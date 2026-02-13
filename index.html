@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bo Jackson Card Scanner - Claude API</title>
+    <title>Bo Jackson Card Scanner - Enhanced</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -67,6 +67,7 @@
         }
         .status.ready { background: #dcfce7; color: #166534; }
         .status.waiting { background: #fef3c7; color: #92400e; }
+        .status.error { background: #fee; color: #991b1b; }
         .upload-area {
             border: 3px dashed #22c55e;
             border-radius: 12px;
@@ -100,7 +101,7 @@
         button:hover { opacity: 0.9; transform: translateY(-1px); }
         .cards-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
             gap: 20px;
         }
         .card {
@@ -116,6 +117,17 @@
             background: #f3f4f6;
         }
         .card-body { padding: 15px; }
+        .match-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .match-perfect { background: #dcfce7; color: #166534; }
+        .match-partial { background: #fef3c7; color: #92400e; }
+        .match-none { background: #fee; color: #991b1b; }
         .field-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -136,6 +148,10 @@
             border-radius: 4px;
             font-size: 13px;
             font-family: inherit;
+        }
+        .field input.auto-filled {
+            background: #dcfce7;
+            border-color: #22c55e;
         }
         .btn-remove {
             width: 100%;
@@ -183,6 +199,15 @@
             color: #166534;
             font-size: 14px;
         }
+        .warning-box {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #92400e;
+            font-size: 14px;
+        }
         .hidden { display: none; }
         .cost-tracker {
             text-align: center;
@@ -190,17 +215,31 @@
             color: #6b7280;
             margin-top: 10px;
         }
+        .db-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎴 Bo Jackson Card Scanner</h1>
-            <p style="color: #666;">Powered by Claude API - High accuracy vision recognition</p>
+            <h1>🎴 Bo Jackson Card Scanner - Enhanced</h1>
+            <p style="color: #666;">Powered by Claude API with Database Lookup</p>
+            <div class="db-status">
+                <span id="dbStatus" class="status waiting">Loading database...</span>
+            </div>
+        </div>
+
+        <div id="dbWarning" class="warning-box hidden">
+            <strong>⚠️ Database Not Found:</strong> Upload <code>card-database.json</code> to your GitHub repo to enable automatic Card ID, Year, Set, and Parallel lookup.
         </div>
 
         <div class="success-box">
-            <strong>✅ Backend Connected:</strong> Your scanner is using a reliable Vercel backend to handle API requests. Images are automatically compressed for optimal performance.
+            <strong>✨ New Features:</strong> Scanned cards are automatically matched against the master database to fill in Card ID, Year, Set, and Parallel!
         </div>
 
         <div class="api-key-panel" id="apiKeyPanel">
@@ -256,14 +295,81 @@
         let apiKey = localStorage.getItem('anthropic_api_key') || '';
         let totalCost = 0;
         let cardsScanned = 0;
+        let cardDatabase = [];
+        let databaseLoaded = false;
 
-        // Check for saved API key on load
-        window.addEventListener('load', () => {
+        // Load card database on page load
+        window.addEventListener('load', async () => {
+            // Check for saved API key
             if (apiKey) {
                 document.getElementById('apiKeyInput').value = apiKey;
                 enableScanning();
             }
+
+            // Load database
+            await loadDatabase();
         });
+
+        async function loadDatabase() {
+            try {
+                // Try to load from same directory as the HTML
+                const response = await fetch('./card-database.json');
+                
+                if (response.ok) {
+                    cardDatabase = await response.json();
+                    databaseLoaded = true;
+                    document.getElementById('dbStatus').textContent = `✅ Database loaded (${cardDatabase.length.toLocaleString()} cards)`;
+                    document.getElementById('dbStatus').className = 'status ready';
+                    console.log('Database loaded:', cardDatabase.length, 'cards');
+                } else {
+                    throw new Error('Database file not found');
+                }
+            } catch (error) {
+                console.warn('Could not load database:', error);
+                document.getElementById('dbStatus').textContent = '⚠️ Database not loaded';
+                document.getElementById('dbStatus').className = 'status error';
+                document.getElementById('dbWarning').classList.remove('hidden');
+            }
+        }
+
+        function findCardInDatabase(scannedCard) {
+            if (!databaseLoaded || cardDatabase.length === 0) {
+                return { match: null, confidence: 'none' };
+            }
+
+            // Try to find exact match first
+            let exactMatch = cardDatabase.find(dbCard => 
+                dbCard.Name?.toUpperCase() === scannedCard.hero?.toUpperCase() &&
+                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase() &&
+                dbCard.Weapon?.toUpperCase() === scannedCard.weapon?.toUpperCase() &&
+                dbCard.Power === parseFloat(scannedCard.power)
+            );
+
+            if (exactMatch) {
+                return { match: exactMatch, confidence: 'perfect' };
+            }
+
+            // Try partial match (name and card number)
+            let partialMatch = cardDatabase.find(dbCard =>
+                dbCard.Name?.toUpperCase() === scannedCard.hero?.toUpperCase() &&
+                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase()
+            );
+
+            if (partialMatch) {
+                return { match: partialMatch, confidence: 'partial' };
+            }
+
+            // Try card number only
+            let cardNumMatch = cardDatabase.find(dbCard =>
+                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase()
+            );
+
+            if (cardNumMatch) {
+                return { match: cardNumMatch, confidence: 'partial' };
+            }
+
+            return { match: null, confidence: 'none' };
+        }
 
         function saveApiKey() {
             const input = document.getElementById('apiKeyInput');
@@ -318,19 +424,16 @@
             e.target.value = '';
         });
 
-        // Function to compress images before sending
         async function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const img = new Image();
                     img.onload = () => {
-                        // Create canvas
                         const canvas = document.createElement('canvas');
                         let width = img.width;
                         let height = img.height;
                         
-                        // Resize if image is too large (max 1500px on longest side)
                         const maxSize = 1500;
                         if (width > maxSize || height > maxSize) {
                             if (width > height) {
@@ -345,11 +448,9 @@
                         canvas.width = width;
                         canvas.height = height;
                         
-                        // Draw and compress
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // Convert to base64 with compression (0.8 quality)
                         const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
                         resolve(base64);
                     };
@@ -372,13 +473,11 @@
             try {
                 const imageUrl = URL.createObjectURL(file);
                 
-                // Compress image if it's too large
                 document.getElementById('loadingText').textContent = 'Compressing image...';
                 const compressedBase64 = await compressImage(file);
                 
                 document.getElementById('loadingText').textContent = 'Analyzing card with Claude...';
 
-                // Call Claude API through Vercel backend
                 const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
                     method: 'POST',
                     headers: {
@@ -427,18 +526,34 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
 
                 const data = await response.json();
                 
-                // Extract JSON from response
                 let jsonText = data.content[0].text.trim();
                 jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
                 
                 const cardData = JSON.parse(jsonText);
-                cardData.imageUrl = imageUrl;
-                cardData.fileName = file.name;
                 
-                cards.push(cardData);
+                // Look up in database
+                document.getElementById('loadingText').textContent = 'Looking up in database...';
+                const { match, confidence } = findCardInDatabase(cardData);
+                
+                // Build final card object
+                const finalCard = {
+                    hero: cardData.hero,
+                    cardNumber: cardData.cardNumber,
+                    weapon: cardData.weapon,
+                    power: cardData.power,
+                    pose: cardData.pose || (match ? match.Parallel : ''),
+                    set: cardData.set || (match ? match.Set : ''),
+                    cardId: match ? match['Card ID'] : '',
+                    year: match ? match.Year : '',
+                    imageUrl: imageUrl,
+                    fileName: file.name,
+                    matchConfidence: confidence,
+                    autoFilled: match ? ['cardId', 'year', 'set', 'pose'] : []
+                };
+                
+                cards.push(finalCard);
                 cardsScanned++;
                 
-                // Estimate cost (rough calculation)
                 const estimatedCost = 0.007;
                 totalCost += estimatedCost;
                 updateCostTracker();
@@ -447,7 +562,7 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
                 
             } catch (err) {
                 console.error('Error:', err);
-                alert(`Failed to process image: ${err.message}\n\nThis could be due to:\n- Invalid API key\n- Image too large (try a smaller photo)\n- Network issues`);
+                alert(`Failed to process image: ${err.message}`);
             } finally {
                 showLoading(false);
             }
@@ -478,13 +593,16 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
                 <div class="card">
                     <img src="${card.imageUrl}" alt="${card.cardNumber}">
                     <div class="card-body">
+                        ${renderMatchBadge(card.matchConfidence)}
                         <div class="field-grid">
-                            ${createField('Hero', 'hero', index, card.hero)}
-                            ${createField('Power', 'power', index, card.power)}
-                            ${createField('Pose', 'pose', index, card.pose)}
-                            ${createField('Weapon', 'weapon', index, card.weapon)}
-                            ${createField('Card #', 'cardNumber', index, card.cardNumber)}
-                            ${createField('Set', 'set', index, card.set)}
+                            ${createField('Card ID', 'cardId', index, card.cardId, card.autoFilled.includes('cardId'))}
+                            ${createField('Name', 'hero', index, card.hero, false)}
+                            ${createField('Year', 'year', index, card.year, card.autoFilled.includes('year'))}
+                            ${createField('Set', 'set', index, card.set, card.autoFilled.includes('set'))}
+                            ${createField('Card #', 'cardNumber', index, card.cardNumber, false)}
+                            ${createField('Parallel', 'pose', index, card.pose, card.autoFilled.includes('pose'))}
+                            ${createField('Weapon', 'weapon', index, card.weapon, false)}
+                            ${createField('Power', 'power', index, card.power, false)}
                         </div>
                         <button class="btn-remove" onclick="removeCard(${index})">Remove</button>
                     </div>
@@ -492,11 +610,22 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
             `).join('');
         }
 
-        function createField(label, field, index, value) {
+        function renderMatchBadge(confidence) {
+            const badges = {
+                'perfect': '<span class="match-badge match-perfect">✅ Perfect Match</span>',
+                'partial': '<span class="match-badge match-partial">⚠️ Partial Match</span>',
+                'none': '<span class="match-badge match-none">❌ No Match</span>'
+            };
+            return badges[confidence] || '';
+        }
+
+        function createField(label, field, index, value, autoFilled) {
+            const autoFilledClass = autoFilled ? ' auto-filled' : '';
             return `
                 <div class="field">
-                    <label>${label}</label>
+                    <label>${label}${autoFilled ? ' 🔄' : ''}</label>
                     <input type="text" value="${value}" 
+                           class="${autoFilledClass}"
                            onchange="updateCard(${index}, '${field}', this.value)"
                            placeholder="Enter ${label.toLowerCase()}">
                 </div>
@@ -527,9 +656,16 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
         function exportCSV() {
             if (cards.length === 0) return;
 
-            const headers = ['Hero', 'Pose', 'Set', 'Card Number', 'Weapon', 'Power'];
+            const headers = ['Card ID', 'Name', 'Year', 'Set', 'Card Number', 'Parallel', 'Weapon', 'Power'];
             const rows = cards.map(card => [
-                card.hero, card.pose, card.set, card.cardNumber, card.weapon, card.power
+                card.cardId,
+                card.hero,
+                card.year,
+                card.set,
+                card.cardNumber,
+                card.pose,
+                card.weapon,
+                card.power
             ]);
 
             const csv = [
