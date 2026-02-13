@@ -325,7 +325,7 @@
                 document.getElementById('loadingText').textContent = 'Analyzing card with Claude...';
 
                 // Call Claude API
-                const response = await fetch('https://boba-scanner.vercel.app//api/anthropic', {
+                const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -500,3 +500,4 @@ Return ONLY the JSON object with no other text, code fences, or explanation.`
     </script>
 </body>
 </html>
+
