@@ -1,35 +1,41 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
   ],
   "functions": {
     "api/anthropic.js": {
       "memory": 1024,
       "maxDuration": 30
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-api-key, anthropic-version"
+        }
+      ]
+    }
+  ]
 }
-```
-
-This tells Vercel:
-- Serve `index.html` as the main page
-- Route `/api/*` requests to the API functions
-
-Then your API will be available at:
-```
-https://boba-scanner.vercel.app/api/anthropic
-```
-
-### Option B: Separate Repos (Cleaner Architecture)
-
-Create two separate repos:
-1. `BOBA-Scanner` (frontend only) → GitHub Pages
-2. `BOBA-Scanner-API` (backend only) → Vercel
-
----
-
-## 🎯 Quick Test: Is Your API Working?
-
-Try visiting this URL:
-```
-https://boba-scanner.vercel.app/api/anthropic
