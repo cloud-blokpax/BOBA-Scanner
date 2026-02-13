@@ -6,350 +6,583 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#22c55e">
-    <title>Bo Jackson Card Scanner Pro</title>
+    <title>Bo Jackson Card Scanner</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #22c55e;
+            --primary-dark: #16a34a;
+            --secondary: #3b82f6;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-400: #9ca3af;
+            --gray-600: #6b7280;
+            --gray-900: #111827;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: #f9fafb;
+            background: var(--gray-50);
             padding: 12px;
             -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
         }
-        .container { max-width: 1200px; margin: 0 auto; }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Compact Header */
         .header {
             text-align: center;
-            margin-bottom: 20px;
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        h1 { font-size: 24px; color: #111; margin-bottom: 8px; }
-        @media (max-width: 640px) {
-            h1 { font-size: 20px; }
-        }
-        .api-key-panel {
-            background: #fef3c7;
-            border: 2px solid #fbbf24;
-            border-radius: 12px;
-            padding: 16px;
             margin-bottom: 16px;
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .api-key-panel h3 {
-            margin-bottom: 8px;
-            color: #92400e;
-            font-size: 16px;
-        }
-        .api-key-input {
+        
+        h1 { 
+            font-size: 22px; 
+            color: var(--gray-900); 
+            margin-bottom: 4px;
             display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 12px;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        @media (min-width: 640px) {
-            .api-key-input { flex-direction: row; }
+        
+        .subtitle {
+            font-size: 13px;
+            color: var(--gray-600);
         }
-        .api-key-input input {
-            flex: 1;
-            padding: 14px;
-            border: 2px solid #d97706;
+        
+        /* Simplified Status Bar */
+        .status-bar {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--gray-200);
+            transition: all 0.3s;
+        }
+        
+        .status-dot.ready {
+            background: var(--primary);
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+        }
+        
+        .status-dot.loading {
+            background: var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .status-label {
+            font-size: 11px;
+            color: var(--gray-600);
+            text-align: center;
+            margin-top: 4px;
+        }
+        
+        /* Collapsible API Key Section */
+        .api-section {
+            margin-bottom: 16px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        
+        .api-toggle {
+            background: var(--gray-100);
+            border: 1px solid var(--gray-200);
             border-radius: 8px;
-            font-size: 16px;
+            padding: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        
+        .api-toggle:active {
+            transform: scale(0.98);
+        }
+        
+        .api-toggle.has-key {
+            background: #dcfce7;
+            border-color: var(--primary);
+        }
+        
+        .api-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: white;
+            border-radius: 0 0 8px 8px;
+        }
+        
+        .api-content.expanded {
+            max-height: 300px;
+            border: 1px solid var(--gray-200);
+            border-top: none;
+            padding: 12px;
+        }
+        
+        .api-input-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        .api-input-group input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 14px;
             font-family: 'Courier New', monospace;
         }
-        .api-key-input button {
-            padding: 14px 24px;
-            background: #d97706;
-            color: white;
+        
+        .api-input-group button {
+            padding: 10px 16px;
             border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 16px;
-            min-height: 48px;
-        }
-        .api-key-input button:active { transform: scale(0.98); }
-        .api-key-input button.clear { background: #ef4444; }
-        .status {
-            display: inline-block;
-            padding: 8px 12px;
             border-radius: 6px;
-            font-size: 13px;
             font-weight: 600;
-            margin-top: 10px;
-        }
-        .status.ready { background: #dcfce7; color: #166534; }
-        .status.waiting { background: #fef3c7; color: #92400e; }
-        .status.error { background: #fee; color: #991b1b; }
-        .upload-area {
-            border: 3px dashed #22c55e;
-            border-radius: 12px;
-            padding: 40px 20px;
-            text-align: center;
-            background: #f0fdf4;
             cursor: pointer;
-            margin-bottom: 20px;
-            transition: all 0.3s;
-            min-height: 200px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            font-size: 14px;
+            transition: all 0.2s;
         }
-        .upload-area:active { background: #dcfce7; transform: scale(0.99); }
-        .upload-area.disabled { opacity: 0.5; cursor: not-allowed; }
-        .upload-area.processing { border-color: #3b82f6; background: #eff6ff; }
-        .upload-icon { font-size: 48px; margin-bottom: 12px; }
+        
+        .btn-save {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-save:active {
+            background: var(--primary-dark);
+            transform: scale(0.95);
+        }
+        
+        .btn-clear {
+            background: var(--gray-200);
+            color: var(--gray-600);
+        }
+        
+        /* Streamlined Upload Area */
+        .upload-area {
+            border: 2px dashed var(--primary);
+            border-radius: 12px;
+            padding: 32px 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            cursor: pointer;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .upload-area:active {
+            transform: scale(0.98);
+        }
+        
+        .upload-area.processing {
+            border-color: var(--secondary);
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        }
+        
+        .upload-area.processing::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.2), transparent);
+            animation: shimmer 1.5s infinite;
+        }
+        
+        @keyframes shimmer {
+            to { left: 100%; }
+        }
+        
         input[type="file"] { display: none; }
         
-        .buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 20px;
+        .upload-icon { 
+            font-size: 40px; 
+            margin-bottom: 8px;
+            animation: float 3s ease-in-out infinite;
         }
-        @media (min-width: 640px) {
-            .buttons { flex-direction: row; justify-content: flex-end; }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
         }
-        button {
-            padding: 14px 24px;
-            border: none;
-            border-radius: 8px;
+        
+        .upload-title {
             font-size: 16px;
             font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            min-height: 48px;
-        }
-        button:active { transform: scale(0.98); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-clear { background: #ef4444; color: white; }
-        .btn-export { background: #22c55e; color: white; }
-        .btn-settings { background: #8b5cf6; color: white; }
-        
-        .cards-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 16px;
-        }
-        @media (min-width: 640px) {
-            .cards-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (min-width: 1024px) {
-            .cards-grid { grid-template-columns: repeat(3, 1fr); }
-        }
-        .card {
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .card:hover { transform: translateY(-2px); }
-        .card img {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-            background: #f3f4f6;
-        }
-        .card-body { padding: 12px; }
-        .match-badge {
-            display: inline-block;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 12px;
-        }
-        .match-perfect { background: #dcfce7; color: #166534; }
-        .match-free { background: #e0e7ff; color: #3730a3; }
-        .match-none { background: #fee; color: #991b1b; }
-        .field-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-        .field label {
-            display: block;
-            color: #6b7280;
-            font-size: 12px;
-            font-weight: 600;
+            color: var(--gray-900);
             margin-bottom: 4px;
         }
-        .field input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            font-size: 15px;
-            font-family: inherit;
+        
+        .upload-subtitle {
+            font-size: 13px;
+            color: var(--gray-600);
         }
-        .field input.auto-filled {
-            background: #dcfce7;
-            border-color: #22c55e;
+        
+        /* Compact Stats */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .btn-remove {
-            width: 100%;
-            background: #f3f4f6;
-            color: #6b7280;
-            border: 1px solid #e5e7eb;
-            min-height: 44px;
-        }
-        .loading {
+        
+        .stat {
             text-align: center;
-            padding: 24px;
-            background: #eff6ff;
-            border-radius: 12px;
-            margin-bottom: 20px;
         }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        
+        .stat-label {
+            font-size: 10px;
+            color: var(--gray-600);
+            margin-top: 2px;
+        }
+        
+        /* Simplified Loading */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        .loading-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            min-width: 200px;
+            animation: slideUp 0.3s ease;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid #3b82f6;
-            border-top-color: transparent;
+            border: 3px solid var(--gray-200);
+            border-top-color: var(--primary);
             border-radius: 50%;
             margin: 0 auto 12px;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #9ca3af;
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
-        .info-box {
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 16px;
-            color: #1e40af;
+        
+        .loading-text {
             font-size: 14px;
+            color: var(--gray-600);
+            margin-bottom: 8px;
         }
-        .success-box {
-            background: #dcfce7;
-            border: 1px solid #22c55e;
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 16px;
-            color: #166534;
-            font-size: 14px;
-        }
-        .warning-box {
-            background: #fef3c7;
-            border: 1px solid #fbbf24;
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 16px;
-            color: #92400e;
-            font-size: 14px;
-        }
-        .stats-box {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 12px;
-            background: white;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .stat-item {
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #6b7280;
-            font-weight: 600;
-        }
-        .hidden { display: none; }
-        .cost-tracker {
-            text-align: center;
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 12px;
-        }
-        .db-status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            justify-content: center;
-            margin-top: 12px;
-            flex-wrap: wrap;
-        }
+        
         .progress-bar {
             width: 100%;
-            height: 8px;
-            background: #e5e7eb;
-            border-radius: 4px;
+            height: 4px;
+            background: var(--gray-200);
+            border-radius: 2px;
             overflow: hidden;
-            margin-top: 8px;
         }
-        .progress-bar-fill {
+        
+        .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #22c55e, #10b981);
+            background: linear-gradient(90deg, var(--primary), #10b981);
             transition: width 0.3s ease;
         }
         
-        /* Settings modal */
+        /* Compact Action Bar */
+        .action-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            justify-content: flex-end;
+        }
+        
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-secondary { background: var(--gray-200); color: var(--gray-600); }
+        
+        /* Compact Card Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        
+        @media (min-width: 640px) {
+            .cards-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        
+        @media (min-width: 1024px) {
+            .cards-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            transition: all 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        }
+        
+        .card-image {
+            width: 100%;
+            height: 160px;
+            object-fit: cover;
+            background: var(--gray-100);
+        }
+        
+        .card-body {
+            padding: 10px;
+        }
+        
+        .card-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+        
+        .badge-free { background: #e0e7ff; color: #3730a3; }
+        .badge-paid { background: #dcfce7; color: #166534; }
+        
+        .card-fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .field {
+            position: relative;
+        }
+        
+        .field-label {
+            font-size: 9px;
+            color: var(--gray-600);
+            font-weight: 600;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+        
+        .field-input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid var(--gray-200);
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        
+        .field-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+        }
+        
+        .field-input.auto-filled {
+            background: #f0fdf4;
+            border-color: var(--primary);
+        }
+        
+        .btn-remove {
+            width: 100%;
+            padding: 6px;
+            background: var(--gray-100);
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--gray-600);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-remove:active {
+            background: var(--gray-200);
+            transform: scale(0.95);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 48px 20px;
+            color: var(--gray-400);
+        }
+        
+        .hidden { display: none; }
+        
+        /* Settings Modal - Simplified */
         .modal {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 999;
+            padding: 20px;
         }
+        
         .modal.active { display: flex; }
+        
         .modal-content {
             background: white;
             border-radius: 12px;
-            padding: 24px;
-            max-width: 500px;
-            width: 90%;
+            padding: 20px;
+            max-width: 400px;
+            width: 100%;
             max-height: 80vh;
             overflow-y: auto;
+            animation: slideUp 0.3s ease;
         }
+        
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
         .modal-close {
-            font-size: 24px;
+            font-size: 28px;
+            color: var(--gray-400);
             cursor: pointer;
-            color: #6b7280;
+            line-height: 1;
+            transition: color 0.2s;
         }
-        .setting-item {
-            margin-bottom: 20px;
+        
+        .modal-close:hover {
+            color: var(--gray-600);
         }
+        
+        .setting-group {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .setting-group:last-child {
+            border-bottom: none;
+        }
+        
         .setting-label {
+            font-size: 13px;
             font-weight: 600;
-            margin-bottom: 8px;
-            display: block;
+            margin-bottom: 4px;
         }
-        .toggle-switch {
+        
+        .setting-desc {
+            font-size: 11px;
+            color: var(--gray-600);
+            margin-top: 4px;
+        }
+        
+        .toggle {
             position: relative;
             display: inline-block;
-            width: 50px;
-            height: 28px;
+            width: 44px;
+            height: 24px;
         }
-        .toggle-switch input {
+        
+        .toggle input {
             opacity: 0;
             width: 0;
             height: 0;
         }
+        
         .toggle-slider {
             position: absolute;
             cursor: pointer;
@@ -357,448 +590,617 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
-            transition: 0.4s;
-            border-radius: 28px;
+            background: var(--gray-200);
+            transition: 0.3s;
+            border-radius: 24px;
         }
+        
         .toggle-slider:before {
             position: absolute;
             content: "";
-            height: 20px;
-            width: 20px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: 0.4s;
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            transition: 0.3s;
             border-radius: 50%;
         }
+        
         input:checked + .toggle-slider {
-            background-color: #22c55e;
+            background: var(--primary);
         }
+        
         input:checked + .toggle-slider:before {
-            transform: translateX(22px);
+            transform: translateX(20px);
+        }
+        
+        select, input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1001;
+        }
+        
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .toast-icon {
+            font-size: 20px;
+        }
+        
+        .toast-message {
+            font-size: 13px;
+            font-weight: 500;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Compact Header -->
         <div class="header">
-            <h1>🎴 Card Scanner Pro</h1>
-            <p style="color: #666; font-size: 14px;">AI-Powered with Auto-Crop</p>
-            <div class="db-status">
-                <span id="dbStatus" class="status waiting">Loading...</span>
-                <span id="ocrStatus" class="status waiting">Loading OCR...</span>
-                <span id="cvStatus" class="status waiting">Loading CV...</span>
+            <h1>
+                <span>🎴</span>
+                <span>Card Scanner</span>
+            </h1>
+            <div class="subtitle">Smart OCR + AI Detection</div>
+            
+            <div class="status-bar">
+                <div>
+                    <div class="status-dot" id="statusDb"></div>
+                    <div class="status-label">DB</div>
+                </div>
+                <div>
+                    <div class="status-dot" id="statusOcr"></div>
+                    <div class="status-label">OCR</div>
+                </div>
+                <div>
+                    <div class="status-dot" id="statusCv"></div>
+                    <div class="status-label">CV</div>
+                </div>
             </div>
         </div>
 
-        <div id="statsBox" class="stats-box hidden">
-            <div class="stat-item">
-                <div class="stat-value" style="color: #22c55e;" id="statFree">0</div>
-                <div class="stat-label">Free Scans</div>
+        <!-- Collapsible API Section -->
+        <div class="api-section">
+            <div class="api-toggle" id="apiToggle" onclick="toggleApiSection()">
+                <div>
+                    <span id="apiToggleText">🔑 API Key</span>
+                    <span style="font-size: 11px; color: var(--gray-600); margin-left: 8px;">(Optional)</span>
+                </div>
+                <span id="apiToggleIcon">▼</span>
             </div>
-            <div class="stat-item">
-                <div class="stat-value" style="color: #3b82f6;" id="statPaid">0</div>
-                <div class="stat-label">AI Scans</div>
+            <div class="api-content" id="apiContent">
+                <div style="font-size: 12px; color: var(--gray-600); margin-bottom: 8px;">
+                    Get at <a href="https://console.anthropic.com" target="_blank" style="color: var(--primary);">console.anthropic.com</a>
+                </div>
+                <div class="api-input-group">
+                    <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-...">
+                    <button class="btn-save" onclick="saveApiKey()">Save</button>
+                    <button class="btn-clear" onclick="clearApiKey()">✕</button>
+                </div>
             </div>
-            <div class="stat-item">
-                <div class="stat-value" style="color: #f59e0b;" id="statCost">$0.00</div>
-                <div class="stat-label">Total Cost</div>
+        </div>
+
+        <!-- Compact Stats -->
+        <div class="stats-bar hidden" id="statsBar">
+            <div class="stat">
+                <div class="stat-value" style="color: var(--primary);" id="statFree">0</div>
+                <div class="stat-label">FREE</div>
             </div>
-            <div class="stat-item">
+            <div class="stat">
+                <div class="stat-value" style="color: var(--secondary);" id="statPaid">0</div>
+                <div class="stat-label">PAID</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="color: var(--warning);" id="statCost">$0</div>
+                <div class="stat-label">COST</div>
+            </div>
+            <div class="stat">
                 <div class="stat-value" style="color: #8b5cf6;" id="statRate">0%</div>
-                <div class="stat-label">Free Rate</div>
+                <div class="stat-label">FREE RATE</div>
             </div>
         </div>
 
-        <div id="dbWarning" class="warning-box hidden">
-            <strong>⚠️ Database Not Found:</strong> Upload <code>card-database.json</code> to enable lookup.
-        </div>
-
-        <div class="success-box">
-            <strong>✨ Features:</strong> Auto card detection, perspective correction, and region-based OCR!
-        </div>
-
-        <div class="api-key-panel" id="apiKeyPanel">
-            <h3>🔑 API Key (Optional)</h3>
-            <p style="color: #92400e; margin-bottom: 5px; font-size: 13px;">
-                Only needed if card not in database. Get at: <a href="https://console.anthropic.com" target="_blank" style="color: #d97706; text-decoration: underline;">console.anthropic.com</a>
-            </p>
-            <div class="api-key-input">
-                <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-... (optional)">
-                <button onclick="saveApiKey()">Save</button>
-                <button class="clear" onclick="clearApiKey()">Clear</button>
-            </div>
-            <div class="status waiting" id="apiStatus">Optional</div>
-        </div>
-
+        <!-- Upload Area -->
         <div class="upload-area" id="uploadArea">
             <input type="file" id="fileInput" multiple accept="image/*" capture="environment">
             <div class="upload-icon">📸</div>
-            <p style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Tap to Scan Card</p>
-            <p style="color: #666; font-size: 14px;">Auto-crop & perspective correction</p>
+            <div class="upload-title">Tap to Scan</div>
+            <div class="upload-subtitle">Auto-crop & smart detection</div>
         </div>
 
-        <div class="loading hidden" id="loading">
-            <div class="spinner"></div>
-            <p id="loadingText" style="color: #3b82f6; font-weight: 600; font-size: 15px;">Processing...</p>
-            <div class="progress-bar" id="progressBar">
-                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
-            </div>
+        <!-- Action Bar -->
+        <div class="action-bar hidden" id="actionBar">
+            <button class="btn btn-secondary" onclick="openSettings()">⚙️</button>
+            <button class="btn btn-danger" onclick="clearAll()">🗑️</button>
+            <button class="btn btn-primary" onclick="exportCSV()">
+                <span>💾</span>
+                <span id="exportCount">0</span>
+            </button>
         </div>
 
-        <div class="buttons hidden" id="buttons">
-            <button class="btn-settings" onclick="openSettings()">⚙️ Settings</button>
-            <button class="btn-clear" onclick="clearAll()">🗑️ Clear All</button>
-            <button class="btn-export" onclick="exportCSV()">💾 Export CSV (<span id="count">0</span>)</button>
-        </div>
-
+        <!-- Cards Grid -->
         <div class="cards-grid" id="cardsGrid"></div>
 
+        <!-- Empty State -->
         <div class="empty-state" id="emptyState">
-            <div style="font-size: 64px; margin-bottom: 15px;">📷</div>
-            <p style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">No cards scanned</p>
-            <p style="font-size: 14px;">Tap above to get started</p>
+            <div style="font-size: 48px; margin-bottom: 12px;">📷</div>
+            <div style="font-size: 14px; font-weight: 600; color: var(--gray-600);">No cards yet</div>
+            <div style="font-size: 12px; color: var(--gray-400); margin-top: 4px;">Tap above to start</div>
         </div>
+    </div>
 
-        <div class="cost-tracker" id="costTracker"></div>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-card">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loadingText">Processing...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Settings Modal -->
     <div class="modal" id="settingsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>⚙️ Settings</h2>
-                <span class="modal-close" onclick="closeSettings()">×</span>
+                <div class="modal-title">Settings</div>
+                <div class="modal-close" onclick="closeSettings()">×</div>
             </div>
             
-            <div class="setting-item">
-                <label class="setting-label">Auto Card Detection</label>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="autoDetectToggle" checked onchange="toggleAutoDetect()">
-                    <span class="toggle-slider"></span>
-                </label>
-                <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
-                    Automatically detect and crop card boundaries
-                </p>
+            <div class="setting-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="setting-label">Auto Detection</div>
+                        <div class="setting-desc">Crop card automatically</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateSetting('autoDetect', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
             
-            <div class="setting-item">
-                <label class="setting-label">Perspective Correction</label>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="perspectiveToggle" checked onchange="togglePerspective()">
-                    <span class="toggle-slider"></span>
-                </label>
-                <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
-                    Correct angled or skewed photos
-                </p>
+            <div class="setting-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="setting-label">Perspective Fix</div>
+                        <div class="setting-desc">Straighten angled photos</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="togglePerspective" checked onchange="updateSetting('perspective', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
             
-            <div class="setting-item">
-                <label class="setting-label">Region-Based OCR</label>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="regionOCRToggle" checked onchange="toggleRegionOCR()">
-                    <span class="toggle-slider"></span>
-                </label>
-                <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
-                    Only scan specific card regions (faster & more accurate)
-                </p>
+            <div class="setting-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="setting-label">Region OCR</div>
+                        <div class="setting-desc">Faster, targeted scanning</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateSetting('regionOcr', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
             
-            <div class="setting-item">
-                <label class="setting-label">Image Quality</label>
-                <select id="qualitySelect" onchange="changeQuality()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #d1d5db;">
-                    <option value="0.5">Low (Fastest, Cheapest)</option>
-                    <option value="0.7" selected>Medium (Balanced)</option>
-                    <option value="0.9">High (Best Quality)</option>
+            <div class="setting-group">
+                <div class="setting-label">Image Quality</div>
+                <select id="selectQuality" onchange="updateSetting('quality', this.value)">
+                    <option value="0.5">Low (Fastest)</option>
+                    <option value="0.7" selected>Medium</option>
+                    <option value="0.9">High (Best)</option>
                 </select>
             </div>
             
-            <div class="setting-item">
-                <label class="setting-label">OCR Confidence Threshold</label>
-                <input type="range" id="confidenceSlider" min="40" max="80" value="60" 
-                       oninput="updateConfidence(this.value)" 
-                       style="width: 100%;">
-                <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
-                    Current: <span id="confidenceValue">60</span>% (Lower = more AI fallbacks)
-                </p>
+            <div class="setting-group">
+                <div class="setting-label">OCR Threshold: <span id="thresholdValue">60</span>%</div>
+                <input type="range" id="rangeThreshold" min="40" max="80" value="60" 
+                       oninput="document.getElementById('thresholdValue').textContent = this.value; updateSetting('threshold', this.value)">
+                <div class="setting-desc">Lower = more AI fallbacks</div>
             </div>
             
-            <button onclick="resetSettings()" style="width: 100%; background: #6b7280; color: white;">
-                Reset to Defaults
+            <button class="btn btn-secondary" style="width: 100%;" onclick="resetSettings()">
+                Reset Defaults
             </button>
         </div>
     </div>
 
-    <!-- Load libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- Toast Container -->
+    <div class="toast" id="toast">
+        <span class="toast-icon" id="toastIcon">✓</span>
+        <span class="toast-message" id="toastMessage"></span>
+    </div>
+
+    <!-- Lazy Load Tesseract -->
     <script>
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        script.async = true;
+        document.head.appendChild(script);
+    </script>
+
+    <script>
+        // ==================== STATE ====================
         let cards = [];
-        let apiKey = localStorage.getItem('anthropic_api_key') || '';
-        let totalCost = 0;
-        let cardsScanned = 0;
-        let freeScans = 0;
-        let cardDatabase = [];
-        let databaseLoaded = false;
-        let tesseractReady = false;
+        let apiKey = localStorage.getItem('api_key') || '';
+        let stats = { scanned: 0, free: 0, cost: 0 };
+        let database = [];
         let tesseractWorker = null;
-        let openCvReady = false;
-        let progressUpdateInterval = null;
-
-        // Configuration
-        const CONFIG = {
-            OCR_CONFIDENCE_THRESHOLD: parseInt(localStorage.getItem('ocrConfidence')) || 60,
-            MAX_IMAGE_SIZE: 1000,
-            IMAGE_QUALITY: parseFloat(localStorage.getItem('imageQuality')) || 0.7,
-            AI_COST_PER_SCAN: 0.002,
-            MAX_RETRIES: 3,
-            AUTO_DETECT: localStorage.getItem('autoDetect') !== 'false',
-            PERSPECTIVE_CORRECTION: localStorage.getItem('perspectiveCorrection') !== 'false',
-            REGION_OCR: localStorage.getItem('regionOCR') !== 'false',
-            
-            CARD_ASPECT_RATIO: 2.5 / 3.5,
-            CARD_ASPECT_TOLERANCE: 0.15,
-            
-            REGIONS: {
-                CARD_NUMBER: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 },
-                POWER: { x: 0.8, y: 0.05, w: 0.15, h: 0.12 },
-                HERO: { x: 0.05, y: 0.05, w: 0.5, h: 0.15 },
-                WEAPON: { x: 0.65, y: 0.85, w: 0.3, h: 0.12 }
-            }
+        let ready = { db: false, ocr: false, cv: false };
+        
+        // ==================== CONFIG ====================
+        const config = {
+            autoDetect: localStorage.getItem('autoDetect') !== 'false',
+            perspective: localStorage.getItem('perspective') !== 'false',
+            regionOcr: localStorage.getItem('regionOcr') !== 'false',
+            quality: parseFloat(localStorage.getItem('quality')) || 0.7,
+            threshold: parseInt(localStorage.getItem('threshold')) || 60,
+            maxSize: 1000,
+            aiCost: 0.002,
+            region: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 }
         };
-
-        // Initialize on load
-        window.addEventListener('load', async () => {
-            console.log('Page loaded, initializing...');
+        
+        // ==================== INIT ====================
+        window.addEventListener('load', init);
+        
+        async function init() {
+            console.log('🚀 Initializing...');
             
             if (apiKey) {
                 document.getElementById('apiKeyInput').value = apiKey;
-                enableApiKey();
+                updateApiToggle(true);
             }
             
-            // Load settings
-            document.getElementById('autoDetectToggle').checked = CONFIG.AUTO_DETECT;
-            document.getElementById('perspectiveToggle').checked = CONFIG.PERSPECTIVE_CORRECTION;
-            document.getElementById('regionOCRToggle').checked = CONFIG.REGION_OCR;
-            document.getElementById('qualitySelect').value = CONFIG.IMAGE_QUALITY;
-            document.getElementById('confidenceSlider').value = CONFIG.OCR_CONFIDENCE_THRESHOLD;
-            document.getElementById('confidenceValue').textContent = CONFIG.OCR_CONFIDENCE_THRESHOLD;
+            await Promise.all([
+                loadDatabase(),
+                initTesseract(),
+                loadOpenCV()
+            ]);
             
-            await loadDatabase();
-            await initTesseract();
-            await loadOpenCV();
-            await restorePreviousSession();
-        });
-
-        // Load OpenCV with proper error handling
-        async function loadOpenCV() {
+            restoreSession();
+            
+            document.getElementById('uploadArea').onclick = () => document.getElementById('fileInput').click();
+            document.getElementById('fileInput').onchange = handleFiles;
+            
+            console.log('✅ Ready');
+        }
+        
+        // ==================== DATABASE ====================
+        async function loadDatabase() {
+            setStatus('db', 'loading');
             try {
-                document.getElementById('cvStatus').textContent = 'Loading CV...';
+                const res = await fetch('./card-database.json');
+                if (!res.ok) throw new Error('DB not found');
+                database = await res.json();
+                ready.db = true;
+                setStatus('db', 'ready');
+                console.log(`✅ DB: ${database.length} cards`);
+            } catch (err) {
+                console.error('❌ DB failed:', err);
+                setStatus('db', 'error');
+            }
+        }
+        
+        function findCard(cardNumber) {
+            if (!ready.db || !cardNumber) return null;
+            const normalized = cardNumber.toUpperCase().trim();
+            return database.find(c => (c['Card Number'] || '').toUpperCase().trim() === normalized);
+        }
+        
+        // ==================== TESSERACT ====================
+        async function initTesseract() {
+            setStatus('ocr', 'loading');
+            try {
+                while (typeof Tesseract === 'undefined') {
+                    await new Promise(r => setTimeout(r, 100));
+                }
                 
-                // Load OpenCV script
+                tesseractWorker = await Tesseract.createWorker('eng');
+                ready.ocr = true;
+                setStatus('ocr', 'ready');
+                console.log('✅ OCR ready');
+            } catch (err) {
+                console.error('❌ OCR failed:', err);
+                setStatus('ocr', 'error');
+            }
+        }
+        
+        // ==================== OPENCV (Lazy) ====================
+        let cvLoadPromise = null;
+        
+        function loadOpenCV() {
+            if (cvLoadPromise) return cvLoadPromise;
+            
+            setStatus('cv', 'loading');
+            
+            cvLoadPromise = new Promise((resolve) => {
                 const script = document.createElement('script');
                 script.src = 'https://docs.opencv.org/4.5.2/opencv.js';
                 script.async = true;
                 
+                const timeout = setTimeout(() => {
+                    console.warn('⚠️ OpenCV timeout');
+                    setStatus('cv', 'error');
+                    resolve(false);
+                }, 8000);
+                
                 script.onload = () => {
-                    // OpenCV needs time to initialize
-                    const checkOpenCV = setInterval(() => {
+                    const check = setInterval(() => {
                         if (typeof cv !== 'undefined' && cv.Mat) {
-                            clearInterval(checkOpenCV);
-                            openCvReady = true;
-                            document.getElementById('cvStatus').textContent = '✅ CV Ready';
-                            document.getElementById('cvStatus').className = 'status ready';
-                            console.log('OpenCV loaded and ready');
+                            clearInterval(check);
+                            clearTimeout(timeout);
+                            ready.cv = true;
+                            setStatus('cv', 'ready');
+                            console.log('✅ OpenCV ready');
+                            resolve(true);
                         }
                     }, 100);
-                    
-                    // Timeout after 10 seconds
-                    setTimeout(() => {
-                        clearInterval(checkOpenCV);
-                        if (!openCvReady) {
-                            console.warn('OpenCV timeout');
-                            document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
-                            document.getElementById('cvStatus').className = 'status error';
-                        }
-                    }, 10000);
                 };
                 
                 script.onerror = () => {
-                    console.error('Failed to load OpenCV');
-                    document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
-                    document.getElementById('cvStatus').className = 'status error';
+                    clearTimeout(timeout);
+                    console.error('❌ OpenCV failed');
+                    setStatus('cv', 'error');
+                    resolve(false);
                 };
                 
                 document.head.appendChild(script);
-            } catch (error) {
-                console.error('OpenCV load error:', error);
-                document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
-                document.getElementById('cvStatus').className = 'status error';
-            }
+            });
+            
+            return cvLoadPromise;
         }
-
-        // Settings functions
+        
+        // ==================== STATUS ====================
+        function setStatus(type, state) {
+            const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
+            el.className = `status-dot ${state}`;
+        }
+        
+        // ==================== UI ====================
+        function toggleApiSection() {
+            const content = document.getElementById('apiContent');
+            const icon = document.getElementById('apiToggleIcon');
+            const expanded = content.classList.toggle('expanded');
+            icon.textContent = expanded ? '▲' : '▼';
+        }
+        
+        function updateApiToggle(hasKey) {
+            const toggle = document.getElementById('apiToggle');
+            const text = document.getElementById('apiToggleText');
+            toggle.classList.toggle('has-key', hasKey);
+            text.textContent = hasKey ? '🔑 API Key Saved' : '🔑 API Key';
+        }
+        
+        function showToast(message, icon = '✓') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastIcon').textContent = icon;
+            document.getElementById('toastMessage').textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+        
+        function showLoading(show, text = 'Processing...') {
+            const overlay = document.getElementById('loadingOverlay');
+            document.getElementById('loadingText').textContent = text;
+            overlay.classList.toggle('active', show);
+        }
+        
+        function setProgress(percent) {
+            document.getElementById('progressFill').style.width = `${percent}%`;
+        }
+        
+        // ==================== API KEY ====================
+        function saveApiKey() {
+            const input = document.getElementById('apiKeyInput');
+            const key = input.value.trim();
+            
+            if (!key.startsWith('sk-ant-')) {
+                showToast('Invalid key format', '⚠️');
+                return;
+            }
+            
+            apiKey = key;
+            localStorage.setItem('api_key', key);
+            updateApiToggle(true);
+            showToast('API key saved');
+            toggleApiSection();
+        }
+        
+        function clearApiKey() {
+            if (!confirm('Clear API key?')) return;
+            apiKey = '';
+            localStorage.removeItem('api_key');
+            document.getElementById('apiKeyInput').value = '';
+            updateApiToggle(false);
+            showToast('API key cleared');
+        }
+        
+        // ==================== SETTINGS ====================
         function openSettings() {
             document.getElementById('settingsModal').classList.add('active');
+            document.getElementById('toggleAutoDetect').checked = config.autoDetect;
+            document.getElementById('togglePerspective').checked = config.perspective;
+            document.getElementById('toggleRegionOcr').checked = config.regionOcr;
+            document.getElementById('selectQuality').value = config.quality;
+            document.getElementById('rangeThreshold').value = config.threshold;
+            document.getElementById('thresholdValue').textContent = config.threshold;
         }
-
+        
         function closeSettings() {
             document.getElementById('settingsModal').classList.remove('active');
         }
-
-        function toggleAutoDetect() {
-            CONFIG.AUTO_DETECT = document.getElementById('autoDetectToggle').checked;
-            localStorage.setItem('autoDetect', CONFIG.AUTO_DETECT);
+        
+        function updateSetting(key, value) {
+            config[key] = key === 'quality' ? parseFloat(value) : 
+                         key === 'threshold' ? parseInt(value) : 
+                         value;
+            localStorage.setItem(key, value);
         }
-
-        function togglePerspective() {
-            CONFIG.PERSPECTIVE_CORRECTION = document.getElementById('perspectiveToggle').checked;
-            localStorage.setItem('perspectiveCorrection', CONFIG.PERSPECTIVE_CORRECTION);
-        }
-
-        function toggleRegionOCR() {
-            CONFIG.REGION_OCR = document.getElementById('regionOCRToggle').checked;
-            localStorage.setItem('regionOCR', CONFIG.REGION_OCR);
-        }
-
-        function changeQuality() {
-            CONFIG.IMAGE_QUALITY = parseFloat(document.getElementById('qualitySelect').value);
-            localStorage.setItem('imageQuality', CONFIG.IMAGE_QUALITY);
-        }
-
-        function updateConfidence(value) {
-            CONFIG.OCR_CONFIDENCE_THRESHOLD = parseInt(value);
-            document.getElementById('confidenceValue').textContent = value;
-            localStorage.setItem('ocrConfidence', value);
-        }
-
+        
         function resetSettings() {
-            localStorage.removeItem('autoDetect');
-            localStorage.removeItem('perspectiveCorrection');
-            localStorage.removeItem('regionOCR');
-            localStorage.removeItem('imageQuality');
-            localStorage.removeItem('ocrConfidence');
-            
-            CONFIG.AUTO_DETECT = true;
-            CONFIG.PERSPECTIVE_CORRECTION = true;
-            CONFIG.REGION_OCR = true;
-            CONFIG.IMAGE_QUALITY = 0.7;
-            CONFIG.OCR_CONFIDENCE_THRESHOLD = 60;
-            
-            document.getElementById('autoDetectToggle').checked = true;
-            document.getElementById('perspectiveToggle').checked = true;
-            document.getElementById('regionOCRToggle').checked = true;
-            document.getElementById('qualitySelect').value = 0.7;
-            document.getElementById('confidenceSlider').value = 60;
-            document.getElementById('confidenceValue').textContent = 60;
-            
-            alert('Settings reset to defaults');
+            Object.keys(config).forEach(k => localStorage.removeItem(k));
+            config.autoDetect = true;
+            config.perspective = true;
+            config.regionOcr = true;
+            config.quality = 0.7;
+            config.threshold = 60;
+            openSettings();
+            showToast('Settings reset');
         }
-
+        
+        // ==================== SESSION ====================
         window.addEventListener('beforeunload', () => {
             if (cards.length > 0) {
-                saveSession();
+                localStorage.setItem('session', JSON.stringify({
+                    cards: cards.map(c => ({ ...c, imageUrl: null })),
+                    stats
+                }));
             }
         });
-
-        function saveSession() {
-            const cardsToSave = cards.map(card => ({
-                ...card,
-                imageUrl: null
-            }));
-            localStorage.setItem('scanned_cards', JSON.stringify(cardsToSave));
-            localStorage.setItem('scan_stats', JSON.stringify({
-                cardsScanned,
-                freeScans,
-                totalCost
-            }));
-        }
-
-        async function restorePreviousSession() {
-            const savedCards = localStorage.getItem('scanned_cards');
-            const savedStats = localStorage.getItem('scan_stats');
+        
+        function restoreSession() {
+            const saved = localStorage.getItem('session');
+            if (!saved) return;
             
-            if (savedCards && savedStats) {
-                const shouldRestore = confirm('Restore previous scanning session?\n\n(Note: Card images won\'t be restored)');
-                if (shouldRestore) {
-                    try {
-                        cards = JSON.parse(savedCards);
-                        const stats = JSON.parse(savedStats);
-                        cardsScanned = stats.cardsScanned || cards.length;
-                        freeScans = stats.freeScans || 0;
-                        totalCost = stats.totalCost || 0;
-                        updateStats();
-                        renderCards();
-                    } catch (e) {
-                        console.error('Failed to restore session:', e);
+            if (confirm('Restore previous session?')) {
+                const { cards: savedCards, stats: savedStats } = JSON.parse(saved);
+                cards = savedCards;
+                stats = savedStats;
+                updateStats();
+                renderCards();
+            }
+            localStorage.removeItem('session');
+        }
+        
+        // ==================== FILE HANDLING ====================
+        async function handleFiles(e) {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+            if (!files.length) return;
+            
+            if (files.length > 1) {
+                if (!confirm(`Scan ${files.length} cards?`)) {
+                    e.target.value = '';
+                    return;
+                }
+            }
+            
+            for (let i = 0; i < files.length; i++) {
+                showLoading(true, `Processing ${i + 1}/${files.length}...`);
+                await processImage(files[i]);
+                if (i < files.length - 1) await new Promise(r => setTimeout(r, 300));
+            }
+            
+            e.target.value = '';
+        }
+        
+        // ==================== IMAGE PROCESSING ====================
+        async function processImage(file) {
+            try {
+                const uploadArea = document.getElementById('uploadArea');
+                uploadArea.classList.add('processing');
+                
+                setProgress(0);
+                const imageUrl = URL.createObjectURL(file);
+                setProgress(10);
+                
+                showLoading(true, 'Detecting card...');
+                const processed = config.autoDetect ? await detectCard(imageUrl) : imageUrl;
+                setProgress(30);
+                
+                showLoading(true, 'Reading card...');
+                const { text, confidence } = await runOCR(processed);
+                setProgress(60);
+                
+                const cardNumber = extractCardNumber(text);
+                console.log({ text, confidence, cardNumber });
+                
+                if (!cardNumber || confidence < config.threshold) {
+                    throw new Error('Low confidence');
+                }
+                
+                showLoading(true, 'Looking up...');
+                const match = findCard(cardNumber);
+                setProgress(80);
+                
+                if (!match) throw new Error('Not in database');
+                
+                addCard(match, processed, file.name, 'free', confidence);
+                setProgress(100);
+                showToast(`Card ${cardNumber} scanned (FREE)`, '🎉');
+                
+            } catch (err) {
+                console.log('OCR failed, trying AI:', err.message);
+                
+                if (!apiKey) {
+                    showLoading(false);
+                    showToast('OCR failed. Add API key?', '⚠️');
+                    return;
+                }
+                
+                try {
+                    showLoading(true, 'Using AI...');
+                    const imageUrl = URL.createObjectURL(file);
+                    const compressed = await compressImage(file);
+                    setProgress(70);
+                    
+                    const data = await callAPI(compressed);
+                    setProgress(85);
+                    
+                    const cardNum = JSON.parse(data.content[0].text.replace(/```json|```/g, '').trim()).cardNumber;
+                    const match = findCard(cardNum);
+                    
+                    if (match) {
+                        addCard(match, imageUrl, file.name, 'ai');
+                        setProgress(100);
+                        showToast(`Card ${cardNum} scanned (AI)`, '💰');
+                        stats.cost += config.aiCost;
+                    } else {
+                        throw new Error('Not in database');
                     }
+                } catch (aiErr) {
+                    console.error('AI failed:', aiErr);
+                    showToast('Scan failed', '❌');
                 }
-                localStorage.removeItem('scanned_cards');
-                localStorage.removeItem('scan_stats');
+            } finally {
+                showLoading(false);
+                document.getElementById('uploadArea').classList.remove('processing');
+                setProgress(0);
             }
         }
-
-        async function initTesseract() {
-            try {
-                console.log('Initializing Tesseract...');
-                document.getElementById('ocrStatus').textContent = 'Loading OCR...';
-                
-                // Create worker WITHOUT complex logger to avoid DataCloneError
-                tesseractWorker = await Tesseract.createWorker('eng');
-                
-                tesseractReady = true;
-                document.getElementById('ocrStatus').textContent = '✅ OCR Ready';
-                document.getElementById('ocrStatus').className = 'status ready';
-                console.log('Tesseract ready');
-            } catch (error) {
-                console.error('Tesseract init error:', error);
-                document.getElementById('ocrStatus').textContent = '⚠️ OCR Failed';
-                document.getElementById('ocrStatus').className = 'status error';
-            }
-        }
-
-        async function loadDatabase() {
-            try {
-                console.log('Loading database...');
-                const response = await fetch('./card-database.json');
-                if (response.ok) {
-                    cardDatabase = await response.json();
-                    databaseLoaded = true;
-                    document.getElementById('dbStatus').textContent = `✅ DB (${cardDatabase.length.toLocaleString()})`;
-                    document.getElementById('dbStatus').className = 'status ready';
-                    console.log('Database loaded:', cardDatabase.length, 'cards');
-                } else {
-                    throw new Error('Database file not found');
-                }
-            } catch (error) {
-                console.error('Database load error:', error);
-                document.getElementById('dbStatus').textContent = '⚠️ No DB';
-                document.getElementById('dbStatus').className = 'status error';
-                document.getElementById('dbWarning').classList.remove('hidden');
-            }
-        }
-
-        function findCardByNumber(cardNumber) {
-            if (!databaseLoaded || !cardNumber) return null;
-            const normalized = cardNumber.toString().toUpperCase().trim();
-            return cardDatabase.find(dbCard => {
-                const dbCardNum = (dbCard['Card Number'] || '').toString().toUpperCase().trim();
-                return dbCardNum === normalized;
-            });
-        }
-
-        /**
-         * CARD DETECTION & CROPPING
-         */
-        async function detectAndCropCard(imageUrl) {
-            if (!openCvReady || !CONFIG.AUTO_DETECT) {
-                console.log('OpenCV not ready or auto-detect disabled, skipping');
-                return imageUrl;
-            }
+        
+        // ==================== CARD DETECTION ====================
+        async function detectCard(imageUrl) {
+            if (!ready.cv || !config.autoDetect) return imageUrl;
             
             try {
-                console.log('Attempting card detection...');
-                return await new Promise((resolve, reject) => {
+                return await new Promise((resolve) => {
                     const img = new Image();
                     img.crossOrigin = 'anonymous';
                     
@@ -834,30 +1236,21 @@
                                 cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
                                 
                                 if (approx.rows === 4 && area > maxArea) {
-                                    const aspectRatio = calculateAspectRatio(approx);
-                                    const expectedRatio = CONFIG.CARD_ASPECT_RATIO;
-                                    
-                                    if (Math.abs(aspectRatio - expectedRatio) < CONFIG.CARD_ASPECT_TOLERANCE) {
-                                        maxArea = area;
-                                        if (bestContour) bestContour.delete();
-                                        bestContour = approx.clone();
-                                    }
+                                    maxArea = area;
+                                    if (bestContour) bestContour.delete();
+                                    bestContour = approx.clone();
                                 }
                                 
                                 approx.delete();
                                 contour.delete();
                             }
                             
-                            let result = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
+                            let result = canvas.toDataURL('image/jpeg', config.quality);
                             
-                            if (bestContour && CONFIG.PERSPECTIVE_CORRECTION) {
-                                console.log('Card detected, applying perspective correction');
-                                result = applyPerspectiveCorrection(src, bestContour);
-                            } else {
-                                console.log('No card detected, using original image');
+                            if (bestContour && config.perspective) {
+                                result = applyPerspective(src, bestContour);
                             }
                             
-                            // Cleanup
                             src.delete();
                             gray.delete();
                             blurred.delete();
@@ -868,32 +1261,20 @@
                             
                             resolve(result);
                         } catch (err) {
-                            console.error('Card detection error:', err);
+                            console.error('Detection error:', err);
                             resolve(imageUrl);
                         }
                     };
                     
-                    img.onerror = () => {
-                        console.error('Image load failed');
-                        resolve(imageUrl);
-                    };
-                    
+                    img.onerror = () => resolve(imageUrl);
                     img.src = imageUrl;
                 });
             } catch (error) {
-                console.error('Detection failed:', error);
                 return imageUrl;
             }
         }
-
-        function calculateAspectRatio(contour) {
-            const rect = cv.minAreaRect(contour);
-            const width = rect.size.width;
-            const height = rect.size.height;
-            return Math.min(width, height) / Math.max(width, height);
-        }
-
-        function applyPerspectiveCorrection(src, contour) {
+        
+        function applyPerspective(src, contour) {
             try {
                 const points = [];
                 for (let i = 0; i < contour.rows; i++) {
@@ -933,7 +1314,7 @@
                 
                 const canvas = document.createElement('canvas');
                 cv.imshow(canvas, dst);
-                const result = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
+                const result = canvas.toDataURL('image/jpeg', config.quality);
                 
                 srcPoints.delete();
                 dstPoints.delete();
@@ -942,16 +1323,30 @@
                 
                 return result;
             } catch (error) {
-                console.error('Perspective correction failed:', error);
+                console.error('Perspective error:', error);
                 const canvas = document.createElement('canvas');
                 cv.imshow(canvas, src);
-                return canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
+                return canvas.toDataURL('image/jpeg', config.quality);
             }
         }
-
-        /**
-         * REGION-BASED OCR
-         */
+        
+        // ==================== OCR ====================
+        async function runOCR(imageUrl) {
+            if (!ready.ocr) throw new Error('OCR not ready');
+            
+            let targetImage = imageUrl;
+            
+            if (config.regionOcr) {
+                targetImage = await extractRegion(imageUrl, config.region);
+            }
+            
+            const result = await tesseractWorker.recognize(targetImage);
+            return {
+                text: result.data.text,
+                confidence: result.data.confidence
+            };
+        }
+        
         function extractRegion(imageUrl, region) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
@@ -968,7 +1363,6 @@
                     
                     canvas.width = w;
                     canvas.height = h;
-                    
                     ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
                     
                     const imageData = ctx.getImageData(0, 0, w, h);
@@ -988,105 +1382,67 @@
                 img.src = imageUrl;
             });
         }
-
-        function extractCardNumber(ocrText) {
-            const cleaned = ocrText
-                .replace(/[|]/g, 'I')
-                .replace(/[O]/g, '0')
-                .toUpperCase();
+        
+        function extractCardNumber(text) {
+            const cleaned = text.replace(/[|]/g, 'I').replace(/[O]/g, '0').toUpperCase();
             
             const patterns = [
                 /\b([A-Z]{2,4})[-–—]\s*(\d{2,4})\b/,
                 /\b([A-Z]{2,4})\s+(\d{2,4})\b/,
-                /\b([A-Z]{2,4})(\d{2,4})\b/,
-                /\b([A-Z]{2,4})[-–—]\s*(\d{2,4})[-–—]?[A-Z]?\b/
+                /\b([A-Z]{2,4})(\d{2,4})\b/
             ];
             
             for (const pattern of patterns) {
                 const match = cleaned.match(pattern);
-                if (match) {
-                    const letters = match[1];
-                    const numbers = match[2];
-                    if (letters.length >= 2 && numbers.length >= 2) {
-                        return `${letters}-${numbers}`;
-                    }
+                if (match && match[1].length >= 2 && match[2].length >= 2) {
+                    return `${match[1]}-${match[2]}`;
                 }
             }
             
-            const fallbackMatch = cleaned.match(/\b([A-Z]{2,})[^\w]*(\d{2,})\b/);
-            if (fallbackMatch) {
-                return `${fallbackMatch[1]}-${fallbackMatch[2]}`;
-            }
-            
-            return null;
+            const fallback = cleaned.match(/\b([A-Z]{2,})[^\w]*(\d{2,})\b/);
+            return fallback ? `${fallback[1]}-${fallback[2]}` : null;
         }
-
-        function saveApiKey() {
-            const input = document.getElementById('apiKeyInput');
-            apiKey = input.value.trim();
+        
+        // ==================== API CALL ====================
+        async function callAPI(imageData) {
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: 'claude-haiku-4-20250514',
+                    max_tokens: 500,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'image',
+                                source: {
+                                    type: 'base64',
+                                    media_type: 'image/jpeg',
+                                    data: imageData
+                                }
+                            },
+                            {
+                                type: 'text',
+                                text: 'Extract card number from bottom left. Return ONLY JSON: {"cardNumber": "XX-###"}'
+                            }
+                        ]
+                    }]
+                })
+            });
             
-            if (apiKey && !apiKey.startsWith('sk-ant-')) {
-                alert('Invalid API key format. Should start with "sk-ant-"');
-                return;
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || 'API failed');
             }
-
-            if (apiKey) {
-                localStorage.setItem('anthropic_api_key', apiKey);
-                enableApiKey();
-            }
+            
+            return await response.json();
         }
-
-        function clearApiKey() {
-            if (confirm('Clear your saved API key?')) {
-                localStorage.removeItem('anthropic_api_key');
-                apiKey = '';
-                document.getElementById('apiKeyInput').value = '';
-                document.getElementById('apiStatus').textContent = 'Optional';
-                document.getElementById('apiStatus').className = 'status waiting';
-            }
-        }
-
-        function enableApiKey() {
-            document.getElementById('apiStatus').textContent = '✅ API Key Saved';
-            document.getElementById('apiStatus').className = 'status ready';
-        }
-
-        document.getElementById('uploadArea').addEventListener('click', () => {
-            document.getElementById('fileInput').click();
-        });
-
-        document.getElementById('fileInput').addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files);
-            
-            if (files.length === 0) return;
-            
-            if (files.length > 1) {
-                const proceed = confirm(
-                    `Scan ${files.length} cards?\n\nThis may take a few minutes.\n` +
-                    `Estimated cost: $${(files.length * 0.002).toFixed(3)} (if all need AI)`
-                );
-                if (!proceed) {
-                    e.target.value = '';
-                    return;
-                }
-            }
-            
-            for (let i = 0; i < files.length; i++) {
-                if (files[i].type.startsWith('image/')) {
-                    if (files.length > 1) {
-                        document.getElementById('loadingText').textContent = 
-                            `Processing card ${i + 1} of ${files.length}...`;
-                    }
-                    await processImage(files[i]);
-                    if (i < files.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                }
-            }
-            
-            e.target.value = '';
-        });
-
+        
         async function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -1097,13 +1453,13 @@
                         let width = img.width;
                         let height = img.height;
                         
-                        if (width > CONFIG.MAX_IMAGE_SIZE || height > CONFIG.MAX_IMAGE_SIZE) {
+                        if (width > config.maxSize || height > config.maxSize) {
                             if (width > height) {
-                                height = (height / width) * CONFIG.MAX_IMAGE_SIZE;
-                                width = CONFIG.MAX_IMAGE_SIZE;
+                                height = (height / width) * config.maxSize;
+                                width = config.maxSize;
                             } else {
-                                width = (width / height) * CONFIG.MAX_IMAGE_SIZE;
-                                height = CONFIG.MAX_IMAGE_SIZE;
+                                width = (width / height) * config.maxSize;
+                                height = config.maxSize;
                             }
                         }
                         
@@ -1111,8 +1467,7 @@
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-                        const base64 = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY).split(',')[1];
-                        resolve(base64);
+                        resolve(canvas.toDataURL('image/jpeg', config.quality).split(',')[1]);
                     };
                     img.onerror = reject;
                     img.src = e.target.result;
@@ -1121,438 +1476,147 @@
                 reader.readAsDataURL(file);
             });
         }
-
-        async function callClaudeAPI(imageData, retries = CONFIG.MAX_RETRIES) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-api-key': apiKey,
-                            'anthropic-version': '2023-06-01'
-                        },
-                        body: JSON.stringify({
-                            model: 'claude-haiku-4-20250514',
-                            max_tokens: 500,
-                            messages: [{
-                                role: 'user',
-                                content: [
-                                    {
-                                        type: 'image',
-                                        source: {
-                                            type: 'base64',
-                                            media_type: 'image/jpeg',
-                                            data: imageData
-                                        }
-                                    },
-                                    {
-                                        type: 'text',
-                                        text: `Extract the card number from bottom left. Format: {"cardNumber": "XX-###"}. JSON only.`
-                                    }
-                                ]
-                            }]
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        return await response.json();
-                    }
-                    
-                    if (i < retries - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
-                        document.getElementById('loadingText').textContent = 
-                            `API retry ${i + 1}/${retries - 1}...`;
-                    }
-                } catch (error) {
-                    if (i === retries - 1) throw error;
-                }
-            }
-            throw new Error('API call failed after retries');
-        }
-
-        /**
-         * MAIN PROCESSING FUNCTION - FIXED VERSION
-         */
-        async function processImage(file) {
-            showLoading(true);
-            setProgress(0);
+        
+        // ==================== CARD MANAGEMENT ====================
+        function addCard(match, imageUrl, fileName, type, confidence = null) {
+            const card = {
+                cardId: match['Card ID'] || '',
+                hero: match.Name || '',
+                year: match.Year || '',
+                set: match.Set || '',
+                cardNumber: match['Card Number'] || '',
+                pose: match.Parallel || '',
+                weapon: match.Weapon || '',
+                power: match.Power || '',
+                imageUrl,
+                fileName,
+                scanType: type,
+                scanMethod: type === 'free' ? `Free OCR (${Math.round(confidence)}%)` : 'AI + Database'
+            };
             
-            const uploadArea = document.getElementById('uploadArea');
-            uploadArea.classList.add('processing');
-
-            try {
-                console.log('Starting image processing...');
-                const imageUrl = URL.createObjectURL(file);
-                setProgress(5);
-                
-                // Step 1: Auto-detect and crop card
-                document.getElementById('loadingText').textContent = 'Detecting card...';
-                setProgress(10);
-                
-                const croppedUrl = await detectAndCropCard(imageUrl);
-                setProgress(20);
-                console.log('Card detection complete');
-                
-                if (!tesseractReady) {
-                    throw new Error('OCR not ready');
-                }
-                
-                // Step 2: Region-based OCR (if enabled)
-                let cardNumber = null;
-                let ocrText = '';
-                let confidence = 0;
-                
-                if (CONFIG.REGION_OCR) {
-                    document.getElementById('loadingText').textContent = 'Extracting card number region...';
-                    setProgress(30);
-                    
-                    const cardNumberRegion = await extractRegion(croppedUrl, CONFIG.REGIONS.CARD_NUMBER);
-                    console.log('Region extracted');
-                    
-                    document.getElementById('loadingText').textContent = 'Reading card number...';
-                    setProgress(40);
-                    
-                    // FIXED: Removed complex logger that causes DataCloneError
-                    // Use simple progress updates instead
-                    let currentProgress = 40;
-                    progressUpdateInterval = setInterval(() => {
-                        currentProgress = Math.min(currentProgress + 2, 60);
-                        setProgress(currentProgress);
-                    }, 200);
-                    
-                    try {
-                        const result = await tesseractWorker.recognize(cardNumberRegion);
-                        clearInterval(progressUpdateInterval);
-                        
-                        ocrText = result.data.text;
-                        confidence = result.data.confidence;
-                        cardNumber = extractCardNumber(ocrText);
-                        
-                        console.log('OCR complete:', { ocrText, confidence, cardNumber });
-                    } catch (ocrErr) {
-                        clearInterval(progressUpdateInterval);
-                        throw ocrErr;
-                    }
-                } else {
-                    // Full card OCR
-                    document.getElementById('loadingText').textContent = 'Running full OCR...';
-                    setProgress(30);
-                    
-                    let currentProgress = 30;
-                    progressUpdateInterval = setInterval(() => {
-                        currentProgress = Math.min(currentProgress + 3, 60);
-                        setProgress(currentProgress);
-                    }, 300);
-                    
-                    try {
-                        const result = await tesseractWorker.recognize(croppedUrl);
-                        clearInterval(progressUpdateInterval);
-                        
-                        ocrText = result.data.text;
-                        confidence = result.data.confidence;
-                        cardNumber = extractCardNumber(ocrText);
-                        
-                        console.log('OCR complete:', { ocrText, confidence, cardNumber });
-                    } catch (ocrErr) {
-                        clearInterval(progressUpdateInterval);
-                        throw ocrErr;
-                    }
-                }
-                
-                setProgress(60);
-                
-                if (confidence < CONFIG.OCR_CONFIDENCE_THRESHOLD) {
-                    console.log(`Low OCR confidence (${confidence}), skipping to AI`);
-                    throw new Error('OCR confidence too low');
-                }
-                
-                let finalCard;
-                
-                if (cardNumber) {
-                    document.getElementById('loadingText').textContent = 'Looking up in database...';
-                    setProgress(70);
-                    const dbMatch = findCardByNumber(cardNumber);
-                    
-                    if (dbMatch) {
-                        setProgress(100);
-                        console.log('Match found in database!');
-                        
-                        finalCard = {
-                            hero: dbMatch.Name || '',
-                            cardNumber: dbMatch['Card Number'] || cardNumber,
-                            weapon: dbMatch.Weapon || '',
-                            power: dbMatch.Power || '',
-                            pose: dbMatch.Parallel || '',
-                            set: dbMatch.Set || '',
-                            cardId: dbMatch['Card ID'] || '',
-                            year: dbMatch.Year || '',
-                            imageUrl: croppedUrl,
-                            fileName: file.name,
-                            matchConfidence: 'free',
-                            scanMethod: `Free OCR + DB (${Math.round(confidence)}%)`,
-                            autoFilled: ['cardId', 'hero', 'year', 'set', 'pose', 'weapon', 'power']
-                        };
-                        
-                        freeScans++;
-                    } else {
-                        console.log('Card not in database');
-                        throw new Error('Card not in database');
-                    }
-                } else {
-                    console.log('No card number extracted');
-                    throw new Error('OCR failed to extract card number');
-                }
-                
-                cards.push(finalCard);
-                cardsScanned++;
-                updateStats();
-                renderCards();
-                
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-                
-                console.log('Processing complete - FREE scan!');
-                
-            } catch (ocrError) {
-                // Clear any running progress intervals
-                if (progressUpdateInterval) {
-                    clearInterval(progressUpdateInterval);
-                }
-                
-                console.log('OCR failed, trying Claude API:', ocrError.message);
-                
-                if (!apiKey) {
-                    showLoading(false);
-                    uploadArea.classList.remove('processing');
-                    const needsKey = confirm(
-                        'Free OCR couldn\'t read this card.\n\n' +
-                        'Would you like to add an API key to use AI scanning?\n' +
-                        `(~$${CONFIG.AI_COST_PER_SCAN.toFixed(3)} per card)`
-                    );
-                    
-                    if (needsKey) {
-                        document.getElementById('apiKeyInput').focus();
-                    }
-                    return;
-                }
-                
-                try {
-                    document.getElementById('loadingText').textContent = 'Compressing image...';
-                    setProgress(70);
-                    const imageUrl = URL.createObjectURL(file);
-                    const compressedBase64 = await compressImage(file);
-                    
-                    document.getElementById('loadingText').textContent = 'Using AI (charged)...';
-                    setProgress(80);
-                    
-                    const data = await callClaudeAPI(compressedBase64);
-                    
-                    setProgress(90);
-                    
-                    let jsonText = data.content[0].text.trim();
-                    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-                    const cardData = JSON.parse(jsonText);
-                    
-                    document.getElementById('loadingText').textContent = 'Looking up in database...';
-                    const dbMatch = findCardByNumber(cardData.cardNumber);
-                    
-                    setProgress(100);
-                    
-                    if (dbMatch) {
-                        const finalCard = {
-                            hero: dbMatch.Name || '',
-                            cardNumber: dbMatch['Card Number'] || cardData.cardNumber,
-                            weapon: dbMatch.Weapon || '',
-                            power: dbMatch.Power || '',
-                            pose: dbMatch.Parallel || '',
-                            set: dbMatch.Set || '',
-                            cardId: dbMatch['Card ID'] || '',
-                            year: dbMatch.Year || '',
-                            imageUrl: imageUrl,
-                            fileName: file.name,
-                            matchConfidence: 'perfect',
-                            scanMethod: 'AI + Database',
-                            autoFilled: ['cardId', 'hero', 'year', 'set', 'pose', 'weapon', 'power']
-                        };
-                        
-                        cards.push(finalCard);
-                        cardsScanned++;
-                        totalCost += CONFIG.AI_COST_PER_SCAN;
-                        updateStats();
-                        renderCards();
-                        
-                        if (navigator.vibrate) {
-                            navigator.vibrate([50, 100, 50]);
-                        }
-                        
-                        console.log('Processing complete - AI scan');
-                    } else {
-                        alert('Card not found in database. Manual entry needed.');
-                    }
-                    
-                } catch (aiError) {
-                    console.error('AI Error:', aiError);
-                    alert(`Failed to process card: ${aiError.message}\n\nPlease try again or enter manually.`);
-                }
-            } finally {
-                // Clean up
-                if (progressUpdateInterval) {
-                    clearInterval(progressUpdateInterval);
-                }
-                showLoading(false);
-                uploadArea.classList.remove('processing');
-                setProgress(0);
+            cards.push(card);
+            stats.scanned++;
+            if (type === 'free') stats.free++;
+            
+            updateStats();
+            renderCards();
+            
+            if (navigator.vibrate) {
+                navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
             }
         }
-
-        function updateStats() {
-            const paidScans = cardsScanned - freeScans;
-            const freeRate = cardsScanned > 0 ? Math.round((freeScans / cardsScanned) * 100) : 0;
-            
-            document.getElementById('statFree').textContent = freeScans;
-            document.getElementById('statPaid').textContent = paidScans;
-            document.getElementById('statCost').textContent = `$${totalCost.toFixed(3)}`;
-            document.getElementById('statRate').textContent = `${freeRate}%`;
-            
-            if (cardsScanned > 0) {
-                document.getElementById('statsBox').classList.remove('hidden');
-            }
-            
-            const tracker = document.getElementById('costTracker');
-            tracker.textContent = `Cards: ${cardsScanned} (${freeScans} free, ${paidScans} paid) | Cost: $${totalCost.toFixed(3)}`;
-        }
-
-        function setProgress(percent) {
-            document.getElementById('progressBarFill').style.width = `${percent}%`;
-        }
-
-        function renderCards() {
-            const grid = document.getElementById('cardsGrid');
-            const empty = document.getElementById('emptyState');
-            const buttons = document.getElementById('buttons');
-            
-            if (cards.length === 0) {
-                empty.classList.remove('hidden');
-                buttons.classList.add('hidden');
-                grid.innerHTML = '';
-                return;
-            }
-
-            empty.classList.add('hidden');
-            buttons.classList.remove('hidden');
-            document.getElementById('count').textContent = cards.length;
-
-            grid.innerHTML = cards.map((card, index) => `
-                <div class="card">
-                    <img src="${card.imageUrl}" alt="${card.cardNumber}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%239ca3af%22%3ENo Image%3C/text%3E%3C/svg%3E'">
-                    <div class="card-body">
-                        ${renderMatchBadge(card.matchConfidence, card.scanMethod)}
-                        <div class="field-grid">
-                            ${createField('Card ID', 'cardId', index, card.cardId, card.autoFilled.includes('cardId'))}
-                            ${createField('Name', 'hero', index, card.hero, card.autoFilled.includes('hero'))}
-                            ${createField('Year', 'year', index, card.year, card.autoFilled.includes('year'))}
-                            ${createField('Set', 'set', index, card.set, card.autoFilled.includes('set'))}
-                            ${createField('Card #', 'cardNumber', index, card.cardNumber, false)}
-                            ${createField('Parallel', 'pose', index, card.pose, card.autoFilled.includes('pose'))}
-                            ${createField('Weapon', 'weapon', index, card.weapon, card.autoFilled.includes('weapon'))}
-                            ${createField('Power', 'power', index, card.power, card.autoFilled.includes('power'))}
-                        </div>
-                        <button class="btn-remove" onclick="removeCard(${index})">Remove</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function renderMatchBadge(confidence, method) {
-            if (confidence === 'free') {
-                return `<span class="match-badge match-free">🆓 ${method}</span>`;
-            } else if (confidence === 'perfect') {
-                return `<span class="match-badge match-perfect">💰 ${method}</span>`;
-            } else {
-                return `<span class="match-badge match-none">📝 Manual</span>`;
-            }
-        }
-
-        function createField(label, field, index, value, autoFilled) {
-            const autoFilledClass = autoFilled ? ' auto-filled' : '';
-            return `
-                <div class="field">
-                    <label>${label}${autoFilled ? ' 🔄' : ''}</label>
-                    <input type="text" value="${value}" 
-                           class="${autoFilledClass}"
-                           onchange="updateCard(${index}, '${field}', this.value)"
-                           placeholder="${label}">
-                </div>
-            `;
-        }
-
-        function updateCard(index, field, value) {
-            cards[index][field] = value;
-        }
-
+        
         function removeCard(index) {
             if (cards[index].imageUrl) {
                 URL.revokeObjectURL(cards[index].imageUrl);
             }
             cards.splice(index, 1);
-            renderCards();
+            stats.scanned--;
             updateStats();
+            renderCards();
         }
-
+        
         function clearAll() {
-            if (confirm('Clear all cards?')) {
-                cards.forEach(card => {
-                    if (card.imageUrl) {
-                        URL.revokeObjectURL(card.imageUrl);
-                    }
-                });
-                cards = [];
-                cardsScanned = 0;
-                freeScans = 0;
-                totalCost = 0;
-                renderCards();
-                updateStats();
-                document.getElementById('statsBox').classList.add('hidden');
-            }
+            if (!confirm('Clear all cards?')) return;
+            cards.forEach(c => c.imageUrl && URL.revokeObjectURL(c.imageUrl));
+            cards = [];
+            stats = { scanned: 0, free: 0, cost: 0 };
+            updateStats();
+            renderCards();
+            showToast('All cards cleared');
         }
-
+        
+        // ==================== RENDERING ====================
+        function updateStats() {
+            const paid = stats.scanned - stats.free;
+            const rate = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
+            
+            document.getElementById('statFree').textContent = stats.free;
+            document.getElementById('statPaid').textContent = paid;
+            document.getElementById('statCost').textContent = `$${stats.cost.toFixed(2)}`;
+            document.getElementById('statRate').textContent = `${rate}%`;
+            
+            document.getElementById('statsBar').classList.toggle('hidden', stats.scanned === 0);
+        }
+        
+        function renderCards() {
+            const grid = document.getElementById('cardsGrid');
+            const empty = document.getElementById('emptyState');
+            const actionBar = document.getElementById('actionBar');
+            
+            if (cards.length === 0) {
+                empty.classList.remove('hidden');
+                actionBar.classList.add('hidden');
+                grid.innerHTML = '';
+                return;
+            }
+            
+            empty.classList.add('hidden');
+            actionBar.classList.remove('hidden');
+            document.getElementById('exportCount').textContent = cards.length;
+            
+            grid.innerHTML = cards.map((card, i) => `
+                <div class="card">
+                    <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
+                    <div class="card-body">
+                        <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
+                            ${card.scanMethod}
+                        </span>
+                        <div class="card-fields">
+                            ${renderField('Card ID', 'cardId', i, card.cardId, true)}
+                            ${renderField('Name', 'hero', i, card.hero, true)}
+                            ${renderField('Year', 'year', i, card.year, true)}
+                            ${renderField('Set', 'set', i, card.set, true)}
+                            ${renderField('Card #', 'cardNumber', i, card.cardNumber, false)}
+                            ${renderField('Parallel', 'pose', i, card.pose, true)}
+                            ${renderField('Weapon', 'weapon', i, card.weapon, true)}
+                            ${renderField('Power', 'power', i, card.power, true)}
+                        </div>
+                        <button class="btn-remove" onclick="removeCard(${i})">Remove</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderField(label, field, index, value, autoFilled) {
+            return `
+                <div class="field">
+                    <div class="field-label">${label}</div>
+                    <input class="field-input ${autoFilled ? 'auto-filled' : ''}" 
+                           value="${value}" 
+                           onchange="updateCard(${index}, '${field}', this.value)">
+                </div>
+            `;
+        }
+        
+        function updateCard(index, field, value) {
+            cards[index][field] = value;
+        }
+        
+        // ==================== EXPORT ====================
         function exportCSV() {
             if (cards.length === 0) return;
-
+            
             const headers = ['Card ID', 'Name', 'Year', 'Set', 'Card Number', 'Parallel', 'Weapon', 'Power', 'Scan Method'];
-            const rows = cards.map(card => [
-                card.cardId,
-                card.hero,
-                card.year,
-                card.set,
-                card.cardNumber,
-                card.pose,
-                card.weapon,
-                card.power,
-                card.scanMethod || 'Unknown'
+            const rows = cards.map(c => [
+                c.cardId, c.hero, c.year, c.set, c.cardNumber, c.pose, c.weapon, c.power, c.scanMethod
             ]);
-
+            
             const csv = [
                 headers.join(','),
                 ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
             ].join('\n');
-
+            
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `bo_jackson_cards_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `cards_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
             URL.revokeObjectURL(url);
+            
+            showToast(`Exported ${cards.length} cards`);
         }
-
-        function showLoading(show) {
-            document.getElementById('loading').classList.toggle('hidden', !show);
-        }
-
-        updateStats();
     </script>
 </body>
 </html>
