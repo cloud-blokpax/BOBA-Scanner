@@ -338,31 +338,40 @@
             }
 
             // Try to find exact match first
-            let exactMatch = cardDatabase.find(dbCard => 
-                dbCard.Name?.toUpperCase() === scannedCard.hero?.toUpperCase() &&
-                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase() &&
-                dbCard.Weapon?.toUpperCase() === scannedCard.weapon?.toUpperCase() &&
-                dbCard.Power === parseFloat(scannedCard.power)
-            );
+            let exactMatch = cardDatabase.find(dbCard => {
+                const dbName = dbCard.Name || dbCard.name || '';
+                const dbCardNum = dbCard['Card Number'] || '';
+                const dbWeapon = dbCard.Weapon || dbCard.weapon || '';
+                const dbPower = dbCard.Power || dbCard.power;
+                
+                return dbName.toString().toUpperCase() === (scannedCard.hero || '').toString().toUpperCase() &&
+                       dbCardNum.toString().toUpperCase() === (scannedCard.cardNumber || '').toString().toUpperCase() &&
+                       dbWeapon.toString().toUpperCase() === (scannedCard.weapon || '').toString().toUpperCase() &&
+                       parseFloat(dbPower) === parseFloat(scannedCard.power);
+            });
 
             if (exactMatch) {
                 return { match: exactMatch, confidence: 'perfect' };
             }
 
             // Try partial match (name and card number)
-            let partialMatch = cardDatabase.find(dbCard =>
-                dbCard.Name?.toUpperCase() === scannedCard.hero?.toUpperCase() &&
-                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase()
-            );
+            let partialMatch = cardDatabase.find(dbCard => {
+                const dbName = dbCard.Name || dbCard.name || '';
+                const dbCardNum = dbCard['Card Number'] || '';
+                
+                return dbName.toString().toUpperCase() === (scannedCard.hero || '').toString().toUpperCase() &&
+                       dbCardNum.toString().toUpperCase() === (scannedCard.cardNumber || '').toString().toUpperCase();
+            });
 
             if (partialMatch) {
                 return { match: partialMatch, confidence: 'partial' };
             }
 
             // Try card number only
-            let cardNumMatch = cardDatabase.find(dbCard =>
-                dbCard['Card Number']?.toUpperCase() === scannedCard.cardNumber?.toUpperCase()
-            );
+            let cardNumMatch = cardDatabase.find(dbCard => {
+                const dbCardNum = dbCard['Card Number'] || '';
+                return dbCardNum.toString().toUpperCase() === (scannedCard.cardNumber || '').toString().toUpperCase();
+            });
 
             if (cardNumMatch) {
                 return { match: cardNumMatch, confidence: 'partial' };
