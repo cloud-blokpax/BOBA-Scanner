@@ -1139,7 +1139,51 @@
                     const data = await callAPI(compressed);
                     setProgress(85);
                     
-                    const parsed = JSON.parse(data.content[0].text.replace(/```json|```/g, '').trim());
+                    try {
+    showLoading(true, 'Using AI...');
+    const imageUrl = URL.createObjectURL(file);
+    const compressed = await compressImage(file);
+    setProgress(70);
+    
+    const data = await callAPI(compressed);
+    setProgress(85);
+    
+    // ✅ Log the full response so we can see what Claude returned
+    console.log('Full API response:', JSON.stringify(data));
+    
+    // ✅ Guard against missing content
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+        throw new Error('Empty response from AI: ' + JSON.stringify(data));
+    }
+    
+    const rawText = data.content[0].text.replace(/```json|```/g, '').trim();
+    console.log('Claude raw text:', rawText);
+    
+    let parsed;
+    try {
+        parsed = JSON.parse(rawText);
+    } catch(e) {
+        throw new Error('Claude response not valid JSON: ' + rawText);
+    }
+    
+    console.log('Parsed card number:', parsed.cardNumber);
+    console.log('Sample DB cards:', database.slice(0, 5).map(c => c['Card Number']));
+    
+    const cardNum = parsed.cardNumber;
+    const match = findCard(cardNum);
+    
+    if (match) {
+        addCard(match, imageUrl, file.name, 'ai');
+        setProgress(100);
+        showToast(`Card ${cardNum} scanned (AI)`, '💰');
+        stats.cost += config.aiCost;
+    } else {
+        throw new Error('Not in database: ' + cardNum);
+    }
+} catch (aiErr) {
+    console.error('AI failed:', aiErr.message);
+    showToast('Scan failed', '❌');
+}
                     const cardNum = parsed.cardNumber;
                     console.log('Claude returned card number:', cardNum);  // ✅ add this
                     console.log('Sample DB entries:', database.slice(0, 3).map(c => c['Card Number']));  // ✅ add this
@@ -1585,6 +1629,7 @@
     </script>
 </body>
 </html>
+
 
 
 
