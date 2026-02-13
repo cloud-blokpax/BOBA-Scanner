@@ -885,8 +885,8 @@
         
         function findCard(cardNumber) {
             if (!ready.db || !cardNumber) return null;
-            const normalized = cardNumber.toUpperCase().trim();
-            return database.find(c => (c['Card Number'] || '').toUpperCase().trim() === normalized);
+            const normalized = String(cardNumber).toUpperCase().trim();
+            return database.find(c => String(c['Card Number'] || '').toUpperCase().trim() === normalized);
         }
         
         async function initTesseract() {
@@ -1582,4 +1582,5 @@
     </script>
 </body>
 </html>
+
 
