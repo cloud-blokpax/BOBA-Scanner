@@ -237,6 +237,29 @@
             color: #92400e;
             font-size: 14px;
         }
+        .stats-box {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 600;
+        }
         .hidden { display: none; }
         .cost-tracker {
             text-align: center;
@@ -252,6 +275,19 @@
             margin-top: 12px;
             flex-wrap: wrap;
         }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e, #10b981);
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -265,6 +301,25 @@
             </div>
         </div>
 
+        <div id="statsBox" class="stats-box hidden">
+            <div class="stat-item">
+                <div class="stat-value" style="color: #22c55e;" id="statFree">0</div>
+                <div class="stat-label">Free Scans</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" style="color: #3b82f6;" id="statPaid">0</div>
+                <div class="stat-label">AI Scans</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" style="color: #f59e0b;" id="statCost">$0.00</div>
+                <div class="stat-label">Total Cost</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" style="color: #8b5cf6;" id="statRate">0%</div>
+                <div class="stat-label">Free Rate</div>
+            </div>
+        </div>
+
         <div id="dbWarning" class="warning-box hidden">
             <strong>⚠️ Database Not Found:</strong> Upload <code>card-database.json</code> to enable lookup.
         </div>
@@ -274,7 +329,7 @@
         </div>
 
         <div class="api-key-panel" id="apiKeyPanel">
-            <h3>⚠️ API Key (Optional for DB cards)</h3>
+            <h3>🔑 API Key (Optional for DB cards)</h3>
             <p style="color: #92400e; margin-bottom: 5px; font-size: 13px;">
                 Only needed if card not in database. Get at: <a href="https://console.anthropic.com" target="_blank" style="color: #d97706; text-decoration: underline;">console.anthropic.com</a>
             </p>
@@ -287,7 +342,7 @@
         </div>
 
         <div class="info-box">
-            <strong>💰 Cost:</strong> FREE for cards in database! ~$0.005 for new cards (if API key provided)
+            <strong>💰 Cost:</strong> FREE for cards in database! ~$0.002 for new cards (if API key provided)
         </div>
 
         <div class="upload-area" id="uploadArea">
@@ -300,6 +355,9 @@
         <div class="loading hidden" id="loading">
             <div class="spinner"></div>
             <p id="loadingText" style="color: #3b82f6; font-weight: 600; font-size: 15px;">Processing...</p>
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
+            </div>
         </div>
 
         <div class="buttons hidden" id="buttons">
@@ -328,6 +386,16 @@
         let cardDatabase = [];
         let databaseLoaded = false;
         let tesseractReady = false;
+        let tesseractWorker = null;
+
+        // Configuration
+        const CONFIG = {
+            OCR_CONFIDENCE_THRESHOLD: 60,
+            MAX_IMAGE_SIZE: 1000,
+            IMAGE_QUALITY: 0.7,
+            AI_COST_PER_SCAN: 0.002,
+            MAX_RETRIES: 3
+        };
 
         window.addEventListener('load', async () => {
             if (apiKey) {
@@ -336,15 +404,73 @@
             }
             await loadDatabase();
             await initTesseract();
+            await restorePreviousSession();
         });
+
+        // Save session before page closes
+        window.addEventListener('beforeunload', () => {
+            if (cards.length > 0) {
+                saveSession();
+            }
+        });
+
+        function saveSession() {
+            const cardsToSave = cards.map(card => ({
+                ...card,
+                imageUrl: null // Don't save blob URLs
+            }));
+            localStorage.setItem('scanned_cards', JSON.stringify(cardsToSave));
+            localStorage.setItem('scan_stats', JSON.stringify({
+                cardsScanned,
+                freeScans,
+                totalCost
+            }));
+        }
+
+        async function restorePreviousSession() {
+            const savedCards = localStorage.getItem('scanned_cards');
+            const savedStats = localStorage.getItem('scan_stats');
+            
+            if (savedCards && savedStats) {
+                const shouldRestore = confirm('Restore previous scanning session?\n\n(Note: Card images won\'t be restored)');
+                if (shouldRestore) {
+                    try {
+                        cards = JSON.parse(savedCards);
+                        const stats = JSON.parse(savedStats);
+                        cardsScanned = stats.cardsScanned || cards.length;
+                        freeScans = stats.freeScans || 0;
+                        totalCost = stats.totalCost || 0;
+                        updateStats();
+                        renderCards();
+                    } catch (e) {
+                        console.error('Failed to restore session:', e);
+                    }
+                }
+                localStorage.removeItem('scanned_cards');
+                localStorage.removeItem('scan_stats');
+            }
+        }
 
         async function initTesseract() {
             try {
-                if (window.Tesseract) {
-                    tesseractReady = true;
-                    document.getElementById('ocrStatus').textContent = '✅ OCR Ready';
-                    document.getElementById('ocrStatus').className = 'status ready';
-                }
+                document.getElementById('ocrStatus').textContent = 'Loading OCR...';
+                
+                tesseractWorker = await Tesseract.createWorker('eng', 1, {
+                    logger: m => {
+                        if (m.status === 'loading tesseract core') {
+                            document.getElementById('ocrStatus').textContent = 'Loading core...';
+                        } else if (m.status === 'loading language traineddata') {
+                            const percent = Math.round(m.progress * 100);
+                            document.getElementById('ocrStatus').textContent = `Loading: ${percent}%`;
+                        } else if (m.status === 'initializing tesseract') {
+                            document.getElementById('ocrStatus').textContent = 'Initializing...';
+                        }
+                    }
+                });
+                
+                tesseractReady = true;
+                document.getElementById('ocrStatus').textContent = '✅ OCR Ready';
+                document.getElementById('ocrStatus').className = 'status ready';
             } catch (error) {
                 console.error('Tesseract init error:', error);
                 document.getElementById('ocrStatus').textContent = '⚠️ OCR Failed';
@@ -364,6 +490,7 @@
                     throw new Error('Database file not found');
                 }
             } catch (error) {
+                console.error('Database load error:', error);
                 document.getElementById('dbStatus').textContent = '⚠️ No DB';
                 document.getElementById('dbStatus').className = 'status error';
                 document.getElementById('dbWarning').classList.remove('hidden');
@@ -372,10 +499,58 @@
 
         function findCardByNumber(cardNumber) {
             if (!databaseLoaded || !cardNumber) return null;
+            const normalized = cardNumber.toString().toUpperCase().trim();
             return cardDatabase.find(dbCard => {
                 const dbCardNum = (dbCard['Card Number'] || '').toString().toUpperCase().trim();
-                return dbCardNum === cardNumber.toString().toUpperCase().trim();
+                return dbCardNum === normalized;
             });
+        }
+
+        function extractCardNumber(ocrText) {
+            // Clean up common OCR mistakes
+            const cleaned = ocrText
+                .replace(/[|]/g, 'I')
+                .replace(/[O]/g, '0')
+                .toUpperCase();
+            
+            console.log('Cleaned OCR text:', cleaned);
+            
+            // Try multiple pattern strategies
+            const patterns = [
+                // Standard: BF-127, ACTION-45
+                /\b([A-Z]{2,4})[-–—]\s*(\d{2,4})\b/,
+                // Spaces instead of dash: BF 127
+                /\b([A-Z]{2,4})\s+(\d{2,4})\b/,
+                // No separator: BF127
+                /\b([A-Z]{2,4})(\d{2,4})\b/,
+                // With extra chars: BF-127-A
+                /\b([A-Z]{2,4})[-–—]\s*(\d{2,4})[-–—]?[A-Z]?\b/
+            ];
+            
+            for (const pattern of patterns) {
+                const match = cleaned.match(pattern);
+                if (match) {
+                    const letters = match[1];
+                    const numbers = match[2];
+                    // Validate it looks like a real card number
+                    if (letters.length >= 2 && numbers.length >= 2) {
+                        const cardNum = `${letters}-${numbers}`;
+                        console.log('Extracted card number:', cardNum);
+                        return cardNum;
+                    }
+                }
+            }
+            
+            // Last resort: look for any sequence of letters followed by numbers
+            const fallbackMatch = cleaned.match(/\b([A-Z]{2,})[^\w]*(\d{2,})\b/);
+            if (fallbackMatch) {
+                const cardNum = `${fallbackMatch[1]}-${fallbackMatch[2]}`;
+                console.log('Fallback extracted card number:', cardNum);
+                return cardNum;
+            }
+            
+            console.log('No card number found');
+            return null;
         }
 
         function saveApiKey() {
@@ -412,13 +587,36 @@
             document.getElementById('fileInput').click();
         });
 
-        document.getElementById('fileInput').addEventListener('change', (e) => {
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
-            files.forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    processImage(file);
+            
+            if (files.length === 0) return;
+            
+            if (files.length > 1) {
+                const proceed = confirm(
+                    `Scan ${files.length} cards?\n\nThis may take a few minutes.\n` +
+                    `Estimated cost: $${(files.length * 0.002).toFixed(3)} (if all need AI)`
+                );
+                if (!proceed) {
+                    e.target.value = '';
+                    return;
                 }
-            });
+            }
+            
+            for (let i = 0; i < files.length; i++) {
+                if (files[i].type.startsWith('image/')) {
+                    if (files.length > 1) {
+                        document.getElementById('loadingText').textContent = 
+                            `Processing card ${i + 1} of ${files.length}...`;
+                    }
+                    await processImage(files[i]);
+                    // Small delay between batch scans
+                    if (i < files.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+            }
+            
             e.target.value = '';
         });
 
@@ -432,14 +630,13 @@
                         let width = img.width;
                         let height = img.height;
                         
-                        const maxSize = 1000;
-                        if (width > maxSize || height > maxSize) {
+                        if (width > CONFIG.MAX_IMAGE_SIZE || height > CONFIG.MAX_IMAGE_SIZE) {
                             if (width > height) {
-                                height = (height / width) * maxSize;
-                                width = maxSize;
+                                height = (height / width) * CONFIG.MAX_IMAGE_SIZE;
+                                width = CONFIG.MAX_IMAGE_SIZE;
                             } else {
-                                width = (width / height) * maxSize;
-                                height = maxSize;
+                                width = (width / height) * CONFIG.MAX_IMAGE_SIZE;
+                                height = CONFIG.MAX_IMAGE_SIZE;
                             }
                         }
                         
@@ -447,7 +644,7 @@
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-                        const base64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+                        const base64 = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY).split(',')[1];
                         resolve(base64);
                     };
                     img.onerror = reject;
@@ -458,111 +655,45 @@
             });
         }
 
-        function extractCardNumber(ocrText) {
-            // Look for card number patterns like "BF-127", "ACTION-45", etc.
-            const patterns = [
-                /\b([A-Z]{2,4})[-\s]?(\d{2,4})\b/i,
-                /\b([A-Z]+)(\d{2,4})\b/i
-            ];
-            
-            for (const pattern of patterns) {
-                const match = ocrText.match(pattern);
-                if (match) {
-                    const letters = match[1].toUpperCase();
-                    const numbers = match[2];
-                    return `${letters}-${numbers}`;
-                }
-            }
-            return null;
+        async function preprocessImageForOCR(imageUrl) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Draw original
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Get image data
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    // Convert to grayscale and increase contrast
+                    for (let i = 0; i < data.length; i += 4) {
+                        const gray = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11;
+                        
+                        // Increase contrast (simple threshold)
+                        const adjusted = gray > 128 ? 255 : 0;
+                        
+                        data[i] = adjusted;     // R
+                        data[i + 1] = adjusted; // G
+                        data[i + 2] = adjusted; // B
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.onerror = reject;
+                img.src = imageUrl;
+            });
         }
 
-        async function processImage(file) {
-            showLoading(true);
-
-            try {
-                const imageUrl = URL.createObjectURL(file);
-                
-                // Step 1: Try free OCR first
-                document.getElementById('loadingText').textContent = 'Trying free OCR...';
-                
-                if (!tesseractReady) {
-                    throw new Error('OCR not ready');
-                }
-
-                const { data: { text } } = await Tesseract.recognize(imageUrl, 'eng', {
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            document.getElementById('loadingText').textContent = 
-                                `OCR: ${Math.round(m.progress * 100)}%`;
-                        }
-                    }
-                });
-
-                console.log('OCR Text:', text);
-                
-                // Try to extract card number from OCR
-                const cardNumber = extractCardNumber(text);
-                console.log('Extracted card number:', cardNumber);
-                
-                let finalCard;
-                
-                if (cardNumber) {
-                    document.getElementById('loadingText').textContent = 'Looking up in database...';
-                    const dbMatch = findCardByNumber(cardNumber);
-                    
-                    if (dbMatch) {
-                        // SUCCESS! Free scan with database match
-                        finalCard = {
-                            hero: dbMatch.Name || '',
-                            cardNumber: dbMatch['Card Number'] || cardNumber,
-                            weapon: dbMatch.Weapon || '',
-                            power: dbMatch.Power || '',
-                            pose: dbMatch.Parallel || '',
-                            set: dbMatch.Set || '',
-                            cardId: dbMatch['Card ID'] || '',
-                            year: dbMatch.Year || '',
-                            imageUrl: imageUrl,
-                            fileName: file.name,
-                            matchConfidence: 'free',
-                            scanMethod: 'Free OCR + Database',
-                            autoFilled: ['cardId', 'hero', 'year', 'set', 'pose', 'weapon', 'power']
-                        };
-                        
-                        freeScans++;
-                    } else {
-                        // Card number found but not in database - need AI
-                        throw new Error('Card not in database');
-                    }
-                } else {
-                    // OCR couldn't find card number reliably - need AI
-                    throw new Error('OCR failed to extract card number');
-                }
-                
-                cards.push(finalCard);
-                cardsScanned++;
-                updateCostTracker();
-                renderCards();
-                
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-                
-            } catch (ocrError) {
-                // OCR failed - fall back to Claude API
-                console.log('OCR failed, trying Claude API:', ocrError.message);
-                
-                if (!apiKey) {
-                    alert('OCR could not read this card. Please add an API key to use AI scanning.');
-                    showLoading(false);
-                    return;
-                }
-                
+        async function callClaudeAPI(imageData, retries = CONFIG.MAX_RETRIES) {
+            for (let i = 0; i < retries; i++) {
                 try {
-                    document.getElementById('loadingText').textContent = 'Using AI fallback...';
-                    
-                    const imageUrl = URL.createObjectURL(file);
-                    const compressedBase64 = await compressImage(file);
-                    
                     const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
                         method: 'POST',
                         headers: {
@@ -581,26 +712,167 @@
                                         source: {
                                             type: 'base64',
                                             media_type: 'image/jpeg',
-                                            data: compressedBase64
+                                            data: imageData
                                         }
                                     },
                                     {
                                         type: 'text',
-                                        text: `Extract card number from bottom left. Format: {"cardNumber": "XX-###"}. JSON only.`
+                                        text: `Extract the card number from the bottom left corner of this card. Format: {"cardNumber": "XX-###"}. Return ONLY valid JSON, no other text.`
                                     }
                                 ]
                             }]
                         })
                     });
+                    
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    
+                    if (i < retries - 1) {
+                        // Wait before retrying (exponential backoff)
+                        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+                        document.getElementById('loadingText').textContent = 
+                            `API retry ${i + 1}/${retries - 1}...`;
+                    }
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                }
+            }
+            throw new Error('API call failed after retries');
+        }
 
-                    if (!response.ok) throw new Error('API request failed');
+        async function processImage(file) {
+            showLoading(true);
+            setProgress(0);
 
-                    const data = await response.json();
+            try {
+                const imageUrl = URL.createObjectURL(file);
+                setProgress(10);
+                
+                // Step 1: Try free OCR first
+                document.getElementById('loadingText').textContent = 'Preprocessing image...';
+                
+                if (!tesseractReady) {
+                    throw new Error('OCR not ready');
+                }
+
+                // Preprocess image for better OCR
+                setProgress(20);
+                const preprocessedUrl = await preprocessImageForOCR(imageUrl);
+                
+                document.getElementById('loadingText').textContent = 'Running free OCR...';
+                setProgress(30);
+                
+                const { data: { text, confidence } } = await tesseractWorker.recognize(preprocessedUrl, {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            const ocrProgress = 30 + (m.progress * 30); // 30-60%
+                            setProgress(ocrProgress);
+                            document.getElementById('loadingText').textContent = 
+                                `OCR: ${Math.round(m.progress * 100)}%`;
+                        }
+                    }
+                });
+
+                console.log('OCR Text:', text);
+                console.log('OCR Confidence:', confidence);
+                
+                setProgress(60);
+                
+                // Check if OCR confidence is high enough
+                if (confidence < CONFIG.OCR_CONFIDENCE_THRESHOLD) {
+                    console.log(`Low OCR confidence (${confidence}), skipping to AI`);
+                    throw new Error('OCR confidence too low');
+                }
+                
+                // Try to extract card number from OCR
+                const cardNumber = extractCardNumber(text);
+                
+                let finalCard;
+                
+                if (cardNumber) {
+                    document.getElementById('loadingText').textContent = 'Looking up in database...';
+                    setProgress(70);
+                    const dbMatch = findCardByNumber(cardNumber);
+                    
+                    if (dbMatch) {
+                        // SUCCESS! Free scan with database match
+                        setProgress(100);
+                        finalCard = {
+                            hero: dbMatch.Name || '',
+                            cardNumber: dbMatch['Card Number'] || cardNumber,
+                            weapon: dbMatch.Weapon || '',
+                            power: dbMatch.Power || '',
+                            pose: dbMatch.Parallel || '',
+                            set: dbMatch.Set || '',
+                            cardId: dbMatch['Card ID'] || '',
+                            year: dbMatch.Year || '',
+                            imageUrl: imageUrl,
+                            fileName: file.name,
+                            matchConfidence: 'free',
+                            scanMethod: `Free OCR + DB (${confidence}%)`,
+                            autoFilled: ['cardId', 'hero', 'year', 'set', 'pose', 'weapon', 'power']
+                        };
+                        
+                        freeScans++;
+                    } else {
+                        // Card number found but not in database - need AI
+                        throw new Error('Card not in database');
+                    }
+                } else {
+                    // OCR couldn't find card number reliably - need AI
+                    throw new Error('OCR failed to extract card number');
+                }
+                
+                cards.push(finalCard);
+                cardsScanned++;
+                updateStats();
+                renderCards();
+                
+                // Haptic feedback on success
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+                
+            } catch (ocrError) {
+                // OCR failed - fall back to Claude API
+                console.log('OCR failed, trying Claude API:', ocrError.message);
+                
+                if (!apiKey) {
+                    showLoading(false);
+                    const needsKey = confirm(
+                        'Free OCR couldn\'t read this card.\n\n' +
+                        'Would you like to add an API key to use AI scanning?\n' +
+                        `(~$${CONFIG.AI_COST_PER_SCAN.toFixed(3)} per card)`
+                    );
+                    
+                    if (needsKey) {
+                        document.getElementById('apiKeyInput').focus();
+                    }
+                    return;
+                }
+                
+                try {
+                    document.getElementById('loadingText').textContent = 'Compressing image...';
+                    setProgress(70);
+                    const imageUrl = URL.createObjectURL(file);
+                    const compressedBase64 = await compressImage(file);
+                    
+                    document.getElementById('loadingText').textContent = 'Using AI (charged)...';
+                    setProgress(80);
+                    
+                    const data = await callClaudeAPI(compressedBase64);
+                    
+                    setProgress(90);
+                    
                     let jsonText = data.content[0].text.trim();
                     jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
                     const cardData = JSON.parse(jsonText);
                     
+                    document.getElementById('loadingText').textContent = 'Looking up in database...';
                     const dbMatch = findCardByNumber(cardData.cardNumber);
+                    
+                    setProgress(100);
                     
                     if (dbMatch) {
                         // Found in database after AI scan
@@ -622,28 +894,46 @@
                         
                         cards.push(finalCard);
                         cardsScanned++;
-                        totalCost += 0.002; // Haiku is very cheap
-                        updateCostTracker();
+                        totalCost += CONFIG.AI_COST_PER_SCAN;
+                        updateStats();
                         renderCards();
+                        
+                        if (navigator.vibrate) {
+                            navigator.vibrate([50, 100, 50]); // Different pattern for AI scans
+                        }
                     } else {
                         alert('Card not found in database. Manual entry needed.');
-                        showLoading(false);
-                        return;
                     }
                     
                 } catch (aiError) {
                     console.error('AI Error:', aiError);
-                    alert(`Failed: ${aiError.message}`);
+                    alert(`Failed to process card: ${aiError.message}\n\nPlease try again or enter manually.`);
                 }
             } finally {
                 showLoading(false);
+                setProgress(0);
             }
         }
 
-        function updateCostTracker() {
-            const tracker = document.getElementById('costTracker');
+        function updateStats() {
             const paidScans = cardsScanned - freeScans;
+            const freeRate = cardsScanned > 0 ? Math.round((freeScans / cardsScanned) * 100) : 0;
+            
+            document.getElementById('statFree').textContent = freeScans;
+            document.getElementById('statPaid').textContent = paidScans;
+            document.getElementById('statCost').textContent = `$${totalCost.toFixed(3)}`;
+            document.getElementById('statRate').textContent = `${freeRate}%`;
+            
+            if (cardsScanned > 0) {
+                document.getElementById('statsBox').classList.remove('hidden');
+            }
+            
+            const tracker = document.getElementById('costTracker');
             tracker.textContent = `Cards: ${cardsScanned} (${freeScans} free, ${paidScans} paid) | Cost: $${totalCost.toFixed(3)}`;
+        }
+
+        function setProgress(percent) {
+            document.getElementById('progressBarFill').style.width = `${percent}%`;
         }
 
         function renderCards() {
@@ -664,7 +954,7 @@
 
             grid.innerHTML = cards.map((card, index) => `
                 <div class="card">
-                    <img src="${card.imageUrl}" alt="${card.cardNumber}">
+                    <img src="${card.imageUrl}" alt="${card.cardNumber}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%239ca3af%22%3ENo Image%3C/text%3E%3C/svg%3E'">
                     <div class="card-body">
                         ${renderMatchBadge(card.matchConfidence, card.scanMethod)}
                         <div class="field-grid">
@@ -714,24 +1004,30 @@
             URL.revokeObjectURL(cards[index].imageUrl);
             cards.splice(index, 1);
             renderCards();
+            updateStats();
         }
 
         function clearAll() {
             if (confirm('Clear all cards?')) {
-                cards.forEach(card => URL.revokeObjectURL(card.imageUrl));
+                cards.forEach(card => {
+                    if (card.imageUrl) {
+                        URL.revokeObjectURL(card.imageUrl);
+                    }
+                });
                 cards = [];
                 cardsScanned = 0;
                 freeScans = 0;
                 totalCost = 0;
                 renderCards();
-                updateCostTracker();
+                updateStats();
+                document.getElementById('statsBox').classList.add('hidden');
             }
         }
 
         function exportCSV() {
             if (cards.length === 0) return;
 
-            const headers = ['Card ID', 'Name', 'Year', 'Set', 'Card Number', 'Parallel', 'Weapon', 'Power'];
+            const headers = ['Card ID', 'Name', 'Year', 'Set', 'Card Number', 'Parallel', 'Weapon', 'Power', 'Scan Method'];
             const rows = cards.map(card => [
                 card.cardId,
                 card.hero,
@@ -740,7 +1036,8 @@
                 card.cardNumber,
                 card.pose,
                 card.weapon,
-                card.power
+                card.power,
+                card.scanMethod || 'Unknown'
             ]);
 
             const csv = [
@@ -761,7 +1058,7 @@
             document.getElementById('loading').classList.toggle('hidden', !show);
         }
 
-        renderCards();
+        updateStats();
     </script>
 </body>
 </html>
