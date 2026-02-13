@@ -6,8 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#22c55e">
-    <link rel="manifest" href="manifest.json">
-    <title>Bo Jackson Card Scanner</title>
+    <title>Bo Jackson Card Scanner Pro</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -96,42 +95,12 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            position: relative;
-            overflow: hidden;
         }
         .upload-area:active { background: #dcfce7; transform: scale(0.99); }
         .upload-area.disabled { opacity: 0.5; cursor: not-allowed; }
         .upload-area.processing { border-color: #3b82f6; background: #eff6ff; }
         .upload-icon { font-size: 48px; margin-bottom: 12px; }
         input[type="file"] { display: none; }
-        
-        /* Camera preview overlay */
-        .camera-preview {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            z-index: 1000;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        .camera-preview.active { display: flex; }
-        .camera-preview canvas {
-            max-width: 90%;
-            max-height: 70vh;
-            border: 2px solid #22c55e;
-            border-radius: 8px;
-        }
-        .camera-overlay {
-            position: absolute;
-            border: 3px solid #22c55e;
-            box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
-            pointer-events: none;
-        }
         
         .buttons {
             display: flex;
@@ -419,6 +388,7 @@
             <div class="db-status">
                 <span id="dbStatus" class="status waiting">Loading...</span>
                 <span id="ocrStatus" class="status waiting">Loading OCR...</span>
+                <span id="cvStatus" class="status waiting">Loading CV...</span>
             </div>
         </div>
 
@@ -446,7 +416,7 @@
         </div>
 
         <div class="success-box">
-            <strong>✨ New Features:</strong> Auto card detection, perspective correction, and region-based OCR for maximum accuracy!
+            <strong>✨ Features:</strong> Auto card detection, perspective correction, and region-based OCR!
         </div>
 
         <div class="api-key-panel" id="apiKeyPanel">
@@ -466,7 +436,7 @@
             <input type="file" id="fileInput" multiple accept="image/*" capture="environment">
             <div class="upload-icon">📸</div>
             <p style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Tap to Scan Card</p>
-            <p style="color: #666; font-size: 14px;">Auto-crop & perspective correction enabled</p>
+            <p style="color: #666; font-size: 14px;">Auto-crop & perspective correction</p>
         </div>
 
         <div class="loading hidden" id="loading">
@@ -492,15 +462,6 @@
         </div>
 
         <div class="cost-tracker" id="costTracker"></div>
-    </div>
-
-    <!-- Camera Preview Overlay -->
-    <div class="camera-preview" id="cameraPreview">
-        <canvas id="previewCanvas"></canvas>
-        <div style="margin-top: 20px; display: flex; gap: 10px;">
-            <button onclick="acceptPreview()" style="background: #22c55e;">✓ Use This</button>
-            <button onclick="cancelPreview()" style="background: #ef4444;">✗ Retake</button>
-        </div>
     </div>
 
     <!-- Settings Modal -->
@@ -569,8 +530,8 @@
         </div>
     </div>
 
+    <!-- Load libraries -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="https://docs.opencv.org/4.5.2/opencv.js" async onload="onOpenCvReady()"></script>
     <script>
         let cards = [];
         let apiKey = localStorage.getItem('anthropic_api_key') || '';
@@ -582,7 +543,7 @@
         let tesseractReady = false;
         let tesseractWorker = null;
         let openCvReady = false;
-        let currentPreviewImage = null;
+        let progressUpdateInterval = null;
 
         // Configuration
         const CONFIG = {
@@ -595,21 +556,21 @@
             PERSPECTIVE_CORRECTION: localStorage.getItem('perspectiveCorrection') !== 'false',
             REGION_OCR: localStorage.getItem('regionOCR') !== 'false',
             
-            // Card detection settings (standard trading card aspect ratio)
-            CARD_ASPECT_RATIO: 2.5 / 3.5, // ~0.714
+            CARD_ASPECT_RATIO: 2.5 / 3.5,
             CARD_ASPECT_TOLERANCE: 0.15,
             
-            // OCR regions (as percentages of card)
             REGIONS: {
-                CARD_NUMBER: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 }, // Bottom left
-                POWER: { x: 0.8, y: 0.05, w: 0.15, h: 0.12 },         // Top right
-                HERO: { x: 0.05, y: 0.05, w: 0.5, h: 0.15 },          // Top left
-                WEAPON: { x: 0.65, y: 0.85, w: 0.3, h: 0.12 }         // Bottom right
+                CARD_NUMBER: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 },
+                POWER: { x: 0.8, y: 0.05, w: 0.15, h: 0.12 },
+                HERO: { x: 0.05, y: 0.05, w: 0.5, h: 0.15 },
+                WEAPON: { x: 0.65, y: 0.85, w: 0.3, h: 0.12 }
             }
         };
 
-        // Initialize settings UI
+        // Initialize on load
         window.addEventListener('load', async () => {
+            console.log('Page loaded, initializing...');
+            
             if (apiKey) {
                 document.getElementById('apiKeyInput').value = apiKey;
                 enableApiKey();
@@ -625,12 +586,55 @@
             
             await loadDatabase();
             await initTesseract();
+            await loadOpenCV();
             await restorePreviousSession();
         });
 
-        function onOpenCvReady() {
-            openCvReady = true;
-            console.log('OpenCV ready');
+        // Load OpenCV with proper error handling
+        async function loadOpenCV() {
+            try {
+                document.getElementById('cvStatus').textContent = 'Loading CV...';
+                
+                // Load OpenCV script
+                const script = document.createElement('script');
+                script.src = 'https://docs.opencv.org/4.5.2/opencv.js';
+                script.async = true;
+                
+                script.onload = () => {
+                    // OpenCV needs time to initialize
+                    const checkOpenCV = setInterval(() => {
+                        if (typeof cv !== 'undefined' && cv.Mat) {
+                            clearInterval(checkOpenCV);
+                            openCvReady = true;
+                            document.getElementById('cvStatus').textContent = '✅ CV Ready';
+                            document.getElementById('cvStatus').className = 'status ready';
+                            console.log('OpenCV loaded and ready');
+                        }
+                    }, 100);
+                    
+                    // Timeout after 10 seconds
+                    setTimeout(() => {
+                        clearInterval(checkOpenCV);
+                        if (!openCvReady) {
+                            console.warn('OpenCV timeout');
+                            document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
+                            document.getElementById('cvStatus').className = 'status error';
+                        }
+                    }, 10000);
+                };
+                
+                script.onerror = () => {
+                    console.error('Failed to load OpenCV');
+                    document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
+                    document.getElementById('cvStatus').className = 'status error';
+                };
+                
+                document.head.appendChild(script);
+            } catch (error) {
+                console.error('OpenCV load error:', error);
+                document.getElementById('cvStatus').textContent = '⚠️ CV Disabled';
+                document.getElementById('cvStatus').className = 'status error';
+            }
         }
 
         // Settings functions
@@ -691,7 +695,6 @@
             alert('Settings reset to defaults');
         }
 
-        // Save session before page closes
         window.addEventListener('beforeunload', () => {
             if (cards.length > 0) {
                 saveSession();
@@ -737,22 +740,16 @@
 
         async function initTesseract() {
             try {
+                console.log('Initializing Tesseract...');
                 document.getElementById('ocrStatus').textContent = 'Loading OCR...';
                 
-                tesseractWorker = await Tesseract.createWorker('eng', 1, {
-                    logger: m => {
-                        if (m.status === 'loading tesseract core') {
-                            document.getElementById('ocrStatus').textContent = 'Loading core...';
-                        } else if (m.status === 'loading language traineddata') {
-                            const percent = Math.round(m.progress * 100);
-                            document.getElementById('ocrStatus').textContent = `Loading: ${percent}%`;
-                        }
-                    }
-                });
+                // Create worker WITHOUT complex logger to avoid DataCloneError
+                tesseractWorker = await Tesseract.createWorker('eng');
                 
                 tesseractReady = true;
                 document.getElementById('ocrStatus').textContent = '✅ OCR Ready';
                 document.getElementById('ocrStatus').className = 'status ready';
+                console.log('Tesseract ready');
             } catch (error) {
                 console.error('Tesseract init error:', error);
                 document.getElementById('ocrStatus').textContent = '⚠️ OCR Failed';
@@ -762,12 +759,14 @@
 
         async function loadDatabase() {
             try {
+                console.log('Loading database...');
                 const response = await fetch('./card-database.json');
                 if (response.ok) {
                     cardDatabase = await response.json();
                     databaseLoaded = true;
                     document.getElementById('dbStatus').textContent = `✅ DB (${cardDatabase.length.toLocaleString()})`;
                     document.getElementById('dbStatus').className = 'status ready';
+                    console.log('Database loaded:', cardDatabase.length, 'cards');
                 } else {
                     throw new Error('Database file not found');
                 }
@@ -790,19 +789,21 @@
 
         /**
          * CARD DETECTION & CROPPING
-         * Uses OpenCV.js to detect card boundaries and correct perspective
          */
         async function detectAndCropCard(imageUrl) {
             if (!openCvReady || !CONFIG.AUTO_DETECT) {
-                return imageUrl; // Return original if OpenCV not ready or disabled
+                console.log('OpenCV not ready or auto-detect disabled, skipping');
+                return imageUrl;
             }
             
             try {
+                console.log('Attempting card detection...');
                 return await new Promise((resolve, reject) => {
                     const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    
                     img.onload = () => {
                         try {
-                            // Convert to OpenCV Mat
                             const canvas = document.createElement('canvas');
                             canvas.width = img.width;
                             canvas.height = img.height;
@@ -816,19 +817,11 @@
                             const contours = new cv.MatVector();
                             const hierarchy = new cv.Mat();
                             
-                            // Convert to grayscale
                             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-                            
-                            // Blur to reduce noise
                             cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-                            
-                            // Edge detection
                             cv.Canny(blurred, edges, 50, 150);
-                            
-                            // Find contours
                             cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
                             
-                            // Find largest rectangular contour
                             let maxArea = 0;
                             let bestContour = null;
                             
@@ -838,15 +831,12 @@
                                 const perimeter = cv.arcLength(contour, true);
                                 const approx = new cv.Mat();
                                 
-                                // Approximate contour
                                 cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
                                 
-                                // Check if it's a rectangle (4 corners)
                                 if (approx.rows === 4 && area > maxArea) {
                                     const aspectRatio = calculateAspectRatio(approx);
                                     const expectedRatio = CONFIG.CARD_ASPECT_RATIO;
                                     
-                                    // Check if aspect ratio matches a card
                                     if (Math.abs(aspectRatio - expectedRatio) < CONFIG.CARD_ASPECT_TOLERANCE) {
                                         maxArea = area;
                                         if (bestContour) bestContour.delete();
@@ -860,9 +850,11 @@
                             
                             let result = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
                             
-                            // If card detected, apply perspective correction
                             if (bestContour && CONFIG.PERSPECTIVE_CORRECTION) {
+                                console.log('Card detected, applying perspective correction');
                                 result = applyPerspectiveCorrection(src, bestContour);
+                            } else {
+                                console.log('No card detected, using original image');
                             }
                             
                             // Cleanup
@@ -877,10 +869,15 @@
                             resolve(result);
                         } catch (err) {
                             console.error('Card detection error:', err);
-                            resolve(imageUrl); // Fallback to original
+                            resolve(imageUrl);
                         }
                     };
-                    img.onerror = () => resolve(imageUrl);
+                    
+                    img.onerror = () => {
+                        console.error('Image load failed');
+                        resolve(imageUrl);
+                    };
+                    
                     img.src = imageUrl;
                 });
             } catch (error) {
@@ -898,7 +895,6 @@
 
         function applyPerspectiveCorrection(src, contour) {
             try {
-                // Get corner points
                 const points = [];
                 for (let i = 0; i < contour.rows; i++) {
                     points.push({
@@ -907,17 +903,14 @@
                     });
                 }
                 
-                // Order points: top-left, top-right, bottom-right, bottom-left
                 points.sort((a, b) => a.y - b.y);
                 const top = points.slice(0, 2).sort((a, b) => a.x - b.x);
                 const bottom = points.slice(2, 4).sort((a, b) => a.x - b.x);
                 const ordered = [...top, ...bottom.reverse()];
                 
-                // Calculate output size (standard card dimensions)
                 const cardWidth = 350;
                 const cardHeight = 500;
                 
-                // Create transformation matrix
                 const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
                     ordered[0].x, ordered[0].y,
                     ordered[1].x, ordered[1].y,
@@ -938,12 +931,10 @@
                 
                 cv.warpPerspective(src, dst, M, dsize);
                 
-                // Convert to canvas and get data URL
                 const canvas = document.createElement('canvas');
                 cv.imshow(canvas, dst);
                 const result = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
                 
-                // Cleanup
                 srcPoints.delete();
                 dstPoints.delete();
                 M.delete();
@@ -960,16 +951,16 @@
 
         /**
          * REGION-BASED OCR
-         * Extract specific regions of the card for targeted OCR
          */
         function extractRegion(imageUrl, region) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     
-                    // Calculate region coordinates
                     const x = img.width * region.x;
                     const y = img.height * region.y;
                     const w = img.width * region.w;
@@ -978,14 +969,11 @@
                     canvas.width = w;
                     canvas.height = h;
                     
-                    // Extract region
                     ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
                     
-                    // Enhance for OCR
                     const imageData = ctx.getImageData(0, 0, w, h);
                     const data = imageData.data;
                     
-                    // Grayscale and threshold
                     for (let i = 0; i < data.length; i += 4) {
                         const gray = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11;
                         const adjusted = gray > 128 ? 255 : 0;
@@ -995,6 +983,7 @@
                     ctx.putImageData(imageData, 0, 0);
                     resolve(canvas.toDataURL('image/png'));
                 };
+                
                 img.onerror = reject;
                 img.src = imageUrl;
             });
@@ -1133,48 +1122,6 @@
             });
         }
 
-        function showPreview(imageUrl) {
-            const canvas = document.getElementById('previewCanvas');
-            const ctx = canvas.getContext('2d');
-            const img = new Image();
-            
-            img.onload = () => {
-                const maxWidth = window.innerWidth * 0.9;
-                const maxHeight = window.innerHeight * 0.7;
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > maxWidth) {
-                    height = (height / width) * maxWidth;
-                    width = maxWidth;
-                }
-                if (height > maxHeight) {
-                    width = (width / height) * maxHeight;
-                    height = maxHeight;
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                document.getElementById('cameraPreview').classList.add('active');
-            };
-            
-            img.src = imageUrl;
-            currentPreviewImage = imageUrl;
-        }
-
-        function acceptPreview() {
-            document.getElementById('cameraPreview').classList.remove('active');
-            // Continue with processing
-        }
-
-        function cancelPreview() {
-            document.getElementById('cameraPreview').classList.remove('active');
-            currentPreviewImage = null;
-            document.getElementById('fileInput').click();
-        }
-
         async function callClaudeAPI(imageData, retries = CONFIG.MAX_RETRIES) {
             for (let i = 0; i < retries; i++) {
                 try {
@@ -1201,7 +1148,7 @@
                                     },
                                     {
                                         type: 'text',
-                                        text: `Extract the card number from the bottom left corner. Format: {"cardNumber": "XX-###"}. JSON only.`
+                                        text: `Extract the card number from bottom left. Format: {"cardNumber": "XX-###"}. JSON only.`
                                     }
                                 ]
                             }]
@@ -1224,6 +1171,9 @@
             throw new Error('API call failed after retries');
         }
 
+        /**
+         * MAIN PROCESSING FUNCTION - FIXED VERSION
+         */
         async function processImage(file) {
             showLoading(true);
             setProgress(0);
@@ -1232,6 +1182,7 @@
             uploadArea.classList.add('processing');
 
             try {
+                console.log('Starting image processing...');
                 const imageUrl = URL.createObjectURL(file);
                 setProgress(5);
                 
@@ -1241,6 +1192,7 @@
                 
                 const croppedUrl = await detectAndCropCard(imageUrl);
                 setProgress(20);
+                console.log('Card detection complete');
                 
                 if (!tesseractReady) {
                     throw new Error('OCR not ready');
@@ -1256,44 +1208,57 @@
                     setProgress(30);
                     
                     const cardNumberRegion = await extractRegion(croppedUrl, CONFIG.REGIONS.CARD_NUMBER);
+                    console.log('Region extracted');
                     
                     document.getElementById('loadingText').textContent = 'Reading card number...';
                     setProgress(40);
                     
-                    const result = await tesseractWorker.recognize(cardNumberRegion, {
-                        logger: m => {
-                            if (m.status === 'recognizing text') {
-                                const ocrProgress = 40 + (m.progress * 20);
-                                setProgress(ocrProgress);
-                            }
-                        }
-                    });
+                    // FIXED: Removed complex logger that causes DataCloneError
+                    // Use simple progress updates instead
+                    let currentProgress = 40;
+                    progressUpdateInterval = setInterval(() => {
+                        currentProgress = Math.min(currentProgress + 2, 60);
+                        setProgress(currentProgress);
+                    }, 200);
                     
-                    ocrText = result.data.text;
-                    confidence = result.data.confidence;
-                    cardNumber = extractCardNumber(ocrText);
+                    try {
+                        const result = await tesseractWorker.recognize(cardNumberRegion);
+                        clearInterval(progressUpdateInterval);
+                        
+                        ocrText = result.data.text;
+                        confidence = result.data.confidence;
+                        cardNumber = extractCardNumber(ocrText);
+                        
+                        console.log('OCR complete:', { ocrText, confidence, cardNumber });
+                    } catch (ocrErr) {
+                        clearInterval(progressUpdateInterval);
+                        throw ocrErr;
+                    }
                 } else {
                     // Full card OCR
                     document.getElementById('loadingText').textContent = 'Running full OCR...';
                     setProgress(30);
                     
-                    const result = await tesseractWorker.recognize(croppedUrl, {
-                        logger: m => {
-                            if (m.status === 'recognizing text') {
-                                const ocrProgress = 30 + (m.progress * 30);
-                                setProgress(ocrProgress);
-                            }
-                        }
-                    });
+                    let currentProgress = 30;
+                    progressUpdateInterval = setInterval(() => {
+                        currentProgress = Math.min(currentProgress + 3, 60);
+                        setProgress(currentProgress);
+                    }, 300);
                     
-                    ocrText = result.data.text;
-                    confidence = result.data.confidence;
-                    cardNumber = extractCardNumber(ocrText);
+                    try {
+                        const result = await tesseractWorker.recognize(croppedUrl);
+                        clearInterval(progressUpdateInterval);
+                        
+                        ocrText = result.data.text;
+                        confidence = result.data.confidence;
+                        cardNumber = extractCardNumber(ocrText);
+                        
+                        console.log('OCR complete:', { ocrText, confidence, cardNumber });
+                    } catch (ocrErr) {
+                        clearInterval(progressUpdateInterval);
+                        throw ocrErr;
+                    }
                 }
-                
-                console.log('OCR Text:', ocrText);
-                console.log('OCR Confidence:', confidence);
-                console.log('Extracted card number:', cardNumber);
                 
                 setProgress(60);
                 
@@ -1311,6 +1276,8 @@
                     
                     if (dbMatch) {
                         setProgress(100);
+                        console.log('Match found in database!');
+                        
                         finalCard = {
                             hero: dbMatch.Name || '',
                             cardNumber: dbMatch['Card Number'] || cardNumber,
@@ -1329,9 +1296,11 @@
                         
                         freeScans++;
                     } else {
+                        console.log('Card not in database');
                         throw new Error('Card not in database');
                     }
                 } else {
+                    console.log('No card number extracted');
                     throw new Error('OCR failed to extract card number');
                 }
                 
@@ -1344,7 +1313,14 @@
                     navigator.vibrate(50);
                 }
                 
+                console.log('Processing complete - FREE scan!');
+                
             } catch (ocrError) {
+                // Clear any running progress intervals
+                if (progressUpdateInterval) {
+                    clearInterval(progressUpdateInterval);
+                }
+                
                 console.log('OCR failed, trying Claude API:', ocrError.message);
                 
                 if (!apiKey) {
@@ -1410,6 +1386,8 @@
                         if (navigator.vibrate) {
                             navigator.vibrate([50, 100, 50]);
                         }
+                        
+                        console.log('Processing complete - AI scan');
                     } else {
                         alert('Card not found in database. Manual entry needed.');
                     }
@@ -1419,6 +1397,10 @@
                     alert(`Failed to process card: ${aiError.message}\n\nPlease try again or enter manually.`);
                 }
             } finally {
+                // Clean up
+                if (progressUpdateInterval) {
+                    clearInterval(progressUpdateInterval);
+                }
                 showLoading(false);
                 uploadArea.classList.remove('processing');
                 setProgress(0);
