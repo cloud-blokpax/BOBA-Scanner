@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST,PUT,DELETE');
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
             return res.status(401).json({ error: 'No API key provided.' });
         }
 
-        // ✅ Manually parse body in case Vercel didn't auto-parse it
+        // Manually parse body in case Vercel didn't auto-parse it
         let body = req.body;
         if (typeof body === 'string') {
             body = JSON.parse(body);
@@ -50,7 +50,6 @@ export default async function handler(req, res) {
         
     } catch (error) {
         console.error('Backend error:', error.message);
-        // ✅ Always return JSON, never plain text
         return res.status(500).json({ 
             error: 'Internal server error',
             message: error.message 
