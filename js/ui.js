@@ -103,3 +103,115 @@ function renderField(label, field, index, value, autoFilled) {
         </div>
     `;
 }
+
+// ==================== NEW: RECENT SCANS FUNCTIONS ====================
+
+function renderRecentScans() {
+    // Get all cards from all collections with timestamps
+    const allCards = [];
+    
+    collections.forEach(collection => {
+        collection.cards.forEach((card, index) => {
+            allCards.push({
+                ...card,
+                collectionName: collection.name,
+                collectionId: collection.id,
+                // Use index as proxy for recency (last added = highest index)
+                timestamp: index
+            });
+        });
+    });
+    
+    // Sort by most recent (assuming cards are added in order)
+    const recent = allCards.slice(-5).reverse();
+    
+    if (recent.length === 0) {
+        return `
+            <div class="recent-scans-empty">
+                <div class="empty-icon">📷</div>
+                <div class="empty-text">No recent scans</div>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="recent-scans-list">
+            ${recent.map(card => `
+                <div class="recent-scan-item">
+                    <img src="${card.imageUrl}" alt="${card.cardNumber}" class="recent-scan-image">
+                    <div class="recent-scan-info">
+                        <div class="recent-scan-name">${card.hero}</div>
+                        <div class="recent-scan-number">${card.cardNumber}</div>
+                        <div class="recent-scan-collection">${card.collectionName}</div>
+                    </div>
+                    <div class="recent-scan-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
+                        ${card.scanType === 'free' ? '🎉' : '💰'}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function showRecentScansWidget() {
+    const widget = `
+        <div class="recent-scans-widget">
+            <div class="widget-header">
+                <h3>🕐 Recent Scans</h3>
+                <button class="widget-close" onclick="closeRecentScans()">×</button>
+            </div>
+            <div class="widget-content">
+                ${renderRecentScans()}
+            </div>
+        </div>
+    `;
+    
+    // Remove existing widget if any
+    const existing = document.querySelector('.recent-scans-widget');
+    if (existing) existing.remove();
+    
+    document.querySelector('.main-content').insertAdjacentHTML('afterbegin', widget);
+}
+
+function closeRecentScans() {
+    const widget = document.querySelector('.recent-scans-widget');
+    if (widget) widget.remove();
+}
+
+function toggleRecentScans() {
+    const existing = document.querySelector('.recent-scans-widget');
+    if (existing) {
+        closeRecentScans();
+    } else {
+        showRecentScansWidget();
+    }
+}
+
+// Auto-refresh recent scans when cards change
+function refreshRecentScans() {
+    const widget = document.querySelector('.recent-scans-widget');
+    if (widget) {
+        const content = widget.querySelector('.widget-content');
+        content.innerHTML = renderRecentScans();
+    }
+}
+
+// ==================== NEW: ACTION BAR UPDATE ====================
+
+function updateActionBar() {
+    const collection = getCurrentCollection();
+    const actionBar = document.getElementById('actionBar');
+    
+    if (collection.cards.length === 0) {
+        actionBar.classList.add('hidden');
+        return;
+    }
+    
+    actionBar.classList.remove('hidden');
+    actionBar.innerHTML = `
+        <button class="btn btn-secondary" onclick="toggleRecentScans()">🕐</button>
+        <button class="btn btn-stats" onclick="showStatsModal()">📊</button>
+        <button class="btn btn-secondary" onclick="openSettings()">⚙️</button>
+        <button class="btn btn-danger" onclick="clearCurrentCollection()">🗑️</button>
+    `;
+}
