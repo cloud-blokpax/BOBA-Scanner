@@ -111,19 +111,27 @@ function saveCollectionName() {
 
 function renderCollections() {
     const list = document.getElementById('collectionList');
-    list.innerHTML = collections.map(c => `
-        <div class="collection-item ${c.id === currentCollectionId ? 'active' : ''}" 
-             onclick="switchCollection(${c.id})">
-            <div class="collection-info">
-                <div class="collection-name">${c.name}</div>
-                <div class="collection-count">${c.cards.length} cards</div>
+    list.innerHTML = collections.map(c => {
+        // NEW: Get stats for quick display
+        const stats = typeof getCollectionStats === 'function' ? getCollectionStats(c) : null;
+        
+        return `
+            <div class="collection-item ${c.id === currentCollectionId ? 'active' : ''}" 
+                 onclick="switchCollection(${c.id})">
+                <div class="collection-info">
+                    <div class="collection-name">${c.name}</div>
+                    <div class="collection-count">
+                        🎴 ${c.cards.length} cards
+                        ${stats && stats.uniqueSets > 0 ? ` · 📦 ${stats.uniqueSets} sets` : ''}
+                    </div>
+                </div>
+                <div class="collection-actions">
+                    <button class="btn-collection-action" onclick="event.stopPropagation(); renameCollection(${c.id})">✏️</button>
+                    <button class="btn-collection-action" onclick="event.stopPropagation(); deleteCollection(${c.id})">🗑️</button>
+                </div>
             </div>
-            <div class="collection-actions">
-                <button class="btn-collection-action" onclick="event.stopPropagation(); renameCollection(${c.id})">✏️</button>
-                <button class="btn-collection-action" onclick="event.stopPropagation(); deleteCollection(${c.id})">🗑️</button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderCurrentCollection() {
@@ -134,6 +142,7 @@ function renderCurrentCollection() {
     
     updateStats();
     renderCards();
+    updateActionBar();  // NEW: Update action bar with new buttons
 }
 
 function clearCurrentCollection() {
