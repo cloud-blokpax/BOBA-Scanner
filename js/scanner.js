@@ -180,6 +180,11 @@ function addCard(match, imageUrl, fileName, type, confidence = null) {
     renderCards();
     renderCollections();
     
+    // NEW: Refresh recent scans widget if it's open
+    if (typeof refreshRecentScans === 'function') {
+        refreshRecentScans();
+    }
+    
     if (navigator.vibrate) {
         navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
     }
@@ -198,6 +203,11 @@ function removeCard(index) {
     updateStats();
     renderCards();
     renderCollections();
+    
+    // NEW: Refresh recent scans widget if it's open
+    if (typeof refreshRecentScans === 'function') {
+        refreshRecentScans();
+    }
 }
 
 function updateCard(index, field, value) {
