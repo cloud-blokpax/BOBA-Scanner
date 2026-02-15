@@ -16,11 +16,19 @@ export default async function handler(req, res) {
     }
     
     try {
-        const { imageData, apiKey } = req.body;
+       const { imageData } = req.body;
         
-        if (!imageData || !apiKey) {
+        if (!imageData) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
+
+// Get API key from environment variable
+   const apiKey = process.env.ANTHROPIC_API_KEY;
+   
+   if (!apiKey) {
+       console.error('API key not configured in Vercel');
+       return res.status(500).json({ error: 'API key not configured' });
+   }
         
         // Call Claude API
         const response = await fetch('https://api.anthropic.com/v1/messages', {
