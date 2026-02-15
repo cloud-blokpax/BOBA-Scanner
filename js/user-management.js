@@ -1,12 +1,9 @@
 // User Management & Limits System
 
 const SUPABASE_CONFIG = {
-    url: 'https://rtffhhxuzkjzzvnsuroz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0ZmZoaHh1emtqenp2bnN1cm96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODIzMTQsImV4cCI6MjA4NjY1ODMxNH0.fG3cYKUAGf4UqHv4D8zVgP4Iblwf-8JFHLvzEN5GRBQ'
+    url: 'https://your-project.supabase.co',
+    anonKey: 'your-anon-key'
 };
-
-// Import Supabase client
-let supabase = null;
 
 // Current user state
 let currentUser = null;
@@ -29,12 +26,26 @@ const DEFAULT_LIMITS = {
 // ==================== INITIALIZATION ====================
 
 async function initUserManagement() {
+    // Check if Supabase library is loaded
+    if (typeof window.supabase === 'undefined') {
+        console.warn('⚠️ Supabase library not loaded - user management disabled');
+        return;
+    }
+    
+    // Check if config is set
+    if (SUPABASE_CONFIG.url === 'https://your-project.supabase.co') {
+        console.warn('⚠️ Supabase not configured - update SUPABASE_CONFIG in user-management.js');
+        return;
+    }
+    
     try {
-        // Initialize Supabase
-        supabase = window.supabase.createClient(
-            SUPABASE_CONFIG.url,
-            SUPABASE_CONFIG.anonKey
-        );
+        // Initialize Supabase (only if not already initialized globally)
+        if (typeof supabase === 'undefined') {
+            window.supabase = window.supabase.createClient(
+                SUPABASE_CONFIG.url,
+                SUPABASE_CONFIG.anonKey
+            );
+        }
         
         console.log('✅ User management initialized');
         
@@ -46,9 +57,15 @@ async function initUserManagement() {
 // ==================== USER AUTHENTICATION ====================
 
 async function handleUserSignIn(googleUser) {
+    // Check if supabase is available
+    if (typeof window.supabase === 'undefined') {
+        console.warn('User management not available');
+        return null;
+    }
+    
     try {
         // Check if user exists in database
-        const { data: existingUser, error: fetchError } = await supabase
+        const { data: existingUser, error: fetchError } = await window.supabase
             .from('users')
             .select('*')
             .eq('google_id', googleUser.id)
@@ -64,7 +81,7 @@ async function handleUserSignIn(googleUser) {
             await checkAndResetMonthlyLimits();
         } else {
             // Create new user
-            const { data: newUser, error: createError } = await supabase
+            const { data: newUser, error: createError } = await window.supabase
                 .from('users')
                 .insert({
                     google_id: googleUser.id,
@@ -90,7 +107,9 @@ async function handleUserSignIn(googleUser) {
         await loadUserLimits();
         
         // Update UI
-        updateLimitsUI();
+        if (typeof updateLimitsUI === 'function') {
+            updateLimitsUI();
+        }
         
         return currentUser;
         
@@ -111,7 +130,7 @@ async function checkAndResetMonthlyLimits() {
         
         console.log('🔄 Resetting monthly limits...');
         
-        const { error } = await supabase
+        const { error } = await window.supabase
             .from('users')
             .update({
                 api_calls_used: 0,
@@ -141,7 +160,7 @@ async function loadUserLimits() {
 }
 
 function isGuestMode() {
-    return !currentUser || !googleUser;
+    return !currentUser || typeof googleUser === 'undefined' || !googleUser;
 }
 
 function isAdmin() {
@@ -193,15 +212,14 @@ async function canMakeApiCall() {
 }
 
 async function trackCardAdded() {
-    if (isGuestMode()) {
-        // Guest mode - just count locally
+    if (isGuestMode() || typeof window.supabase === 'undefined') {
         return;
     }
     
     // Update user's card count
     const totalCards = collections.reduce((sum, c) => sum + c.cards.length, 0);
     
-    const { error } = await supabase
+    const { error } = await window.supabase
         .from('users')
         .update({ cards_in_collection: totalCards })
         .eq('id', currentUser.id);
@@ -209,7 +227,9 @@ async function trackCardAdded() {
     if (!error) {
         currentUser.cards_in_collection = totalCards;
         userLimits.cardsInCollection = totalCards;
-        updateLimitsUI();
+        if (typeof updateLimitsUI === 'function') {
+            updateLimitsUI();
+        }
     }
 }
 
@@ -218,12 +238,18 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
         // Guest mode - increment local counter
         const current = parseInt(localStorage.getItem('guest_api_calls') || '0');
         localStorage.setItem('guest_api_calls', (current + 1).toString());
-        updateLimitsUI();
+        if (typeof updateLimitsUI === 'function') {
+            updateLimitsUI();
+        }
+        return;
+    }
+    
+    if (typeof window.supabase === 'undefined') {
         return;
     }
     
     // Log the API call
-    const { error: logError } = await supabase
+    const { error: logError } = await window.supabase
         .from('api_call_logs')
         .insert({
             user_id: currentUser.id,
@@ -240,7 +266,7 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
     // Increment user's API call counter
     const newCount = currentUser.api_calls_used + cardsProcessed;
     
-    const { error: updateError } = await supabase
+    const { error: updateError } = await window.supabase
         .from('users')
         .update({ api_calls_used: newCount })
         .eq('id', currentUser.id);
@@ -248,7 +274,9 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
     if (!updateError) {
         currentUser.api_calls_used = newCount;
         userLimits.apiCallsUsed = newCount;
-        updateLimitsUI();
+        if (typeof updateLimitsUI === 'function') {
+            updateLimitsUI();
+        }
     }
 }
 
@@ -376,7 +404,11 @@ function closeLimitModal() {
 }
 
 function showSignInPrompt() {
-    initGoogleAuth();
+    if (typeof initGoogleAuth === 'function') {
+        initGoogleAuth();
+    } else {
+        showToast('Google sign-in not configured', '⚠️');
+    }
 }
 
 // ==================== USER PROFILE ====================
@@ -479,8 +511,13 @@ async function openUserProfile() {
 async function saveDiscordId() {
     const discordId = document.getElementById('discordIdInput').value.trim();
     
+    if (typeof window.supabase === 'undefined') {
+        showToast('Database not available', '❌');
+        return;
+    }
+    
     try {
-        const { error } = await supabase
+        const { error } = await window.supabase
             .from('users')
             .update({ discord_id: discordId })
             .eq('id', currentUser.id);
@@ -500,44 +537,3 @@ function closeProfileModal() {
     const modal = document.getElementById('profileModal');
     if (modal) modal.remove();
 }
-
-// ==================== INTEGRATION WITH SCANNER ====================
-
-// Override original functions to include limit checks
-
-const originalAddCard = window.addCard;
-window.addCard = async function(match, imageUrl, fileName, type, confidence) {
-    // Check if can add card
-    if (!await canAddCard()) {
-        return;
-    }
-    
-    // Call original function
-    originalAddCard(match, imageUrl, fileName, type, confidence);
-    
-    // Track card added
-    await trackCardAdded();
-};
-
-const originalCallAPI = window.callAPI;
-window.callAPI = async function(imageData) {
-    // Check if can make API call
-    if (!await canMakeApiCall()) {
-        throw new Error('API call limit reached');
-    }
-    
-    try {
-        // Call original API function
-        const result = await originalCallAPI(imageData);
-        
-        // Track successful API call
-        await trackApiCall('ai', true, config.aiCost, 1);
-        
-        return result;
-        
-    } catch (err) {
-        // Track failed API call
-        await trackApiCall('ai', false, 0, 1);
-        throw err;
-    }
-};
