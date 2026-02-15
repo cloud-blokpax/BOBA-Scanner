@@ -233,7 +233,9 @@ function updateAuthUI(signedIn) {
     
     if (signedIn && googleUser) {
         signInContainer?.classList.add('hidden');
+        if (signInContainer) signInContainer.style.display = 'none';
         userInfo?.classList.remove('hidden');
+        if (userInfo) userInfo.style.display = 'flex';
         signOutBtn?.classList.remove('hidden');
         driveSection?.classList.remove('hidden');
         
