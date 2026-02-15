@@ -3,7 +3,7 @@
 
 const GOOGLE_CONFIG = {
     // REPLACE THESE with your actual values from Google Cloud Console
-    clientId: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+    clientId: '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com',
     apiKey: 'YOUR_API_KEY', // Optional
     discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
     scopes: [
