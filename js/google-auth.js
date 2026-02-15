@@ -3,7 +3,7 @@
 
 const GOOGLE_CONFIG = {
     // Your actual Client ID from Google Cloud Console
-    clientId: '572964589574-hn6786nf84q5joug9ts2vul0r9oql6f.apps.googleusercontent.com',
+    clientId: '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com',
     apiKey: '', // Leave blank - not needed for basic OAuth
     discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
     scopes: [
