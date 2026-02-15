@@ -27,7 +27,7 @@ const DEFAULT_LIMITS = {
 
 async function initUserManagement() {
     // Check if Supabase library is loaded
-    if (typeof window.supabase === 'undefined') {
+    if (typeof window.supabaseClient === 'undefined') {
         console.warn('⚠️ Supabase library not loaded - user management disabled');
         return;
     }
@@ -39,13 +39,14 @@ async function initUserManagement() {
     }
     
     try {
-        // Initialize Supabase (only if not already initialized globally)
-        if (typeof supabase === 'undefined') {
-            window.supabase = window.supabase.createClient(
-                SUPABASE_CONFIG.url,
-                SUPABASE_CONFIG.anonKey
-            );
-        }
+        // Create Supabase client CORRECTLY
+        const supabaseClient = window.supabaseClient.createClient(
+            SUPABASE_CONFIG.url,
+            SUPABASE_CONFIG.anonKey
+        );
+        
+        // Store globally
+        window.supabaseClientClient = supabaseClient;
         
         console.log('✅ User management initialized');
         
@@ -58,14 +59,14 @@ async function initUserManagement() {
 
 async function handleUserSignIn(googleUser) {
     // Check if supabase is available
-    if (typeof window.supabase === 'undefined') {
+    if (typeof window.supabaseClient === 'undefined') {
         console.warn('User management not available');
         return null;
     }
     
     try {
         // Check if user exists in database
-        const { data: existingUser, error: fetchError } = await window.supabase
+        const { data: existingUser, error: fetchError } = await window.supabaseClient
             .from('users')
             .select('*')
             .eq('google_id', googleUser.id)
@@ -81,7 +82,7 @@ async function handleUserSignIn(googleUser) {
             await checkAndResetMonthlyLimits();
         } else {
             // Create new user
-            const { data: newUser, error: createError } = await window.supabase
+            const { data: newUser, error: createError } = await window.supabaseClient
                 .from('users')
                 .insert({
                     google_id: googleUser.id,
@@ -130,7 +131,7 @@ async function checkAndResetMonthlyLimits() {
         
         console.log('🔄 Resetting monthly limits...');
         
-        const { error } = await window.supabase
+        const { error } = await window.supabaseClient
             .from('users')
             .update({
                 api_calls_used: 0,
@@ -212,14 +213,14 @@ async function canMakeApiCall() {
 }
 
 async function trackCardAdded() {
-    if (isGuestMode() || typeof window.supabase === 'undefined') {
+    if (isGuestMode() || typeof window.supabaseClient === 'undefined') {
         return;
     }
     
     // Update user's card count
     const totalCards = collections.reduce((sum, c) => sum + c.cards.length, 0);
     
-    const { error } = await window.supabase
+    const { error } = await window.supabaseClient
         .from('users')
         .update({ cards_in_collection: totalCards })
         .eq('id', currentUser.id);
@@ -244,12 +245,12 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
         return;
     }
     
-    if (typeof window.supabase === 'undefined') {
+    if (typeof window.supabaseClient === 'undefined') {
         return;
     }
     
     // Log the API call
-    const { error: logError } = await window.supabase
+    const { error: logError } = await window.supabaseClient
         .from('api_call_logs')
         .insert({
             user_id: currentUser.id,
@@ -266,7 +267,7 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
     // Increment user's API call counter
     const newCount = currentUser.api_calls_used + cardsProcessed;
     
-    const { error: updateError } = await window.supabase
+    const { error: updateError } = await window.supabaseClient
         .from('users')
         .update({ api_calls_used: newCount })
         .eq('id', currentUser.id);
@@ -511,13 +512,13 @@ async function openUserProfile() {
 async function saveDiscordId() {
     const discordId = document.getElementById('discordIdInput').value.trim();
     
-    if (typeof window.supabase === 'undefined') {
+    if (typeof window.supabaseClient === 'undefined') {
         showToast('Database not available', '❌');
         return;
     }
     
     try {
-        const { error } = await window.supabase
+        const { error } = await window.supabaseClient
             .from('users')
             .update({ discord_id: discordId })
             .eq('id', currentUser.id);
