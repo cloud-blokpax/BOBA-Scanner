@@ -1,8 +1,8 @@
 // User Management & Limits System
 
 const SUPABASE_CONFIG = {
-    url: 'https://rtffhhxuzkjzzvnsuroz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0ZmZoaHh1emtqenp2bnN1cm96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODIzMTQsImV4cCI6MjA4NjY1ODMxNH0.fG3cYKUAGf4UqHv4D8zVgP4Iblwf-8JFHLvzEN5GRBQ'
+    url: 'https://rrtffhhxuzkjzzvnsuroz.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydGZmaGh4dXpranp6dm5zdXJveiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM3OTI3MTg2LCJleHAiOjIwNTM1MDMxODZ9.NtRYBv3Ni8dLEZ2DWXWCMq3n_jZxYx4qTzEJkx_aaLQ'
 };
 
 // Current user state
@@ -27,26 +27,20 @@ const DEFAULT_LIMITS = {
 
 async function initUserManagement() {
     // Check if Supabase library is loaded
-    if (typeof window.supabaseClient === 'undefined') {
+    if (typeof window.supabase === 'undefined') {
         console.warn('⚠️ Supabase library not loaded - user management disabled');
-        return;
-    }
-    
-    // Check if config is set
-    if (SUPABASE_CONFIG.url === 'https://your-project.supabase.co') {
-        console.warn('⚠️ Supabase not configured - update SUPABASE_CONFIG in user-management.js');
         return;
     }
     
     try {
         // Create Supabase client CORRECTLY
-        const supabaseClient = window.supabaseClient.createClient(
+        const supabaseClient = window.supabase.createClient(
             SUPABASE_CONFIG.url,
             SUPABASE_CONFIG.anonKey
         );
         
         // Store globally
-        window.supabaseClientClient = supabaseClient;
+        window.supabaseClient = supabaseClient;
         
         console.log('✅ User management initialized');
         
@@ -371,13 +365,13 @@ function showLimitReachedModal(type, current, max) {
                     <div class="modal-close" onclick="closeLimitModal()">×</div>
                 </div>
                 
-                <div class="limit-modal-content">
+                <div class="limit-modal-content" style="padding: 20px;">
                     <p><strong>${msg.message}</strong></p>
                     <p>${isGuest ? msg.guest : msg.auth}</p>
                     
                     ${isGuest ? `
                         <div class="modal-buttons">
-                            <button class="btn btn-primary" onclick="initGoogleAuth(); closeLimitModal()">
+                            <button class="btn btn-primary" onclick="showSignInPrompt(); closeLimitModal()">
                                 Sign In with Google
                             </button>
                             <button class="btn btn-secondary" onclick="closeLimitModal()">
