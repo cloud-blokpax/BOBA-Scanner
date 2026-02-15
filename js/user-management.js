@@ -2,7 +2,7 @@
 
 const SUPABASE_CONFIG = {
     url: 'https://rrtffhhxuzkjzzvnsuroz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydGZmaGh4dXpranp6dm5zdXJveiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM3OTI3MTg2LCJleHAiOjIwNTM1MDMxODZ9.NtRYBv3Ni8dLEZ2DWXWCMq3n_jZxYx4qTzEJkx_aaLQ'
+    anonKey: 'sb_publishable_I2F2d2QxfVJuzqZxfRoF4g_tVTmxmgI'
 };
 
 // Current user state
