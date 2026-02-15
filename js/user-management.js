@@ -1,8 +1,8 @@
 // User Management & Limits System
 
 const SUPABASE_CONFIG = {
-    url: 'https://your-project.supabase.co',
-    anonKey: 'your-anon-key'
+    url: 'https://rtffhhxuzkjzzvnsuroz.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0ZmZoaHh1emtqenp2bnN1cm96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwODIzMTQsImV4cCI6MjA4NjY1ODMxNH0.fG3cYKUAGf4UqHv4D8zVgP4Iblwf-8JFHLvzEN5GRBQ'
 };
 
 // Current user state
