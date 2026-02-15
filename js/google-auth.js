@@ -257,6 +257,7 @@ function updateAuthUI(signedIn) {
 // ==================== GOOGLE DRIVE API ====================
 
 async function initDriveAPI(accessToken) {
+return;
     try {
         console.log('☁️ Initializing Drive API...');
         
