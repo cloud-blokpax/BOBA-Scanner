@@ -103,3 +103,69 @@ function renderField(label, field, index, value, autoFilled) {
         </div>
     `;
 }
+
+// ==================== UPLOAD AREA ====================
+
+function initUploadArea() {
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    
+    if (!uploadArea || !fileInput) {
+        console.warn('Upload area elements not found');
+        return;
+    }
+    
+    // Click to upload
+    uploadArea.addEventListener('click', (e) => {
+        if (e.target.classList.contains('upload-action-btn')) {
+            return; // Let button handlers deal with it
+        }
+        fileInput.click();
+    });
+    
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        const files = Array.from(e.dataTransfer.files).filter(f => 
+            f.type.startsWith('image/')
+        );
+        
+        if (files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            handleFiles();
+        }
+    });
+}
+
+// Mobile camera capture
+function capturePhoto(e) {
+    e.stopPropagation();
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.setAttribute('capture', 'environment');
+        fileInput.setAttribute('accept', 'image/*');
+        fileInput.click();
+    }
+}
+
+// Mobile gallery picker
+function chooseFromGallery(e) {
+    e.stopPropagation();
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.removeAttribute('capture');
+        fileInput.setAttribute('accept', 'image/*');
+        fileInput.click();
+    }
+}
