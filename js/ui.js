@@ -98,13 +98,12 @@ function renderField(label, field, index, value, autoFilled) {
         <div class="field">
             <div class="field-label">${label}</div>
             <input class="field-input ${autoFilled ? 'auto-filled' : ''}" 
-                   value="${value}" 
+                   type="text" 
+                   value="${value || ''}" 
                    onchange="updateCard(${index}, '${field}', this.value)">
         </div>
     `;
 }
-
-// ==================== UPLOAD AREA ====================
 
 function initUploadArea() {
     const uploadArea = document.getElementById('uploadArea');
@@ -142,8 +141,15 @@ function initUploadArea() {
         );
         
         if (files.length > 0) {
-            fileInput.files = e.dataTransfer.files;
-            handleFiles();
+            const fileInput = document.getElementById('fileInput');
+            // Create a new FileList-like object
+            const dataTransfer = new DataTransfer();
+            files.forEach(file => dataTransfer.items.add(file));
+            fileInput.files = dataTransfer.files;
+            
+            // Trigger the change event properly
+            const event = new Event('change', { bubbles: true });
+            fileInput.dispatchEvent(event);
         }
     });
 }
