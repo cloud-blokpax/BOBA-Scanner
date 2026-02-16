@@ -1,7 +1,7 @@
 // User Management & Limits System
 
 const SUPABASE_CONFIG = {
-    url: 'https://rrtffhhxuzkjzzvnsuroz.supabase.co',
+    url: 'https://rtffhhxuzkjzzvnsuroz.supabase.co',
     anonKey: 'sb_publishable_I2F2d2QxfVJuzqZxfRoF4g_tVTmxmgI'
 };
 
