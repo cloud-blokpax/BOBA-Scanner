@@ -13,10 +13,10 @@
     
     <title>Bo Jackson Card Scanner | AI-Powered Card Recognition</title>
     
-    <!-- Redesigned Styles -->
+    <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
     
-    <!-- Keep original functionality scripts -->
+    <!-- External Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -25,9 +25,7 @@
     <!-- Main App Container -->
     <div class="app-container">
         
-        <!-- ========================================
-             HEADER - FIXED TOP NAVIGATION
-             ======================================== -->
+        <!-- Header -->
         <header class="app-header">
             <div class="header-content">
                 <!-- Logo -->
@@ -54,16 +52,12 @@
                         </div>
                         <img class="user-avatar" id="userAvatar" alt="User" onclick="toggleUserMenu()">
                         <button class="btn-sign-out" onclick="signOut()">Sign Out</button>
-                   <!-- Before closing </body> tag -->
-                        <script src="js/ui-enhancements.js"></script>
                     </div>
                 </div>
             </div>
         </header>
         
-        <!-- ========================================
-             MAIN CONTENT AREA
-             ======================================== -->
+        <!-- Main Content -->
         <main class="app-main">
             
             <!-- Stats Dashboard -->
@@ -72,14 +66,14 @@
                     <div class="stat-icon cards">🎴</div>
                     <div class="stat-label">Cards Scanned</div>
                     <div class="stat-value" id="statCards">0 / 5</div>
-                    <div class="stat-sublabel">Guest limit</div>
+                    <div class="stat-sublabel" id="statCardsLabel">Guest limit</div>
                 </div>
                 
                 <div class="stat-card">
                     <div class="stat-icon ai">🤖</div>
                     <div class="stat-label">AI Lookups</div>
                     <div class="stat-value" id="statAI">0 / 1</div>
-                    <div class="stat-sublabel">Remaining</div>
+                    <div class="stat-sublabel" id="statAILabel">Remaining</div>
                 </div>
                 
                 <div class="stat-card">
@@ -97,7 +91,7 @@
                 </div>
             </div>
             
-            <!-- Upload Hero Section -->
+            <!-- Upload Section -->
             <section class="upload-section" id="uploadArea">
                 <div class="upload-icon">📷</div>
                 <h1 class="upload-title">Upload or Capture</h1>
@@ -125,7 +119,7 @@
                 </div>
             </section>
             
-            <!-- Collections Switcher -->
+            <!-- Collections Bar -->
             <div class="collections-bar" id="collectionsBar" style="display: none;">
                 <!-- Populated by JS -->
             </div>
@@ -144,9 +138,7 @@
             
         </main>
         
-        <!-- ========================================
-             FLOATING ACTION BUTTON
-             ======================================== -->
+        <!-- Floating Action Button -->
         <div class="fab-container" id="fabContainer" style="display: none;">
             <button class="fab" onclick="document.getElementById('fileInput').click()" aria-label="Scan new card">
                 <span>+</span>
@@ -155,9 +147,7 @@
         
     </div>
     
-    <!-- ========================================
-         LOADING OVERLAY
-         ======================================== -->
+    <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
         <div class="loading-text" id="loadingText">Processing...</div>
@@ -166,30 +156,77 @@
         </div>
     </div>
     
-    <!-- ========================================
-         TOAST NOTIFICATION
-         ======================================== -->
+    <!-- Toast Notification -->
     <div class="toast" id="toast">
         <span class="toast-icon" id="toastIcon">✓</span>
         <span class="toast-message" id="toastMessage">Success!</span>
     </div>
     
-    <!-- ========================================
-         MODALS (Keep existing modals)
-         ======================================== -->
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal">
-        <!-- Keep existing modal content -->
+        <div class="modal-backdrop" onclick="closeSettings()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h3>Scan Settings</h3>
+                    <label class="setting-item">
+                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateConfig('autoDetect', this.checked)">
+                        <span>Auto-detect card edges</span>
+                    </label>
+                    <label class="setting-item">
+                        <input type="checkbox" id="togglePerspective" checked onchange="updateConfig('perspective', this.checked)">
+                        <span>Perspective correction</span>
+                    </label>
+                    <label class="setting-item">
+                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateConfig('regionOcr', this.checked)">
+                        <span>Region-based OCR</span>
+                    </label>
+                </div>
+                
+                <div class="setting-group">
+                    <h3>Quality</h3>
+                    <select id="selectQuality" class="setting-select" onchange="updateConfig('quality', this.value)">
+                        <option value="low">Low (Fast)</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High (Slow)</option>
+                    </select>
+                </div>
+                
+                <div class="setting-group">
+                    <h3>OCR Confidence Threshold</h3>
+                    <div class="setting-range-container">
+                        <input type="range" id="rangeThreshold" min="0" max="100" value="70" class="setting-range" 
+                               oninput="document.getElementById('thresholdValue').textContent = this.value"
+                               onchange="updateConfig('threshold', this.value)">
+                        <span><span id="thresholdValue">70</span>%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeSettings()">Close</button>
+            </div>
+        </div>
     </div>
     
     <!-- Admin Dashboard Modal -->
     <div id="adminModal" class="modal">
-        <!-- Keep existing modal content -->
+        <div class="modal-backdrop" onclick="closeAdminDashboard()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Admin Dashboard</h2>
+                <button class="modal-close" onclick="closeAdminDashboard()">×</button>
+            </div>
+            <div class="modal-body" id="adminDashboardContent">
+                <!-- Populated by admin-dashboard.js -->
+            </div>
+        </div>
     </div>
     
-    <!-- ========================================
-         SCRIPTS - Keep all existing functionality
-         ======================================== -->
+    <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/database.js"></script>
     <script src="js/ocr.js"></script>
@@ -202,8 +239,6 @@
     <script src="js/user-management.js"></script>
     <script src="js/admin-dashboard.js"></script>
     <script src="js/app.js"></script>
-    
-    <!-- New UI Enhancement Script -->
     <script src="js/ui-enhancements.js"></script>
 </body>
 </html>
