@@ -43,7 +43,7 @@ async function callAPI(imageData) {
     console.log('Calling API via Vercel backend...');
     
     try {
-        const response = await fetch('/api/anthropic', {
+        const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
