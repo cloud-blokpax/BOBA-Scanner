@@ -1,5 +1,7 @@
 // Anthropic API Functions
 
+let apiKey = localStorage.getItem('api_key') || '';
+
 function saveApiKey() {
     const input = document.getElementById('apiKeyInput');
     const key = input.value.trim();
@@ -42,50 +44,28 @@ function updateApiToggle(hasKey) {
 async function callAPI(imageData) {
     console.log('Calling API via Vercel backend...');
     
-    const response = await fetch('https://boba-scanner.vercel.app/api/anthropic', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 500,
-            messages: [{
-                role: 'user',
-                content: [
-                    {
-                        type: 'image',
-                        source: {
-                            type: 'base64',
-                            media_type: 'image/jpeg',
-                            data: imageData
-                        }
-                    },
-                    {
-                        type: 'text',
-                        text: `Extract card information:
-1. Card number from bottom left (format: XX-###)
-2. Hero name from top of card
-
-Return ONLY this JSON:
-{
-  "cardNumber": "XX-###",
-  "hero": "Hero Name"
-}`
-                    }
-                ]
-            }]
-        })
-    });
-    
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || `API failed: ${response.status}`);
+    try {
+        const response = await fetch('/api/anthropic', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                imageData: imageData
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || `API failed: ${response.status}`);
+        }
+        
+        return await response.json();
+        
+    } catch (error) {
+        console.error('API call failed:', error);
+        throw error;
     }
-    
-    return await response.json();
 }
 
 async function compressImage(file) {
