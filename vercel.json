@@ -3,5 +3,12 @@
     "api/anthropic.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/anthropic",
+      "dest": "/api/anthropic.js",
+      "methods": ["POST", "OPTIONS"]
+    }
+  ]
 }
