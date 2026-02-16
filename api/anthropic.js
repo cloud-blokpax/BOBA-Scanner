@@ -16,19 +16,27 @@ export default async function handler(req, res) {
     }
     
     try {
-       const { imageData } = req.body;
+        const { imageData } = req.body;
+        
+        // Debug logging
+        console.log('Request received');
+        console.log('Has imageData:', !!imageData);
+        console.log('ImageData length:', imageData?.length);
         
         if (!imageData) {
-            return res.status(400).json({ error: 'Missing required fields' });
+            console.error('Missing imageData in request');
+            return res.status(400).json({ error: 'Missing image data' });
         }
-
-// Get API key from environment variable
-   const apiKey = process.env.ANTHROPIC_API_KEY;
-   
-   if (!apiKey) {
-       console.error('API key not configured in Vercel');
-       return res.status(500).json({ error: 'API key not configured' });
-   }
+        
+        // Get API key from environment variable
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        
+        if (!apiKey) {
+            console.error('ANTHROPIC_API_KEY not set in environment');
+            return res.status(500).json({ error: 'API key not configured' });
+        }
+        
+        console.log('Calling Claude API...');
         
         // Call Claude API
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -55,7 +63,6 @@ export default async function handler(req, res) {
                         {
                             type: 'text',
                             text: `Analyze this Bo Jackson trading card image and extract the following information:
-
 1. Year (e.g., "2023")
 2. Set name (e.g., "Base Set", "Refractor", "Chrome", etc.)
 3. Card number (e.g., "001", "42", "BS-10", etc.)
@@ -81,18 +88,23 @@ Be precise and extract exactly what you see on the card.`
         });
         
         if (!response.ok) {
-            const error = await response.text();
-            console.error('Claude API error:', error);
-            throw new Error(`Claude API error: ${response.status}`);
+            const errorText = await response.text();
+            console.error('Claude API error:', response.status, errorText);
+            return res.status(response.status).json({ 
+                error: `Claude API error: ${response.status}`,
+                details: errorText
+            });
         }
         
         const data = await response.json();
+        console.log('Claude API success');
         return res.status(200).json(data);
         
     } catch (error) {
         console.error('API Handler Error:', error);
         return res.status(500).json({ 
-            error: error.message || 'Internal server error' 
+            error: error.message || 'Internal server error',
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 }
