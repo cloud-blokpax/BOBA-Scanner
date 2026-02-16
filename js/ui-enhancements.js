@@ -475,24 +475,28 @@ function setupNetworkIndicator() {
 // INSTALL PROMPT (PWA)
 // ========================================
 
-let deferredPrompt = null;
-// Check if already declared elsewhere
-if (typeof window.deferredPrompt !== 'undefined') {
-    deferredPrompt = window.deferredPrompt;
-} else {
+// ========================================
+// INSTALL PROMPT (PWA)
+// ========================================
+
+if (!window.deferredPrompt) {
     window.deferredPrompt = null;
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    deferredPrompt = e;
+    window.deferredPrompt = e;
     
     // Show install button
     showInstallPrompt();
 });
 
 function showInstallPrompt() {
+    // Only show if not already shown
+    if (document.getElementById('install-prompt-btn')) return;
+    
     const installButton = document.createElement('button');
+    installButton.id = 'install-prompt-btn';
     installButton.className = 'btn-secondary';
     installButton.textContent = '📱 Install App';
     installButton.style.position = 'fixed';
@@ -501,22 +505,23 @@ function showInstallPrompt() {
     installButton.style.zIndex = '1000';
     
     installButton.addEventListener('click', async () => {
-        if (!deferredPrompt) return;
+        if (!window.deferredPrompt) return;
         
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
+        window.deferredPrompt.prompt();
+        const { outcome } = await window.deferredPrompt.userChoice;
         
         if (outcome === 'accepted') {
-            showToast('App installed!', '✓');
+            if (typeof showToast === 'function') {
+                showToast('App installed!', '✓');
+            }
         }
         
-        deferredPrompt = null;
+        window.deferredPrompt = null;
         installButton.remove();
     });
     
     document.body.appendChild(installButton);
 }
-
 // ========================================
 // EXPORT ENHANCEMENTS
 // ========================================
