@@ -90,17 +90,25 @@ async function processImage(file) {
         setProgress(100);
         showToast(`Card ${cardNumber} scanned (FREE)`, '🎉');
         
-    } catch (err) {
-        console.log('OCR failed, trying AI:', err.message);
-        
-        // Check if we need to check API limits
-        if (typeof canMakeApiCall === 'function') {
-            const canCall = await canMakeApiCall();
-            if (!canCall) {
-                showLoading(false);
-                return; // Limit modal already shown
-            }
+} catch (err) {
+    console.log('OCR failed, trying AI:', err.message);
+    
+    // CRITICAL: Check if ready object exists
+    if (typeof ready === 'undefined') {
+        console.error('ready object not defined - check if state.js is loaded');
+        showToast('System not ready, please refresh', '⚠️');
+        showLoading(false);
+        return;
+    }
+    
+    // Check if we need to check API limits
+    if (typeof canMakeApiCall === 'function') {
+        const canCall = await canMakeApiCall();
+        if (!canCall) {
+            showLoading(false);
+            return; // Limit modal already shown
         }
+    }
         
         try {
             showLoading(true, 'Using AI...');
