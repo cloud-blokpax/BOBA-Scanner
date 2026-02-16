@@ -1,168 +1,112 @@
-// Google Authentication & Drive Integration
-// FIXED VERSION - Drive API disabled, proper error handling
-
-const GOOGLE_CONFIG = {
-    // Your actual Client ID from Google Cloud Console
-    clientId: '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com',
-    apiKey: '', // Leave blank - not needed for basic OAuth
-    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-    scopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/userinfo.email'
-    ],
-    appFolderName: 'Card Scanner Data',
-    autoSyncDelay: 2000
-};
+// Google OAuth Authentication
 
 let googleUser = null;
-let driveInitialized = false;
-let appFolderId = null;
-let syncTimeout = null;
+let authInitialized = false;
 
-// ==================== INITIALIZATION ====================
-
-async function initGoogleAuth() {
-    try {
-        console.log('🔐 Initializing Google Auth...');
-        
-        // Load Google Identity Services
-        await loadGoogleScript();
-        
-        // Check for stored user
-        const user = getStoredUser();
-        if (user) {
-            googleUser = user;
-            updateAuthUI(true);
-            console.log('✅ Restored session:', user.email);
-            
-            // Call handleUserSignIn if it exists (for Supabase integration)
-            if (typeof handleUserSignIn === 'function') {
-                await handleUserSignIn(user).catch(err => {
-                    console.warn('User management not available:', err.message);
-                });
-            }
-        } else {
-            updateAuthUI(false);
-        }
-        
-        // Initialize sign-in button
-        renderSignInButton();
-        
-        console.log('✅ Google Auth initialized');
-        
-    } catch (err) {
-        console.error('❌ Google Auth failed:', err);
-        showToast('Google Auth unavailable', '⚠️');
+function initGoogleAuth() {
+    if (authInitialized) {
+        console.log('Google Auth already initialized');
+        return;
     }
-}
-
-function loadGoogleScript() {
-    return new Promise((resolve, reject) => {
-        if (typeof google !== 'undefined' && google.accounts) {
-            resolve();
-            return;
-        }
-        
-        const script = document.createElement('script');
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load Google script'));
-        document.head.appendChild(script);
-    });
-}
-
-function renderSignInButton() {
-    const container = document.getElementById('googleSignInBtn');
-    if (!container) {
-        console.warn('Google sign-in button container not found');
+    
+    console.log('🔐 Initializing Google Auth...');
+    
+    // Check if Google API is loaded
+    if (typeof google === 'undefined' || !google.accounts) {
+        console.warn('Google API not loaded yet, retrying...');
+        setTimeout(initGoogleAuth, 1000);
         return;
     }
     
     try {
+        // Initialize Google Sign-In
         google.accounts.id.initialize({
-            client_id: GOOGLE_CONFIG.clientId,
+            client_id: '289056388851-5o34uvkj5gfpgvumtbobqcp6hl4d11rl.apps.googleusercontent.com',
             callback: handleCredentialResponse,
             auto_select: false,
             cancel_on_tap_outside: true
         });
         
-        google.accounts.id.renderButton(
-            container,
-            {
-                theme: 'outline',
-                size: 'large',
-                text: 'signin_with',
-                shape: 'rectangular',
-                width: 250
+        // Render sign-in button if element exists
+        const signInDiv = document.getElementById('googleSignInButton');
+        if (signInDiv) {
+            google.accounts.id.renderButton(
+                signInDiv,
+                { 
+                    theme: 'outline', 
+                    size: 'large',
+                    width: 250,
+                    text: 'signin_with',
+                    shape: 'rectangular'
+                }
+            );
+        }
+        
+        // Try to auto-sign in if previously signed in
+        google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                console.log('Auto sign-in not available');
+                updateAuthUI(null);
             }
-        );
-    } catch (err) {
-        console.error('Error rendering sign-in button:', err);
+        });
+        
+        authInitialized = true;
+        console.log('✅ Google Auth initialized');
+        
+    } catch (error) {
+        console.error('❌ Google Auth initialization error:', error);
     }
 }
 
-async function handleCredentialResponse(response) {
+function handleCredentialResponse(response) {
+    console.log('📝 Received credential response');
+    
     try {
-        const payload = parseJwt(response.credential);
+        // Decode JWT token
+        const credential = response.credential;
+        const payload = parseJwt(credential);
         
-        console.log('🔐 Credential received, requesting access token...');
+        console.log('User signed in:', payload.email);
         
-        // Request access token
-        const tokenResponse = await requestAccessToken();
-        
-        if (!tokenResponse || !tokenResponse.access_token) {
-            throw new Error('Failed to get access token');
-        }
-        
+        // Store user info
         googleUser = {
             id: payload.sub,
             email: payload.email,
             name: payload.name,
             picture: payload.picture,
-            access_token: tokenResponse.access_token,
-            expires_at: Date.now() + (tokenResponse.expires_in * 1000)
+            credential: credential
         };
         
-        storeUser(googleUser);
-        updateAuthUI(true);
+        // Save to localStorage for persistence
+        localStorage.setItem('googleUser', JSON.stringify(googleUser));
+        localStorage.setItem('googleCredential', credential);
         
-        // Call handleUserSignIn if available (Supabase integration)
-        if (typeof handleUserSignIn === 'function') {
-            await handleUserSignIn(googleUser).catch(err => {
-                console.warn('User management not available:', err.message);
-            });
+        // Update UI
+        updateAuthUI(googleUser);
+        
+        // Show success message
+        if (typeof showToast === 'function') {
+            showToast(`Welcome back, ${googleUser.name}!`, '👋');
         }
         
-        showToast(`Welcome, ${googleUser.name}!`, '👋');
+        // Initialize user management if available
+        if (typeof handleUserSignIn === 'function') {
+            handleUserSignIn(googleUser);
+        }
         
-    } catch (err) {
-        console.error('Sign-in error:', err);
-        showToast('Sign-in failed', '❌');
+        // Trigger user management initialization
+        if (typeof initUserManagement === 'function') {
+            setTimeout(() => {
+                initUserManagement();
+            }, 500);
+        }
+        
+    } catch (error) {
+        console.error('❌ Error handling credential:', error);
+        if (typeof showToast === 'function') {
+            showToast('Sign-in failed. Please try again.', '❌');
+        }
     }
-}
-
-function requestAccessToken() {
-    return new Promise((resolve, reject) => {
-        const client = google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CONFIG.clientId,
-            scope: GOOGLE_CONFIG.scopes.join(' '),
-            callback: (response) => {
-                if (response.error) {
-                    reject(new Error(response.error));
-                } else {
-                    resolve(response);
-                }
-            },
-            error_callback: (error) => {
-                reject(new Error(error.message || 'Token request failed'));
-            }
-        });
-        
-        client.requestAccessToken();
-    });
 }
 
 function parseJwt(token) {
@@ -176,179 +120,128 @@ function parseJwt(token) {
                 .join('')
         );
         return JSON.parse(jsonPayload);
-    } catch (err) {
-        console.error('JWT parse error:', err);
+    } catch (error) {
+        console.error('Error parsing JWT:', error);
         return null;
     }
 }
 
-function storeUser(user) {
+function restoreSession() {
+    console.log('🔍 Checking for existing session...');
+    
     try {
-        localStorage.setItem('googleUser', JSON.stringify(user));
-    } catch (err) {
-        console.error('Error storing user:', err);
-    }
-}
-
-function getStoredUser() {
-    try {
-        const stored = localStorage.getItem('googleUser');
-        if (!stored) return null;
+        const savedUser = localStorage.getItem('googleUser');
+        const savedCredential = localStorage.getItem('googleCredential');
         
-        const user = JSON.parse(stored);
-        
-        // Check if token expired
-        if (user.expires_at && user.expires_at < Date.now()) {
-            console.log('Token expired, clearing');
-            localStorage.removeItem('googleUser');
-            return null;
+        if (savedUser && savedCredential) {
+            googleUser = JSON.parse(savedUser);
+            console.log('✅ Restored session:', googleUser.email);
+            
+            // Update UI
+            updateAuthUI(googleUser);
+            
+            if (typeof showToast === 'function') {
+                showToast(`Welcome back, ${googleUser.name}!`, '👋');
+            }
+            
+            // Initialize user management
+            if (typeof handleUserSignIn === 'function') {
+                handleUserSignIn(googleUser);
+            }
+            
+            return true;
+        } else {
+            console.log('No saved session found');
+            updateAuthUI(null);
+            return false;
         }
-        
-        return user;
-    } catch (err) {
-        console.error('Error getting stored user:', err);
-        return null;
+    } catch (error) {
+        console.error('Error restoring session:', error);
+        updateAuthUI(null);
+        return false;
     }
 }
 
-function signOut() {
+function signOutGoogle() {
+    console.log('👋 Signing out...');
+    
     try {
-        googleUser = null;
-        driveInitialized = false;
-        appFolderId = null;
-        
-        localStorage.removeItem('googleUser');
-        
+        // Disable auto-select
         if (typeof google !== 'undefined' && google.accounts) {
             google.accounts.id.disableAutoSelect();
         }
         
-        updateAuthUI(false);
-        showToast('Signed out', '👋');
+        // Clear stored data
+        googleUser = null;
+        localStorage.removeItem('googleUser');
+        localStorage.removeItem('googleCredential');
+        sessionStorage.clear();
         
-        // Reload to reset state
-        setTimeout(() => location.reload(), 500);
-    } catch (err) {
-        console.error('Sign out error:', err);
+        // Update UI
+        updateAuthUI(null);
+        
+        if (typeof showToast === 'function') {
+            showToast('Signed out successfully', '👋');
+        }
+        
+        // Reload page to clear all state
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error signing out:', error);
     }
 }
 
-function updateAuthUI(signedIn) {
-    const signInContainer = document.getElementById('googleSignInBtn');
-    const userInfo = document.getElementById('googleUserInfo');
-    const signOutBtn = document.getElementById('googleSignOutBtn');
-    const driveSection = document.getElementById('driveExportSection');
+// Update authentication UI based on user state
+function updateAuthUI(user) {
+    console.log('🎨 Updating auth UI, user:', user ? user.email : 'none');
     
-    if (signedIn && googleUser) {
-        // Hide sign-in button
-        if (signInContainer) {
-            signInContainer.classList.add('hidden');
-            signInContainer.style.display = 'none';
+    const btnSignIn = document.getElementById('btnSignIn');
+    const userAuthenticated = document.getElementById('userAuthenticated');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+    const userAvatar = document.getElementById('userAvatar');
+    
+    if (user) {
+        // User is signed in
+        console.log('User signed in, showing authenticated UI');
+        if (btnSignIn) btnSignIn.style.display = 'none';
+        if (userAuthenticated) userAuthenticated.style.display = 'flex';
+        
+        if (userName) userName.textContent = user.name || 'User';
+        if (userEmail) userEmail.textContent = user.email || '';
+        if (userAvatar) {
+            userAvatar.src = user.picture || '';
+            userAvatar.alt = user.name || 'User';
         }
-        
-        // Show user info
-        if (userInfo) {
-            userInfo.classList.remove('hidden');
-            userInfo.style.display = 'flex';
-        }
-        
-        if (signOutBtn) {
-            signOutBtn.classList.remove('hidden');
-            signOutBtn.style.display = 'block';
-        }
-        
-        // Note: Drive section disabled for now
-        if (driveSection) {
-            driveSection.classList.add('hidden');
-            driveSection.style.display = 'none';
-        }
-        
-        // Update user info
-        const userName = document.getElementById('userName');
-        const userEmail = document.getElementById('userEmail');
-        const userAvatar = document.getElementById('userAvatar');
-        
-        if (userName) userName.textContent = googleUser.name;
-        if (userEmail) userEmail.textContent = googleUser.email;
-        if (userAvatar) userAvatar.src = googleUser.picture;
     } else {
-        // Show sign-in button
-        if (signInContainer) {
-            signInContainer.classList.remove('hidden');
-            signInContainer.style.display = 'block';
-        }
-        
-        // Hide user info
-        if (userInfo) {
-            userInfo.classList.add('hidden');
-            userInfo.style.display = 'none';
-        }
-        
-        if (signOutBtn) {
-            signOutBtn.classList.add('hidden');
-            signOutBtn.style.display = 'none';
-        }
-        
-        if (driveSection) {
-            driveSection.classList.add('hidden');
-            driveSection.style.display = 'none';
-        }
+        // User is not signed in
+        console.log('User not signed in, showing sign-in button');
+        if (btnSignIn) btnSignIn.style.display = 'block';
+        if (userAuthenticated) userAuthenticated.style.display = 'none';
     }
 }
 
-// ==================== DRIVE API - DISABLED ====================
-// Drive functionality is disabled to avoid errors
-// Can be re-enabled after proper configuration
-
-async function initDriveAPI(accessToken) {
-    console.log('⚠️ Drive API disabled');
-    return;
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 Page loaded, initializing auth...');
     
-    // Original code commented out
-    /*
-    try {
-        console.log('☁️ Initializing Drive API...');
-        await loadGapiScript();
-        await new Promise((resolve) => gapi.load('client', resolve));
-        await gapi.client.init({
-            apiKey: GOOGLE_CONFIG.apiKey,
-            discoveryDocs: GOOGLE_CONFIG.discoveryDocs
-        });
-        gapi.client.setToken({ access_token: accessToken });
-        appFolderId = await getOrCreateAppFolder();
-        driveInitialized = true;
-        console.log('✅ Drive API initialized');
-    } catch (err) {
-        console.error('❌ Drive API init failed:', err);
+    // First try to restore session
+    const restored = restoreSession();
+    
+    // Then initialize Google Auth
+    setTimeout(() => {
+        initGoogleAuth();
+    }, 100);
+});
+
+// Also try to restore session after a delay (in case DOM loads slowly)
+setTimeout(() => {
+    if (!googleUser) {
+        restoreSession();
     }
-    */
-}
+}, 1000);
 
-function loadGapiScript() {
-    return Promise.resolve(); // Disabled
-}
-
-function setupAutoSync() {
-    console.log('✅ Auto-sync enabled (local only - Drive disabled)');
-}
-
-function syncCollectionsToDrive() {
-    console.log('⚠️ Drive sync disabled');
-    return Promise.resolve();
-}
-
-function loadCollectionsFromDrive() {
-    showToast('Drive sync temporarily disabled', '⚠️');
-}
-
-function exportToDriveCSV() {
-    showToast('Drive export temporarily disabled', '⚠️');
-}
-
-function exportToDriveExcel() {
-    showToast('Drive export temporarily disabled', '⚠️');
-}
-
-function showDriveFileBrowser() {
-    showToast('Drive browser temporarily disabled', '⚠️');
-}
+console.log('✅ Google Auth module loaded');
