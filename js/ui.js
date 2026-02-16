@@ -2,39 +2,37 @@
 
 function setStatus(type, state) {
     const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
-    el.className = `status-dot ${state}`;
+    if (el) el.className = `status-dot ${state}`;
 }
 
 function showToast(message, icon = '✓') {
     const toast = document.getElementById('toast');
-    document.getElementById('toastIcon').textContent = icon;
-    document.getElementById('toastMessage').textContent = message;
+    const toastIcon = document.getElementById('toastIcon');
+    const toastMessage = document.getElementById('toastMessage');
+    
+    if (!toast || !toastIcon || !toastMessage) return;
+    
+    toastIcon.textContent = icon;
+    toastMessage.textContent = message;
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
 function showLoading(show, text = 'Processing...') {
     const overlay = document.getElementById('loadingOverlay');
-    document.getElementById('loadingText').textContent = text;
+    const loadingText = document.getElementById('loadingText');
+    
+    if (!overlay || !loadingText) return;
+    
+    loadingText.textContent = text;
     overlay.classList.toggle('active', show);
 }
 
 function setProgress(percent) {
-    document.getElementById('progressFill').style.width = `${percent}%`;
-}
-
-function openSettings() {
-    document.getElementById('settingsModal').classList.add('active');
-    document.getElementById('toggleAutoDetect').checked = config.autoDetect;
-    document.getElementById('togglePerspective').checked = config.perspective;
-    document.getElementById('toggleRegionOcr').checked = config.regionOcr;
-    document.getElementById('selectQuality').value = config.quality;
-    document.getElementById('rangeThreshold').value = config.threshold;
-    document.getElementById('thresholdValue').textContent = config.threshold;
-}
-
-function closeSettings() {
-    document.getElementById('settingsModal').classList.remove('active');
+    const progressFill = document.getElementById('progressFill');
+    if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+    }
 }
 
 function updateStats() {
@@ -44,12 +42,20 @@ function updateStats() {
     const paid = stats.scanned - stats.free;
     const rate = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
     
-    document.getElementById('statFree').textContent = stats.free;
-    document.getElementById('statPaid').textContent = paid;
-    document.getElementById('statCost').textContent = `$${stats.cost.toFixed(2)}`;
-    document.getElementById('statRate').textContent = `${rate}%`;
+    const statFree = document.getElementById('statFree');
+    const statPaid = document.getElementById('statPaid');
+    const statCost = document.getElementById('statCost');
+    const statRate = document.getElementById('statRate');
     
-    document.getElementById('statsBar').classList.toggle('hidden', stats.scanned === 0);
+    if (statFree) statFree.textContent = stats.free;
+    if (statPaid) statPaid.textContent = paid;
+    if (statCost) statCost.textContent = `$${stats.cost.toFixed(2)}`;
+    if (statRate) statRate.textContent = `${rate}%`;
+    
+    const statsBar = document.getElementById('statsBar');
+    if (statsBar) {
+        statsBar.classList.toggle('hidden', stats.scanned === 0);
+    }
 }
 
 function renderCards() {
@@ -60,15 +66,17 @@ function renderCards() {
     const empty = document.getElementById('emptyState');
     const actionBar = document.getElementById('actionBar');
     
+    if (!grid) return;
+    
     if (cards.length === 0) {
-        empty.classList.remove('hidden');
-        actionBar.classList.add('hidden');
+        if (empty) empty.classList.remove('hidden');
+        if (actionBar) actionBar.classList.add('hidden');
         grid.innerHTML = '';
         return;
     }
     
-    empty.classList.add('hidden');
-    actionBar.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (actionBar) actionBar.classList.remove('hidden');
     
     grid.innerHTML = cards.map((card, i) => `
         <div class="card">
@@ -116,7 +124,9 @@ function initUploadArea() {
     
     // Click to upload
     uploadArea.addEventListener('click', (e) => {
-        if (e.target.classList.contains('upload-action-btn')) {
+        if (e.target.classList.contains('upload-action-btn') || 
+            e.target.classList.contains('btn-primary') ||
+            e.target.classList.contains('btn-group-item')) {
             return; // Let button handlers deal with it
         }
         fileInput.click();
@@ -154,24 +164,163 @@ function initUploadArea() {
     });
 }
 
-// Mobile camera capture
-function capturePhoto(e) {
-    e.stopPropagation();
+// ========================================
+// COMPATIBILITY FUNCTIONS FOR REDESIGNED UI
+// ========================================
+
+// Settings modal
+window.openSettings = function() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) {
+        modal.classList.add('active');
+        
+        // Update toggle values
+        const toggleAutoDetect = document.getElementById('toggleAutoDetect');
+        const togglePerspective = document.getElementById('togglePerspective');
+        const toggleRegionOcr = document.getElementById('toggleRegionOcr');
+        const selectQuality = document.getElementById('selectQuality');
+        const rangeThreshold = document.getElementById('rangeThreshold');
+        const thresholdValue = document.getElementById('thresholdValue');
+        
+        if (typeof config !== 'undefined') {
+            if (toggleAutoDetect) toggleAutoDetect.checked = config.autoDetect;
+            if (togglePerspective) togglePerspective.checked = config.perspective;
+            if (toggleRegionOcr) toggleRegionOcr.checked = config.regionOcr;
+            if (selectQuality) selectQuality.value = config.quality;
+            if (rangeThreshold) rangeThreshold.value = config.threshold;
+            if (thresholdValue) thresholdValue.textContent = config.threshold;
+        }
+    } else {
+        showToast('Settings coming soon!', '⚙️');
+    }
+};
+
+window.closeSettings = function() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+};
+
+// Camera capture (mobile)
+window.capturePhoto = function(e) {
+    if (e) e.stopPropagation();
     const fileInput = document.getElementById('fileInput');
     if (fileInput) {
         fileInput.setAttribute('capture', 'environment');
         fileInput.setAttribute('accept', 'image/*');
         fileInput.click();
+        
+        // Remove capture attribute after click so gallery works normally
+        setTimeout(() => {
+            fileInput.removeAttribute('capture');
+        }, 100);
     }
-}
+};
 
-// Mobile gallery picker
-function chooseFromGallery(e) {
-    e.stopPropagation();
+// Choose from gallery
+window.chooseFromGallery = function(e) {
+    if (e) e.stopPropagation();
     const fileInput = document.getElementById('fileInput');
     if (fileInput) {
         fileInput.removeAttribute('capture');
         fileInput.setAttribute('accept', 'image/*');
         fileInput.click();
     }
-}
+};
+
+// Authentication UI
+window.showSignInPrompt = function() {
+    // Try to trigger Google sign-in
+    if (typeof google !== 'undefined' && google.accounts) {
+        google.accounts.id.prompt();
+    } else if (typeof initGoogleAuth === 'function') {
+        initGoogleAuth();
+    } else {
+        showToast('Please enable Google Sign-In', '🔐');
+    }
+};
+
+window.updateAuthUI = function(user) {
+    const btnSignIn = document.getElementById('btnSignIn');
+    const userAuthenticated = document.getElementById('userAuthenticated');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+    const userAvatar = document.getElementById('userAvatar');
+    
+    if (user) {
+        // User is signed in
+        if (btnSignIn) btnSignIn.style.display = 'none';
+        if (userAuthenticated) userAuthenticated.style.display = 'flex';
+        
+        if (userName) userName.textContent = user.name || 'User';
+        if (userEmail) userEmail.textContent = user.email || '';
+        if (userAvatar) {
+            userAvatar.src = user.picture || user.profilePicture || '';
+            userAvatar.alt = user.name || 'User';
+        }
+    } else {
+        // User is not signed in
+        if (btnSignIn) btnSignIn.style.display = 'block';
+        if (userAuthenticated) userAuthenticated.style.display = 'none';
+    }
+};
+
+window.toggleUserMenu = function() {
+    // Simple menu toggle - can be expanded later
+    const dropdown = document.getElementById('userDropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('active');
+    } else {
+        // For now, just show a toast
+        showToast('User menu', '👤');
+    }
+};
+
+window.signOut = function() {
+    if (!confirm('Sign out?')) return;
+    
+    // Google sign out
+    if (typeof google !== 'undefined' && google.accounts) {
+        google.accounts.id.disableAutoSelect();
+    }
+    
+    // Clear all local data
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Clear global user variables
+    if (typeof googleUser !== 'undefined') {
+        window.googleUser = null;
+    }
+    if (typeof currentUser !== 'undefined') {
+        window.currentUser = null;
+    }
+    
+    // Update UI
+    updateAuthUI(null);
+    
+    // Show toast
+    showToast('Signed out successfully', '👋');
+    
+    // Reload page
+    setTimeout(() => {
+        window.location.reload();
+    }, 1000);
+};
+
+// Initialize auth UI on load
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if user is already signed in
+    setTimeout(() => {
+        if (typeof googleUser !== 'undefined' && googleUser) {
+            updateAuthUI(googleUser);
+        } else if (typeof currentUser !== 'undefined' && currentUser) {
+            updateAuthUI(currentUser);
+        } else {
+            updateAuthUI(null);
+        }
+    }, 500);
+});
+
+console.log('✅ UI helpers loaded');
