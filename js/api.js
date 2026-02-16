@@ -1,7 +1,5 @@
 // Anthropic API Functions
 
-let apiKey = localStorage.getItem('api_key') || '';
-
 function saveApiKey() {
     const input = document.getElementById('apiKeyInput');
     const key = input.value.trim();
