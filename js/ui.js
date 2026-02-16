@@ -10,7 +10,10 @@ function showToast(message, icon = '✓') {
     const toastIcon = document.getElementById('toastIcon');
     const toastMessage = document.getElementById('toastMessage');
     
-    if (!toast || !toastIcon || !toastMessage) return;
+    if (!toast || !toastIcon || !toastMessage) {
+        console.log('Toast elements not found, showing alert:', message);
+        return;
+    }
     
     toastIcon.textContent = icon;
     toastMessage.textContent = message;
@@ -152,12 +155,10 @@ function initUploadArea() {
         
         if (files.length > 0) {
             const fileInput = document.getElementById('fileInput');
-            // Create a new FileList-like object
             const dataTransfer = new DataTransfer();
             files.forEach(file => dataTransfer.items.add(file));
             fileInput.files = dataTransfer.files;
             
-            // Trigger the change event properly
             const event = new Event('change', { bubbles: true });
             fileInput.dispatchEvent(event);
         }
@@ -211,7 +212,6 @@ window.capturePhoto = function(e) {
         fileInput.setAttribute('accept', 'image/*');
         fileInput.click();
         
-        // Remove capture attribute after click so gallery works normally
         setTimeout(() => {
             fileInput.removeAttribute('capture');
         }, 100);
@@ -231,7 +231,6 @@ window.chooseFromGallery = function(e) {
 
 // Authentication UI
 window.showSignInPrompt = function() {
-    // Try to trigger Google sign-in
     if (typeof google !== 'undefined' && google.accounts) {
         google.accounts.id.prompt();
     } else if (typeof initGoogleAuth === 'function') {
@@ -249,7 +248,6 @@ window.updateAuthUI = function(user) {
     const userAvatar = document.getElementById('userAvatar');
     
     if (user) {
-        // User is signed in
         if (btnSignIn) btnSignIn.style.display = 'none';
         if (userAuthenticated) userAuthenticated.style.display = 'flex';
         
@@ -260,19 +258,16 @@ window.updateAuthUI = function(user) {
             userAvatar.alt = user.name || 'User';
         }
     } else {
-        // User is not signed in
         if (btnSignIn) btnSignIn.style.display = 'block';
         if (userAuthenticated) userAuthenticated.style.display = 'none';
     }
 };
 
 window.toggleUserMenu = function() {
-    // Simple menu toggle - can be expanded later
     const dropdown = document.getElementById('userDropdown');
     if (dropdown) {
         dropdown.classList.toggle('active');
     } else {
-        // For now, just show a toast
         showToast('User menu', '👤');
     }
 };
@@ -280,16 +275,13 @@ window.toggleUserMenu = function() {
 window.signOut = function() {
     if (!confirm('Sign out?')) return;
     
-    // Google sign out
     if (typeof google !== 'undefined' && google.accounts) {
         google.accounts.id.disableAutoSelect();
     }
     
-    // Clear all local data
     localStorage.clear();
     sessionStorage.clear();
     
-    // Clear global user variables
     if (typeof googleUser !== 'undefined') {
         window.googleUser = null;
     }
@@ -297,36 +289,20 @@ window.signOut = function() {
         window.currentUser = null;
     }
     
-    // Update UI
     updateAuthUI(null);
-    
-    // Show toast
     showToast('Signed out successfully', '👋');
     
-    // Reload page
     setTimeout(() => {
         window.location.reload();
     }, 1000);
 };
 
-// Initialize auth UI on load
-document.addEventListener('DOMContentLoaded', () => {
-    // Check if user is already signed in
-    setTimeout(() => {
-        if (typeof googleUser !== 'undefined' && googleUser) {
-            updateAuthUI(googleUser);
-        } else if (typeof currentUser !== 'undefined' && currentUser) {
-            updateAuthUI(currentUser);
-        } else {
-            updateAuthUI(null);
-        }
-    }, 500);
-}
-                         // Screen reader announcements (for accessibility)
+// Screen reader announcements (accessibility)
 window.announceToScreenReader = function(message) {
     const announcement = document.createElement('div');
     announcement.setAttribute('role', 'status');
     announcement.setAttribute('aria-live', 'polite');
+    announcement.setAttribute('aria-atomic', 'true');
     announcement.className = 'sr-only';
     announcement.style.position = 'absolute';
     announcement.style.left = '-10000px';
@@ -337,9 +313,23 @@ window.announceToScreenReader = function(message) {
     document.body.appendChild(announcement);
     
     setTimeout(() => {
-        document.body.removeChild(announcement);
+        if (announcement.parentNode) {
+            document.body.removeChild(announcement);
+        }
     }, 1000);
 };
-                         );
+
+// Initialize auth UI on load
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if (typeof googleUser !== 'undefined' && googleUser) {
+            updateAuthUI(googleUser);
+        } else if (typeof currentUser !== 'undefined' && currentUser) {
+            updateAuthUI(currentUser);
+        } else {
+            updateAuthUI(null);
+        }
+    }, 500);
+});
 
 console.log('✅ UI helpers loaded');
