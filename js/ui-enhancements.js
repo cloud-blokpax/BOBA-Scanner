@@ -475,7 +475,13 @@ function setupNetworkIndicator() {
 // INSTALL PROMPT (PWA)
 // ========================================
 
-let deferredPrompt;
+let deferredPrompt = null;
+// Check if already declared elsewhere
+if (typeof window.deferredPrompt !== 'undefined') {
+    deferredPrompt = window.deferredPrompt;
+} else {
+    window.deferredPrompt = null;
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
