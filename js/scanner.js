@@ -1,12 +1,41 @@
 // Main Scanner Logic
 
 async function handleFiles(e) {
-    const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
-    if (!files.length) return;
+    console.log('handleFiles called with:', e);
+    
+    // Handle multiple call patterns
+    let files;
+    
+    if (!e) {
+        // Called without parameter - get files from input directly
+        const fileInput = document.getElementById('fileInput');
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            console.warn('No files selected');
+            return;
+        }
+        files = Array.from(fileInput.files).filter(f => f.type.startsWith('image/'));
+    } else if (e.target && e.target.files) {
+        // Standard event object
+        files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+    } else if (e.dataTransfer && e.dataTransfer.files) {
+        // Drag and drop event
+        files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    } else {
+        console.error('Invalid event object:', e);
+        return;
+    }
+    
+    if (!files.length) {
+        console.warn('No image files found');
+        return;
+    }
+    
+    console.log(`Processing ${files.length} file(s)...`);
     
     if (files.length > 1) {
         if (!confirm(`Scan ${files.length} cards?`)) {
-            e.target.value = '';
+            const fileInput = document.getElementById('fileInput');
+            if (fileInput) fileInput.value = '';
             return;
         }
     }
@@ -17,10 +46,14 @@ async function handleFiles(e) {
         if (i < files.length - 1) await new Promise(r => setTimeout(r, 300));
     }
     
-    e.target.value = '';
+    // Clear file input
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) fileInput.value = '';
 }
 
 async function processImage(file) {
+    console.log('Processing image:', file.name);
+    
     try {
         const uploadArea = document.getElementById('uploadArea');
         uploadArea.classList.add('processing');
@@ -60,10 +93,13 @@ async function processImage(file) {
     } catch (err) {
         console.log('OCR failed, trying AI:', err.message);
         
-        if (!apiKey) {
-            showLoading(false);
-            showToast('OCR failed. Add API key?', '⚠️');
-            return;
+        // Check if we need to check API limits
+        if (typeof canMakeApiCall === 'function') {
+            const canCall = await canMakeApiCall();
+            if (!canCall) {
+                showLoading(false);
+                return; // Limit modal already shown
+            }
         }
         
         try {
@@ -72,6 +108,7 @@ async function processImage(file) {
             const compressed = await compressImage(file);
             setProgress(70);
             
+            console.log('Calling API with image data...');
             const data = await callAPI(compressed);
             setProgress(85);
             
@@ -139,8 +176,14 @@ async function processImage(file) {
             addCard(match, imageUrl, file.name, 'ai');
             setProgress(100);
             showToast(`${match.Name} (${cardNum}) scanned (AI)`, '💰');
-            collection.stats.cost += config.aiCost;
-            saveCollections();
+            
+            // Track API call if function exists
+            if (typeof trackApiCall === 'function') {
+                await trackApiCall('card_scan', true, config.aiCost, 1);
+            } else {
+                collection.stats.cost += config.aiCost;
+                saveCollections();
+            }
             
         } catch (aiErr) {
             console.error('AI scan failed:', aiErr.message);
@@ -148,7 +191,8 @@ async function processImage(file) {
         }
     } finally {
         showLoading(false);
-        document.getElementById('uploadArea').classList.remove('processing');
+        const uploadArea = document.getElementById('uploadArea');
+        if (uploadArea) uploadArea.classList.remove('processing');
         setProgress(0);
     }
 }
@@ -174,6 +218,11 @@ function addCard(match, imageUrl, fileName, type, confidence = null) {
     collection.cards.push(card);
     collection.stats.scanned++;
     if (type === 'free') collection.stats.free++;
+    
+    // Track card added if function exists
+    if (typeof trackCardAdded === 'function') {
+        trackCardAdded();
+    }
     
     saveCollections();
     updateStats();
