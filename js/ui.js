@@ -321,6 +321,25 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAuthUI(null);
         }
     }, 500);
-});
+}
+                         // Screen reader announcements (for accessibility)
+window.announceToScreenReader = function(message) {
+    const announcement = document.createElement('div');
+    announcement.setAttribute('role', 'status');
+    announcement.setAttribute('aria-live', 'polite');
+    announcement.className = 'sr-only';
+    announcement.style.position = 'absolute';
+    announcement.style.left = '-10000px';
+    announcement.style.width = '1px';
+    announcement.style.height = '1px';
+    announcement.style.overflow = 'hidden';
+    announcement.textContent = message;
+    document.body.appendChild(announcement);
+    
+    setTimeout(() => {
+        document.body.removeChild(announcement);
+    }, 1000);
+};
+                         );
 
 console.log('✅ UI helpers loaded');
