@@ -3,11 +3,5 @@
     "api/anthropic.js": {
       "maxDuration": 30
     }
-  },
-  "rewrites": [
-    {
-      "source": "/api/anthropic",
-      "destination": "/api/anthropic.js"
-    }
-  ]
+  }
 }
