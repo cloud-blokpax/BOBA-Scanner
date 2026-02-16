@@ -21,7 +21,7 @@ function initGoogleAuth() {
     try {
         // Initialize Google Sign-In
         google.accounts.id.initialize({
-            client_id: '289056388851-5o34uvkj5gfpgvumtbobqcp6hl4d11rl.apps.googleusercontent.com',
+            client_id: '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com',
             callback: handleCredentialResponse,
             auto_select: false,
             cancel_on_tap_outside: true
