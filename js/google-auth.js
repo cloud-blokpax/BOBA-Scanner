@@ -24,7 +24,8 @@ function initGoogleAuth() {
             client_id: '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com',
             callback: handleCredentialResponse,
             auto_select: false,
-            cancel_on_tap_outside: true
+            cancel_on_tap_outside: true,
+            use_fedcm_for_prompt: false 
         });
         
         // Render sign-in button if element exists
