@@ -63,12 +63,17 @@ export default async function handler(req, res) {
                         {
                             type: 'text',
                             text: `Analyze this Bo Jackson trading card image and extract the following information:
+
+CRITICAL: You MUST extract the hero/character name from the card. Look at the top of the card for the character name.
+
+Extract these fields:
 1. Year (e.g., "2023")
-2. Set name (e.g., "Base Set", "Refractor", "Chrome", etc.)
-3. Card number (e.g., "001", "42", "BS-10", etc.)
-4. Parallel/Pose type (e.g., "Standard", "Gold Refractor", "Base", etc.)
+2. Set name (e.g., "Base Set", "Battle Arena", etc.)
+3. Card number (e.g., "BF-22", "001", etc.)
+4. Parallel/Pose type (e.g., "Glow", "Standard", "Base", etc.)
 5. Weapon shown on card (if any, otherwise "None")
 6. Power level (if shown on card, otherwise "None")
+7. Hero/Character name (REQUIRED - this is the name at the top of the card)
 
 Return ONLY a JSON object with this exact format, no other text:
 {
@@ -77,9 +82,11 @@ Return ONLY a JSON object with this exact format, no other text:
   "cardNumber": "###",
   "pose": "Parallel/Pose Type",
   "weapon": "Weapon Name or None",
-  "power": "Power Level or None"
+  "power": "Power Level or None",
+  "hero": "Character Name"
 }
 
+IMPORTANT: The "hero" field is REQUIRED and must contain the character name from the top of the card.
 Be precise and extract exactly what you see on the card.`
                         }
                     ]
