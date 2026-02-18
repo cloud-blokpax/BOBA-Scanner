@@ -105,10 +105,8 @@ async function callAPI(imageUrl) {
         let base64Data;
         
         if (imageUrl.startsWith('data:image')) {
-            // Data URL - extract base64 part
             base64Data = imageUrl.split(',')[1];
         } else {
-            // Blob URL - convert to base64
             const response = await fetch(imageUrl);
             const blob = await response.blob();
             
@@ -116,7 +114,6 @@ async function callAPI(imageUrl) {
                 const reader = new FileReader();
                 reader.onloadend = () => {
                     const result = reader.result;
-                    // Extract base64 part after comma
                     const base64 = result.includes(',') ? result.split(',')[1] : result;
                     resolve(base64);
                 };
@@ -127,15 +124,14 @@ async function callAPI(imageUrl) {
         
         console.log('📤 Sending image data... (base64 length:', base64Data?.length || 0, ')');
         
-        // Verify we have data
         if (!base64Data || base64Data.length === 0) {
             throw new Error('Failed to convert image to base64');
         }
         
-        // CRITICAL: Try both field names that your API might expect
+        // Call API with improved prompt
         const requestBody = {
-            image: base64Data,      // Try this first
-            imageData: base64Data,  // Fallback
+            image: base64Data,
+            imageData: base64Data,
             prompt: `You are analyzing a Bo Jackson trading card. Extract the following information:
 
 CRITICAL LOCATIONS ON THE CARD:
@@ -173,15 +169,11 @@ Return ONLY valid JSON:
 }
 
 Common OCR errors to avoid:
-- 6 vs 8 (BLBF-64 vs BLBF-84)
-- 0 vs O
-- 1 vs I
+- 6 vs 8, 0 vs O, 1 vs I
 
 Return ONLY the JSON object, no explanations.`
+        };
         
-        console.log('📤 Request body keys:', Object.keys(requestBody));
-        
-        // Call Vercel API
         const apiResponse = await fetch('/api/anthropic', {
             method: 'POST',
             headers: {
@@ -201,7 +193,6 @@ Return ONLY the JSON object, no explanations.`
         const data = await apiResponse.json();
         console.log('✅ Full API response:', data);
         
-        // Extract text from Claude's response
         const textContent = data.content?.find(c => c.type === 'text');
         if (!textContent) {
             throw new Error('No text content in API response');
@@ -210,7 +201,6 @@ Return ONLY the JSON object, no explanations.`
         const rawText = textContent.text;
         console.log('Claude raw text:', rawText);
         
-        // Parse JSON from response
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             throw new Error('No JSON found in response');
