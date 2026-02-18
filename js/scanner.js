@@ -136,35 +136,48 @@ async function callAPI(imageUrl) {
         const requestBody = {
             image: base64Data,      // Try this first
             imageData: base64Data,  // Fallback
-            prompt: `Extract the following information from this Bo Jackson trading card image:
+            prompt: `You are analyzing a Bo Jackson trading card. Extract the following information:
 
-Look for:
-- Card number (format like "BLBF-127" or "BF-108")
-- Hero/Character name
-- Year
-- Set name
-- Parallel/Pose type
-- Weapon type
-- Power level
+CRITICAL LOCATIONS ON THE CARD:
+1. CARD NUMBER - Look at the BOTTOM LEFT corner
+   - Format: Letters + dash + numbers (e.g., "BLBF-84", "BF-108", "AAAA-12")
+   - This is NOT the power number in the top right!
+   - Common formats: BLBF-XXX, BF-XXX, AAAA-XXX
 
-Return ONLY valid JSON with these exact keys:
+2. POWER - Look at the TOP RIGHT corner in a circle/badge
+   - This is just a number (e.g., "125", "140", "130")
+   - DO NOT confuse this with the card number!
+
+3. HERO NAME - Usually printed prominently near the top
+   - May be in all caps
+   - Look for names like "UNIBROW", "DONNY BUCKETS", etc.
+
+4. SET NAME - Usually near bottom or on a banner
+   - Examples: "Battle Arena", "Alpha Edition", "Griffey Edition"
+
+5. YEAR - Usually "2023" or similar
+
+IMPORTANT DISTINCTIONS:
+- Card Number (bottom left): "BLBF-84" ✓
+- Power Number (top right): "125" ✗ (NOT the card number!)
+
+Return ONLY valid JSON:
 {
-  "cardNumber": "BLBF-127",
-  "hero": "Donny Buckets",
+  "cardNumber": "BLBF-84",
+  "hero": "UNIBROW",
   "year": "2023",
   "set": "Battle Arena",
   "pose": "First Edition",
-  "weapon": "Fire",
-  "power": "130"
+  "weapon": "None",
+  "power": "125"
 }
 
-CRITICAL: Look carefully at card numbers. Common OCR errors:
+Common OCR errors to avoid:
 - 6 vs 8 (BLBF-64 vs BLBF-84)
 - 0 vs O
 - 1 vs I
 
 Return ONLY the JSON object, no explanations.`
-        };
         
         console.log('📤 Request body keys:', Object.keys(requestBody));
         
