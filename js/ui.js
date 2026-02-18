@@ -126,14 +126,15 @@ function initUploadArea() {
     }
     
     // Click to upload
-    uploadArea.addEventListener('click', (e) => {
-        if (e.target.classList.contains('upload-action-btn') || 
-            e.target.classList.contains('btn-primary') ||
-            e.target.classList.contains('btn-group-item')) {
-            return; // Let button handlers deal with it
-        }
-        fileInput.click();
-    });
+uploadArea.addEventListener('click', (e) => {
+    if (e.target.classList.contains('upload-action-btn') || 
+        e.target.classList.contains('btn-primary') ||
+        e.target.classList.contains('btn-group-item') ||
+        e.target.closest('button')) {  // ← ADD THIS LINE
+        return;
+    }
+    fileInput.click();
+});
     
     // Drag and drop
     uploadArea.addEventListener('dragover', (e) => {
