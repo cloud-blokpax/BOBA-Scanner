@@ -150,35 +150,45 @@ function initUploadArea() {
         return;
     }
     
-    // SIMPLE: Just open file picker on any click in upload area
-    uploadArea.addEventListener('click', (e) => {
+    // CRITICAL: Clone to remove ALL existing event listeners
+    const newUploadArea = uploadArea.cloneNode(true);
+    uploadArea.parentNode.replaceChild(newUploadArea, uploadArea);
+    
+    // Add ONE click handler
+    newUploadArea.addEventListener('click', function(e) {
         console.log('Upload area clicked');
-        fileInput.click();
+        
+        // Get fresh reference to file input (in case it was cloned)
+        const input = document.getElementById('fileInput');
+        if (input) {
+            input.click();
+        }
     });
     
     // Drag and drop
-    uploadArea.addEventListener('dragover', (e) => {
+    newUploadArea.addEventListener('dragover', function(e) {
         e.preventDefault();
-        uploadArea.classList.add('dragover');
+        newUploadArea.classList.add('dragover');
     });
     
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
+    newUploadArea.addEventListener('dragleave', function() {
+        newUploadArea.classList.remove('dragover');
     });
     
-    uploadArea.addEventListener('drop', (e) => {
+    newUploadArea.addEventListener('drop', function(e) {
         e.preventDefault();
-        uploadArea.classList.remove('dragover');
+        newUploadArea.classList.remove('dragover');
         
         const files = Array.from(e.dataTransfer.files).filter(f => 
             f.type.startsWith('image/')
         );
         
         if (files.length > 0) {
+            const input = document.getElementById('fileInput');
             const dataTransfer = new DataTransfer();
             files.forEach(file => dataTransfer.items.add(file));
-            fileInput.files = dataTransfer.files;
-            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            input.files = dataTransfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
         }
     });
 }
