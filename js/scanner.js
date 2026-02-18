@@ -1,170 +1,106 @@
-// Main Scanner Logic
+// Card Scanner - Process Images and Extract Data
 
 async function handleFiles(e) {
     console.log('handleFiles called with:', e);
+    const files = e.target.files || e.dataTransfer?.files;
     
-    // Handle multiple call patterns
-    let files;
-    
-    if (!e) {
-        // Called without parameter - get files from input directly
-        const fileInput = document.getElementById('fileInput');
-        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-            console.warn('No files selected');
-            return;
-        }
-        files = Array.from(fileInput.files).filter(f => f.type.startsWith('image/'));
-    } else if (e.target && e.target.files) {
-        // Standard event object
-        files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
-    } else if (e.dataTransfer && e.dataTransfer.files) {
-        // Drag and drop event
-        files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-    } else {
-        console.error('Invalid event object:', e);
+    if (!files || files.length === 0) {
+        console.log('No files selected');
         return;
     }
     
-    if (!files.length) {
-        console.warn('No image files found');
-        return;
-    }
+    // Reset progress
+    setProgress(0);
     
     console.log(`Processing ${files.length} file(s)...`);
     
-    if (files.length > 1) {
-        if (!confirm(`Scan ${files.length} cards?`)) {
-            const fileInput = document.getElementById('fileInput');
-            if (fileInput) fileInput.value = '';
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) {
+            console.warn(`Skipping non-image file: ${file.name}`);
+            continue;
+        }
+        
+        setProgress((i / files.length) * 100);
+        
+        try {
+            await processImage(file);
+        } catch (error) {
+            console.error(`Error processing ${file.name}:`, error);
+            showToast(`Failed to process ${file.name}`, '❌');
+        }
+    }
+    
+    // Reset file input
+    e.target.value = '';
+}
+
+async function processImage(file) {
+    console.log(`Processing image: ${file.name}`);
+    
+    const imageUrl = URL.createObjectURL(file);
+    const processed = await preprocessImage(imageUrl);
+    
+    let cardNum = null;
+    let heroName = null;
+    let confidence = 0;
+    let match = null;
+    
+    // Try OCR first
+    if (ready.ocr) {
+        try {
+            const ocrResult = await scanWithOCR(processed);
+            cardNum = ocrResult.cardNumber;
+            heroName = ocrResult.heroName;
+            confidence = ocrResult.confidence || 0;
+            
+            if (confidence >= 70 && cardNum) {
+                match = findCard(cardNum, heroName);
+                
+                if (match) {
+                    console.log('✅ OCR match found:', match.Name);
+                    addCard(match, processed, file.name, 'free', confidence);
+                    setProgress(100);
+                    showToast(`${match.Name} (${cardNum}) scanned (Free OCR)`, '🆓');
+                    return;
+                }
+            }
+        } catch (err) {
+            console.log('OCR failed, trying AI:', err.message);
+        }
+    }
+    
+    // OCR failed or low confidence - try AI
+    console.log('OCR failed, trying AI:', confidence < 70 ? 'Low confidence' : 'undefined');
+    
+    // Check if user can make API call
+    if (typeof canMakeApiCall === 'function') {
+        const canCall = await canMakeApiCall();
+        if (!canCall) {
+            console.log('❌ API call limit reached');
+            URL.revokeObjectURL(imageUrl);
+            URL.revokeObjectURL(processed);
             return;
         }
     }
     
-    for (let i = 0; i < files.length; i++) {
-        showLoading(true, `Processing ${i + 1}/${files.length}...`);
-        await processImage(files[i]);
-        if (i < files.length - 1) await new Promise(r => setTimeout(r, 300));
-    }
-    
-    // Clear file input
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) fileInput.value = '';
-}
-
-async function processImage(file) {
-    console.log('Processing image:', file.name);
-    
     try {
-        const uploadArea = document.getElementById('uploadArea');
-        uploadArea.classList.add('processing');
+        console.log('Calling API with image data...');
+        const extracted = await callAPI(processed);
         
-        setProgress(0);
-        const imageUrl = URL.createObjectURL(file);
-        setProgress(10);
-        
-        showLoading(true, 'Detecting card...');
-        const processed = config.autoDetect ? await detectCard(imageUrl) : imageUrl;
-        setProgress(30);
-        
-        showLoading(true, 'Reading card...');
-        const { text, confidence } = await runOCR(processed);
-        setProgress(60);
-        
-        const cardNumber = extractCardNumber(text);
-        console.log({ text, confidence, cardNumber });
-        
-        if (!cardNumber || confidence < config.threshold) {
-            throw new Error('Low confidence');
+        if (!extracted || !extracted.cardNumber) {
+            throw new Error('No card data extracted from AI');
         }
         
-        showLoading(true, 'Looking up...');
-        const match = findCard(cardNumber, null);
-        setProgress(80);
+        cardNum = extracted.cardNumber;
+        heroName = extracted.hero;
         
-        if (!match) {
-            console.warn('⚠️ Card number found but not unique or not in database - need AI');
-            throw new Error('Multiple cards with this number or not found - need AI');
-        }
+        console.log('✅ Extracted data:', { cardNumber: cardNum, hero: heroName });
         
-        addCard(match, processed, file.name, 'free', confidence);
-        setProgress(100);
-        showToast(`Card ${cardNumber} scanned (FREE)`, '🎉');
+        // Find card in database
+        match = findCard(cardNum, heroName);
         
-    } catch (err) {
-        console.log('OCR failed, trying AI:', err.message);
-        
-        // Check if we need to check API limits
-        if (typeof canMakeApiCall === 'function') {
-            const canCall = await canMakeApiCall();
-            if (!canCall) {
-                showLoading(false);
-                return; // Limit modal already shown
-            }
-        }
-        
-        try {
-            showLoading(true, 'Using AI...');
-            const imageUrl = URL.createObjectURL(file);
-            const compressed = await compressImage(file);
-            setProgress(70);
-            
-            console.log('Calling API with image data...');
-            const data = await callAPI(compressed);
-            setProgress(85);
-            
-            console.log('Full API response:', data);
-            
-            if (!data.content || !data.content[0] || !data.content[0].text) {
-                throw new Error('Empty or invalid response from AI');
-            }
-            
-            const rawText = data.content[0].text.replace(/```json|```/g, '').trim();
-            console.log('Claude raw text:', rawText);
-            
-            let parsed;
-            try {
-                parsed = JSON.parse(rawText);
-            } catch(e) {
-                throw new Error('Claude response not valid JSON: ' + rawText);
-            }
-            
-            const cardNum = parsed.cardNumber;
-            const heroName = parsed.hero;
-            
-            if (!cardNum) {
-                throw new Error('AI did not extract a card number');
-            }
-            
-            if (!heroName) {
-                console.warn('⚠️ AI did not extract hero name - may cause issues with duplicate card numbers');
-            }
-            
-            const cardNumPattern = /^[A-Z]{2,4}-\d{2,4}$/i;
-            if (!cardNumPattern.test(cardNum)) {
-                console.warn(`⚠️ Warning: Card number "${cardNum}" has unusual format`);
-            }
-            
-            console.log('✅ Extracted data:', { cardNumber: cardNum, hero: heroName });
-            
-            const match = findCard(cardNum, heroName);
-            
-            if (!match) {
-                const normalized = String(cardNum).toUpperCase().trim();
-                const similar = database
-                    .filter(c => {
-                        const dbNum = String(c['Card Number'] || '').toUpperCase().trim();
-                        return dbNum === normalized;
-                    })
-                    .slice(0, 10)
-                    .map(c => ({ num: c['Card Number'], name: c.Name, set: c.Set }));
-                
-                console.error('❌ Card not found in database');
-                console.log('Searched for:', { cardNumber: normalized, hero: heroName });
-                console.log('All cards with number', normalized + ':', similar);
-                
-                throw new Error(`Card "${cardNum}" with hero "${heroName}" not found`);
-            }
-            
+        if (match) {
             console.log('✅ Perfect match found:', {
                 cardNumber: match['Card Number'],
                 hero: match.Name,
@@ -172,45 +108,53 @@ async function processImage(file) {
                 cardId: match['Card ID']
             });
             
-            const collection = getCurrentCollection();
             addCard(match, imageUrl, file.name, 'ai');
             setProgress(100);
             showToast(`${match.Name} (${cardNum}) scanned (AI)`, '💰');
             
             // Track API call if function exists
             if (typeof trackApiCall === 'function') {
-                await trackApiCall('card_scan', true, config.aiCost, 1);
-            } else {
-                collection.stats.cost += config.aiCost;
-                saveCollections();
+                await trackApiCall('scan', true, 0.01, 1);
             }
             
-        } catch (aiErr) {
-            console.error('AI scan failed:', aiErr.message);
-            showToast('AI scan failed: ' + aiErr.message, '❌');
+        } else {
+            console.error('❌ Card not found in database');
+            console.log('Searched for:', { cardNumber: cardNum, hero: heroName });
+            
+            // Track failed API call
+            if (typeof trackApiCall === 'function') {
+                await trackApiCall('scan', false, 0.01, 1);
+            }
+            
+            throw new Error(`Card "${cardNum}" with hero "${heroName}" not found`);
         }
-    } finally {
-        showLoading(false);
-        const uploadArea = document.getElementById('uploadArea');
-        if (uploadArea) uploadArea.classList.remove('processing');
-        setProgress(0);
+        
+    } catch (err) {
+        console.error('❌ AI scan failed:', err.message);
+        showToast('Scan failed. Try again or check image quality.', '❌');
+        URL.revokeObjectURL(imageUrl);
+        URL.revokeObjectURL(processed);
+        throw err;
     }
 }
 
 function addCard(match, imageUrl, fileName, type, confidence = null) {
-    console.log('📝 Adding card:', match['Card Number']);
+    console.log('📝 Adding card to collection:', match['Card Number']);
     
-    // NEW WAY: Get full collections array
+    // CRITICAL: Get full collections array, not just current collection reference
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
     
     if (!collection) {
         console.error('❌ No collection found!');
+        if (typeof showToast === 'function') {
+            showToast('Failed to save card - no collection', '❌');
+        }
         return;
     }
     
-    // Create card
+    // Create card object
     const card = {
         cardId: match['Card ID'] || '',
         hero: match.Name || '',
@@ -227,66 +171,118 @@ function addCard(match, imageUrl, fileName, type, confidence = null) {
         timestamp: new Date().toISOString()
     };
     
-    // Add to collection
+    // Add card to collection
     collection.cards.push(card);
+    
+    // Update stats
     collection.stats.scanned++;
     if (type === 'free') collection.stats.free++;
+    if (type === 'ai') collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
     
     console.log(`✅ Card added: ${card.hero} (${card.cardNumber})`);
     console.log(`📊 Collection now has ${collection.cards.length} cards`);
     
-    // CRITICAL: Save with full collections array
+    // CRITICAL: Save to localStorage with the full collections array
     saveCollections(collections);
     
-    // Track
+    // Track in Supabase if available
+    if (typeof trackCardAdded === 'function') {
+        trackCardAdded();
+    }
+    
+    // Update all UI elements
+    if (typeof updateStats === 'function') {
+        updateStats();
+    }
+    
+    if (typeof renderCards === 'function') {
+        renderCards();
+    }
+    
+    if (typeof renderCollections === 'function') {
+        renderCollections();
+    }
+    
+    // Haptic feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
+    }
+    
+    // Show success message
+    if (typeof showToast === 'function') {
+        showToast(`Added: ${card.hero} (${card.cardNumber})`, '✅');
+    }
+}
+
+function removeCard(index) {
+    console.log('🗑️ Removing card at index:', index);
+    
+    const collections = getCollections();
+    const currentId = getCurrentCollectionId();
+    const collection = collections.find(c => c.id === currentId);
+    
+    if (!collection || !collection.cards[index]) {
+        console.error('❌ Card not found at index:', index);
+        return;
+    }
+    
+    const card = collection.cards[index];
+    
+    // Revoke object URL to free memory
+    if (card.imageUrl) {
+        URL.revokeObjectURL(card.imageUrl);
+    }
+    
+    // Remove from array
+    collection.cards.splice(index, 1);
+    
+    // Update stats
+    collection.stats.scanned--;
+    if (card.scanType === 'free') collection.stats.free--;
+    
+    console.log(`✅ Card removed: ${card.hero || 'Unknown'}`);
+    console.log(`📊 Collection now has ${collection.cards.length} cards`);
+    
+    // Save
+    saveCollections(collections);
+    
+    // Track removal
     if (typeof trackCardAdded === 'function') {
         trackCardAdded();
     }
     
     // Update UI
-    if (typeof updateStats === 'function') updateStats();
-    if (typeof renderCards === 'function') renderCards();
-    if (typeof renderCollections === 'function') renderCollections();
-    
-    showToast(`Added: ${card.hero} (${card.cardNumber})`, '✅');
-}
-    
-    collection.cards.push(card);
-    collection.stats.scanned++;
-    if (type === 'free') collection.stats.free++;
-    
-    // Track card added if function exists
-    if (typeof trackCardAdded === 'function') {
-        trackCardAdded();
+    if (typeof updateStats === 'function') {
+        updateStats();
     }
     
-    saveCollections();
-    updateStats();
-    renderCards();
-    renderCollections();
-    
-    if (navigator.vibrate) {
-        navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
+    if (typeof renderCards === 'function') {
+        renderCards();
     }
-}
-
-function removeCard(index) {
-    const collection = getCurrentCollection();
     
-    if (collection.cards[index].imageUrl) {
-        URL.revokeObjectURL(collection.cards[index].imageUrl);
+    if (typeof renderCollections === 'function') {
+        renderCollections();
     }
-    collection.cards.splice(index, 1);
-    collection.stats.scanned--;
     
-    saveCollections();
-    updateStats();
-    renderCards();
-    renderCollections();
+    if (typeof showToast === 'function') {
+        showToast('Card removed', '🗑️');
+    }
 }
 
 function updateCard(index, field, value) {
-    const collection = getCurrentCollection();
+    console.log(`✏️ Updating card ${index}, field: ${field}`);
+    
+    const collections = getCollections();
+    const currentId = getCurrentCollectionId();
+    const collection = collections.find(c => c.id === currentId);
+    
+    if (!collection || !collection.cards[index]) {
+        console.error('❌ Card not found at index:', index);
+        return;
+    }
+    
     collection.cards[index][field] = value;
-    saveCollections();
+    saveCollections(collections);
+    
+    console.log(`✅ Card updated: ${field} = ${value}`);
 }
