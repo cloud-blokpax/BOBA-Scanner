@@ -30,7 +30,7 @@ async function openAdminDashboard() {
 }
 
 async function fetchAllUsers() {
-    const { data, error } = await supabase
+    const { data, error } = await window.supabaseClient
         .from('users')
         .select('*')
         .order('created_at', { ascending: false });
@@ -40,7 +40,7 @@ async function fetchAllUsers() {
 }
 
 async function fetchRecentLogs(limit = 100) {
-    const { data, error } = await supabase
+    const { data, error } = await window.supabaseClient
         .from('api_call_logs')
         .select(`
             *,
@@ -57,7 +57,7 @@ async function fetchSystemStats() {
     // Get today's stats
     const today = new Date().toISOString().split('T')[0];
     
-    const { data, error } = await supabase
+    const { data, error } = await window.supabaseClient
         .from('system_stats')
         .select('*')
         .eq('date', today)
@@ -78,12 +78,12 @@ async function calculateTodayStats() {
     today.setHours(0, 0, 0, 0);
     
     // Count total users
-    const { count: totalUsers } = await supabase
+    const { count: totalUsers } = await window.supabaseClient
         .from('users')
         .select('*', { count: 'exact', head: true });
     
     // Count active users (API calls today)
-    const { data: activeCalls } = await supabase
+    const { data: activeCalls } = await window.supabaseClient
         .from('api_call_logs')
         .select('user_id')
         .gte('created_at', today.toISOString());
@@ -91,13 +91,13 @@ async function calculateTodayStats() {
     const activeUsers = new Set(activeCalls?.map(c => c.user_id) || []).size;
     
     // Count total API calls today
-    const { count: totalApiCalls } = await supabase
+    const { count: totalApiCalls } = await window.supabaseClient
         .from('api_call_logs')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', today.toISOString());
     
     // Calculate total cost today
-    const { data: costData } = await supabase
+    const { data: costData } = await window.supabaseClient
         .from('api_call_logs')
         .select('cost')
         .gte('created_at', today.toISOString());
@@ -487,7 +487,7 @@ async function saveUserChanges(userId) {
     const isAdmin = document.getElementById('editIsAdmin').checked;
     
     try {
-        const { error } = await supabase
+        const { error } = await window.supabaseClient
             .from('users')
             .update({
                 card_limit: cardLimit,
@@ -522,7 +522,7 @@ async function resetUserApiCalls(userId) {
     }
     
     try {
-        const { error } = await supabase
+        const { error } = await window.supabaseClient
             .from('users')
             .update({ api_calls_used: 0 })
             .eq('id', userId);
@@ -543,7 +543,7 @@ async function viewUserLogs(userId) {
     try {
         showLoading(true, 'Loading user logs...');
         
-        const { data: logs, error } = await supabase
+        const { data: logs, error } = await window.supabaseClient
             .from('api_call_logs')
             .select('*')
             .eq('user_id', userId)
@@ -607,7 +607,7 @@ async function viewUserLogs(userId) {
 
 async function logAdminAction(actionType, targetUserId, oldValue, newValue) {
     try {
-        await supabase
+        await window.supabaseClient
             .from('admin_actions')
             .insert({
                 admin_id: currentUser.id,
