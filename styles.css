@@ -578,6 +578,23 @@ body {
     object-fit: cover;
 }
 
+/* Fix for oversized card images */
+.card-image {
+    max-width: 400px !important;
+    object-fit: contain !important;
+    height: auto;
+}
+
+.card {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 400px));
+    justify-content: center;
+}
+
 .card-badge {
     position: absolute;
     top: var(--space-3);
