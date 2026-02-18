@@ -1,4 +1,4 @@
-// UI Helper Functions - COMPLETE FIXED VERSION
+// UI Helper Functions - COMPLETE PRODUCTION VERSION
 
 function setStatus(type, state) {
     const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
@@ -39,6 +39,7 @@ function setProgress(percent) {
 }
 
 function updateStats() {
+    // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -71,6 +72,7 @@ function updateStats() {
 function renderCards() {
     console.log('🎨 Rendering cards...');
     
+    // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -88,10 +90,11 @@ function renderCards() {
     const actionBar = document.getElementById('actionBar');
     
     if (!grid) {
-        console.error('❌ Grid element not found!');
+        console.error('❌ Grid element not found');
         return;
     }
     
+    // Show/hide empty state
     if (cards.length === 0) {
         if (empty) empty.classList.remove('hidden');
         if (actionBar) actionBar.classList.add('hidden');
@@ -104,6 +107,7 @@ function renderCards() {
     if (actionBar) actionBar.classList.remove('hidden');
     grid.style.display = 'grid';
     
+    // Render cards
     grid.innerHTML = cards.map((card, i) => `
         <div class="card">
             <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
@@ -150,7 +154,9 @@ function initUploadArea() {
         return;
     }
     
-    // CRITICAL: Clone to remove ALL existing event listeners
+    console.log('📤 Setting up upload area...');
+    
+    // CRITICAL FIX: Clone element to remove ALL existing event listeners
     const newUploadArea = uploadArea.cloneNode(true);
     uploadArea.parentNode.replaceChild(newUploadArea, uploadArea);
     
@@ -158,14 +164,14 @@ function initUploadArea() {
     newUploadArea.addEventListener('click', function(e) {
         console.log('Upload area clicked');
         
-        // Get fresh reference to file input (in case it was cloned)
+        // Get fresh reference to file input (in case it was cloned in app.js)
         const input = document.getElementById('fileInput');
         if (input) {
             input.click();
         }
     });
     
-    // Drag and drop
+    // Drag and drop handlers
     newUploadArea.addEventListener('dragover', function(e) {
         e.preventDefault();
         newUploadArea.classList.add('dragover');
@@ -185,16 +191,20 @@ function initUploadArea() {
         
         if (files.length > 0) {
             const input = document.getElementById('fileInput');
-            const dataTransfer = new DataTransfer();
-            files.forEach(file => dataTransfer.items.add(file));
-            input.files = dataTransfer.files;
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+            if (input) {
+                const dataTransfer = new DataTransfer();
+                files.forEach(file => dataTransfer.items.add(file));
+                input.files = dataTransfer.files;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
     });
+    
+    console.log('✅ Upload area ready');
 }
 
 // ========================================
-// COMPATIBILITY FUNCTIONS
+// COMPATIBILITY FUNCTIONS FOR REDESIGNED UI
 // ========================================
 
 window.openSettings = function() {
