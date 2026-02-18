@@ -101,20 +101,34 @@ async function callAPI(imageUrl) {
     console.log('Calling API via Vercel backend...');
     
     try {
-        // Convert data URL to blob
-        const response = await fetch(imageUrl);
-        const blob = await response.blob();
+        // FIXED: Better base64 conversion
+        let base64Data;
         
-        // Convert to base64
-        const base64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64String = reader.result.split(',')[1];
-                resolve(base64String);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
+        if (imageUrl.startsWith('data:image')) {
+            // Data URL - extract base64 directly
+            base64Data = imageUrl.split(',')[1];
+        } else {
+            // Blob URL - convert to base64
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            
+            base64Data = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64String = reader.result.split(',')[1];
+                    resolve(base64String);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+        
+        console.log('📤 Sending image data... (base64 length:', base64Data?.length || 0, ')');
+        
+        // CRITICAL: Verify we have data
+        if (!base64Data || base64Data.length === 0) {
+            throw new Error('Failed to convert image to base64');
+        }
         
         // Call Vercel serverless function
         const apiResponse = await fetch('/api/anthropic', {
@@ -123,7 +137,7 @@ async function callAPI(imageUrl) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                image: base64,
+                image: base64Data,  // FIXED: Send as 'image' not 'imageData'
                 prompt: `Extract the following information from this Bo Jackson trading card image:
                 
                 Look for:
@@ -146,18 +160,20 @@ async function callAPI(imageUrl) {
                   "power": "130"
                 }
                 
-                CRITICAL: The cardNumber is the most important. Look carefully at the card number - common OCR errors:
+                CRITICAL: Look carefully at card numbers. Common OCR errors to avoid:
                 - 6 vs 8 (BLBF-64 vs BLBF-84)
                 - 0 vs O
                 - 1 vs I
                 
-                If you cannot find a field, use empty string "".
                 Return ONLY the JSON object, no explanations.`
             })
         });
         
+        console.log('📥 API response status:', apiResponse.status);
+        
         if (!apiResponse.ok) {
             const errorText = await apiResponse.text();
+            console.error('API error response:', errorText);
             throw new Error(`API error: ${apiResponse.status} - ${errorText}`);
         }
         
@@ -187,6 +203,7 @@ async function callAPI(imageUrl) {
         throw error;
     }
 }
+
 
 // ========================================
 // MAIN SCANNING FUNCTIONS
