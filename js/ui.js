@@ -122,31 +122,6 @@ function renderCards() {
     console.log('✅ Cards rendered successfully');
 }
     
-    if (empty) empty.classList.add('hidden');
-    if (actionBar) actionBar.classList.remove('hidden');
-    
-    grid.innerHTML = cards.map((card, i) => `
-        <div class="card">
-            <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
-            <div class="card-body">
-                <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
-                    ${card.scanMethod}
-                </span>
-                <div class="card-fields">
-                    ${renderField('Card ID', 'cardId', i, card.cardId, true)}
-                    ${renderField('Name', 'hero', i, card.hero, true)}
-                    ${renderField('Year', 'year', i, card.year, true)}
-                    ${renderField('Set', 'set', i, card.set, true)}
-                    ${renderField('Card #', 'cardNumber', i, card.cardNumber, false)}
-                    ${renderField('Parallel', 'pose', i, card.pose, true)}
-                    ${renderField('Weapon', 'weapon', i, card.weapon, true)}
-                    ${renderField('Power', 'power', i, card.power, true)}
-                </div>
-                <button class="btn-remove" onclick="removeCard(${i})">Remove</button>
-            </div>
-        </div>
-    `).join('');
-}
 
 function renderField(label, field, index, value, autoFilled) {
     return `
