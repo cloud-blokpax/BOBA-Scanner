@@ -101,11 +101,11 @@ async function callAPI(imageUrl) {
     console.log('Calling API via Vercel backend...');
     
     try {
-        // FIXED: Better base64 conversion
+        // Convert image to base64
         let base64Data;
         
         if (imageUrl.startsWith('data:image')) {
-            // Data URL - extract base64 directly
+            // Data URL - extract base64 part
             base64Data = imageUrl.split(',')[1];
         } else {
             // Blob URL - convert to base64
@@ -115,8 +115,10 @@ async function callAPI(imageUrl) {
             base64Data = await new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    const base64String = reader.result.split(',')[1];
-                    resolve(base64String);
+                    const result = reader.result;
+                    // Extract base64 part after comma
+                    const base64 = result.includes(',') ? result.split(',')[1] : result;
+                    resolve(base64);
                 };
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
@@ -125,48 +127,54 @@ async function callAPI(imageUrl) {
         
         console.log('📤 Sending image data... (base64 length:', base64Data?.length || 0, ')');
         
-        // CRITICAL: Verify we have data
+        // Verify we have data
         if (!base64Data || base64Data.length === 0) {
             throw new Error('Failed to convert image to base64');
         }
         
-        // Call Vercel serverless function
+        // CRITICAL: Try both field names that your API might expect
+        const requestBody = {
+            image: base64Data,      // Try this first
+            imageData: base64Data,  // Fallback
+            prompt: `Extract the following information from this Bo Jackson trading card image:
+
+Look for:
+- Card number (format like "BLBF-127" or "BF-108")
+- Hero/Character name
+- Year
+- Set name
+- Parallel/Pose type
+- Weapon type
+- Power level
+
+Return ONLY valid JSON with these exact keys:
+{
+  "cardNumber": "BLBF-127",
+  "hero": "Donny Buckets",
+  "year": "2023",
+  "set": "Battle Arena",
+  "pose": "First Edition",
+  "weapon": "Fire",
+  "power": "130"
+}
+
+CRITICAL: Look carefully at card numbers. Common OCR errors:
+- 6 vs 8 (BLBF-64 vs BLBF-84)
+- 0 vs O
+- 1 vs I
+
+Return ONLY the JSON object, no explanations.`
+        };
+        
+        console.log('📤 Request body keys:', Object.keys(requestBody));
+        
+        // Call Vercel API
         const apiResponse = await fetch('/api/anthropic', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                image: base64Data,  // FIXED: Send as 'image' not 'imageData'
-                prompt: `Extract the following information from this Bo Jackson trading card image:
-                
-                Look for:
-                - Card number (format like "BLBF-127" or "BF-108")
-                - Hero/Character name
-                - Year
-                - Set name
-                - Parallel/Pose type
-                - Weapon type
-                - Power level
-                
-                Return ONLY valid JSON with these exact keys:
-                {
-                  "cardNumber": "BLBF-127",
-                  "hero": "Donny Buckets",
-                  "year": "2023",
-                  "set": "Battle Arena",
-                  "pose": "First Edition",
-                  "weapon": "Fire",
-                  "power": "130"
-                }
-                
-                CRITICAL: Look carefully at card numbers. Common OCR errors to avoid:
-                - 6 vs 8 (BLBF-64 vs BLBF-84)
-                - 0 vs O
-                - 1 vs I
-                
-                Return ONLY the JSON object, no explanations.`
-            })
+            body: JSON.stringify(requestBody)
         });
         
         console.log('📥 API response status:', apiResponse.status);
@@ -178,10 +186,10 @@ async function callAPI(imageUrl) {
         }
         
         const data = await apiResponse.json();
-        console.log('Full API response:', data);
+        console.log('✅ Full API response:', data);
         
-        // Extract JSON from Claude's response
-        const textContent = data.content.find(c => c.type === 'text');
+        // Extract text from Claude's response
+        const textContent = data.content?.find(c => c.type === 'text');
         if (!textContent) {
             throw new Error('No text content in API response');
         }
@@ -189,13 +197,15 @@ async function callAPI(imageUrl) {
         const rawText = textContent.text;
         console.log('Claude raw text:', rawText);
         
-        // Parse JSON (remove markdown code blocks if present)
+        // Parse JSON from response
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             throw new Error('No JSON found in response');
         }
         
         const extracted = JSON.parse(jsonMatch[0]);
+        console.log('✅ Extracted data:', extracted);
+        
         return extracted;
         
     } catch (error) {
@@ -203,7 +213,6 @@ async function callAPI(imageUrl) {
         throw error;
     }
 }
-
 
 // ========================================
 // MAIN SCANNING FUNCTIONS
