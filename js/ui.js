@@ -164,10 +164,76 @@ function initUploadArea() {
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
     
-    if (!uploadArea || !fileInput) {
-        console.warn('Upload area elements not found');
-        return;
-    }
+    if (!uploadArea || !fileInput) return;
+    
+    // FIXED: Prevent double-click
+    uploadArea.addEventListener('click', (e) => {
+        // Ignore if click came from a button
+        if (e.target.tagName === 'BUTTON' ||
+            e.target.closest('button') ||
+            e.target.classList.contains('btn-primary')) {
+            return;
+        }
+        
+        fileInput.click();
+    });
+    
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    });
+}
+```
+
+---
+
+## 🚀 Quick Apply
+
+1. Open `js/scanner.js` on GitHub
+2. Find `function addCard(` 
+3. Replace entire function with Fix 1 above
+4. Commit: "Fix: Card saving with proper collections reference"
+
+5. Open `js/ui.js` on GitHub
+6. Find `function renderCards(`
+7. Replace entire function with Fix 2 above
+8. Find `function initUploadArea(`
+9. Replace entire function with Fix 3 above
+10. Commit: "Fix: Card rendering and double-click"
+
+11. Deploy, wait 30 seconds
+12. Clear storage: `localStorage.clear(); location.reload();`
+13. Upload a card
+14. **Should work!** ✅
+
+---
+
+## ✅ Expected Results
+
+**Console:**
+```
+📝 Adding card: BF-108
+✅ Card added: Thomstone (BF-108)
+📊 Collection now has 1 cards
+✅ Saved 1 collection(s), 1 total cards
+🎨 Rendering cards...
+📊 Rendering 1 card(s)
+✅ Cards rendered successfully
     
     // Click to upload
     uploadArea.addEventListener('click', (e) => {
