@@ -118,6 +118,21 @@
                     </button>
                 </div>
             </section>
+
+            <!-- Add this after the upload section -->
+<section class="export-section" style="padding: 20px; text-align: center;">
+    <h3 style="margin-bottom: 16px;">Export Your Collection</h3>
+    <div class="button-group">
+        <button class="btn-group-item" onclick="exportCurrentCSV()">
+            <span class="btn-icon">📄</span>
+            <span>Export CSV</span>
+        </button>
+        <button class="btn-group-item" onclick="exportExcel()">
+            <span class="btn-icon">📊</span>
+            <span>Export Excel</span>
+        </button>
+    </div>
+</section>
             
             <!-- Collections Bar -->
             <div class="collections-bar" id="collectionsBar" style="display: none;">
