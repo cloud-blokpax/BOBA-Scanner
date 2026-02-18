@@ -1,10 +1,7 @@
-// Google OAuth Authentication - FIXED VERSION
-// Resolves: FedCM loop, sign-out issues, user management integration
+// Google OAuth Authentication
 
 let googleUser = null;
 let authInitialized = false;
-
-const GOOGLE_CLIENT_ID = '572964589574-hn6786nf84q5joug9ts2vuln0r9oql6f.apps.googleusercontent.com';
 
 function initGoogleAuth() {
     if (authInitialized) {
@@ -14,6 +11,7 @@ function initGoogleAuth() {
     
     console.log('🔐 Initializing Google Auth...');
     
+    // Check if Google API is loaded
     if (typeof google === 'undefined' || !google.accounts) {
         console.warn('Google API not loaded yet, retrying...');
         setTimeout(initGoogleAuth, 1000);
@@ -21,13 +19,12 @@ function initGoogleAuth() {
     }
     
     try {
-        // Initialize with FedCM disabled to prevent loop
+        // Initialize Google Sign-In
         google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
+            client_id: '289056388851-5o34uvkj5gfpgvumtbobqcp6hl4d11rl.apps.googleusercontent.com',
             callback: handleCredentialResponse,
             auto_select: false,
-            cancel_on_tap_outside: true,
-            use_fedcm_for_prompt: false  // CRITICAL: Disable FedCM to prevent loop
+            cancel_on_tap_outside: true
         });
         
         // Render sign-in button if element exists
@@ -45,22 +42,16 @@ function initGoogleAuth() {
             );
         }
         
-        // IMPORTANT: Only prompt if no saved session exists
-        const savedUser = localStorage.getItem('googleUser');
-        if (!savedUser) {
-            // Only prompt for new users, not returning users
-            setTimeout(() => {
-                google.accounts.id.prompt((notification) => {
-                    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                        console.log('Auto sign-in not available');
-                        updateAuthUI(null);
-                    }
-                });
-            }, 500);
-        }
+        // Try to auto-sign in if previously signed in
+        google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                console.log('Auto sign-in not available');
+                updateAuthUI(null);
+            }
+        });
         
         authInitialized = true;
-        console.log('✅ Google Auth initialized (FedCM disabled)');
+        console.log('✅ Google Auth initialized');
         
     } catch (error) {
         console.error('❌ Google Auth initialization error:', error);
@@ -71,19 +62,18 @@ function handleCredentialResponse(response) {
     console.log('📝 Received credential response');
     
     try {
+        // Decode JWT token
         const credential = response.credential;
         const payload = parseJwt(credential);
         
-        console.log('✅ User signed in:', payload.email);
+        console.log('User signed in:', payload.email);
         
-        // Store complete user info
+        // Store user info
         googleUser = {
             id: payload.sub,
-            google_id: payload.sub,
             email: payload.email,
             name: payload.name,
             picture: payload.picture,
-            profilePicture: payload.picture,
             credential: credential
         };
         
@@ -91,43 +81,24 @@ function handleCredentialResponse(response) {
         localStorage.setItem('googleUser', JSON.stringify(googleUser));
         localStorage.setItem('googleCredential', credential);
         
-        // Update UI immediately
+        // Update UI
         updateAuthUI(googleUser);
         
-        // Show welcome message
+        // Show success message
         if (typeof showToast === 'function') {
-            showToast(`Welcome, ${googleUser.name}!`, '👋');
+            showToast(`Welcome back, ${googleUser.name}!`, '👋');
         }
         
-        // CRITICAL: Call user management functions
-        console.log('🔄 Initializing user management...');
-        
-        // Call handleUserSignIn if available
+        // Initialize user management if available
         if (typeof handleUserSignIn === 'function') {
-            console.log('→ Calling handleUserSignIn');
             handleUserSignIn(googleUser);
-        } else {
-            console.warn('⚠️ handleUserSignIn not available');
         }
         
-        // Initialize user management
+        // Trigger user management initialization
         if (typeof initUserManagement === 'function') {
-            console.log('→ Calling initUserManagement');
             setTimeout(() => {
                 initUserManagement();
             }, 500);
-        } else {
-            console.warn('⚠️ initUserManagement not available');
-        }
-        
-        // Update limits UI
-        if (typeof updateLimitsUI === 'function') {
-            console.log('→ Calling updateLimitsUI');
-            setTimeout(() => {
-                updateLimitsUI();
-            }, 1000);
-        } else {
-            console.warn('⚠️ updateLimitsUI not available');
         }
         
     } catch (error) {
@@ -169,18 +140,13 @@ function restoreSession() {
             // Update UI
             updateAuthUI(googleUser);
             
-            // Don't show toast on restore (less annoying)
+            if (typeof showToast === 'function') {
+                showToast(`Welcome back, ${googleUser.name}!`, '👋');
+            }
             
             // Initialize user management
             if (typeof handleUserSignIn === 'function') {
                 handleUserSignIn(googleUser);
-            }
-            
-            // Update limits
-            if (typeof updateLimitsUI === 'function') {
-                setTimeout(() => {
-                    updateLimitsUI();
-                }, 500);
             }
             
             return true;
@@ -218,7 +184,7 @@ function signOutGoogle() {
             showToast('Signed out successfully', '👋');
         }
         
-        // IMPORTANT: Don't reload immediately, let user see the sign-out
+        // Reload page to clear all state
         setTimeout(() => {
             window.location.reload();
         }, 1000);
@@ -228,6 +194,7 @@ function signOutGoogle() {
     }
 }
 
+// Update authentication UI based on user state
 function updateAuthUI(user) {
     console.log('🎨 Updating auth UI, user:', user ? user.email : 'none');
     
@@ -238,7 +205,8 @@ function updateAuthUI(user) {
     const userAvatar = document.getElementById('userAvatar');
     
     if (user) {
-        console.log('→ User signed in, showing authenticated UI');
+        // User is signed in
+        console.log('User signed in, showing authenticated UI');
         if (btnSignIn) btnSignIn.style.display = 'none';
         if (userAuthenticated) userAuthenticated.style.display = 'flex';
         
@@ -249,7 +217,8 @@ function updateAuthUI(user) {
             userAvatar.alt = user.name || 'User';
         }
     } else {
-        console.log('→ User not signed in, showing sign-in button');
+        // User is not signed in
+        console.log('User not signed in, showing sign-in button');
         if (btnSignIn) btnSignIn.style.display = 'block';
         if (userAuthenticated) userAuthenticated.style.display = 'none';
     }
@@ -259,7 +228,7 @@ function updateAuthUI(user) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Page loaded, initializing auth...');
     
-    // First restore session if exists
+    // First try to restore session
     const restored = restoreSession();
     
     // Then initialize Google Auth
@@ -268,11 +237,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
 });
 
-// Fallback check after delay
+// Also try to restore session after a delay (in case DOM loads slowly)
 setTimeout(() => {
     if (!googleUser) {
         restoreSession();
     }
 }, 1000);
 
-console.log('✅ Google Auth module loaded (FedCM disabled)');
+console.log('✅ Google Auth module loaded');
