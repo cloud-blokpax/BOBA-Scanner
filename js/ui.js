@@ -62,21 +62,65 @@ function updateStats() {
 }
 
 function renderCards() {
-    const collection = getCurrentCollection();
-    const cards = collection.cards;
+    console.log('🎨 Rendering cards...');
+    
+    // NEW WAY: Get collections properly
+    const collections = getCollections();
+    const currentId = getCurrentCollectionId();
+    const collection = collections.find(c => c.id === currentId);
+    
+    if (!collection) {
+        console.error('❌ No collection found');
+        return;
+    }
+    
+    const cards = collection.cards || [];
+    console.log(`📊 Rendering ${cards.length} card(s)`);
     
     const grid = document.getElementById('cardsGrid');
     const empty = document.getElementById('emptyState');
-    const actionBar = document.getElementById('actionBar');
     
-    if (!grid) return;
-    
-    if (cards.length === 0) {
-        if (empty) empty.classList.remove('hidden');
-        if (actionBar) actionBar.classList.add('hidden');
-        grid.innerHTML = '';
+    if (!grid) {
+        console.error('❌ Grid element not found!');
         return;
     }
+    
+    // Show/hide empty state
+    if (cards.length === 0) {
+        if (empty) empty.classList.remove('hidden');
+        grid.innerHTML = '';
+        grid.style.display = 'none';
+        return;
+    }
+    
+    if (empty) empty.classList.add('hidden');
+    grid.style.display = 'grid';
+    
+    // Render cards
+    grid.innerHTML = cards.map((card, i) => `
+        <div class="card">
+            <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
+            <div class="card-body">
+                <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
+                    ${card.scanMethod}
+                </span>
+                <div class="card-fields">
+                    ${renderField('Card ID', 'cardId', i, card.cardId, true)}
+                    ${renderField('Name', 'hero', i, card.hero, true)}
+                    ${renderField('Year', 'year', i, card.year, true)}
+                    ${renderField('Set', 'set', i, card.set, true)}
+                    ${renderField('Card #', 'cardNumber', i, card.cardNumber, false)}
+                    ${renderField('Parallel', 'pose', i, card.pose, true)}
+                    ${renderField('Weapon', 'weapon', i, card.weapon, true)}
+                    ${renderField('Power', 'power', i, card.power, true)}
+                </div>
+                <button class="btn-remove" onclick="removeCard(${i})">🗑️ Remove</button>
+            </div>
+        </div>
+    `).join('');
+    
+    console.log('✅ Cards rendered successfully');
+}
     
     if (empty) empty.classList.add('hidden');
     if (actionBar) actionBar.classList.remove('hidden');
