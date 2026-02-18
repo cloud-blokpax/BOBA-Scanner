@@ -39,7 +39,6 @@ function setProgress(percent) {
 }
 
 function updateStats() {
-    // Get collections properly
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -50,7 +49,6 @@ function updateStats() {
     }
     
     const stats = collection.stats;
-    
     const paid = stats.scanned - stats.free;
     const rate = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
     
@@ -73,7 +71,6 @@ function updateStats() {
 function renderCards() {
     console.log('🎨 Rendering cards...');
     
-    // FIXED: Get collections properly
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -95,7 +92,6 @@ function renderCards() {
         return;
     }
     
-    // Show/hide empty state
     if (cards.length === 0) {
         if (empty) empty.classList.remove('hidden');
         if (actionBar) actionBar.classList.add('hidden');
@@ -108,7 +104,6 @@ function renderCards() {
     if (actionBar) actionBar.classList.remove('hidden');
     grid.style.display = 'grid';
     
-    // Render cards
     grid.innerHTML = cards.map((card, i) => `
         <div class="card">
             <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
@@ -155,20 +150,23 @@ function initUploadArea() {
         return;
     }
     
-    // FIXED: Prevent double-click
+    // SIMPLIFIED: Only prevent clicks on actual "Choose Image" button
     uploadArea.addEventListener('click', (e) => {
-        // Don't trigger if click came from a button or its children
-        if (e.target.tagName === 'BUTTON' ||
-            e.target.closest('button') ||
-            e.target.classList.contains('btn-primary') ||
-            e.target.classList.contains('btn-secondary') ||
-            e.target.classList.contains('upload-action-btn') ||
-            e.target.classList.contains('btn-group-item')) {
-            console.log('Click came from button, ignoring');
+        // Log what was clicked
+        console.log('Upload area clicked, target:', e.target.tagName, e.target.className);
+        
+        // ONLY block the main "Choose Image" button
+        const isChooseButton = 
+            (e.target.classList.contains('btn-primary') && e.target.textContent.includes('Choose')) ||
+            (e.target.closest('.btn-primary') && e.target.closest('.btn-primary').textContent.includes('Choose'));
+        
+        if (isChooseButton) {
+            console.log('Click came from Choose Image button, letting button handle it');
             return;
         }
         
-        console.log('Upload area clicked, opening file picker');
+        // Everything else triggers file input
+        console.log('Opening file picker');
         fileInput.click();
     });
     
@@ -203,16 +201,14 @@ function initUploadArea() {
 }
 
 // ========================================
-// COMPATIBILITY FUNCTIONS FOR REDESIGNED UI
+// COMPATIBILITY FUNCTIONS
 // ========================================
 
-// Settings modal
 window.openSettings = function() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
         modal.classList.add('active');
         
-        // Update toggle values
         const toggleAutoDetect = document.getElementById('toggleAutoDetect');
         const togglePerspective = document.getElementById('togglePerspective');
         const toggleRegionOcr = document.getElementById('toggleRegionOcr');
@@ -240,7 +236,6 @@ window.closeSettings = function() {
     }
 };
 
-// Camera capture (mobile)
 window.capturePhoto = function(e) {
     if (e) e.stopPropagation();
     const fileInput = document.getElementById('fileInput');
@@ -255,7 +250,6 @@ window.capturePhoto = function(e) {
     }
 };
 
-// Choose from gallery
 window.chooseFromGallery = function(e) {
     if (e) e.stopPropagation();
     const fileInput = document.getElementById('fileInput');
@@ -266,7 +260,6 @@ window.chooseFromGallery = function(e) {
     }
 };
 
-// Authentication UI
 window.showSignInPrompt = function() {
     if (typeof google !== 'undefined' && google.accounts) {
         google.accounts.id.prompt();
@@ -334,7 +327,6 @@ window.signOut = function() {
     }, 1000);
 };
 
-// Screen reader announcements (accessibility)
 window.announceToScreenReader = function(message) {
     const announcement = document.createElement('div');
     announcement.setAttribute('role', 'status');
@@ -356,7 +348,6 @@ window.announceToScreenReader = function(message) {
     }, 1000);
 };
 
-// Initialize auth UI on load
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         if (typeof googleUser !== 'undefined' && googleUser) {
