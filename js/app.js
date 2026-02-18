@@ -1,4 +1,5 @@
-// App initialization
+// App initialization - COMPLETE FIXED VERSION
+
 async function init() {
     console.log('🚀 Initializing Card Scanner...');
     
@@ -9,7 +10,9 @@ async function init() {
         }
         
         // Load collections
-        loadCollections();
+        if (typeof loadCollections === 'function') {
+            loadCollections();
+        }
         
         // Initialize Google Auth (if configured)
         if (typeof initGoogleAuth === 'function') {
@@ -17,7 +20,9 @@ async function init() {
             
             // If user is signed in, handle sign-in
             if (typeof googleUser !== 'undefined' && googleUser) {
-                await handleUserSignIn(googleUser);
+                if (typeof handleUserSignIn === 'function') {
+                    await handleUserSignIn(googleUser);
+                }
             }
         }
         
@@ -33,12 +38,26 @@ async function init() {
             loadOpenCV()
         ]);
         
-        // Set up event listeners
-        initUploadArea();
+        // Set up upload area event listeners
+        if (typeof initUploadArea === 'function') {
+            initUploadArea();
+        }
         
+        // CRITICAL: Connect file input to handleFiles
         const fileInput = document.getElementById('fileInput');
         if (fileInput) {
-            fileInput.onchange = handleFiles;
+            console.log('📎 Connecting file input to handleFiles...');
+            
+            // Check if handleFiles exists
+            if (typeof handleFiles === 'function') {
+                // Use addEventListener for better reliability
+                fileInput.addEventListener('change', handleFiles);
+                console.log('✅ File input connected successfully');
+            } else {
+                console.error('❌ handleFiles function not found!');
+            }
+        } else {
+            console.error('❌ File input element not found!');
         }
         
         // Update limits UI if function exists
@@ -50,7 +69,9 @@ async function init() {
         
     } catch (err) {
         console.error('❌ Initialization error:', err);
-        showToast('Some features may not be available', '⚠️');
+        if (typeof showToast === 'function') {
+            showToast('Some features may not be available', '⚠️');
+        }
     }
 }
 
