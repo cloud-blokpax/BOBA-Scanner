@@ -1,4 +1,4 @@
-// UI Helper Functions
+// UI Helper Functions - COMPLETE FIXED VERSION
 
 function setStatus(type, state) {
     const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
@@ -39,7 +39,16 @@ function setProgress(percent) {
 }
 
 function updateStats() {
-    const collection = getCurrentCollection();
+    // Get collections properly
+    const collections = getCollections();
+    const currentId = getCurrentCollectionId();
+    const collection = collections.find(c => c.id === currentId);
+    
+    if (!collection) {
+        console.warn('No collection found for stats update');
+        return;
+    }
+    
     const stats = collection.stats;
     
     const paid = stats.scanned - stats.free;
@@ -64,7 +73,7 @@ function updateStats() {
 function renderCards() {
     console.log('🎨 Rendering cards...');
     
-    // NEW WAY: Get collections properly
+    // FIXED: Get collections properly
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -79,6 +88,7 @@ function renderCards() {
     
     const grid = document.getElementById('cardsGrid');
     const empty = document.getElementById('emptyState');
+    const actionBar = document.getElementById('actionBar');
     
     if (!grid) {
         console.error('❌ Grid element not found!');
@@ -88,12 +98,14 @@ function renderCards() {
     // Show/hide empty state
     if (cards.length === 0) {
         if (empty) empty.classList.remove('hidden');
+        if (actionBar) actionBar.classList.add('hidden');
         grid.innerHTML = '';
         grid.style.display = 'none';
         return;
     }
     
     if (empty) empty.classList.add('hidden');
+    if (actionBar) actionBar.classList.remove('hidden');
     grid.style.display = 'grid';
     
     // Render cards
@@ -121,7 +133,6 @@ function renderCards() {
     
     console.log('✅ Cards rendered successfully');
 }
-    
 
 function renderField(label, field, index, value, autoFilled) {
     return `
@@ -139,84 +150,25 @@ function initUploadArea() {
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
     
-    if (!uploadArea || !fileInput) return;
+    if (!uploadArea || !fileInput) {
+        console.warn('Upload area elements not found');
+        return;
+    }
     
     // FIXED: Prevent double-click
     uploadArea.addEventListener('click', (e) => {
-        // Ignore if click came from a button
+        // Don't trigger if click came from a button or its children
         if (e.target.tagName === 'BUTTON' ||
             e.target.closest('button') ||
-            e.target.classList.contains('btn-primary')) {
+            e.target.classList.contains('btn-primary') ||
+            e.target.classList.contains('btn-secondary') ||
+            e.target.classList.contains('upload-action-btn') ||
+            e.target.classList.contains('btn-group-item')) {
+            console.log('Click came from button, ignoring');
             return;
         }
         
-        fileInput.click();
-    });
-    
-    // Drag and drop
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-    
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-    });
-    
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        
-        if (e.dataTransfer.files.length > 0) {
-            fileInput.files = e.dataTransfer.files;
-            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    });
-}
-```
-
----
-
-## 🚀 Quick Apply
-
-1. Open `js/scanner.js` on GitHub
-2. Find `function addCard(` 
-3. Replace entire function with Fix 1 above
-4. Commit: "Fix: Card saving with proper collections reference"
-
-5. Open `js/ui.js` on GitHub
-6. Find `function renderCards(`
-7. Replace entire function with Fix 2 above
-8. Find `function initUploadArea(`
-9. Replace entire function with Fix 3 above
-10. Commit: "Fix: Card rendering and double-click"
-
-11. Deploy, wait 30 seconds
-12. Clear storage: `localStorage.clear(); location.reload();`
-13. Upload a card
-14. **Should work!** ✅
-
----
-
-## ✅ Expected Results
-
-**Console:**
-```
-📝 Adding card: BF-108
-✅ Card added: Thomstone (BF-108)
-📊 Collection now has 1 cards
-✅ Saved 1 collection(s), 1 total cards
-🎨 Rendering cards...
-📊 Rendering 1 card(s)
-✅ Cards rendered successfully
-    
-    // Click to upload
-    uploadArea.addEventListener('click', (e) => {
-        if (e.target.classList.contains('upload-action-btn') || 
-            e.target.classList.contains('btn-primary') ||
-            e.target.classList.contains('btn-group-item')) {
-            return; // Let button handlers deal with it
-        }
+        console.log('Upload area clicked, opening file picker');
         fileInput.click();
     });
     
