@@ -150,23 +150,9 @@ function initUploadArea() {
         return;
     }
     
-    // SIMPLIFIED: Only prevent clicks on actual "Choose Image" button
+    // SIMPLE: Just open file picker on any click in upload area
     uploadArea.addEventListener('click', (e) => {
-        // Log what was clicked
-        console.log('Upload area clicked, target:', e.target.tagName, e.target.className);
-        
-        // ONLY block the main "Choose Image" button
-        const isChooseButton = 
-            (e.target.classList.contains('btn-primary') && e.target.textContent.includes('Choose')) ||
-            (e.target.closest('.btn-primary') && e.target.closest('.btn-primary').textContent.includes('Choose'));
-        
-        if (isChooseButton) {
-            console.log('Click came from Choose Image button, letting button handle it');
-            return;
-        }
-        
-        // Everything else triggers file input
-        console.log('Opening file picker');
+        console.log('Upload area clicked');
         fileInput.click();
     });
     
@@ -189,13 +175,10 @@ function initUploadArea() {
         );
         
         if (files.length > 0) {
-            const fileInput = document.getElementById('fileInput');
             const dataTransfer = new DataTransfer();
             files.forEach(file => dataTransfer.items.add(file));
             fileInput.files = dataTransfer.files;
-            
-            const event = new Event('change', { bubbles: true });
-            fileInput.dispatchEvent(event);
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
     });
 }
