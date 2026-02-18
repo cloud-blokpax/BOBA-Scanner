@@ -4,7 +4,7 @@ async function init() {
     console.log('🚀 Initializing Card Scanner...');
     
     try {
-        // Initialize user management first (if Supabase is configured)
+        // Initialize user management first
         if (typeof initUserManagement === 'function') {
             await initUserManagement();
         }
@@ -14,11 +14,10 @@ async function init() {
             loadCollections();
         }
         
-        // Initialize Google Auth (if configured)
+        // Initialize Google Auth
         if (typeof initGoogleAuth === 'function') {
             await initGoogleAuth();
             
-            // If user is signed in, handle sign-in
             if (typeof googleUser !== 'undefined' && googleUser) {
                 if (typeof handleUserSignIn === 'function') {
                     await handleUserSignIn(googleUser);
@@ -38,29 +37,28 @@ async function init() {
             loadOpenCV()
         ]);
         
-        // Set up upload area event listeners
-        if (typeof initUploadArea === 'function') {
-            initUploadArea();
-        }
-        
-        // CRITICAL: Connect file input to handleFiles
+        // CRITICAL: Only connect file input ONCE
         const fileInput = document.getElementById('fileInput');
-        if (fileInput) {
-            console.log('📎 Connecting file input to handleFiles...');
+        if (fileInput && typeof handleFiles === 'function') {
+            console.log('📎 Connecting file input...');
             
-            // Check if handleFiles exists
-            if (typeof handleFiles === 'function') {
-                // Use addEventListener for better reliability
-                fileInput.addEventListener('change', handleFiles);
-                console.log('✅ File input connected successfully');
-            } else {
-                console.error('❌ handleFiles function not found!');
-            }
-        } else {
-            console.error('❌ File input element not found!');
+            // Remove any existing listeners by cloning
+            const newInput = fileInput.cloneNode(true);
+            fileInput.parentNode.replaceChild(newInput, fileInput);
+            
+            // Add ONE listener
+            newInput.addEventListener('change', handleFiles);
+            console.log('✅ File input connected');
         }
         
-        // Update limits UI if function exists
+        // CRITICAL: Only init upload area ONCE
+        if (typeof initUploadArea === 'function') {
+            console.log('📤 Initializing upload area...');
+            initUploadArea();
+            console.log('✅ Upload area ready');
+        }
+        
+        // Update limits UI
         if (typeof updateLimitsUI === 'function') {
             updateLimitsUI();
         }
@@ -75,7 +73,7 @@ async function init() {
     }
 }
 
-// Start app when DOM is ready
+// Start app ONCE when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
