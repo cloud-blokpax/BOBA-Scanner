@@ -174,35 +174,35 @@
                 <div class="setting-group">
                     <h3>Scan Settings</h3>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateConfig('autoDetect', this.checked)">
+                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateSetting('autoDetect', this.checked)">
                         <span>Auto-detect card edges</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="togglePerspective" checked onchange="updateConfig('perspective', this.checked)">
+                        <input type="checkbox" id="togglePerspective" checked onchange="updateSetting('perspective', this.checked)">
                         <span>Perspective correction</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateConfig('regionOcr', this.checked)">
+                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateSetting('regionOcr', this.checked)">
                         <span>Region-based OCR</span>
                     </label>
                 </div>
                 
                 <div class="setting-group">
                     <h3>Quality</h3>
-                    <select id="selectQuality" class="setting-select" onchange="updateConfig('quality', this.value)">
-                        <option value="low">Low (Fast)</option>
-                        <option value="medium" selected>Medium</option>
-                        <option value="high">High (Slow)</option>
+                    <select id="selectQuality" class="setting-select" onchange="updateSetting('quality', this.value)">
+                        <option value="0.5">Low (Fast)</option>
+                        <option value="0.7" selected>Medium</option>
+                        <option value="0.9">High (Slow)</option>
                     </select>
                 </div>
                 
                 <div class="setting-group">
                     <h3>OCR Confidence Threshold</h3>
                     <div class="setting-range-container">
-                        <input type="range" id="rangeThreshold" min="0" max="100" value="70" class="setting-range" 
+                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range" 
                                oninput="document.getElementById('thresholdValue').textContent = this.value"
-                               onchange="updateConfig('threshold', this.value)">
-                        <span><span id="thresholdValue">70</span>%</span>
+                               onchange="updateSetting('threshold', this.value)">
+                        <span><span id="thresholdValue">60</span>%</span>
                     </div>
                 </div>
             </div>
@@ -226,20 +226,20 @@
         </div>
     </div>
     
-    <!-- Scripts -->
-<script src="js/state.js"></script>
-<script src="js/config.js"></script>
-<script src="js/database.js"></script>
-<script src="js/ocr.js"></script>
-<script src="js/opencv.js"></script>
-<script src="js/collections.js"></script>
-<script src="js/api.js"></script>
-<script src="js/scanner.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/google-auth.js"></script>
-<script src="js/user-management.js"></script>
-<script src="js/admin-dashboard.js"></script>
-<script src="js/app.js"></script>
-<script src="js/ui-enhancements.js"></script>
+    <!-- Scripts - CRITICAL ORDER -->
+    <script src="js/state.js"></script>          <!-- ← MUST BE FIRST -->
+    <script src="js/config.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/ocr.js"></script>
+    <script src="js/opencv.js"></script>
+    <script src="js/collections.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/scanner.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/google-auth.js"></script>
+    <script src="js/user-management.js"></script>
+    <script src="js/admin-dashboard.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/ui-enhancements.js"></script>
 </body>
 </html>
