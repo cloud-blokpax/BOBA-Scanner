@@ -16,7 +16,8 @@ const DEFAULT_COLLECTION = {
 function getCollections() {
     try {
         const stored = localStorage.getItem('collections');
-        if (stored) {
+        // FIX: Check for "undefined" and "null" strings
+        if (stored && stored !== 'undefined' && stored !== 'null') {
             const collections = JSON.parse(stored);
             // Ensure default collection exists
             if (!collections.find(c => c.id === 'default')) {
@@ -24,9 +25,14 @@ function getCollections() {
             }
             return collections;
         }
-    } catch (error) {
+} catch (error) {
         console.error('Error loading collections:', error);
     }
+    
+    // Clear bad data
+    localStorage.removeItem('collections');
+    localStorage.removeItem('currentCollectionId');
+    
     return [DEFAULT_COLLECTION];
 }
 
