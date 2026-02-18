@@ -1,4 +1,196 @@
 // Card Scanner - Process Images and Extract Data
+// COMPLETE VERSION with all helper functions
+
+// ========================================
+// IMAGE PREPROCESSING
+// ========================================
+
+async function preprocessImage(imageUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Resize to reasonable dimensions for processing
+                const maxWidth = 800;
+                const maxHeight = 600;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = (width * maxHeight) / height;
+                    height = maxHeight;
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Draw image
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Convert to data URL
+                const processedUrl = canvas.toDataURL('image/jpeg', 0.95);
+                resolve(processedUrl);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = imageUrl;
+    });
+}
+
+// ========================================
+// OCR SCANNING
+// ========================================
+
+async function scanWithOCR(imageUrl) {
+    console.log('🔍 Starting OCR scan...');
+    
+    if (!ready.ocr || typeof Tesseract === 'undefined') {
+        throw new Error('OCR not ready');
+    }
+    
+    try {
+        const result = await Tesseract.recognize(imageUrl, 'eng', {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    setProgress(m.progress * 50); // OCR is 50% of progress
+                }
+            }
+        });
+        
+        const text = result.data.text;
+        console.log('OCR raw text:', text);
+        
+        // Extract card number (format: XXXX-###)
+        const cardNumMatch = text.match(/[A-Z]{2,4}-?\d{1,3}/i);
+        const cardNumber = cardNumMatch ? cardNumMatch[0].replace(/\s/g, '').toUpperCase() : null;
+        
+        // Extract hero name (usually all caps)
+        const lines = text.split('\n').filter(l => l.trim().length > 0);
+        const heroName = lines.find(l => /^[A-Z\s]{3,}$/.test(l.trim()));
+        
+        return {
+            cardNumber,
+            heroName: heroName ? heroName.trim() : null,
+            confidence: result.data.confidence,
+            fullText: text
+        };
+        
+    } catch (error) {
+        console.error('OCR error:', error);
+        throw error;
+    }
+}
+
+// ========================================
+// API CALLING
+// ========================================
+
+async function callAPI(imageUrl) {
+    console.log('Calling API via Vercel backend...');
+    
+    try {
+        // Convert data URL to blob
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        
+        // Convert to base64
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result.split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+        
+        // Call Vercel serverless function
+        const apiResponse = await fetch('/api/anthropic', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: base64,
+                prompt: `Extract the following information from this Bo Jackson trading card image:
+                
+                Look for:
+                - Card number (format like "BLBF-127" or "BF-108")
+                - Hero/Character name
+                - Year
+                - Set name
+                - Parallel/Pose type
+                - Weapon type
+                - Power level
+                
+                Return ONLY valid JSON with these exact keys:
+                {
+                  "cardNumber": "BLBF-127",
+                  "hero": "Donny Buckets",
+                  "year": "2023",
+                  "set": "Battle Arena",
+                  "pose": "First Edition",
+                  "weapon": "Fire",
+                  "power": "130"
+                }
+                
+                CRITICAL: The cardNumber is the most important. Look carefully at the card number - common OCR errors:
+                - 6 vs 8 (BLBF-64 vs BLBF-84)
+                - 0 vs O
+                - 1 vs I
+                
+                If you cannot find a field, use empty string "".
+                Return ONLY the JSON object, no explanations.`
+            })
+        });
+        
+        if (!apiResponse.ok) {
+            const errorText = await apiResponse.text();
+            throw new Error(`API error: ${apiResponse.status} - ${errorText}`);
+        }
+        
+        const data = await apiResponse.json();
+        console.log('Full API response:', data);
+        
+        // Extract JSON from Claude's response
+        const textContent = data.content.find(c => c.type === 'text');
+        if (!textContent) {
+            throw new Error('No text content in API response');
+        }
+        
+        const rawText = textContent.text;
+        console.log('Claude raw text:', rawText);
+        
+        // Parse JSON (remove markdown code blocks if present)
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('No JSON found in response');
+        }
+        
+        const extracted = JSON.parse(jsonMatch[0]);
+        return extracted;
+        
+    } catch (error) {
+        console.error('API call error:', error);
+        throw error;
+    }
+}
+
+// ========================================
+// MAIN SCANNING FUNCTIONS
+// ========================================
 
 async function handleFiles(e) {
     console.log('handleFiles called with:', e);
@@ -46,7 +238,7 @@ async function processImage(file) {
     let confidence = 0;
     let match = null;
     
-    // Try OCR first
+    // Try OCR first (if available)
     if (ready.ocr) {
         try {
             const ocrResult = await scanWithOCR(processed);
@@ -112,7 +304,7 @@ async function processImage(file) {
             setProgress(100);
             showToast(`${match.Name} (${cardNum}) scanned (AI)`, '💰');
             
-            // Track API call if function exists
+            // Track API call
             if (typeof trackApiCall === 'function') {
                 await trackApiCall('scan', true, 0.01, 1);
             }
@@ -141,7 +333,7 @@ async function processImage(file) {
 function addCard(match, imageUrl, fileName, type, confidence = null) {
     console.log('📝 Adding card to collection:', match['Card Number']);
     
-    // CRITICAL: Get full collections array, not just current collection reference
+    // Get full collections array
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -182,15 +374,15 @@ function addCard(match, imageUrl, fileName, type, confidence = null) {
     console.log(`✅ Card added: ${card.hero} (${card.cardNumber})`);
     console.log(`📊 Collection now has ${collection.cards.length} cards`);
     
-    // CRITICAL: Save to localStorage with the full collections array
+    // Save to localStorage
     saveCollections(collections);
     
-    // Track in Supabase if available
+    // Track in Supabase
     if (typeof trackCardAdded === 'function') {
         trackCardAdded();
     }
     
-    // Update all UI elements
+    // Update UI
     if (typeof updateStats === 'function') {
         updateStats();
     }
@@ -228,7 +420,7 @@ function removeCard(index) {
     
     const card = collection.cards[index];
     
-    // Revoke object URL to free memory
+    // Revoke object URL
     if (card.imageUrl) {
         URL.revokeObjectURL(card.imageUrl);
     }
