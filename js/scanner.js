@@ -198,8 +198,19 @@ async function processImage(file) {
 }
 
 function addCard(match, imageUrl, fileName, type, confidence = null) {
-    const collection = getCurrentCollection();
+    console.log('📝 Adding card:', match['Card Number']);
     
+    // NEW WAY: Get full collections array
+    const collections = getCollections();
+    const currentId = getCurrentCollectionId();
+    const collection = collections.find(c => c.id === currentId);
+    
+    if (!collection) {
+        console.error('❌ No collection found!');
+        return;
+    }
+    
+    // Create card
     const card = {
         cardId: match['Card ID'] || '',
         hero: match.Name || '',
@@ -212,8 +223,33 @@ function addCard(match, imageUrl, fileName, type, confidence = null) {
         imageUrl,
         fileName,
         scanType: type,
-        scanMethod: type === 'free' ? `Free OCR (${Math.round(confidence)}%)` : 'AI + Database'
+        scanMethod: type === 'free' ? `Free OCR (${Math.round(confidence)}%)` : 'AI + Database',
+        timestamp: new Date().toISOString()
     };
+    
+    // Add to collection
+    collection.cards.push(card);
+    collection.stats.scanned++;
+    if (type === 'free') collection.stats.free++;
+    
+    console.log(`✅ Card added: ${card.hero} (${card.cardNumber})`);
+    console.log(`📊 Collection now has ${collection.cards.length} cards`);
+    
+    // CRITICAL: Save with full collections array
+    saveCollections(collections);
+    
+    // Track
+    if (typeof trackCardAdded === 'function') {
+        trackCardAdded();
+    }
+    
+    // Update UI
+    if (typeof updateStats === 'function') updateStats();
+    if (typeof renderCards === 'function') renderCards();
+    if (typeof renderCollections === 'function') renderCollections();
+    
+    showToast(`Added: ${card.hero} (${card.cardNumber})`, '✅');
+}
     
     collection.cards.push(card);
     collection.stats.scanned++;
