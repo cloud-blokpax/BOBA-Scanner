@@ -339,7 +339,79 @@ window.announceToScreenReader = function(message) {
     }, 1000);
 };
 
+
+// ========================================
+// WIRE UP EVENTS — safety net for buttons
+// Called on DOMContentLoaded as backup to 
+// inline onclick handlers in index.html
+// ========================================
+function wireUpEvents() {
+    const fi = () => document.getElementById('fileInput');
+
+    const btnChooseImage = document.getElementById('btnChooseImage');
+    if (btnChooseImage) btnChooseImage.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const input = fi();
+        if (input) { input.removeAttribute('capture'); input.click(); }
+    });
+
+    const btnCapture = document.getElementById('btnCapture');
+    if (btnCapture) btnCapture.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const input = fi();
+        if (input) {
+            input.setAttribute('capture', 'environment');
+            input.setAttribute('accept', 'image/*');
+            input.click();
+            setTimeout(() => input.removeAttribute('capture'), 100);
+        }
+    });
+
+    const btnSettings = document.getElementById('btnSettings');
+    if (btnSettings) btnSettings.addEventListener('click', function(e) {
+        e.stopPropagation();
+        openSettings();
+    });
+
+    const btnExportCSV = document.getElementById('btnExportCSV');
+    if (btnExportCSV) btnExportCSV.addEventListener('click', function() {
+        if (typeof exportCurrentCSV === 'function') exportCurrentCSV();
+    });
+
+    const btnExportExcel = document.getElementById('btnExportExcel');
+    if (btnExportExcel) btnExportExcel.addEventListener('click', function() {
+        if (typeof exportExcel === 'function') exportExcel();
+    });
+
+    const btnSignIn = document.getElementById('btnSignIn');
+    if (btnSignIn) btnSignIn.addEventListener('click', showSignInPrompt);
+
+    const btnSignOut = document.getElementById('btnSignOut');
+    if (btnSignOut) btnSignOut.addEventListener('click', function() {
+        if (typeof signOut === 'function') signOut();
+    });
+
+    const settingsModalClose = document.getElementById('settingsModalClose');
+    if (settingsModalClose) settingsModalClose.addEventListener('click', closeSettings);
+
+    const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+    if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettings);
+
+    const settingsModalBackdrop = document.getElementById('settingsModalBackdrop');
+    if (settingsModalBackdrop) settingsModalBackdrop.addEventListener('click', closeSettings);
+
+    console.log('✅ Button events wired');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Wire up all button event listeners immediately
+    wireUpEvents();
+
+    // Also call initUploadArea for drag-and-drop
+    if (typeof initUploadArea === 'function') {
+        initUploadArea();
+    }
+
     setTimeout(() => {
         if (typeof googleUser !== 'undefined' && googleUser) {
             updateAuthUI(googleUser);
