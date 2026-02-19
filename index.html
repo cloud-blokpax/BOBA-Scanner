@@ -39,7 +39,7 @@
                 <!-- User Profile -->
                 <!-- FIXED: All onclick="" removed — handlers wired in ui.js wireUpEvents() -->
                 <div class="user-profile" id="userProfile">
-                    <button class="btn-secondary" id="btnSignIn" style="display: none;">
+                    <button class="btn-secondary" id="btnSignIn" onclick="showSignInPrompt()" style="display: none;">
                         Sign In
                     </button>
                     
@@ -48,9 +48,9 @@
                             <div class="user-name" id="userName">Loading...</div>
                             <div class="user-email" id="userEmail"></div>
                         </div>
-                        <img class="user-avatar" id="userAvatar" alt="User">
+                        <img class="user-avatar" id="userAvatar" alt="User" onclick="toggleUserMenu()">
                         <!-- FIXED: was onclick="signOut()" -->
-                        <button class="btn-sign-out" id="btnSignOut">Sign Out</button>
+                        <button class="btn-sign-out" id="btnSignOut" onclick="signOut()">Sign Out</button>
                     </div>
                 </div>
             </div>
@@ -99,19 +99,19 @@
                 
                 <input type="file" id="fileInput" accept="image/*" style="display: none;">
                 
-                <button class="btn-primary" id="btnChooseImage">
+                <button class="btn-primary" id="btnChooseImage" onclick="document.getElementById('fileInput').click()">
                     <span class="btn-icon">🖼️</span>
                     <span>Choose Image</span>
                 </button>
                 
                 <div class="button-group">
                     <!-- FIXED: was onclick="capturePhoto()" -->
-                    <button class="btn-group-item" id="btnCapture">
+                    <button class="btn-group-item" id="btnCapture" onclick="capturePhoto(event)">
                         <span class="btn-icon">📸</span>
                         <span>Take Photo</span>
                     </button>
                     <!-- FIXED: was onclick="openSettings()" -->
-                    <button class="btn-group-item" id="btnSettings">
+                    <button class="btn-group-item" id="btnSettings" onclick="openSettings()">
                         <span class="btn-icon">⚙️</span>
                         <span>Settings</span>
                     </button>
@@ -123,11 +123,11 @@
                 <h3 style="margin-bottom: 16px;">Export Your Collection</h3>
                 <div class="button-group">
                     <!-- FIXED: were onclick="..." -->
-                    <button class="btn-group-item" id="btnExportCSV">
+                    <button class="btn-group-item" id="btnExportCSV" onclick="exportCurrentCSV()">
                         <span class="btn-icon">📄</span>
                         <span>Export CSV</span>
                     </button>
-                    <button class="btn-group-item" id="btnExportExcel">
+                    <button class="btn-group-item" id="btnExportExcel" onclick="exportExcel()">
                         <span class="btn-icon">📊</span>
                         <span>Export Excel</span>
                     </button>
@@ -177,31 +177,31 @@
     <!-- Settings Modal -->
     <!-- FIXED: onchange="" attributes removed — wired in ui.js wireUpEvents() -->
     <div id="settingsModal" class="modal">
-        <div class="modal-backdrop" id="settingsModalBackdrop"></div>
+        <div class="modal-backdrop" id="settingsModalBackdrop" onclick="closeSettings()"></div>
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Settings</h2>
-                <button class="modal-close" id="settingsModalClose">×</button>
+                <button class="modal-close" id="settingsModalClose" onclick="closeSettings()">×</button>
             </div>
             <div class="modal-body">
                 <div class="setting-group">
                     <h3>Scan Settings</h3>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleAutoDetect" checked>
+                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateSetting('autoDetect', this.checked)">
                         <span>Auto-detect card edges</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="togglePerspective" checked>
+                        <input type="checkbox" id="togglePerspective" checked onchange="updateSetting('perspective', this.checked)">
                         <span>Perspective correction</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleRegionOcr" checked>
+                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateSetting('regionOcr', this.checked)">
                         <span>Region-based OCR</span>
                     </label>
                 </div>
                 <div class="setting-group">
                     <h3>Quality</h3>
-                    <select id="selectQuality" class="setting-select">
+                    <select id="selectQuality" class="setting-select" onchange="updateSetting('quality', this.value)">
                         <option value="0.5">Low (Fast)</option>
                         <option value="0.7" selected>Medium</option>
                         <option value="0.9">High (Slow)</option>
@@ -210,13 +210,13 @@
                 <div class="setting-group">
                     <h3>OCR Confidence Threshold</h3>
                     <div class="setting-range-container">
-                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range">
+                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range" oninput="document.getElementById('thresholdValue').textContent=this.value" onchange="updateSetting('threshold', this.value)">
                         <span><span id="thresholdValue">60</span>%</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" id="settingsCloseBtn">Close</button>
+                <button class="btn-secondary" id="settingsCloseBtn" onclick="closeSettings()">Close</button>
             </div>
         </div>
     </div>
