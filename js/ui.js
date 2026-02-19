@@ -18,8 +18,7 @@ function showToast(message, icon = '✓') {
     toastIcon.textContent = icon;
     toastMessage.textContent = message;
     toast.classList.add('show');
-    clearTimeout(toast._hideTimer);
-    toast._hideTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+    setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
 function showLoading(show, text = 'Processing...') {
@@ -40,6 +39,7 @@ function setProgress(percent) {
 }
 
 function updateStats() {
+    // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -60,7 +60,7 @@ function updateStats() {
     
     if (statFree) statFree.textContent = stats.free;
     if (statPaid) statPaid.textContent = paid;
-    if (statCost) statCost.textContent = `$${(stats.cost || 0).toFixed(2)}`;
+    if (statCost) statCost.textContent = `$${stats.cost.toFixed(2)}`;
     if (statRate) statRate.textContent = `${rate}%`;
     
     const statsBar = document.getElementById('statsBar');
@@ -72,6 +72,7 @@ function updateStats() {
 function renderCards() {
     console.log('🎨 Rendering cards...');
     
+    // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
     const currentId = getCurrentCollectionId();
     const collection = collections.find(c => c.id === currentId);
@@ -93,6 +94,7 @@ function renderCards() {
         return;
     }
     
+    // Show/hide empty state
     if (cards.length === 0) {
         if (empty) empty.classList.remove('hidden');
         if (actionBar) actionBar.classList.add('hidden');
@@ -105,6 +107,7 @@ function renderCards() {
     if (actionBar) actionBar.classList.remove('hidden');
     grid.style.display = 'grid';
     
+    // Render cards
     grid.innerHTML = cards.map((card, i) => `
         <div class="card">
             <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
@@ -146,26 +149,21 @@ function initUploadArea() {
     const uploadArea = document.getElementById('uploadArea');
     
     if (!uploadArea) {
-        console.warn('Upload area elements not found');
+        console.warn('Upload area element not found');
         return;
     }
     
     console.log('📤 Setting up upload area...');
     
-    // ── FIX ──────────────────────────────────────────────────────────────────
-    // REMOVED: cloneNode(true) was replacing #uploadArea in the DOM.
-    // The cloned element had no onclick attributes, so "Choose Image",
-    // "Take Photo" and "Settings" buttons all silently stopped working.
-    // Drag-and-drop is added directly to the existing element instead.
-    // ─────────────────────────────────────────────────────────────────────────
-
+    // Drag and drop handlers - attached directly, NO cloneNode
+    // (cloneNode was stripping onclick attributes from the buttons inside,
+    // making "Choose Image", "Take Photo" and "Settings" do nothing)
     uploadArea.addEventListener('dragover', function(e) {
         e.preventDefault();
         uploadArea.classList.add('dragover');
     });
     
     uploadArea.addEventListener('dragleave', function(e) {
-        // Only remove highlight when leaving the upload area entirely
         if (!uploadArea.contains(e.relatedTarget)) {
             uploadArea.classList.remove('dragover');
         }
