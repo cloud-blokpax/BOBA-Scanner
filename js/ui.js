@@ -1,24 +1,18 @@
 // ============================================================
-// js/ui.js — FIXED
-// Changes:
-//   - escapeHtml() helper added here as the global utility (used by all modules)
-//   - showToast() and showLoading() are the PRIMARY/ONLY implementations
-//     (duplicates in state.js have been removed)
-//   - All event bindings that were inline in index.html moved to wireUpEvents()
-//   - renderCards() uses escapeHtml on user-controlled values
-//   - initUploadArea() unchanged (was already correct)
+// js/ui.js
+// FIX: initUploadArea() no longer clones #uploadArea.
+//      The clone was destroying #btnChooseImage and #btnSettings
+//      listeners that wireUpEvents() had just attached, causing
+//      those buttons to do nothing on click.
 // ============================================================
 
 // ── XSS prevention — global escape helper ────────────────────────────────────
-// FIXED: Used everywhere user data is injected into HTML.
 function escapeHtml(str) {
   const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
   return String(str ?? '').replace(/[&<>"']/g, c => map[c]);
 }
 
 // ── Status indicators ─────────────────────────────────────────────────────────
-// FIXED: Single definition (removed from state.js).
-// Maps to actual element IDs in index.html.
 function setStatus(type, state) {
   const idMap = { db: 'dbStatus', ocr: 'ocrStatus', cv: 'cvStatus' };
   const el    = document.getElementById(idMap[type]);
@@ -28,8 +22,7 @@ function setStatus(type, state) {
   el.className   = `status-${state}`;
 }
 
-// ── Toast — SINGLE implementation ────────────────────────────────────────────
-// FIXED: Removed duplicate in state.js. This is the only showToast().
+// ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(message, icon = '✓') {
   const toast        = document.getElementById('toast');
   const toastIcon    = document.getElementById('toastIcon');
@@ -42,7 +35,6 @@ function showToast(message, icon = '✓') {
     clearTimeout(toast._hideTimer);
     toast._hideTimer = setTimeout(() => toast.classList.remove('show'), 3000);
   } else {
-    // Fallback dynamic toast for early init
     _showDynamicToast(message, icon);
   }
 
@@ -57,23 +49,18 @@ function _showDynamicToast(message, icon) {
     container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;';
     document.body.appendChild(container);
   }
-
   const t = document.createElement('div');
   t.style.cssText = 'background:white;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;box-shadow:0 4px 12px rgba(0,0,0,.15);display:flex;align-items:center;gap:8px;font-size:14px;max-width:300px;';
   t.innerHTML = `<span>${escapeHtml(icon)}</span><span>${escapeHtml(message)}</span>`;
   container.appendChild(t);
-
   setTimeout(() => t.remove(), 3000);
 }
 
-// ── Loading overlay — SINGLE implementation ──────────────────────────────────
-// FIXED: Removed duplicate in state.js. This is the only showLoading().
+// ── Loading overlay ───────────────────────────────────────────────────────────
 function showLoading(show, text = 'Processing...') {
   const overlay     = document.getElementById('loadingOverlay');
   const loadingText = document.getElementById('loadingText');
-
   if (!overlay) return;
-
   if (loadingText) loadingText.textContent = text;
   overlay.classList.toggle('active', show);
 }
@@ -92,7 +79,6 @@ function updateStats() {
   if (!collection) return;
 
   const stats = collection.stats;
-  const paid  = Math.max(0, stats.scanned - stats.free);
   const rate  = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
 
   const el = id => document.getElementById(id);
@@ -118,7 +104,7 @@ function renderCards() {
   if (cards.length === 0) {
     if (empty)     empty.classList.remove('hidden');
     if (actionBar) actionBar.classList.add('hidden');
-    grid.innerHTML = '';
+    grid.innerHTML    = '';
     grid.style.display = 'none';
     return;
   }
@@ -135,21 +121,20 @@ function renderCards() {
           ${escapeHtml(card.scanMethod || '')}
         </span>
         <div class="card-fields">
-          ${renderField('Card ID', 'cardId',     i, card.cardId,     false)}
-          ${renderField('Name',    'hero',        i, card.hero,       true)}
-          ${renderField('Year',    'year',        i, card.year,       true)}
-          ${renderField('Set',     'set',         i, card.set,        true)}
-          ${renderField('Card #',  'cardNumber',  i, card.cardNumber, false)}
-          ${renderField('Parallel','pose',        i, card.pose,       true)}
-          ${renderField('Weapon',  'weapon',      i, card.weapon,     true)}
-          ${renderField('Power',   'power',       i, card.power,      true)}
+          ${renderField('Card ID', 'cardId',    i, card.cardId,     false)}
+          ${renderField('Name',    'hero',       i, card.hero,       true)}
+          ${renderField('Year',    'year',       i, card.year,       true)}
+          ${renderField('Set',     'set',        i, card.set,        true)}
+          ${renderField('Card #',  'cardNumber', i, card.cardNumber, false)}
+          ${renderField('Parallel','pose',       i, card.pose,       true)}
+          ${renderField('Weapon',  'weapon',     i, card.weapon,     true)}
+          ${renderField('Power',   'power',      i, card.power,      true)}
         </div>
         <button class="btn-remove" data-remove-index="${i}">🗑️ Remove</button>
       </div>
     </div>
   `).join('');
 
-  // Event delegation for remove buttons and field edits
   grid.querySelectorAll('.btn-remove').forEach(btn => {
     btn.addEventListener('click', () => removeCard(parseInt(btn.dataset.removeIndex)));
   });
@@ -175,33 +160,29 @@ function renderField(label, field, index, value, autoFilled) {
   `;
 }
 
-// ── Upload area ───────────────────────────────────────────────────────────────
+// ── Upload area (drag & drop only — buttons wired in wireUpEvents) ────────────
+// FIX: Removed cloneNode(true) — it was replacing #btnChooseImage and
+//      #btnSettings in the DOM, destroying their event listeners.
+//      Drag-and-drop is set up here; button clicks are in wireUpEvents().
 function initUploadArea() {
   const uploadArea = document.getElementById('uploadArea');
-  const fileInput  = document.getElementById('fileInput');
+  if (!uploadArea) return;
 
-  if (!uploadArea || !fileInput) return;
-
-  // Clone to remove any stale event listeners
-  const fresh = uploadArea.cloneNode(true);
-  uploadArea.parentNode.replaceChild(fresh, uploadArea);
-
-  fresh.addEventListener('click', (e) => {
-    // Don't trigger if clicking a button inside the upload area
-    if (e.target.closest('button')) return;
-    document.getElementById('fileInput')?.click();
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
   });
 
-  fresh.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    fresh.classList.add('dragover');
+  uploadArea.addEventListener('dragleave', (e) => {
+    // Only remove if leaving the upload area entirely (not a child element)
+    if (!uploadArea.contains(e.relatedTarget)) {
+      uploadArea.classList.remove('dragover');
+    }
   });
 
-  fresh.addEventListener('dragleave', () => fresh.classList.remove('dragover'));
-
-  fresh.addEventListener('drop', (e) => {
+  uploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
-    fresh.classList.remove('dragover');
+    uploadArea.classList.remove('dragover');
 
     const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
     if (!files.length) return;
@@ -215,13 +196,19 @@ function initUploadArea() {
     }
   });
 
+  // Clicking the upload area background (not a button) also opens file picker
+  uploadArea.addEventListener('click', (e) => {
+    if (e.target === uploadArea) {
+      document.getElementById('fileInput')?.click();
+    }
+  });
+
   console.log('✅ Upload area ready');
 }
 
-// ── Wire up all event listeners that were inline in index.html ────────────────
-// FIXED: Removes all onclick="..." from HTML — handlers live here instead.
+// ── Wire up all button/input event listeners ──────────────────────────────────
 function wireUpEvents() {
-  // Sign in button
+  // Sign in
   document.getElementById('btnSignIn')?.addEventListener('click', () => {
     if (typeof google !== 'undefined' && google.accounts) {
       google.accounts.id.prompt();
@@ -233,63 +220,72 @@ function wireUpEvents() {
   // Sign out
   document.getElementById('btnSignOut')?.addEventListener('click', signOut);
 
-  // Avatar / user menu toggle
+  // User avatar menu
   document.getElementById('userAvatar')?.addEventListener('click', toggleUserMenu);
 
-  // Settings open button in upload area
-  document.getElementById('btnSettings')?.addEventListener('click', openSettings);
-
-  // Camera capture button
-  document.getElementById('btnCapture')?.addEventListener('click', capturePhoto);
-
-  // Gallery choose button
+  // Choose image — opens file picker
   document.getElementById('btnChooseImage')?.addEventListener('click', () => {
     document.getElementById('fileInput')?.click();
   });
 
-  // Export buttons
+  // Take photo — opens camera on mobile
+  document.getElementById('btnCapture')?.addEventListener('click', capturePhoto);
+
+  // Settings
+  document.getElementById('btnSettings')?.addEventListener('click', openSettings);
+
+  // Export
   document.getElementById('btnExportCSV')?.addEventListener('click', exportCurrentCSV);
   document.getElementById('btnExportExcel')?.addEventListener('click', exportExcel);
 
-  // Settings modal close
+  // Settings modal
   document.getElementById('settingsModalClose')?.addEventListener('click', closeSettings);
   document.querySelector('#settingsModal .modal-backdrop')?.addEventListener('click', closeSettings);
   document.getElementById('settingsCloseBtn')?.addEventListener('click', closeSettings);
 
-  // Settings toggles
-  document.getElementById('toggleAutoDetect')?.addEventListener('change', function() { updateSetting('autoDetect', this.checked); });
-  document.getElementById('togglePerspective')?.addEventListener('change', function() { updateSetting('perspective', this.checked); });
-  document.getElementById('toggleRegionOcr')?.addEventListener('change', function() { updateSetting('regionOcr', this.checked); });
-  document.getElementById('selectQuality')?.addEventListener('change', function() { updateSetting('quality', this.value); });
-  document.getElementById('rangeThreshold')?.addEventListener('input', function() {
+  // Settings controls
+  document.getElementById('toggleAutoDetect')?.addEventListener('change', function () {
+    updateSetting('autoDetect', this.checked);
+  });
+  document.getElementById('togglePerspective')?.addEventListener('change', function () {
+    updateSetting('perspective', this.checked);
+  });
+  document.getElementById('toggleRegionOcr')?.addEventListener('change', function () {
+    updateSetting('regionOcr', this.checked);
+  });
+  document.getElementById('selectQuality')?.addEventListener('change', function () {
+    updateSetting('quality', this.value);
+  });
+  document.getElementById('rangeThreshold')?.addEventListener('input', function () {
     const tv = document.getElementById('thresholdValue');
     if (tv) tv.textContent = this.value;
   });
-  document.getElementById('rangeThreshold')?.addEventListener('change', function() { updateSetting('threshold', this.value); });
+  document.getElementById('rangeThreshold')?.addEventListener('change', function () {
+    updateSetting('threshold', this.value);
+  });
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
-window.openSettings = function() {
+window.openSettings = function () {
   const modal = document.getElementById('settingsModal');
   if (!modal) return;
-
   modal.classList.add('active');
   if (typeof config !== 'undefined') {
     const el = id => document.getElementById(id);
-    if (el('toggleAutoDetect')) el('toggleAutoDetect').checked = config.autoDetect;
+    if (el('toggleAutoDetect'))  el('toggleAutoDetect').checked  = config.autoDetect;
     if (el('togglePerspective')) el('togglePerspective').checked = config.perspective;
-    if (el('toggleRegionOcr')) el('toggleRegionOcr').checked = config.regionOcr;
-    if (el('selectQuality')) el('selectQuality').value = config.quality;
-    if (el('rangeThreshold')) el('rangeThreshold').value = config.threshold;
-    if (el('thresholdValue')) el('thresholdValue').textContent = config.threshold;
+    if (el('toggleRegionOcr'))   el('toggleRegionOcr').checked   = config.regionOcr;
+    if (el('selectQuality'))     el('selectQuality').value       = config.quality;
+    if (el('rangeThreshold'))    el('rangeThreshold').value      = config.threshold;
+    if (el('thresholdValue'))    el('thresholdValue').textContent = config.threshold;
   }
 };
 
-window.closeSettings = function() {
+window.closeSettings = function () {
   document.getElementById('settingsModal')?.classList.remove('active');
 };
 
-window.capturePhoto = function() {
+window.capturePhoto = function () {
   const input = document.getElementById('fileInput');
   if (!input) return;
   input.setAttribute('capture', 'environment');
@@ -298,11 +294,11 @@ window.capturePhoto = function() {
   setTimeout(() => input.removeAttribute('capture'), 100);
 };
 
-window.toggleUserMenu = function() {
+window.toggleUserMenu = function () {
   document.getElementById('userDropdown')?.classList.toggle('active');
 };
 
-window.signOut = function() {
+window.signOut = function () {
   if (!confirm('Sign out?')) return;
   if (typeof signOutGoogle === 'function') {
     signOutGoogle();
@@ -317,30 +313,29 @@ window.signOut = function() {
   }
 };
 
-window.updateAuthUI = function(user) {
-  const btnSignIn        = document.getElementById('btnSignIn');
+window.updateAuthUI = function (user) {
+  const btnSignIn         = document.getElementById('btnSignIn');
   const userAuthenticated = document.getElementById('userAuthenticated');
-  const userName         = document.getElementById('userName');
-  const userEmail        = document.getElementById('userEmail');
-  const userAvatar       = document.getElementById('userAvatar');
+  const userName          = document.getElementById('userName');
+  const userEmail         = document.getElementById('userEmail');
+  const userAvatar        = document.getElementById('userAvatar');
 
   if (user) {
-    if (btnSignIn)         btnSignIn.style.display        = 'none';
-    if (userAuthenticated) userAuthenticated.style.display = 'flex';
-    if (userName)          userName.textContent            = user.name  || 'User';
-    if (userEmail)         userEmail.textContent           = user.email || '';
+    if (btnSignIn)          btnSignIn.style.display         = 'none';
+    if (userAuthenticated)  userAuthenticated.style.display = 'flex';
+    if (userName)           userName.textContent             = user.name  || 'User';
+    if (userEmail)          userEmail.textContent            = user.email || '';
     if (userAvatar) {
       userAvatar.src = user.picture || user.profilePicture || '';
       userAvatar.alt = user.name || 'User';
     }
   } else {
-    if (btnSignIn)         btnSignIn.style.display        = 'block';
-    if (userAuthenticated) userAuthenticated.style.display = 'none';
+    if (btnSignIn)          btnSignIn.style.display         = 'block';
+    if (userAuthenticated)  userAuthenticated.style.display = 'none';
   }
 };
 
-// Announce to screen readers (also defined in ui-enhancements but kept here as primary)
-window.announceToScreenReader = function(message) {
+window.announceToScreenReader = function (message) {
   const el = document.createElement('div');
   el.setAttribute('role', 'status');
   el.setAttribute('aria-live', 'polite');
@@ -353,8 +348,8 @@ window.announceToScreenReader = function(message) {
 
 document.addEventListener('DOMContentLoaded', () => {
   wireUpEvents();
+  initUploadArea();
 
-  // Restore auth UI state after a brief delay to let auth modules load
   setTimeout(() => {
     const user = (typeof googleUser !== 'undefined' && googleUser) ||
                  (typeof currentUser !== 'undefined' && currentUser) || null;
