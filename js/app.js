@@ -1,3 +1,17 @@
+// App initialization — FIXED
+//
+// Fix 1: fileInput 'change' listener is now attached immediately on
+//         DOMContentLoaded, NOT after the async init chain completes.
+//         Previously the user could pick an image during the 5-15s load
+//         window (Tesseract download + DB fetch + Google Auth polling)
+//         and the change event fired with zero listeners — silently dropped.
+//
+// Fix 2: loadAppConfig() is now called FIRST in init().
+//         It was never called before, so appConfig stayed {} forever.
+//         Without appConfig.apiToken the API returned 401 Unauthorized
+//         on every scan attempt, silently failing in the catch block.
+
+// ── Step 1: Wire fileInput immediately — before ANY async work ────────────────
 // This runs synchronously as soon as the script tag is parsed.
 // handleFiles is defined in scanner.js which loads before app.js.
 function attachFileInputNow() {
