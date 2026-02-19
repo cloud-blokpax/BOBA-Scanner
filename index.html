@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Professional Bo Jackson trading card scanner with AI-powered identification">
+    <meta name="theme-color" content="#2563eb">
+    
+    <!-- iOS Web App -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Card Scanner">
+    
+    <title>Bo Jackson Card Scanner | AI-Powered Card Recognition</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <!-- Logo — smooth scroll handled in ui-enhancements.js -->
+                <a href="/" class="app-logo">
+                    <div class="logo-icon">🎴</div>
+                    <div>
+                        <div>Card Scanner</div>
+                        <span class="app-tagline">Smart OCR + AI Detection</span>
+                    </div>
+                </a>
+                
+                <!-- User Profile -->
+                <!-- FIXED: All onclick="" removed — handlers wired in ui.js wireUpEvents() -->
+                <div class="user-profile" id="userProfile">
+                    <button class="btn-secondary" id="btnSignIn" style="display: none;">
+                        Sign In
+                    </button>
+                    
+                    <div id="userAuthenticated" style="display: none;">
+                        <div class="user-info">
+                            <div class="user-name" id="userName">Loading...</div>
+                            <div class="user-email" id="userEmail"></div>
+                        </div>
+                        <img class="user-avatar" id="userAvatar" alt="User">
+                        <!-- FIXED: was onclick="signOut()" -->
+                        <button class="btn-sign-out" id="btnSignOut">Sign Out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Main Content -->
+        <main class="app-main">
+            
+            <!-- Stats Dashboard -->
+            <div class="stats-container" id="statsContainer">
+                <div class="stat-card">
+                    <div class="stat-icon cards">🎴</div>
+                    <div class="stat-label">Cards Scanned</div>
+                    <div class="stat-value" id="statCards">0 / 5</div>
+                    <div class="stat-sublabel" id="statCardsLabel">Guest limit</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon ai">🤖</div>
+                    <div class="stat-label">AI Lookups</div>
+                    <div class="stat-value" id="statAI">0 / 1</div>
+                    <div class="stat-sublabel" id="statAILabel">Remaining</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon cost">💰</div>
+                    <div class="stat-label">Total Cost</div>
+                    <div class="stat-value" id="statCost">$0.00</div>
+                    <div class="stat-sublabel">This session</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon rate">📊</div>
+                    <div class="stat-label">Free Rate</div>
+                    <div class="stat-value" id="statRate">0%</div>
+                    <div class="stat-sublabel">OCR success</div>
+                </div>
+            </div>
+            
+            <!-- Upload Section -->
+            <!-- FIXED: Buttons have IDs; no onclick="" attributes -->
+            <section class="upload-section" id="uploadArea">
+                <div class="upload-icon">📷</div>
+                <h1 class="upload-title">Upload or Capture</h1>
+                <p class="upload-subtitle">Choose from gallery or take a photo</p>
+                
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                
+                <button class="btn-primary" id="btnChooseImage">
+                    <span class="btn-icon">🖼️</span>
+                    <span>Choose Image</span>
+                </button>
+                
+                <div class="button-group">
+                    <!-- FIXED: was onclick="capturePhoto()" -->
+                    <button class="btn-group-item" id="btnCapture">
+                        <span class="btn-icon">📸</span>
+                        <span>Take Photo</span>
+                    </button>
+                    <!-- FIXED: was onclick="openSettings()" -->
+                    <button class="btn-group-item" id="btnSettings">
+                        <span class="btn-icon">⚙️</span>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Export Section -->
+            <section class="export-section" style="padding: 20px; text-align: center;">
+                <h3 style="margin-bottom: 16px;">Export Your Collection</h3>
+                <div class="button-group">
+                    <!-- FIXED: were onclick="..." -->
+                    <button class="btn-group-item" id="btnExportCSV">
+                        <span class="btn-icon">📄</span>
+                        <span>Export CSV</span>
+                    </button>
+                    <button class="btn-group-item" id="btnExportExcel">
+                        <span class="btn-icon">📊</span>
+                        <span>Export Excel</span>
+                    </button>
+                </div>
+            </section>
+            
+            <!-- Collections Bar -->
+            <div class="collections-bar" id="collectionsBar" style="display: none;"></div>
+            
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📭</div>
+                <h2 class="empty-title">No cards scanned yet</h2>
+                <p class="empty-text">Upload your first Bo Jackson card to get started!</p>
+            </div>
+            
+            <!-- Cards Grid -->
+            <div class="cards-grid" id="cardsGrid"></div>
+            
+        </main>
+        
+        <!-- Floating Action Button -->
+        <div class="fab-container" id="fabContainer" style="display: none;">
+            <!-- FIXED: was onclick="document.getElementById('fileInput').click()" -->
+            <button class="fab" id="fabScan" aria-label="Scan new card">
+                <span>+</span>
+            </button>
+        </div>
+        
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">Processing...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+    </div>
+    
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span class="toast-icon" id="toastIcon">✓</span>
+        <span class="toast-message" id="toastMessage">Success!</span>
+    </div>
+    
+    <!-- Settings Modal -->
+    <!-- FIXED: onchange="" attributes removed — wired in ui.js wireUpEvents() -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-backdrop" id="settingsModalBackdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" id="settingsModalClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h3>Scan Settings</h3>
+                    <label class="setting-item">
+                        <input type="checkbox" id="toggleAutoDetect" checked>
+                        <span>Auto-detect card edges</span>
+                    </label>
+                    <label class="setting-item">
+                        <input type="checkbox" id="togglePerspective" checked>
+                        <span>Perspective correction</span>
+                    </label>
+                    <label class="setting-item">
+                        <input type="checkbox" id="toggleRegionOcr" checked>
+                        <span>Region-based OCR</span>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>Quality</h3>
+                    <select id="selectQuality" class="setting-select">
+                        <option value="0.5">Low (Fast)</option>
+                        <option value="0.7" selected>Medium</option>
+                        <option value="0.9">High (Slow)</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <h3>OCR Confidence Threshold</h3>
+                    <div class="setting-range-container">
+                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range">
+                        <span><span id="thresholdValue">60</span>%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="settingsCloseBtn">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Admin Dashboard Modal (shell — populated dynamically) -->
+    <div id="adminModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Admin Dashboard</h2>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body" id="adminDashboardContent"></div>
+        </div>
+    </div>
+
+    <!-- FAB wiring (can't be in ui.js DOMContentLoaded since FAB is outside main) -->
+    <script>
+      document.getElementById('fabScan')?.addEventListener('click', () => {
+        document.getElementById('fileInput')?.click();
+      });
+    </script>
+    
+    <!-- Scripts — load order still matters for globals; see state.js for why -->
+    <script src="js/state.js"></script>      <!-- MUST BE FIRST: defines ready, database, appConfig -->
+    <script src="js/config.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/ocr.js"></script>
+    <script src="js/opencv.js"></script>
+    <script src="js/collections.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/scanner.js"></script>
+    <script src="js/ui.js"></script>          <!-- defines showToast, showLoading, escapeHtml -->
+    <script src="js/google-auth.js"></script>
+    <script src="js/user-management.js"></script>
+    <script src="js/admin-dashboard.js"></script>
+    <script src="js/statistics.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/batch-scanner.js"></script>
+    <script src="js/app.js"></script>         <!-- MUST BE LAST: orchestrates init -->
+    <script src="js/ui-enhancements.js"></script>
+</body>
+</html>
