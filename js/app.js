@@ -1,4 +1,4 @@
-// App initialization - FIXED
+// App initialization - COMPLETE FIXED VERSION
 
 async function init() {
     console.log('🚀 Initializing Card Scanner...');
@@ -37,14 +37,7 @@ async function init() {
             loadOpenCV()
         ]);
         
-        // Connect file input
-        // ── FIX ──────────────────────────────────────────────────────────────
-        // REMOVED: cloneNode on fileInput was redundant — the input starts
-        // with no listeners, so there is nothing to clear. The clone also
-        // ran AFTER initUploadArea(), which had already set up drag/drop on
-        // the upload area. The clone itself is harmless but adds confusion.
-        // Attach the change listener directly to the existing element.
-        // ─────────────────────────────────────────────────────────────────────
+        // Connect file input directly — no cloneNode needed
         const fileInput = document.getElementById('fileInput');
         if (fileInput && typeof handleFiles === 'function') {
             console.log('📎 Connecting file input...');
@@ -52,10 +45,11 @@ async function init() {
             console.log('✅ File input connected');
         }
         
-        // Init upload area (drag & drop only — buttons use inline onclick)
+        // CRITICAL: Only init upload area ONCE
         if (typeof initUploadArea === 'function') {
             console.log('📤 Initializing upload area...');
             initUploadArea();
+            console.log('✅ Upload area ready');
         }
         
         // Update limits UI
