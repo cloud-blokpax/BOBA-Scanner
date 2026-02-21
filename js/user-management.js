@@ -312,7 +312,7 @@ function updateLimitsUI() {
   if (statCards)      statCards.textContent      = `${totalCards} / ${cardLimit}`;
   if (statCardsLabel) statCardsLabel.textContent  = guest ? 'Guest limit' : 'Your limit';
   if (statAI)         statAI.textContent          = `${aiUsed} / ${aiLimit}`;
-  if (statAILabel)    statAILabel.textContent      = guest ? 'Guest limit' : 'Remaining';
+  if (statAILabel)    statAILabel.textContent      = guest ? 'Guest limit' : `${aiLimit - aiUsed} remaining`;
 }
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
