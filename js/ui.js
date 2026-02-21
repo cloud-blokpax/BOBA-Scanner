@@ -39,34 +39,25 @@ function setProgress(percent) {
 }
 
 function updateStats() {
-    // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
-    const currentId = getCurrentCollectionId();
-    const collection = collections.find(c => c.id === currentId);
-    
-    if (!collection) {
-        console.warn('No collection found for stats update');
-        return;
-    }
-    
-    const stats = collection.stats;
-    const paid = stats.scanned - stats.free;
-    const rate = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
-    
-    const statFree = document.getElementById('statFree');
-    const statPaid = document.getElementById('statPaid');
-    const statCost = document.getElementById('statCost');
-    const statRate = document.getElementById('statRate');
-    
-    if (statFree) statFree.textContent = stats.free;
-    if (statPaid) statPaid.textContent = paid;
-    if (statCost) statCost.textContent = `$${stats.cost.toFixed(2)}`;
-    if (statRate) statRate.textContent = `${rate}%`;
-    
-    const statsBar = document.getElementById('statsBar');
-    if (statsBar) {
-        statsBar.classList.toggle('hidden', stats.scanned === 0);
-    }
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection) return;
+
+    const stats  = collection.stats;
+    const aiUsed = stats.aiCalls || 0;
+    const rate   = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
+
+    // IDs match the stat cards in index.html
+    const statCards = document.getElementById('statCards');
+    const statAI    = document.getElementById('statAI');
+    const statCost  = document.getElementById('statCost');
+    const statRate  = document.getElementById('statRate');
+
+    if (statCards) statCards.textContent = `${stats.scanned} / 5`;
+    if (statAI)    statAI.textContent    = `${aiUsed} / 1`;
+    if (statCost)  statCost.textContent  = `$${(stats.cost || 0).toFixed(2)}`;
+    if (statRate)  statRate.textContent  = `${rate}%`;
 }
 
 function renderCards() {
@@ -96,25 +87,33 @@ function renderCards() {
     
     // Show/hide empty state
     if (cards.length === 0) {
-        if (empty) empty.classList.remove('hidden');
-        if (actionBar) actionBar.classList.add('hidden');
+        if (empty) empty.style.display = '';
+        if (actionBar) actionBar.style.display = 'none';
         grid.innerHTML = '';
         grid.style.display = 'none';
         return;
     }
     
-    if (empty) empty.classList.add('hidden');
-    if (actionBar) actionBar.classList.remove('hidden');
+    if (empty) empty.style.display = 'none';
+    if (actionBar) actionBar.style.display = '';
     grid.style.display = 'grid';
     
     // Render cards
     grid.innerHTML = cards.map((card, i) => `
-        <div class="card">
-            <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
-            <div class="card-body">
+        <div class="card-item">
+            <div class="card-image-container">
+                <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
                 <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
                     ${card.scanMethod}
                 </span>
+            </div>
+            <div class="card-content">
+                <div class="card-title">${card.hero || 'Unknown Card'}</div>
+                <div class="card-meta">
+                    <span class="meta-tag">${card.year || ''}</span>
+                    <span class="meta-tag">${card.set || ''}</span>
+                    <span class="meta-tag">${card.cardNumber || ''}</span>
+                </div>
                 <div class="card-fields">
                     ${renderField('Card ID', 'cardId', i, card.cardId, true)}
                     ${renderField('Name', 'hero', i, card.hero, true)}
