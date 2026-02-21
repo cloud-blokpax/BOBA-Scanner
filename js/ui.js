@@ -60,16 +60,25 @@ function updateStats() {
     const aiUsed = stats.aiCalls || 0;
     const rate   = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
 
-    // IDs match the stat cards in index.html
-    const statCards = document.getElementById('statCards');
-    const statAI    = document.getElementById('statAI');
-    const statCost  = document.getElementById('statCost');
-    const statRate  = document.getElementById('statRate');
+    // Use actual user limits from userLimits (set after sign-in) or guest defaults
+    const isGuest    = typeof userLimits === 'undefined' || !userLimits;
+    const cardLimit  = isGuest ? 5  : (userLimits.maxCards    || 5);
+    const aiLimit    = isGuest ? 1  : (userLimits.maxApiCalls || 1);
+    const sublabel   = isGuest ? 'Guest limit' : 'Your limit';
 
-    if (statCards) statCards.textContent = `${stats.scanned} / 5`;
-    if (statAI)    statAI.textContent    = `${aiUsed} / 1`;
-    if (statCost)  statCost.textContent  = `$${(stats.cost || 0).toFixed(2)}`;
-    if (statRate)  statRate.textContent  = `${rate}%`;
+    const statCards      = document.getElementById('statCards');
+    const statAI         = document.getElementById('statAI');
+    const statCost       = document.getElementById('statCost');
+    const statRate       = document.getElementById('statRate');
+    const statCardsLabel = document.getElementById('statCardsLabel');
+    const statAILabel    = document.getElementById('statAILabel');
+
+    if (statCards)      statCards.textContent      = `${stats.scanned} / ${cardLimit}`;
+    if (statAI)         statAI.textContent          = `${aiUsed} / ${aiLimit}`;
+    if (statCost)       statCost.textContent        = `$${(stats.cost || 0).toFixed(2)}`;
+    if (statRate)       statRate.textContent        = `${rate}%`;
+    if (statCardsLabel) statCardsLabel.textContent  = sublabel;
+    if (statAILabel)    statAILabel.textContent     = `${aiLimit - aiUsed} remaining`;
 }
 
 function renderCards() {
