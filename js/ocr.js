@@ -51,14 +51,30 @@ async function runOCR(imageUrl) {
 }
 
 async function runOCROnRegion(sourceCanvas, region) {
-    const cropped    = cropAndPreprocess(sourceCanvas, region);
-    const dataUrl    = cropped.toDataURL('image/png');
-    // Pass OCR options directly to recognize() — correct Tesseract.js v4 API
-    const result     = await tesseractWorker.recognize(dataUrl);
-    const text       = result.data.text || '';
-    const confidence = result.data.confidence || 0;
-    const cardNumber = extractCardNumber(text);
-    return { text, confidence, cardNumber };
+    const cropped  = cropAndPreprocess(sourceCanvas, region);
+    const dataUrl  = cropped.toDataURL('image/png');
+    try {
+        const result     = await tesseractWorker.recognize(dataUrl);
+        const text       = result.data.text || '';
+        const confidence = result.data.confidence || 0;
+        const cardNumber = extractCardNumber(text);
+        return { text, confidence, cardNumber };
+    } catch (err) {
+        // Worker became invalid — recreate it and retry once
+        console.warn('OCR worker error, recreating...', err.message);
+        try {
+            tesseractWorker = await Tesseract.createWorker('eng');
+            ready.ocr = true;
+            const result     = await tesseractWorker.recognize(dataUrl);
+            const text       = result.data.text || '';
+            const confidence = result.data.confidence || 0;
+            const cardNumber = extractCardNumber(text);
+            return { text, confidence, cardNumber };
+        } catch (err2) {
+            console.warn('OCR worker recreation failed:', err2.message);
+            return { text: '', confidence: 0, cardNumber: null };
+        }
+    }
 }
 
 function loadImageToCanvas(imageUrl) {
