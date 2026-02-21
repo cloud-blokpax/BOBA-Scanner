@@ -98,6 +98,12 @@ async function handleUserSignIn(googleUser) {
       showAdminButton();
     }
 
+    // Trigger sync now that currentUser is set
+    // (setupAutoSync in app.js runs too early, before sign-in completes)
+    if (typeof setupAutoSync === 'function') {
+      setupAutoSync();
+    }
+
     return currentUser;
 
   } catch (err) {
