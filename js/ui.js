@@ -403,24 +403,17 @@ function wireUpEvents() {
     console.log('✅ Button events wired');
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Wire up all button event listeners immediately
+// Scripts load at bottom of <body>, so DOM is already ready when this runs.
+// DOMContentLoaded has already fired — addEventListener for it would never trigger.
+// Call directly instead.
+(function() {
     wireUpEvents();
-
-    // Also call initUploadArea for drag-and-drop
-    if (typeof initUploadArea === 'function') {
-        initUploadArea();
-    }
-
+    initUploadArea();
     setTimeout(() => {
-        if (typeof googleUser !== 'undefined' && googleUser) {
-            updateAuthUI(googleUser);
-        } else if (typeof currentUser !== 'undefined' && currentUser) {
-            updateAuthUI(currentUser);
-        } else {
-            updateAuthUI(null);
-        }
+        const user = (typeof googleUser !== 'undefined' && googleUser) ||
+                     (typeof currentUser !== 'undefined' && currentUser) || null;
+        updateAuthUI(user);
     }, 500);
-});
+})();
 
 console.log('✅ UI helpers loaded');
