@@ -114,7 +114,11 @@ function renderCards() {
     grid.innerHTML = cards.map((card, i) => `
         <div class="card-item">
             <div class="card-image-container">
-                <img class="card-image" src="${card.imageUrl}" alt="${card.cardNumber}">
+                <img class="card-image" 
+                     src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
+                     alt="${card.cardNumber}"
+                     onerror="this.style.display='none'"
+                     style="${(!card.imageUrl || card.imageUrl.startsWith('blob:')) ? 'display:none' : ''}">
                 <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
                     ${card.scanMethod}
                 </span>
