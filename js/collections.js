@@ -34,6 +34,8 @@ function getCollections() {
 function saveCollections(collections) {
   try {
     localStorage.setItem('collections', JSON.stringify(collections));
+    // Push to cloud after every save (debounced 2s)
+    if (typeof schedulePush === 'function') schedulePush();
   } catch (err) {
     console.error('Error saving collections:', err);
     showToast('Storage full — export your collection to free space', '⚠️');
