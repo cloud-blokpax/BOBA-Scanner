@@ -17,6 +17,20 @@ async function handleFiles(e) {
   const files = e.target.files || e.dataTransfer?.files;
   if (!files || files.length === 0) return;
 
+  // Guard: if the app is still initializing, wait up to 15s for DB to be ready
+  if (!ready.db) {
+    showToast('Still loading — please wait a moment...', '⏳');
+    let waited = 0;
+    while (!ready.db && waited < 15000) {
+      await new Promise(r => setTimeout(r, 500));
+      waited += 500;
+    }
+    if (!ready.db) {
+      showToast('App failed to load. Please refresh the page.', '❌');
+      return;
+    }
+  }
+
   setProgress(0);
 
   for (let i = 0; i < files.length; i++) {
@@ -80,9 +94,12 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
   // ── OCR path (free) ──────────────────────────────────────────────────────
   if (ready.ocr && tesseractWorker) {
     try {
-      showLoading(true, 'Running OCR...');
-      // FIXED: Use pre-initialized worker via runOCR() — not Tesseract.recognize()
-      const ocrResult = await runOCR(imageUrl);
+      showLoading(true, 'Reading card number...');
+      // Run OCR with a 12-second timeout so it never hangs forever
+      const ocrResult = await Promise.race([
+        runOCR(imageUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 12000))
+      ]);
       cardNum  = extractCardNumber(ocrResult.text);
       heroName = _extractHeroFromOCR(ocrResult.text);
 
@@ -105,7 +122,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
   }
 
   // ── AI fallback path ──────────────────────────────────────────────────────
-  showLoading(true, 'Calling AI...');
+  showLoading(true, 'Identifying card with AI...');
 
   if (typeof canMakeApiCall === 'function') {
     const canCall = await canMakeApiCall();
