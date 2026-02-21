@@ -1,20 +1,10 @@
-// js/ocr.js — FAST SINGLE-PASS VERSION
-//
-// The previous "enhanced" version ran up to 24 Tesseract passes
-// (4 regions × 3 preprocessing variants × 2 PSM modes).
-// Each pass takes 3-8s → total wait up to 2 minutes with no visible progress.
-// Reverted to a single-pass approach that still improves on the original:
-//
-//  ✓ Pre-initialized worker (reused across scans — fast)
-//  ✓ Adaptive threshold (better than fixed 128 cutoff)
-//  ✓ 3× upscale of the card number region
-//  ✓ Tesseract whitelist + single-line PSM
-//  ✓ Context-aware character repair (alpha vs numeric parts)
-//  ✓ Tries bottom-left THEN bottom-right if first attempt fails
-//  ✓ Falls through to AI quickly if OCR confidence is low
+// js/ocr.js
+// Fix: Removed tesseractWorker.setParameters() call from initTesseract().
+// In Tesseract.js v4, setParameters() can fail with "Cannot read properties
+// of null (reading 'SetVariable')" if called immediately after createWorker().
+// The whitelist and PSM mode are now passed directly inside recognize() calls
+// via the options parameter, which is the correct v4 API.
 
-// tesseractWorker is declared as a global in state.js
-// Setting it here makes it available to scanner.js's ready check
 async function initTesseract() {
     setStatus('ocr', 'loading');
     try {
@@ -25,13 +15,8 @@ async function initTesseract() {
         }
         if (typeof Tesseract === 'undefined') throw new Error('Tesseract not loaded');
 
+        // createWorker with language only — no setParameters() here
         tesseractWorker = await Tesseract.createWorker('eng');
-        
-        // Tune Tesseract for card number recognition
-        await tesseractWorker.setParameters({
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
-            tessedit_pageseg_mode: '7'  // single line of text
-        });
 
         ready.ocr = true;
         setStatus('ocr', 'ready');
@@ -42,8 +27,13 @@ async function initTesseract() {
     }
 }
 
+// Tesseract v4 recognize options for card number extraction
+const OCR_OPTIONS = {
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+    tessedit_pageseg_mode:   '7'  // single line of text
+};
+
 // Main entry point — called by scanner.js
-// Returns { text, confidence, cardNumber }
 async function runOCR(imageUrl) {
     if (!ready.ocr || !tesseractWorker) {
         throw new Error('OCR not ready');
@@ -55,25 +45,24 @@ async function runOCR(imageUrl) {
     const result1 = await runOCROnRegion(sourceCanvas, { x: 0.03, y: 0.83, w: 0.40, h: 0.14 });
     if (result1.cardNumber) return result1;
 
-    // Try bottom-right if bottom-left failed (some sets)
+    // Try bottom-right if bottom-left failed
     const result2 = await runOCROnRegion(sourceCanvas, { x: 0.57, y: 0.83, w: 0.40, h: 0.14 });
     if (result2.cardNumber) return result2;
 
-    // Return best of the two even without a parsed number
     return result1.confidence >= result2.confidence ? result1 : result2;
 }
 
 async function runOCROnRegion(sourceCanvas, region) {
     const cropped    = cropAndPreprocess(sourceCanvas, region);
     const dataUrl    = cropped.toDataURL('image/png');
-    const result     = await tesseractWorker.recognize(dataUrl);
+    // Pass OCR options directly to recognize() — correct Tesseract.js v4 API
+    const result     = await tesseractWorker.recognize(dataUrl, OCR_OPTIONS);
     const text       = result.data.text || '';
     const confidence = result.data.confidence || 0;
     const cardNumber = extractCardNumber(text);
     return { text, confidence, cardNumber };
 }
 
-// Load image URL into a canvas (upscaled for better OCR)
 function loadImageToCanvas(imageUrl) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -90,16 +79,14 @@ function loadImageToCanvas(imageUrl) {
     });
 }
 
-// Crop a region from the card and apply preprocessing
 function cropAndPreprocess(sourceCanvas, region) {
-    const sw = sourceCanvas.width;
-    const sh = sourceCanvas.height;
-    const sx = Math.floor(sw * region.x);
-    const sy = Math.floor(sh * region.y);
+    const sw  = sourceCanvas.width;
+    const sh  = sourceCanvas.height;
+    const sx  = Math.floor(sw * region.x);
+    const sy  = Math.floor(sh * region.y);
     const sw2 = Math.floor(sw * region.w);
     const sh2 = Math.floor(sh * region.h);
 
-    // 3× upscale — more pixels = better Tesseract accuracy
     const SCALE = 3;
     const out   = document.createElement('canvas');
     out.width   = sw2 * SCALE;
@@ -107,20 +94,17 @@ function cropAndPreprocess(sourceCanvas, region) {
     const ctx   = out.getContext('2d');
     ctx.drawImage(sourceCanvas, sx, sy, sw2, sh2, 0, 0, out.width, out.height);
 
-    // Adaptive threshold — handles gradient backgrounds and uneven lighting
-    // Better than a fixed cutoff (gray > 128 → white) for card photography
+    // Adaptive threshold
     const imageData = ctx.getImageData(0, 0, out.width, out.height);
-    const data      = imageData.data;
-    const w         = out.width;
-    const h         = out.height;
+    const data = imageData.data;
+    const w    = out.width;
+    const h    = out.height;
 
-    // Convert to grayscale
     const gray = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) {
-        gray[i] = Math.round(data[i*4] * 0.299 + data[i*4+1] * 0.587 + data[i*4+2] * 0.114);
+        gray[i] = Math.round(data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114);
     }
 
-    // Build integral image for fast window averages
     const integral = new Float64Array((w+1) * (h+1));
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -131,9 +115,7 @@ function cropAndPreprocess(sourceCanvas, region) {
         }
     }
 
-    // Threshold each pixel against local neighbourhood mean
-    const half = 10;
-    const C    = 8;
+    const half = 10, C = 8;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const x1  = Math.max(0, x - half);
@@ -149,25 +131,18 @@ function cropAndPreprocess(sourceCanvas, region) {
             data[idx+3] = 255;
         }
     }
-
     ctx.putImageData(imageData, 0, 0);
     return out;
 }
 
-// Parse a card number from OCR text with context-aware character repair
 function extractCardNumber(text) {
-    const upper = text.toUpperCase()
-        .replace(/[|!¡]/g, 'I')
-        .replace(/\s+/g, ' ')
-        .trim();
-
+    const upper = text.toUpperCase().replace(/[|!¡]/g, 'I').replace(/\s+/g, ' ').trim();
     const patterns = [
         /\b([A-Z]{2,5})[-–—]\s*(\d{1,4})\b/,
         /\b([A-Z]{2,5})\s+(\d{2,4})\b/,
         /\b([A-Z]{2,5})(\d{2,4})\b/,
         /([A-Z]{2,})[\s\-–—]*(\d{2,})/,
     ];
-
     for (const pattern of patterns) {
         const match = upper.match(pattern);
         if (match) {
