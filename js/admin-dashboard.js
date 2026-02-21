@@ -58,15 +58,20 @@ async function fetchRecentLogs(limit = 100) {
 }
 
 async function fetchSystemStats() {
-  const today = new Date().toISOString().split('T')[0];
-  const { data, error } = await window.supabaseClient
-    .from('system_stats')
-    .select('*')
-    .eq('date', today)
-    .single();
-
-  if (error && error.code !== 'PGRST116') throw error;
-  return data || await calculateTodayStats();
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await window.supabaseClient
+      .from('system_stats')
+      .select('*')
+      .eq('date', today)
+      .single();
+    // 406 = table doesn't exist, PGRST116 = no row — both are fine
+    if (error && error.code !== 'PGRST116' && error.status !== 406) throw error;
+    return data || await calculateTodayStats();
+  } catch (err) {
+    console.warn('system_stats not available, calculating live:', err.message);
+    return await calculateTodayStats();
+  }
 }
 
 // FIXED: All 4 queries run in parallel (was sequential — 4× slower)
