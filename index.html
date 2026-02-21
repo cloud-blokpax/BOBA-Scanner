@@ -7,9 +7,9 @@
     <meta name="theme-color" content="#2563eb">
     
     <!-- iOS Web App -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-status-bar-style" content="default">
-    <meta name="mobile-web-app-title" content="Card Scanner">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Card Scanner">
     
     <title>Bo Jackson Card Scanner | AI-Powered Card Recognition</title>
     
@@ -99,19 +99,19 @@
                 
                 <input type="file" id="fileInput" accept="image/*" style="display: none;">
                 
-                <button class="btn-primary" id="btnChooseImage" onclick="document.getElementById('fileInput').click()">
+                <button class="btn-primary" id="btnChooseImage" >
                     <span class="btn-icon">🖼️</span>
                     <span>Choose Image</span>
                 </button>
                 
                 <div class="button-group">
                     <!-- FIXED: was onclick="capturePhoto()" -->
-                    <button class="btn-group-item" id="btnCapture" onclick="capturePhoto(event)">
+                    <button class="btn-group-item" id="btnCapture" >
                         <span class="btn-icon">📸</span>
                         <span>Take Photo</span>
                     </button>
                     <!-- FIXED: was onclick="openSettings()" -->
-                    <button class="btn-group-item" id="btnSettings" onclick="openSettings()">
+                    <button class="btn-group-item" id="btnSettings" >
                         <span class="btn-icon">⚙️</span>
                         <span>Settings</span>
                     </button>
