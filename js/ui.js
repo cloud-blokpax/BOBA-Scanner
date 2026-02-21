@@ -1,5 +1,17 @@
 // UI Helper Functions - COMPLETE PRODUCTION VERSION
 
+// Sanitize user-controlled strings before inserting into HTML
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+
 function setStatus(type, state) {
     const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
     if (el) el.className = `status-dot ${state}`;
