@@ -27,11 +27,9 @@ async function initTesseract() {
     }
 }
 
-// Tesseract v4 recognize options for card number extraction
-const OCR_OPTIONS = {
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
-    tessedit_pageseg_mode:   '7'  // single line of text
-};
+// Tesseract.js v4 does NOT accept options as a second arg to recognize().
+// Parameters must be set via worker.setParameters() AFTER the worker is loaded.
+// We skip the whitelist here — extractCardNumber() handles cleanup instead.
 
 // Main entry point — called by scanner.js
 async function runOCR(imageUrl) {
@@ -56,7 +54,7 @@ async function runOCROnRegion(sourceCanvas, region) {
     const cropped    = cropAndPreprocess(sourceCanvas, region);
     const dataUrl    = cropped.toDataURL('image/png');
     // Pass OCR options directly to recognize() — correct Tesseract.js v4 API
-    const result     = await tesseractWorker.recognize(dataUrl, OCR_OPTIONS);
+    const result     = await tesseractWorker.recognize(dataUrl);
     const text       = result.data.text || '';
     const confidence = result.data.confidence || 0;
     const cardNumber = extractCardNumber(text);
