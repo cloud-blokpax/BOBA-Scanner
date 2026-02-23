@@ -554,22 +554,68 @@ window.openCardDetail = function(index) {
         ? new Date(card.timestamp).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })
         : 'Unknown';
 
+    // ── Listing status with clear button ──────────────────────────────────
     const listingHtml = card.listingStatus === 'listed'
         ? `<div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-             <div style="font-weight:700;color:#065f46;margin-bottom:4px;">🟢 Currently Listed on eBay</div>
-             ${card.listingTitle ? `<div style="font-size:12px;color:#374151;margin-bottom:6px;">${escapeHtml(card.listingTitle)}</div>` : ''}
-             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-               ${card.listingPrice ? `<span style="font-size:16px;font-weight:800;color:#065f46;">${escapeHtml(card.listingPrice)}</span>` : ''}
-               ${card.listingUrl   ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener"
-                                        style="color:#2563eb;font-size:13px;font-weight:600;text-decoration:none;">
-                                        View Listing →</a>` : ''}
+             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+               <div>
+                 <div style="font-weight:700;color:#065f46;margin-bottom:4px;">🟢 Currently Listed on eBay</div>
+                 ${card.listingTitle ? `<div style="font-size:12px;color:#374151;margin-bottom:6px;">${escapeHtml(card.listingTitle)}</div>` : ''}
+                 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                   ${card.listingPrice ? `<span style="font-size:16px;font-weight:800;color:#065f46;">${escapeHtml(card.listingPrice)}</span>` : ''}
+                   ${card.listingUrl ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener" style="color:#2563eb;font-size:13px;font-weight:600;text-decoration:none;">View Listing →</a>` : ''}
+                 </div>
+               </div>
+               <button onclick="clearCardListingStatus(${index})" title="Clear listing status"
+                       style="background:none;border:1px solid #6ee7b7;border-radius:6px;padding:3px 8px;font-size:11px;color:#065f46;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+                 Clear ✕
+               </button>
              </div>
            </div>`
         : card.listingStatus === 'sold'
         ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-             <strong>🔴 Sold</strong>${card.soldAt ? ` on ${new Date(card.soldAt).toLocaleDateString()}` : ''}
+             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+               <strong>🔴 Sold${card.soldAt ? ` on ${new Date(card.soldAt).toLocaleDateString()}` : ''}</strong>
+               <button onclick="clearCardListingStatus(${index})" title="Remove sold status"
+                       style="background:none;border:1px solid #fca5a5;border-radius:6px;padding:3px 8px;font-size:11px;color:#991b1b;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+                 Clear ✕
+               </button>
+             </div>
            </div>`
         : '';
+
+    // ── Tags editor ───────────────────────────────────────────────────────
+    const cardTags = Array.isArray(card.tags) ? card.tags.filter(Boolean) : [];
+    const tagsHtml = `
+        <div style="margin-bottom:12px;">
+            <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">Tags</label>
+            <div id="detailTagsContainer" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:24px;">
+                ${cardTags.map(t => `
+                    <span class="tag-chip" style="display:inline-flex;align-items:center;gap:4px;">
+                        ${escapeHtml(t)}
+                        <button onclick="removeDetailTag(${index},'${escapeHtml(t).replace(/'/g,"\\'")}',this)"
+                                style="background:none;border:none;cursor:pointer;padding:0;font-size:11px;color:#6b7280;line-height:1;">✕</button>
+                    </span>`).join('')}
+                ${cardTags.length === 0 ? '<span style="font-size:12px;color:#9ca3af;">No tags yet</span>' : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+                <input type="text" id="detailTagInput" placeholder="Add tag..."
+                       style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;"
+                       onkeydown="if(event.key==='Enter'){addDetailTag(${index});event.preventDefault();}">
+                <button onclick="addDetailTag(${index})" class="btn-tag-add" style="padding:6px 12px;">Add</button>
+            </div>
+        </div>`;
+
+    // ── eBay avg price (loads async after render) ─────────────────────────
+    const priceHtml = `
+        <div id="detailEbayPrice" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">eBay Market Price</div>
+                <div id="detailEbayPriceValue" style="font-size:15px;font-weight:700;color:#111827;">Loading...</div>
+            </div>
+            <a id="detailEbayPriceLink" href="${escapeHtml(ebayUrl || '#')}" target="_blank" rel="noopener"
+               style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">View listings →</a>
+        </div>`;
 
     const html = `
     <div class="modal active" id="cardDetailModal">
@@ -587,6 +633,7 @@ window.openCardDetail = function(index) {
                     : ''}
 
                 ${listingHtml}
+                ${priceHtml}
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
                     ${[
@@ -596,7 +643,7 @@ window.openCardDetail = function(index) {
                     ].map(([label, val]) => val ? `
                         <div style="background:#f9fafb;border-radius:8px;padding:10px;">
                             <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">${label}</div>
-                            <div style="font-size:14px;font-weight:600;color:#111827;margin-top:2px;">${escapeHtml(val)}</div>
+                            <div style="font-size:14px;font-weight:600;color:#111827;margin-top:2px;">${escapeHtml(String(val))}</div>
                         </div>` : '').join('')}
                 </div>
 
@@ -614,6 +661,8 @@ window.openCardDetail = function(index) {
                               placeholder="Purchase price, provenance, grading notes..."
                               onchange="updateCard(${index},'notes',this.value)">${escapeHtml(card.notes || '')}</textarea>
                 </div>
+
+                ${tagsHtml}
 
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid #f3f4f6;">
                     <div style="font-size:12px;color:#9ca3af;">
@@ -636,6 +685,30 @@ window.openCardDetail = function(index) {
     </div>`;
 
     document.body.insertAdjacentHTML('beforeend', html);
+
+    // Async: fetch eBay avg price after modal renders
+    if (typeof fetchEbayAvgPrice === 'function') {
+        fetchEbayAvgPrice(card).then(result => {
+            const el = document.getElementById('detailEbayPriceValue');
+            if (!el) return;
+            if (!result || result.count === 0) {
+                el.textContent = 'N/A';
+                el.style.color = '#9ca3af';
+                document.getElementById('detailEbayPriceLink').style.display = 'none';
+            } else {
+                el.textContent = `$${result.avgPrice.toFixed(2)} avg`;
+                if (result.count > 1) {
+                    el.innerHTML += ` <span style="font-size:11px;color:#6b7280;font-weight:400;">(${result.count} listings · $${result.lowPrice}–$${result.highPrice})</span>`;
+                }
+            }
+        }).catch(() => {
+            const el = document.getElementById('detailEbayPriceValue');
+            if (el) { el.textContent = 'Unavailable'; el.style.color = '#9ca3af'; }
+        });
+    } else {
+        const el = document.getElementById('detailEbayPriceValue');
+        if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
+    }
 };
 
 // Open card detail from collection modal — takes colId + index directly
@@ -687,6 +760,98 @@ window.updateCardDetailField = function(index, field, value) {
     // Keep the main card grid select in sync
     const sel = document.querySelector(`#card_item_${index} select`);
     if (sel && field === 'condition') sel.value = value;
+};
+
+// Clear sold/listed status from card detail — removes status, dates, listing metadata,
+// and removes the "Listed on eBay" / "Sold" tags automatically added by the monitor
+window.clearCardListingStatus = function(index) {
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection?.cards[index]) return;
+
+    const card = collection.cards[index];
+
+    // Clear all listing fields
+    card.listingStatus  = null;
+    card.listingUrl     = null;
+    card.listingTitle   = null;
+    card.listingPrice   = null;
+    card.listingItemId  = null;
+    card.soldAt         = null;
+
+    // Remove auto-applied eBay tags
+    if (Array.isArray(card.tags)) {
+        card.tags = card.tags.filter(t =>
+            t !== 'Listed on eBay' && t !== 'Sold'
+        );
+    }
+
+    saveCollections(collections);
+    if (typeof syncToCloud === 'function') syncToCloud();
+
+    // Re-render the modal with updated card state
+    document.getElementById('cardDetailModal')?.remove();
+    openCardDetail(index);
+    renderCards();
+};
+
+// Add tag from detail modal input
+window.addDetailTag = function(index) {
+    const input = document.getElementById('detailTagInput');
+    if (!input) return;
+    const tag = input.value.trim();
+    if (!tag) return;
+
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection?.cards[index]) return;
+
+    const card = collection.cards[index];
+    if (!Array.isArray(card.tags)) card.tags = [];
+    if (!card.tags.includes(tag)) {
+        card.tags.push(tag);
+        saveCollections(collections);
+        if (typeof syncToCloud === 'function') syncToCloud();
+    }
+
+    input.value = '';
+
+    // Re-render tags container in-place
+    const container = document.getElementById('detailTagsContainer');
+    if (container) {
+        container.innerHTML = card.tags.filter(Boolean).map(t => `
+            <span class="tag-chip" style="display:inline-flex;align-items:center;gap:4px;">
+                ${escapeHtml(t)}
+                <button onclick="removeDetailTag(${index},'${escapeHtml(t).replace(/'/g,"\\'")}',this)"
+                        style="background:none;border:none;cursor:pointer;padding:0;font-size:11px;color:#6b7280;line-height:1;">✕</button>
+            </span>`).join('') || '<span style="font-size:12px;color:#9ca3af;">No tags yet</span>';
+    }
+    renderCards();
+};
+
+// Remove a single tag from the card via the detail modal ✕ button
+window.removeDetailTag = function(index, tag, btnEl) {
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection?.cards[index]) return;
+
+    const card = collection.cards[index];
+    if (Array.isArray(card.tags)) {
+        card.tags = card.tags.filter(t => t !== tag);
+    }
+    saveCollections(collections);
+    if (typeof syncToCloud === 'function') syncToCloud();
+
+    // Remove the chip from the DOM directly (no full re-render needed)
+    btnEl?.closest('.tag-chip')?.remove();
+    const container = document.getElementById('detailTagsContainer');
+    if (container && !container.querySelector('.tag-chip')) {
+        container.innerHTML = '<span style="font-size:12px;color:#9ca3af;">No tags yet</span>';
+    }
+    renderCards();
 };
 
 // Scripts load at bottom of <body>, so DOM is already ready when this runs.
