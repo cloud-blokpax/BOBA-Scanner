@@ -123,6 +123,7 @@ function matchListingsToCollection(listings, collections) {
 function applyListingStatuses(matches, activeItemIds) {
   const collections = getCollections();
   let updated = 0;
+  const LISTED_TAG = 'Listed on eBay';
 
   for (const col of collections) {
     for (let i = 0; i < col.cards.length; i++) {
@@ -132,19 +133,33 @@ function applyListingStatuses(matches, activeItemIds) {
       if (matches[cardKey]) {
         // Card has an active listing
         const wasListed = card.listingStatus === 'listed';
+        const listing   = matches[cardKey].listing;
+
+        // Auto-add "Listed on eBay" tag if not already present
+        const tags = Array.isArray(card.tags) ? [...card.tags] : [];
+        if (!tags.includes(LISTED_TAG)) tags.push(LISTED_TAG);
+
         col.cards[i] = {
           ...card,
-          listingStatus: 'listed',
-          listingUrl:    matches[cardKey].listing.url,
-          listingPrice:  matches[cardKey].listing.price,
-          listingItemId: matches[cardKey].listing.itemId,
+          tags,
+          listingStatus:   'listed',
+          listingUrl:      listing.url,
+          listingPrice:    listing.price,
+          listingItemId:   listing.itemId,
+          listingTitle:    listing.title,
           listingLastSeen: new Date().toISOString()
         };
         if (!wasListed) updated++;
+
       } else if (card.listingStatus === 'listed') {
-        // Was listed but no longer in active listings — infer sold
+        // Was listed but no longer active — infer sold
+        // Keep the "Listed on eBay" tag but also add "Sold"
+        const tags = Array.isArray(card.tags) ? [...card.tags] : [];
+        if (!tags.includes('Sold')) tags.push('Sold');
+
         col.cards[i] = {
           ...card,
+          tags,
           listingStatus: 'sold',
           soldAt:        new Date().toISOString()
         };
