@@ -64,7 +64,9 @@ async function processImage(file) {
 
   const imageBase64 = await compressImage(file);
 
-  let imageUrl = `data:image/jpeg;base64,${imageBase64}`;
+  // imageUrl = what gets STORED on the card (Supabase URL or empty — never base64)
+  // imageBase64 is used only for OCR/AI processing, not for storage
+  let imageUrl = '';
   if (typeof uploadCardImage === 'function') {
     const uploadedUrl = await uploadCardImage(imageBase64, file.name);
     if (uploadedUrl) imageUrl = uploadedUrl;
@@ -373,6 +375,7 @@ function ensurePriceCheckCollection() {
         saveCollections(collections);
         console.log('✅ Price Check collection created');
     }
+    return collections; // return the live array (avoids a second localStorage read)
 }
 window.ensurePriceCheckCollection = ensurePriceCheckCollection;
 
@@ -381,11 +384,20 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   // Determine target collection based on scan mode
   const isPriceCheck = (window.scanMode === 'pricecheck');
-  if (isPriceCheck) ensurePriceCheckCollection();
+  let collections = isPriceCheck
+    ? ensurePriceCheckCollection()  // returns live array with price_check guaranteed
+    : getCollections();
 
-  const collections = getCollections();
-  const targetId    = isPriceCheck ? 'price_check' : getCurrentCollectionId();
-  const collection  = collections.find(c => c.id === targetId);
+  const targetId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
+  let collection = collections.find(c => c.id === targetId);
+
+  // Safety net: if default collection somehow missing, create it in-memory
+  if (!collection && !isPriceCheck) {
+    const defaultCol = { id: 'default', name: 'My Collection', cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
+    collections.unshift(defaultCol);
+    saveCollections(collections);
+    collection = defaultCol;
+  }
 
   if (!collection) {
     showToast('Failed to save card — no collection found', '❌');
