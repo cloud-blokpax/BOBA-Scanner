@@ -2540,3 +2540,15 @@ a.listing-badge {
   transition: opacity .15s;
 }
 a.listing-badge:hover { opacity: .85; }
+
+/* ── Collection card clickable image wrap ─────────── */
+.collection-card-img-wrap { position: relative; }
+.collection-card-img-wrap:hover .collection-card-image { opacity: .88; }
+.collection-card-img-wrap:hover .no-image { background: #e0e7ff; }
+
+/* ── Active listing badge in collection modal ─────── */
+.collection-ebay-link.listing-active {
+  background: linear-gradient(135deg, #065f46, #047857);
+  color: white !important;
+  font-weight: 700;
+}
