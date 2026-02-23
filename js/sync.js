@@ -329,6 +329,11 @@ async function forceSync() {
 function closeCollectionModal() {
     const modal = document.getElementById('collectionModal');
     if (modal) modal.classList.remove('active');
+    // Reset title to default in case Price Check modal was open
+    const titleEl = document.getElementById('collectionModalTitle');
+    if (titleEl && titleEl.textContent.includes('Price Check')) {
+        titleEl.textContent = '🎴 My Collection';
+    }
 }
 
 document.addEventListener('keydown', function(e) {
