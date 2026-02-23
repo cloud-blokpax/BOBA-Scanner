@@ -407,8 +407,17 @@ function renderCollectionModal() {
                      style="cursor:pointer;" title="View details">
                     ${escapeHtml(card.hero || 'Unknown')}
                 </div>
+                ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
+                <div class="coll-price-row">
+                    ${card.ebayAvgPrice ? `<span class="coll-price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
+                    ${card.ebayLowPrice ? `<span class="coll-price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
+                </div>` : ''}
+                ${listingBadge
+                    ? `<div style="margin-bottom:4px;">${listingBadge}</div>`
+                    : ebayUrl ? `<div style="margin-bottom:4px;"><a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener noreferrer"
+                          class="collection-ebay-link" title="Search eBay">🛒 eBay</a></div>` : ''}
                 <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
-                ${card.condition ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;">${escapeHtml(card.condition)}</div>` : ''}
+                ${card.condition ? `<div style="font-size:10px;color:#6b7280;margin-top:1px;">${escapeHtml(card.condition)}</div>` : ''}
                 ${cardTags.length > 0
                     ? `<div class="card-tags-row">${cardTags.map(t => `<span class="tag-chip tag-chip-sm">${escapeHtml(t)}</span>`).join('')}</div>`
                     : ''}
@@ -416,11 +425,6 @@ function renderCollectionModal() {
                     <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
                         ${card.scanType === 'free' ? 'Free OCR' : 'AI'}
                     </span>
-                    ${listingBadge}
-                    ${!listingBadge && ebayUrl
-                        ? `<a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener noreferrer"
-                              class="collection-ebay-link" title="Search eBay">🛒 eBay</a>`
-                        : ''}
                 </div>
             </div>
         </div>`;
