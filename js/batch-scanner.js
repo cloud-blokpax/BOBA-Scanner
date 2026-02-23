@@ -9,10 +9,12 @@ const BATCH_CAP = 10;
 let _pendingResults  = [];
 let _processingCount = 0;
 
-window.openBatchScanner = function() {
+window.openBatchScanner = async function() {
   if (document.getElementById('batchModal')) return;
   _pendingResults  = [];
   _processingCount = 0;
+  // Prompt for tags once upfront — applied to all cards in this batch
+  if (typeof promptForTags === 'function') await promptForTags();
   renderBatchModal();
 };
 
@@ -120,46 +122,43 @@ async function processBatchEntry(entry) {
     let waited = 0;
     while (!ready.db && waited < 10000) { await new Promise(r => setTimeout(r, 300)); waited += 300; }
     if (!ready.db) throw new Error('Database not ready');
+
     const imageBase64 = await compressImage(entry.file);
     entry.imageBase64 = imageBase64;
+
+    // Image upload — non-fatal if it fails (falls back to base64)
     let imageUrl = `data:image/jpeg;base64,${imageBase64}`;
     if (typeof uploadCardImage === 'function') {
-      const uploaded = await uploadCardImage(imageBase64, entry.file.name);
-      if (uploaded) imageUrl = uploaded;
-    }
-    entry.imageUrl = imageUrl;
-    let match = null; let scanType = 'ai'; let confidence = null;
-    if (ready.ocr && tesseractWorker) {
       try {
-        const ocrResult = await Promise.race([
-          runOCR(entry.displayUrl),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('OCR timeout')), 12000))
-        ]);
-        const cardNum  = extractCardNumber(ocrResult.text);
-        const heroName = ocrResult.text.split('\n').map(l => l.trim()).find(l => /^[A-Z\s]{3,}$/.test(l)) || null;
-        if (ocrResult.confidence >= (config?.threshold || 60) && cardNum) {
-          match = findCard(cardNum, heroName);
-          if (match) { scanType = 'free'; confidence = ocrResult.confidence; }
-        }
+        const uploaded = await uploadCardImage(imageBase64, entry.file.name);
+        if (uploaded) imageUrl = uploaded;
       } catch {}
     }
-    if (!match) {
-      const canCall = typeof canMakeApiCall === 'function' ? await canMakeApiCall() : true;
-      if (canCall) {
-        const extracted = await callAPI(imageBase64);
-        if (extracted?.cardNumber) {
-          match = findCard(extracted.cardNumber, extracted.hero);
-          if (match && typeof trackApiCall === 'function') await trackApiCall('scan', true, 0.01, 1);
-        }
-      }
-    }
-    if (!match) throw new Error('Card not identified');
+    entry.imageUrl = imageUrl;
+
+    // Batch mode skips OCR entirely — parallel OCR calls destroy the shared
+    // Tesseract worker (it's single-instance). Go straight to AI for reliability.
+    let match = null;
+    const canCall = typeof canMakeApiCall === 'function' ? await canMakeApiCall() : true;
+    if (!canCall) throw new Error('API limit reached');
+
+    const extracted = await callAPI(imageBase64);
+    if (!extracted?.cardNumber) throw new Error('Card not identified');
+
+    match = findCard(extracted.cardNumber, extracted.hero);
+    if (!match) throw new Error(`No match found for "${extracted.cardNumber}"`);
+
+    if (typeof trackApiCall === 'function') await trackApiCall('scan', true, 0.01, 1);
+
     entry.match      = match;
-    entry.scanType   = scanType;
-    entry.confidence = confidence;
+    entry.scanType   = 'ai';
+    entry.confidence = extracted.confidence || 85;
     entry.status     = 'done';
+
+    // Flag duplicates for user awareness
     const allCards = getCollections().flatMap(c => c.cards);
-    entry.isDuplicate = allCards.some(c => c.cardId && c.cardId === (match['Card ID'] || ''));
+    entry.isDuplicate = allCards.some(c => c.cardId && c.cardId === String(match['Card ID'] || ''));
+
   } catch (err) {
     entry.status = 'error';
     entry.error  = err.message;
