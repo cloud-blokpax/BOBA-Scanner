@@ -586,7 +586,7 @@ body {
 .card-image-container {
     position: relative;
     width: 100%;
-    padding-top: 140%; /* 7:10 aspect ratio for cards */
+    padding-top: 70%; /* 50% shorter than original 140% */
     background: var(--gray-100);
     overflow: hidden;
 }
@@ -643,10 +643,10 @@ body {
 }
 
 .card-title {
-    font-size: var(--text-lg);
+    font-size: 1.4rem;  /* 25% larger than --text-lg (18px) → ~22px */
     font-weight: var(--font-bold);
     color: var(--gray-900);
-    margin-bottom: var(--space-2);
+    margin-bottom: var(--space-1);
 }
 
 .card-meta {
@@ -1812,7 +1812,7 @@ body {
 
 .collection-card-image {
     width: 100%;
-    aspect-ratio: 7/10;
+    aspect-ratio: 7/5;   /* 50% shorter than original 7/10 */
     object-fit: cover;
     background: var(--gray-100);
     display: block;
@@ -1822,20 +1822,20 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 48px;
-    aspect-ratio: 7/10;
+    font-size: 32px;
+    aspect-ratio: 7/5;
     background: var(--gray-100);
 }
 
 .collection-card-info {
-    padding: 10px 12px;
+    padding: 8px 10px;
 }
 
 .collection-card-name {
     font-weight: var(--font-bold);
-    font-size: var(--text-sm);
+    font-size: 1.1rem;   /* 25% larger than --text-sm (14px) → ~17.5px */
     color: var(--gray-900);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2556,15 +2556,31 @@ a.listing-badge:hover { opacity: .85; }
 /* ── Card grid price row ──────────────────────────────── */
 .card-price-row {
   display: flex; gap: 8px; flex-wrap: wrap;
-  margin: 4px 0 2px;
+  margin: 4px 0 6px;
 }
 .price-avg {
-  font-size: 11px; font-weight: 700;
+  font-size: 1.4rem; font-weight: 800;
   color: #1d4ed8; background: #eff6ff;
-  padding: 2px 6px; border-radius: 6px;
+  padding: 2px 8px; border-radius: 6px;
 }
 .price-low {
-  font-size: 11px; font-weight: 700;
+  font-size: 1.4rem; font-weight: 800;
   color: #065f46; background: #d1fae5;
-  padding: 2px 6px; border-radius: 6px;
+  padding: 2px 8px; border-radius: 6px;
+}
+
+/* ── Collection modal price row ───────────────────────── */
+.coll-price-row {
+  display: flex; gap: 5px; flex-wrap: wrap;
+  margin: 2px 0 5px;
+}
+.coll-price-avg {
+  font-size: 1.05rem; font-weight: 800;
+  color: #1d4ed8; background: #eff6ff;
+  padding: 1px 6px; border-radius: 5px;
+}
+.coll-price-low {
+  font-size: 1.05rem; font-weight: 800;
+  color: #065f46; background: #d1fae5;
+  padding: 1px 6px; border-radius: 5px;
 }
