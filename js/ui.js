@@ -644,6 +644,16 @@ window.removeCardFromDetail = function(index) {
     removeCard(index);
 };
 
+// Scroll to a specific card in the grid and briefly highlight it
+window.scrollToCard = function(index) {
+    const el = document.getElementById(`card_item_${index}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'box-shadow 0.3s ease';
+    el.style.boxShadow = '0 0 0 3px #10b981, 0 4px 20px rgba(16,185,129,.3)';
+    setTimeout(() => { el.style.boxShadow = ''; }, 2500);
+};
+
 window.updateCardDetailField = function(index, field, value) {
     // Keep the main card grid select in sync
     const sel = document.querySelector(`#card_item_${index} select`);
