@@ -156,37 +156,77 @@ function addCardToCollection(card) {
 }
 
 function renderCollections() {
-  const container = document.getElementById('collectionsBar');
-  if (!container) return;
+  // Update the new slider UI instead of old pills
+  updateCollectionSlider();
+}
 
-  const collections = getCollections();
-  const currentId   = getCurrentCollectionId();
+function updateCollectionSlider() {
+  const wrap = document.getElementById('collectionSliderWrap');
+  if (!wrap) return;
 
-  if (collections.length <= 1) {
-    container.style.display = 'none';
-    return;
+  const collections  = getCollections();
+  const currentId    = getCurrentCollectionId();
+  const mainCols     = collections.filter(c => c.id !== 'price_check');
+  const priceCheck   = collections.find(c => c.id === 'price_check');
+  const mainCount    = mainCols.reduce((sum, c) => sum + c.cards.length, 0);
+  const pcCount      = priceCheck ? priceCheck.cards.length : 0;
+
+  // Show slider only if price check collection exists and has cards, or is active
+  if (!priceCheck && currentId !== 'price_check') {
+    wrap.style.display = 'none';
+  } else {
+    wrap.style.display = 'block';
   }
 
-  container.style.display = 'flex';
-  container.innerHTML = collections.map(col => `
-    <div class="collection-item ${col.id === currentId ? 'active' : ''}">
-      <button class="collection-btn" data-id="${col.id}">
-        📂 ${escapeHtml(col.name)} (${col.cards.length})
-      </button>
-      ${col.id !== 'default' ? `
-        <button class="collection-delete" data-delete-id="${col.id}" title="Delete collection">×</button>
-      ` : ''}
-    </div>
-  `).join('');
+  const isPC = currentId === 'price_check';
 
-  // Wire up events without inline handlers
-  container.querySelectorAll('.collection-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchCollection(btn.dataset.id));
-  });
-  container.querySelectorAll('.collection-delete').forEach(btn => {
-    btn.addEventListener('click', () => deleteCollection(btn.dataset.deleteId));
-  });
+  // Update counts
+  const elC  = document.getElementById('sliderCountCollection');
+  const elPC = document.getElementById('sliderCountPriceCheck');
+  const btnC  = document.getElementById('sliderBtnCollection');
+  const btnPC = document.getElementById('sliderBtnPriceCheck');
+  const thumb = document.getElementById('sliderThumb');
+
+  if (elC)  elC.textContent  = mainCount;
+  if (elPC) elPC.textContent = pcCount;
+
+  if (thumb) {
+    thumb.style.transform = isPC ? 'translateX(100%)' : 'translateX(0)';
+  }
+
+  if (btnC) {
+    btnC.style.color     = isPC ? '#9ca3af' : '#1e3a5f';
+    btnC.style.fontWeight = isPC ? '600' : '800';
+  }
+  if (btnPC) {
+    btnPC.style.color     = isPC ? '#1e3a5f' : '#9ca3af';
+    btnPC.style.fontWeight = isPC ? '800' : '600';
+  }
+  if (elC) {
+    elC.style.background = isPC ? '#d1d5db' : '#2563eb';
+    elC.style.color      = isPC ? '#374151' : 'white';
+  }
+  if (elPC) {
+    elPC.style.background = isPC ? '#059669' : '#d1d5db';
+    elPC.style.color      = isPC ? 'white'   : '#374151';
+  }
 }
+
+window.updateCollectionSlider = updateCollectionSlider;
+
+window.sliderSwitch = function(targetId) {
+  if (targetId === 'price_check') {
+    const collections = getCollections();
+    const pc = collections.find(c => c.id === 'price_check');
+    if (!pc) return;
+    switchCollection('price_check');
+  } else {
+    // Switch to default collection
+    switchCollection('default');
+  }
+  updateCollectionSlider();
+  if (typeof renderCards === 'function') renderCards();
+};
 
 function loadCollections(collectionsData) {
   if (collectionsData) {
