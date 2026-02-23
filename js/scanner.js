@@ -110,7 +110,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
         if (match) {
           console.log('✅ OCR match:', match.Name);
           showLoading(false);
-          addCard(match, displayUrl, fileName, 'free', ocrResult.confidence);
+          addCard(match, imageUrl, fileName, 'free', ocrResult.confidence);
           setProgress(100);
           showToast(`${match.Name} scanned (Free OCR)`, '🆓');
           return;
@@ -147,7 +147,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
 
     if (match) {
       showLoading(false);
-      addCard(match, displayUrl, fileName, 'ai');
+      addCard(match, imageUrl, fileName, 'ai');
       setProgress(100);
       showToast(`${match.Name} scanned (AI)`, '💰');
 
