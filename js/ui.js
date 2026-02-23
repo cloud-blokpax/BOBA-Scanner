@@ -578,40 +578,10 @@ function updateCollectionNavCounts() {
 }
 window.updateCollectionNavCounts = updateCollectionNavCounts;
 
-// Open Price Check modal — switches to price_check collection, opens the collection modal
+// Open Price Check modal — delegates to the dedicated function in tags.js
 window.openPriceCheckModal = function() {
-    if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
-    const collections = getCollections();
-    const pcCol = collections.find(c => c.id === 'price_check');
-    if (!pcCol) return;
-
-    // Temporarily switch to price_check collection so modal renders it
-    const prevId = getCurrentCollectionId();
-    setCurrentCollectionId('price_check');
-
-    // Override the modal title
-    const titleEl = document.getElementById('collectionModalTitle');
-    if (titleEl) titleEl.textContent = '💰 Price Check';
-
-    if (typeof openCollectionModal === 'function') openCollectionModal();
-
-    // Restore collection when modal closes — hook onto the close button
-    const restorePrev = () => {
-        setCurrentCollectionId(prevId);
-        const titleEl2 = document.getElementById('collectionModalTitle');
-        if (titleEl2) titleEl2.textContent = '🎴 My Collection';
-    };
-
-    // Listen for modal close once
-    const modal = document.getElementById('collectionModal');
-    if (modal) {
-        const observer = new MutationObserver(() => {
-            if (!modal.classList.contains('active')) {
-                restorePrev();
-                observer.disconnect();
-            }
-        });
-        observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    if (typeof openPriceCheckCollectionModal === 'function') {
+        openPriceCheckCollectionModal();
     }
 };
 
