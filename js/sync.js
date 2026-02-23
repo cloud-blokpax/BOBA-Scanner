@@ -1,6 +1,4 @@
 // js/sync.js — Cloud sync for card collections
-// Uses Supabase with no RLS (app-level security via Supabase anon key).
-// Syncs on page load and after every card change (debounced 2s).
 
 const SYNC_DEBOUNCE_MS = 2000;
 let _syncTimer = null;
@@ -21,71 +19,91 @@ function schedulePush() {
     _syncTimer = setTimeout(pushCollections, SYNC_DEBOUNCE_MS);
 }
 
-// Strip blob URLs — they are device-local and meaningless on other devices
 function stripBlobUrls(collections) {
     return collections.map(col => ({
         ...col,
         cards: col.cards.map(card => ({
             ...card,
             imageUrl: (card.imageUrl && !card.imageUrl.startsWith('blob:'))
-                ? card.imageUrl
-                : ''
+                ? card.imageUrl : ''
         }))
     }));
 }
 
-// Merge two collections arrays by card timestamp, keeping all unique cards
+// Merge two card arrays — dedupe by cardNumber+timestamp
+function mergeCardArrays(localCards, remoteCards) {
+    const merged = [...localCards];
+    for (const remoteCard of remoteCards) {
+        const isDupe = merged.some(c =>
+            c.cardNumber === remoteCard.cardNumber &&
+            Math.abs(new Date(c.timestamp) - new Date(remoteCard.timestamp)) < 10000
+        );
+        if (!isDupe) merged.push(remoteCard);
+    }
+    return merged;
+}
+
 function mergeCollections(local, remote) {
-    // Build a map of all collections by id
     const colMap = {};
 
-    for (const col of [...local, ...remote]) {
-        if (!colMap[col.id]) {
-            colMap[col.id] = { ...col, cards: [] };
-        }
-    }
-
-    // Merge cards within each collection — dedupe by timestamp+cardNumber
+    // Seed with local
     for (const col of local) {
-        for (const card of col.cards) {
-            colMap[col.id].cards.push(card);
-        }
+        colMap[col.id] = { ...col, cards: [...col.cards] };
     }
-    for (const col of remote) {
-        for (const card of col.cards) {
-            // Avoid duplicates: skip if same cardNumber+timestamp already present
-            const existing = colMap[col.id].cards;
-            const isDupe = existing.some(c =>
-                c.cardNumber === card.cardNumber &&
-                Math.abs(new Date(c.timestamp) - new Date(card.timestamp)) < 5000
+
+    // Merge remote into each collection
+    for (const remoteCol of remote) {
+        if (!colMap[remoteCol.id]) {
+            colMap[remoteCol.id] = { ...remoteCol, cards: [...remoteCol.cards] };
+        } else {
+            colMap[remoteCol.id].cards = mergeCardArrays(
+                colMap[remoteCol.id].cards,
+                remoteCol.cards
             );
-            if (!isDupe) existing.push(card);
         }
     }
 
-    // Rebuild stats for each collection
+    // Rebuild stats
     return Object.values(colMap).map(col => ({
         ...col,
         stats: {
-            scanned:  col.cards.length,
-            free:     col.cards.filter(c => c.scanType === 'free').length,
-            aiCalls:  col.cards.filter(c => c.scanType === 'ai').length,
-            cost:     col.cards.filter(c => c.scanType === 'ai').length * 0.002
+            scanned: col.cards.length,
+            free:    col.cards.filter(c => c.scanType === 'free').length,
+            aiCalls: col.cards.filter(c => c.scanType === 'ai').length,
+            cost:    col.cards.filter(c => c.scanType === 'ai').length * 0.002
         }
     }));
 }
 
+// Push = read cloud first, merge, then write
+// This prevents any device from overwriting another device's cards
 async function pushCollections() {
     if (!window.supabaseClient || !currentUser) return;
     try {
-        const safe = stripBlobUrls(getCollections());
-        const { error } = await window.supabaseClient
+        // 1. Read current cloud state
+        const { data, error } = await window.supabaseClient
+            .from('collections')
+            .select('data')
+            .eq('user_id', currentUser.id)
+            .single();
+
+        const local = stripBlobUrls(getCollections());
+
+        let toSave = local;
+        if (!error && data?.data) {
+            // 2. Merge cloud into local before writing
+            toSave = mergeCollections(local, data.data);
+        }
+
+        // 3. Write merged result
+        const { error: writeError } = await window.supabaseClient
             .from('collections')
             .upsert(
-                { user_id: currentUser.id, data: safe, updated_at: new Date().toISOString() },
+                { user_id: currentUser.id, data: toSave, updated_at: new Date().toISOString() },
                 { onConflict: 'user_id' }
             );
-        if (error) throw error;
+
+        if (writeError) throw writeError;
         console.log('☁️ Pushed to cloud');
     } catch (err) {
         console.warn('⚠️ Push failed:', err.message);
@@ -103,7 +121,7 @@ async function pullCollections() {
 
         if (error) {
             if (error.code === 'PGRST116') {
-                // No cloud data yet — push what we have locally
+                // No cloud data yet — push local up
                 await pushCollections();
             } else {
                 throw error;
@@ -114,22 +132,26 @@ async function pullCollections() {
         if (!data?.data) return;
 
         const local  = getCollections();
-        const remote = data.data;
-        const merged = mergeCollections(local, remote);
+        const merged = mergeCollections(local, data.data);
 
-        const localTotal  = local.reduce((s, c)  => s + c.cards.length, 0);
+        const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
         const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
 
-        // Always save merged result
-        saveCollections(merged);
-        renderCards();
-        updateStats();
+        // Save merged without triggering another push (avoid loop)
+        try {
+            localStorage.setItem('collections', JSON.stringify(merged));
+        } catch (e) {
+            console.error('Storage full:', e);
+        }
+
+        if (typeof renderCards  === 'function') renderCards();
+        if (typeof updateStats  === 'function') updateStats();
 
         if (mergedTotal > localTotal) {
             const added = mergedTotal - localTotal;
-            showToast(`Synced ${added} new card${added !== 1 ? 's' : ''} from cloud ☁️`, '☁️');
+            showToast(`Synced ${added} new card${added !== 1 ? 's' : ''} from cloud`, '☁️');
             console.log(`☁️ Merged ${added} new cards from cloud`);
-            // Push merged result back so both devices agree
+            // Push the merged result back so cloud is complete
             await pushCollections();
         } else {
             console.log('☁️ Already up to date');
