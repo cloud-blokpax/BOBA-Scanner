@@ -21,7 +21,7 @@ function initGoogleAuth() {
       return;
     }
 
-    const tryInit = () => {
+    const tryInit = async () => {
       if (typeof google === 'undefined' || !google.accounts) {
         setTimeout(tryInit, 200);
         return;
