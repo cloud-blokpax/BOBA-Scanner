@@ -224,25 +224,33 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
   const cancelBtn = document.getElementById('manualSearchCancel');
   const backdrop = document.getElementById('manualSearchBackdrop');
 
-  // Helper: fire search, blur input first so iOS keyboard dismisses
-  function triggerSearch() {
-    if (input) input.blur();
-    runManualSearch();
+  // Live search — fires on every keystroke (debounced 180ms).
+  // This bypasses all iOS button-tap/keyboard-dismiss timing issues entirely.
+  let _searchDebounce = null;
+  function scheduleSearch() {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(runManualSearch, 180);
   }
 
   if (input) {
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); triggerSearch(); } });
+    input.addEventListener('input', scheduleSearch);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(_searchDebounce); runManualSearch(); }
+    });
+    // Focus after a short delay so iOS keyboard has time to appear
+    setTimeout(() => { try { input.focus(); } catch(_) {} }, 120);
   }
 
+  // Button still works as a fallback (pointerdown fires before blur)
   if (searchBtn) {
-    searchBtn.addEventListener('click', e => { e.preventDefault(); triggerSearch(); });
-    // touchend backup for iOS Chrome where click can be swallowed while keyboard is open
-    searchBtn.addEventListener('touchend', e => { e.preventDefault(); triggerSearch(); });
+    searchBtn.addEventListener('pointerdown', e => { e.preventDefault(); clearTimeout(_searchDebounce); runManualSearch(); });
   }
 
   if (closeBtn)  closeBtn.addEventListener('click', () => closeManualSearch());
   if (cancelBtn) cancelBtn.addEventListener('click', () => closeManualSearch());
   if (backdrop)  backdrop.addEventListener('click', () => closeManualSearch());
+
+  // If scanner already filled in a card number, run immediately
   if (suggestedCardNum) setTimeout(runManualSearch, 100);
 }
 
@@ -554,8 +562,14 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
 
-  // Auto-open card detail for regular collection scans (not price check, not batch)
-  if (!isPriceCheck && typeof openCardDetail === 'function') {
+  // Auto-open card detail after every single-card scan
+  if (typeof openCardDetail === 'function') {
+    if (isPriceCheck) {
+      // Switch slider to price_check so the view and openCardDetail are in sync
+      if (typeof setCurrentCollectionId === 'function') setCurrentCollectionId('price_check');
+      if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
+      renderCards();
+    }
     setTimeout(() => openCardDetail(newCardIndex), 200);
   }
 
