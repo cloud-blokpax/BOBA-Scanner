@@ -63,7 +63,22 @@ async function handleUserSignIn(googleUser) {
       .eq('google_id', googleUser.id)
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+    // On mobile, Supabase may return network errors — treat them as soft failures
+    // so the user stays logged in with defaults rather than getting signed out.
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      if (fetchError.message?.includes('fetch') || fetchError.message?.includes('network') || fetchError.status === 0) {
+        console.warn('Supabase unreachable, using defaults:', fetchError.message);
+        userLimits = {
+          maxCards:     DEFAULT_LIMITS.authenticated.maxCards,
+          maxApiCalls:  DEFAULT_LIMITS.authenticated.maxApiCalls,
+          apiCallsUsed: 0,
+          cardsInCollection: 0
+        };
+        updateLimitsUI();
+        return null;
+      }
+      throw fetchError;
+    }
 
     if (existing) {
       currentUser = existing;
