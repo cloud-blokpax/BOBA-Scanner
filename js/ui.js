@@ -685,10 +685,19 @@ window.openCardDetail = function(index) {
             </div>
             <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
                 ${card.imageUrl && !card.imageUrl.startsWith('blob:')
-                    ? `<img src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
-                           style="width:100%;max-height:220px;object-fit:contain;border-radius:10px;margin-bottom:16px;background:#f9fafb;"
-                           onerror="this.style.display='none'">`
-                    : ''}
+                    ? `<div id="detailImgWrap" style="position:relative;text-align:center;margin-bottom:16px;cursor:zoom-in;">
+                           <img id="detailCardImg" data-card-index="${index}"
+                                src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
+                                style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f9fafb;transition:transform .25s ease;"
+                                onerror="this.style.display='none';document.getElementById('detailNoImgMsg')?.style.setProperty('display','block')">
+                           <div id="detailZoomHint" style="position:absolute;bottom:6px;right:8px;background:rgba(0,0,0,.45);color:#fff;font-size:10px;border-radius:4px;padding:2px 6px;">Tap to zoom</div>
+                       </div>`
+                    : `<div style="text-align:center;margin-bottom:16px;">
+                           <div id="detailNoImgMsg" style="background:#f9fafb;border:2px dashed #d1d5db;border-radius:10px;padding:24px;color:#9ca3af;font-size:13px;">
+                               📷 No image — <label id="reAttachLabel" style="color:#2563eb;cursor:pointer;text-decoration:underline;">re-attach photo</label>
+                               <input id="reAttachInput" type="file" accept="image/*" style="display:none">
+                           </div>
+                       </div>`}
 
                 ${listingHtml}
                 ${priceHtml}
@@ -733,6 +742,22 @@ window.openCardDetail = function(index) {
                         Ready to List
                     </label>
                 </div>
+
+                <!-- All Metadata collapsible -->
+                <details style="margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                    <summary style="padding:10px 14px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;background:#f9fafb;list-style:none;display:flex;align-items:center;gap:6px;">
+                        📋 All Metadata <span style="font-size:11px;color:#9ca3af;font-weight:400;">(tap to expand)</span>
+                    </summary>
+                    <div style="padding:12px 14px;font-size:11px;font-family:monospace;background:#fff;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;max-height:260px;overflow-y:auto;">
+                        ${Object.entries(card).map(([k, v]) => {
+                            const display = v === null || v === undefined || v === '' ? '<span style="color:#d1d5db;">—</span>'
+                                : Array.isArray(v) ? escapeHtml(v.join(', ') || '—')
+                                : typeof v === 'object' ? escapeHtml(JSON.stringify(v))
+                                : escapeHtml(String(v));
+                            return `<span style="color:#6b7280;white-space:nowrap;">${escapeHtml(k)}</span><span style="color:#111827;word-break:break-all;">${display}</span>`;
+                        }).join('')}
+                    </div>
+                </details>
             </div>
             <div class="modal-footer" style="gap:8px;">
                 ${ebayBtn}
@@ -744,6 +769,65 @@ window.openCardDetail = function(index) {
 
     document.body.insertAdjacentHTML('beforeend', html);
 
+    // ── Zoom on card image ────────────────────────────────────────────────
+    const imgWrap = document.getElementById('detailImgWrap');
+    const cardImg = document.getElementById('detailCardImg');
+    const zoomHint = document.getElementById('detailZoomHint');
+    if (imgWrap && cardImg) {
+        let zoomLevel = 0; // 0=normal, 1=2x, 2=3x
+        imgWrap.addEventListener('click', () => {
+            zoomLevel = (zoomLevel + 1) % 3;
+            if (zoomLevel === 0) {
+                cardImg.style.transform = 'scale(1)';
+                cardImg.style.maxHeight = '240px';
+                imgWrap.style.cursor = 'zoom-in';
+                imgWrap.style.overflow = 'hidden';
+                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap to zoom'; }
+            } else if (zoomLevel === 1) {
+                cardImg.style.transform = 'scale(2)';
+                cardImg.style.maxHeight = 'none';
+                imgWrap.style.cursor = 'zoom-in';
+                imgWrap.style.overflow = 'auto';
+                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap for 3×'; }
+            } else {
+                cardImg.style.transform = 'scale(3)';
+                cardImg.style.maxHeight = 'none';
+                imgWrap.style.cursor = 'zoom-out';
+                imgWrap.style.overflow = 'auto';
+                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap to reset'; }
+            }
+        });
+    }
+
+    // ── Re-attach photo ───────────────────────────────────────────────────
+    const reAttachInput = document.getElementById('reAttachInput');
+    const reAttachLabel = document.getElementById('reAttachLabel');
+    if (reAttachInput && reAttachLabel) {
+        reAttachLabel.addEventListener('click', () => reAttachInput.click());
+        reAttachInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            reAttachLabel.textContent = 'Uploading...';
+            try {
+                const base64 = await compressImage(file);
+                const url = await uploadWithRetry(base64, file.name, 5, 1000);
+                if (url) {
+                    updateCard(index, 'imageUrl', url);
+                    const noImgDiv = document.getElementById('detailNoImgMsg')?.parentElement;
+                    if (noImgDiv) {
+                        noImgDiv.innerHTML = `<img id="detailCardImg" data-card-index="${index}"
+                            src="${url}" style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f9fafb;">`;
+                    }
+                    renderCards();
+                } else {
+                    reAttachLabel.textContent = 'Upload failed — try again';
+                }
+            } catch(err) {
+                reAttachLabel.textContent = 'Error — try again';
+            }
+        });
+    }
+
     // Async: fetch eBay avg price after modal renders
     if (typeof fetchEbayAvgPrice === 'function') {
         fetchEbayAvgPrice(card).then(result => {
@@ -752,7 +836,7 @@ window.openCardDetail = function(index) {
             if (!result || result.count === 0) {
                 el.textContent = 'N/A';
                 el.style.color = '#9ca3af';
-                document.getElementById('detailEbayPriceLink').style.display = 'none';
+                document.getElementById('detailEbayPriceLink')?.style.setProperty('display', 'none');
                 // Cache as null so we don't refetch every open
                 updateCard(index, 'ebayAvgPrice', null);
                 updateCard(index, 'ebayLowPrice', null);
