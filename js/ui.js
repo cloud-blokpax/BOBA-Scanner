@@ -166,16 +166,22 @@ function renderCards() {
                     <div class="card-title">${escapeHtml(card.hero || 'Unknown Card')}</div>
                     <span id="rtl_badge_${i}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
                 </div>
-                <div class="card-meta">
-                    <span class="meta-tag">${escapeHtml(card.year || '')}</span>
-                    <span class="meta-tag">${escapeHtml(card.set || '')}</span>
-                    <span class="meta-tag">${escapeHtml(card.cardNumber || '')}</span>
-                </div>
                 ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
                 <div class="card-price-row">
                     ${card.ebayAvgPrice ? `<span class="price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
                     ${card.ebayLowPrice ? `<span class="price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
                 </div>` : ''}
+                <div class="card-meta" style="margin-top:4px;">
+                    <span class="meta-tag">${escapeHtml(card.year || '')}</span>
+                    <span class="meta-tag">${escapeHtml(card.set || '')}</span>
+                    <span class="meta-tag">${escapeHtml(card.cardNumber || '')}</span>
+                </div>
+                <div style="margin:2px 0 8px;">
+                    <button class="btn-ebay" onclick="openEbaySearch(${i})" title="Search eBay"
+                            style="width:100%;justify-content:center;">
+                        <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
+                    </button>
+                </div>
                 <div class="card-fields">
                     ${renderField('Card ID', 'cardId', i, card.cardId, true)}
                     ${renderField('Name', 'hero', i, card.hero, true)}
@@ -200,9 +206,6 @@ function renderCards() {
                               onchange="updateCard(${i}, 'notes', this.value)">${escapeHtml(card.notes || '')}</textarea>
                 </div>
                 <div class="card-actions">
-                    <button class="btn-ebay" onclick="openEbaySearch(${i})" title="Search eBay">
-                        <span class="btn-ebay-icon">🛒</span><span>eBay</span>
-                    </button>
                     <button id="rtl_btn_${i}" class="btn-rtl ${rtlActive}"
                             onclick="toggleReadyToList(${i})" title="${card.readyToList ? 'Remove from listing queue' : 'Mark ready to list'}">
                         🏷️
