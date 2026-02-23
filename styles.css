@@ -1885,3 +1885,173 @@ body {
     }
 }
 
+
+/* ═══════════════════════════════════════════
+   TAG SYSTEM STYLES
+═══════════════════════════════════════════ */
+
+/* Base chip */
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1.5px solid #e5e7eb;
+    cursor: default;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+/* Small chip (shown on cards) */
+.tag-chip-sm {
+    padding: 2px 7px;
+    font-size: 11px;
+}
+
+/* Selectable chip (in modals) */
+.tag-chip-selectable {
+    cursor: pointer;
+    border-color: #d1d5db;
+}
+.tag-chip-selectable:hover { background: #e5e7eb; border-color: #9ca3af; }
+
+/* Active/selected state */
+.tag-chip-on,
+.tag-chip-active {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #93c5fd;
+}
+
+/* Tags row on collection cards */
+.card-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 6px 0 4px;
+}
+
+/* Filter bar in collection modal */
+.tag-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0 14px;
+    border-bottom: 1px solid #f3f4f6;
+    margin-bottom: 12px;
+}
+
+.tag-filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-right: 2px;
+}
+
+.tag-filter-chip {
+    cursor: pointer;
+    border-color: #d1d5db;
+}
+.tag-filter-chip.tag-chip-on {
+    background: #1d4ed8;
+    color: white;
+    border-color: #1d4ed8;
+}
+
+.tag-clear-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #ef4444;
+    border: 1.5px solid #fca5a5;
+    border-radius: 99px;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 600;
+}
+.tag-clear-btn:hover { background: #fee2e2; }
+
+/* Add tag button */
+.btn-tag-add {
+    padding: 8px 14px;
+    background: #1d4ed8;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn-tag-add:hover { background: #1e40af; }
+
+.btn-tag-remove {
+    padding: 8px 14px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-tag-remove:hover { background: #dc2626; }
+
+/* Card selection overlay */
+.collection-card {
+    position: relative;
+}
+
+.card-select-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 99px;
+    background: white;
+    border: 2px solid #d1d5db;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 10;
+    color: #6b7280;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+    transition: all 0.15s;
+}
+.card-select-btn:hover { border-color: #1d4ed8; color: #1d4ed8; }
+.card-select-btn.active {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: white;
+}
+
+.collection-card.selected {
+    outline: 2.5px solid #1d4ed8;
+    outline-offset: 1px;
+}
+
+/* Bulk action bar */
+#bulkActionBar {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+}
+
+/* Mobile tweaks */
+@media (max-width: 480px) {
+    .tag-filter-bar { gap: 5px; }
+    #bulkActionBar  { flex-wrap: wrap; gap: 6px; }
+}
