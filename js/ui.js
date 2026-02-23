@@ -83,6 +83,11 @@ function updateStats() {
 
 function renderCards() {
     console.log('🎨 Rendering cards...');
+
+    // Update nav counts whenever cards are re-rendered
+    if (typeof updateCollectionNavCounts === 'function') {
+        try { updateCollectionNavCounts(); } catch(e) {}
+    }
     
     // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
@@ -456,29 +461,47 @@ window.announceToScreenReader = function(message) {
 function wireUpEvents() {
     const fi = () => document.getElementById('fileInput');
 
+    // "Upload to Collection" — sets mode to collection then triggers file picker
     const btnChooseImage = document.getElementById('btnChooseImage');
     if (btnChooseImage) btnChooseImage.addEventListener('click', function(e) {
         e.stopPropagation();
+        window.scanMode = 'collection';
         const input = fi();
         if (input) { input.removeAttribute('capture'); input.click(); }
     });
 
-    const btnCapture = document.getElementById('btnCapture');
-    if (btnCapture) btnCapture.addEventListener('click', function(e) {
+    // "Check eBay Prices" — sets mode to pricecheck then triggers same file picker
+    const btnPriceCheck = document.getElementById('btnPriceCheck');
+    if (btnPriceCheck) btnPriceCheck.addEventListener('click', function(e) {
         e.stopPropagation();
+        window.scanMode = 'pricecheck';
+        if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
         const input = fi();
-        if (input) {
-            input.setAttribute('capture', 'environment');
-            input.setAttribute('accept', 'image/*');
-            input.click();
-            setTimeout(() => input.removeAttribute('capture'), 100);
-        }
+        if (input) { input.removeAttribute('capture'); input.click(); }
     });
 
-    const btnSettings = document.getElementById('btnSettings');
-    if (btnSettings) btnSettings.addEventListener('click', function(e) {
+    // Settings — now wired from both header button and legacy btnSettings if present
+    const btnHeaderSettings = document.getElementById('btnHeaderSettings');
+    if (btnHeaderSettings) btnHeaderSettings.addEventListener('click', function(e) {
         e.stopPropagation();
         openSettings();
+    });
+    const btnSettingsLegacy = document.getElementById('btnSettings');
+    if (btnSettingsLegacy) btnSettingsLegacy.addEventListener('click', function(e) {
+        e.stopPropagation();
+        openSettings();
+    });
+
+    // "My Collection" quick-access button below upload
+    const btnOpenCollection = document.getElementById('btnOpenCollection');
+    if (btnOpenCollection) btnOpenCollection.addEventListener('click', function() {
+        if (typeof openCollectionModal === 'function') openCollectionModal();
+    });
+
+    // "Price Check" quick-access button below upload
+    const btnOpenPriceCheck = document.getElementById('btnOpenPriceCheck');
+    if (btnOpenPriceCheck) btnOpenPriceCheck.addEventListener('click', function() {
+        if (typeof openPriceCheckModal === 'function') openPriceCheckModal();
     });
 
     const btnExportCSV = document.getElementById('btnExportCSV');
@@ -534,6 +557,63 @@ function wireUpEvents() {
 
     console.log('✅ Button events wired');
 }
+
+// Update the card counts on the Collection / Price Check nav buttons
+function updateCollectionNavCounts() {
+    try {
+        const collections = getCollections();
+        // Main collection (default or first non-pricecheck)
+        const mainCol = collections.find(c => c.id === 'default') || collections.find(c => c.id !== 'price_check');
+        const pcCol   = collections.find(c => c.id === 'price_check');
+
+        const mainCount = mainCol?.cards?.length || 0;
+        const pcCount   = pcCol?.cards?.length || 0;
+
+        const mainEl = document.getElementById('collectionNavCount');
+        const pcEl   = document.getElementById('priceCheckNavCount');
+
+        if (mainEl) mainEl.textContent = mainCount > 0 ? ` (${mainCount})` : '';
+        if (pcEl)   pcEl.textContent   = pcCount   > 0 ? ` (${pcCount})`   : '';
+    } catch(e) {}
+}
+window.updateCollectionNavCounts = updateCollectionNavCounts;
+
+// Open Price Check modal — switches to price_check collection, opens the collection modal
+window.openPriceCheckModal = function() {
+    if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
+    const collections = getCollections();
+    const pcCol = collections.find(c => c.id === 'price_check');
+    if (!pcCol) return;
+
+    // Temporarily switch to price_check collection so modal renders it
+    const prevId = getCurrentCollectionId();
+    setCurrentCollectionId('price_check');
+
+    // Override the modal title
+    const titleEl = document.getElementById('collectionModalTitle');
+    if (titleEl) titleEl.textContent = '💰 Price Check';
+
+    if (typeof openCollectionModal === 'function') openCollectionModal();
+
+    // Restore collection when modal closes — hook onto the close button
+    const restorePrev = () => {
+        setCurrentCollectionId(prevId);
+        const titleEl2 = document.getElementById('collectionModalTitle');
+        if (titleEl2) titleEl2.textContent = '🎴 My Collection';
+    };
+
+    // Listen for modal close once
+    const modal = document.getElementById('collectionModal');
+    if (modal) {
+        const observer = new MutationObserver(() => {
+            if (!modal.classList.contains('active')) {
+                restorePrev();
+                observer.disconnect();
+            }
+        });
+        observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    }
+};
 
 // ── Card Detail Modal ────────────────────────────────────────────────────────
 
