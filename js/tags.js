@@ -175,6 +175,7 @@ function promptForTags() {
 let _activeFilters    = new Set();   // tags currently filtered on
 let _selectedCards    = new Set();   // Set of "colId:cardIndex" keys
 let _selectionMode    = false;
+let _viewCollectionId = 'default';  // which collection the modal is currently showing
 
 function rerenderIfOpen() {
     if (document.getElementById('collectionModal')?.classList.contains('active')) {
@@ -319,9 +320,16 @@ function renderCollectionModal() {
     const count = document.getElementById('collectionCount');
     if (!body) return;
 
-    // Gather all cards with their collection ID + index
+    // Gather cards from the currently-viewed collection only
     const allCards = [];
     for (const col of getCollections()) {
+        // My Collection shows everything except price_check
+        // Price Check shows only price_check
+        if (_viewCollectionId === 'price_check') {
+            if (col.id !== 'price_check') continue;
+        } else {
+            if (col.id === 'price_check') continue;
+        }
         col.cards.forEach((card, idx) => {
             allCards.push({ ...card, _colId: col.id, _idx: idx, _key: `${col.id}:${idx}` });
         });
@@ -451,15 +459,30 @@ window.toggleSelectionMode   = toggleSelectionMode;
 window.toggleCardSelection   = toggleCardSelection;
 window.openBulkTagModal      = openBulkTagModal;
 window.renderCollectionModal = renderCollectionModal;
-window.openCollectionModal   = function() {
+window.openCollectionModal = function() {
     const modal = document.getElementById('collectionModal');
     if (!modal) return;
     _selectionMode = false;
     _selectedCards.clear();
     _activeFilters.clear();
-    // Reset title to default (openPriceCheckModal may have changed it)
+    _viewCollectionId = 'default';
     const titleEl = document.getElementById('collectionModalTitle');
     if (titleEl) titleEl.textContent = '🎴 My Collection';
+    modal.classList.add('active');
+    renderCollectionModal();
+};
+
+// Separate entry point for Price Check — shows ONLY price_check cards
+window.openPriceCheckCollectionModal = function() {
+    if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
+    const modal = document.getElementById('collectionModal');
+    if (!modal) return;
+    _selectionMode = false;
+    _selectedCards.clear();
+    _activeFilters.clear();
+    _viewCollectionId = 'price_check';
+    const titleEl = document.getElementById('collectionModalTitle');
+    if (titleEl) titleEl.textContent = '💰 Price Check';
     modal.classList.add('active');
     renderCollectionModal();
 };
