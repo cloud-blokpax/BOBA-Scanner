@@ -20,6 +20,13 @@ function showStatsModal() {
   const listed  = cards.filter(c => c.listingStatus === 'listed').length;
   const sold    = cards.filter(c => c.listingStatus === 'sold').length;
 
+  // ── Cached eBay price aggregates ──────────────────────────────────────────
+  const pricedCards   = cards.filter(c => c.ebayAvgPrice > 0 || c.ebayLowPrice > 0);
+  const unpricedCards = cards.filter(c => !c.ebayPriceFetched);
+  const collFloor     = pricedCards.reduce((sum, c) => sum + (Number(c.ebayLowPrice) || 0), 0);
+  const collAvg       = pricedCards.reduce((sum, c) => sum + (Number(c.ebayAvgPrice) || 0), 0);
+  const pricedCount   = pricedCards.length;
+
   // --- Set breakdown ---
   const bySett = _tally(cards, 'set');
   // --- Year breakdown ---
@@ -54,6 +61,47 @@ function showStatsModal() {
           ${_statBox('Sold', sold, '🔴')}
         </div>
 
+        <!-- eBay Collection Value -->
+        <div style="border-top:1px solid #f3f4f6;margin-top:16px;padding-top:16px;">
+          <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">
+            💰 eBay Collection Value
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div style="background:#d1fae5;border-radius:10px;padding:14px;">
+              <div style="font-size:11px;font-weight:600;color:#065f46;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Collection Floor</div>
+              <div id="statsFloorValue" style="font-size:22px;font-weight:800;color:#065f46;">
+                ${pricedCount > 0 ? '$' + collFloor.toFixed(2) : '—'}
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Sum of lowest listed prices</div>
+            </div>
+            <div style="background:#eff6ff;border-radius:10px;padding:14px;">
+              <div style="font-size:11px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Collection Average</div>
+              <div id="statsAvgValue" style="font-size:22px;font-weight:800;color:#1d4ed8;">
+                ${pricedCount > 0 ? '$' + collAvg.toFixed(2) : '—'}
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Sum of avg listed prices</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div style="font-size:12px;color:#9ca3af;">
+              ${pricedCount > 0
+                ? `${pricedCount} of ${total} card${total!==1?'s':''} priced · ${unpricedCards.length} need refresh`
+                : `No prices cached yet — open card details to fetch, or use Refresh below`}
+            </div>
+            ${unpricedCards.length > 0 ? `
+            <button id="statsRefreshBtn" onclick="bulkPriceRefresh()"
+                    style="padding:7px 14px;background:#1d4ed8;color:white;border:none;
+                           border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              🔄 Refresh ${unpricedCards.length} card${unpricedCards.length!==1?'s':''}
+            </button>` : `
+            <button id="statsRefreshBtn" onclick="bulkPriceRefreshAll()"
+                    style="padding:7px 14px;background:#f3f4f6;color:#6b7280;border:none;
+                           border-radius:8px;font-size:12px;cursor:pointer;">
+              🔄 Re-fetch all prices
+            </button>`}
+          </div>
+        </div>
+
         <!-- Breakdowns -->
         ${total === 0 ? '<p style="text-align:center;color:#9ca3af;padding:32px;">Scan some cards to see stats!</p>' : `
           <div class="stats-sections">
@@ -63,22 +111,6 @@ function showStatsModal() {
             ${byCond && Object.keys(byCond).some(k => k) ? _breakdownSection('By Condition', topCond, total) : ''}
           </div>
         `}
-
-        <!-- Bulk price refresh placeholder -->
-        <div style="border-top:1px solid #f3f4f6;margin-top:16px;padding-top:16px;">
-          <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
-            💰 Pricing (Coming Soon)
-          </div>
-          <p style="font-size:12px;color:#9ca3af;margin:0;">
-            Bulk price refresh and estimated collection value will be available once
-            Radish Price Guide integration is active.
-          </p>
-          <button onclick="showToast('Radish integration coming soon!', '⏳')"
-                  style="margin-top:10px;padding:8px 16px;background:#f3f4f6;border:none;
-                         border-radius:8px;font-size:13px;cursor:pointer;color:#6b7280;">
-            🔄 Refresh Prices (Soon)
-          </button>
-        </div>
 
       </div>
       <div class="modal-footer">
@@ -134,10 +166,89 @@ function _breakdownSection(title, entries, total) {
     </div>`;
 }
 
-// ── Bulk Price Refresh (stub — unlocks when Radish integration is live) ────────
+// ── Bulk Price Refresh — fetches prices for cards that haven't been priced yet ──
 window.bulkPriceRefresh = async function() {
-  showToast('Radish integration coming soon — check back!', '⏳');
+  await _bulkFetch(false);
 };
+
+window.bulkPriceRefreshAll = async function() {
+  await _bulkFetch(true);
+};
+
+async function _bulkFetch(refetchAll) {
+  const cols       = getCollections();
+  const currentId  = getCurrentCollectionId();
+  const collection = cols.find(c => c.id === currentId);
+  if (!collection) return;
+
+  const targets = (collection.cards || [])
+    .map((c, i) => ({ card: c, index: i }))
+    .filter(({ card }) => refetchAll || !card.ebayPriceFetched);
+
+  if (targets.length === 0) {
+    showToast('All cards already priced!', '✅');
+    return;
+  }
+
+  if (typeof fetchEbayAvgPrice !== 'function') {
+    showToast('eBay price module not loaded', '❌');
+    return;
+  }
+
+  const btn = document.getElementById('statsRefreshBtn');
+  if (btn) { btn.disabled = true; btn.textContent = `Fetching 0 / ${targets.length}…`; }
+  showToast(`Fetching prices for ${targets.length} cards…`, '🔄');
+
+  let done = 0;
+  let floorSum = 0;
+  let avgSum   = 0;
+  let priced   = 0;
+
+  // Re-read existing cached prices from other cards so totals stay accurate
+  (collection.cards || []).forEach((card, i) => {
+    if (!targets.find(t => t.index === i) && card.ebayAvgPrice > 0) {
+      floorSum += Number(card.ebayLowPrice) || 0;
+      avgSum   += Number(card.ebayAvgPrice) || 0;
+      priced++;
+    }
+  });
+
+  for (const { card, index } of targets) {
+    try {
+      const result = await fetchEbayAvgPrice(card);
+      if (result && result.count > 0) {
+        updateCard(index, 'ebayAvgPrice',    result.avgPrice);
+        updateCard(index, 'ebayLowPrice',    result.lowPrice);
+        updateCard(index, 'ebayHighPrice',   result.highPrice);
+        updateCard(index, 'ebayListingCount', result.count);
+        floorSum += Number(result.lowPrice) || 0;
+        avgSum   += Number(result.avgPrice) || 0;
+        priced++;
+      } else {
+        updateCard(index, 'ebayAvgPrice',    null);
+        updateCard(index, 'ebayLowPrice',    null);
+      }
+      updateCard(index, 'ebayPriceFetched', new Date().toISOString());
+    } catch { /* skip */ }
+
+    done++;
+    if (btn) btn.textContent = `Fetching ${done} / ${targets.length}…`;
+
+    // Update live totals in modal as we go
+    const floorEl = document.getElementById('statsFloorValue');
+    const avgEl   = document.getElementById('statsAvgValue');
+    if (floorEl) floorEl.textContent = priced > 0 ? '$' + floorSum.toFixed(2) : '—';
+    if (avgEl)   avgEl.textContent   = priced > 0 ? '$' + avgSum.toFixed(2)   : '—';
+
+    // Small delay to avoid rate-limiting
+    if (done < targets.length) await new Promise(r => setTimeout(r, 400));
+  }
+
+  if (typeof syncToCloud === 'function') syncToCloud();
+  renderCards();
+  showToast(`Prices refreshed for ${done} cards`, '✅');
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Re-fetch all prices'; }
+}
 
 console.log('Statistics module loaded (v1.1)');
 window.openStatsModal = showStatsModal;
