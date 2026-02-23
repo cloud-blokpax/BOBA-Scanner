@@ -301,6 +301,9 @@ function removeCard(index) {
 
   const card = collection.cards[index];
 
+  // Record this deletion as a tombstone so sync doesn't re-add the card from cloud
+  recordDeletedCard(card);
+
   // Revoke the display Object URL to free memory
   if (card.imageUrl && card.imageUrl.startsWith('blob:')) {
     URL.revokeObjectURL(card.imageUrl);
