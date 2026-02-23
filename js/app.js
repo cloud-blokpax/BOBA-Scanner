@@ -52,13 +52,19 @@ async function init() {
             await initUserManagement();
         }
 
+        // Restore session from localStorage FIRST — independent of Google SDK.
+        // restoreSession() only needs localStorage, not the Google library.
+        // This runs on every page load/refresh so the user stays logged in.
+        if (typeof restoreSession === 'function') {
+            await restoreSession();
+        }
+
         // Load collections from localStorage
         if (typeof loadCollections === 'function') {
             loadCollections();
         }
 
-        // Initialize Google Auth — restoreSession() is called inside,
-        // which calls handleUserSignIn and setupAutoSync if user is logged in.
+        // Initialize Google Auth (sets up sign-in button, handles new logins)
         if (typeof initGoogleAuth === 'function') {
             await initGoogleAuth();
         }
