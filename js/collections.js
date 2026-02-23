@@ -213,6 +213,8 @@ function updateCollectionSlider() {
 }
 
 window.updateCollectionSlider = updateCollectionSlider;
+window.switchCollection = switchCollection;
+window.setCurrentCollectionId = setCurrentCollectionId;
 
 window.sliderSwitch = function(targetId) {
   if (targetId === 'price_check') {
