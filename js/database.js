@@ -106,7 +106,7 @@ function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
 }
 
 // ── Main findCard ─────────────────────────────────────────────────────────────
-function findCard(cardNumber, heroName = null) {
+function findCard(cardNumber, heroName = null, visualTheme = '') {
   if (!ready.db || !cardNumber) {
     console.error('findCard called but:', { dbReady: ready.db, cardNumber });
     return null;
@@ -114,8 +114,9 @@ function findCard(cardNumber, heroName = null) {
 
   const normalizedCardNum = normalizeCardNum(cardNumber);
   const normalizedHero    = heroName ? normalizeCardNum(heroName) : null;
+  const theme             = (visualTheme || '').toLowerCase();
 
-  console.log('🔍 Searching for card:', { cardNumber: normalizedCardNum, hero: normalizedHero });
+  console.log('🔍 Searching for card:', { cardNumber: normalizedCardNum, hero: normalizedHero, visualTheme: theme });
 
   // STEP 1: Exact match via index (O(1))
   const exactMatches = cardIndex.get(normalizedCardNum) || [];
@@ -164,23 +165,60 @@ function findCard(cardNumber, heroName = null) {
     return exactMatches[0];
   }
 
-  // STEP 4: Multiple exact matches — disambiguate by hero name
-  if (!normalizedHero) {
-    console.error('❌ Multiple matches but no hero name');
-    return null;
+  // STEP 4: Multiple exact matches — score candidates using hero name + visual theme
+  // Visual theme maps: fire/red/orange/flame → "grill" type cards
+  //                    ice/blue/frost/snow   → "chill" type cards
+  function visualThemeScore(card) {
+    if (!theme) return 0;
+    const name = (card.Name || '').toLowerCase();
+    const parallel = (card.Parallel || '').toLowerCase();
+    const combined = name + ' ' + parallel;
+
+    // Fire/heat keywords → match cards with fire/grill/heat names
+    const isFireTheme = /fire|red|orange|flame|grill|heat|blaze|lava/.test(theme);
+    // Ice/cold keywords → match cards with ice/chill/frost names
+    const isIceTheme  = /ice|blue|frost|snow|chill|freeze|frozen/.test(theme);
+
+    if (isFireTheme && /grill|fire|heat|blaze|flame/.test(combined)) return 30;
+    if (isIceTheme  && /chill|ice|frost|freeze|cold/.test(combined)) return 30;
+    // Penalize the opposite
+    if (isFireTheme && /chill|ice|frost|freeze|cold/.test(combined)) return -30;
+    if (isIceTheme  && /grill|fire|heat|blaze|flame/.test(combined)) return -30;
+    return 0;
   }
 
+  function heroScore(card) {
+    if (!normalizedHero) return 0;
+    const dbHero = normalizeCardNum(card.Name || '');
+    if (dbHero === normalizedHero) return 100;
+    if (dbHero.includes(normalizedHero) || normalizedHero.includes(dbHero)) return 50;
+    return 0;
+  }
+
+  const scored = exactMatches.map(c => ({
+    card: c,
+    score: heroScore(c) + visualThemeScore(c)
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  console.log('🎯 Scored candidates:', scored.map(s => `${s.card.Name} (${s.score})`));
+
+  // Return best-scoring candidate if it's meaningfully better than runner-up
+  if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score)) {
+    return scored[0].card;
+  }
+
+  // Fallback: pure hero name match
   const exact = exactMatches.find(c => normalizeCardNum(c.Name || '') === normalizedHero);
   if (exact) return exact;
 
   const partial = exactMatches.find(c => {
     const dbHero = normalizeCardNum(c.Name || '');
-    return dbHero.includes(normalizedHero) || normalizedHero.includes(dbHero);
+    return dbHero.includes(normalizedHero || '') || (normalizedHero || '').includes(dbHero);
   });
-
   if (partial) return partial;
 
-  console.error('❌ Hero name mismatch. Available:', exactMatches.map(c => c.Name));
+  console.error('❌ Could not disambiguate. Available:', exactMatches.map(c => c.Name));
   return null;
 }
 
