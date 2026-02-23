@@ -7,10 +7,8 @@
     <meta name="theme-color" content="#2563eb">
     
     <!-- iOS Web App -->
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎴</text></svg>">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Card Scanner">
     
     <title>Bo Jackson Card Scanner | AI-Powered Card Recognition</title>
@@ -151,8 +149,11 @@
             
         </main>
         
-        <!-- Floating Action Button -->
+        <!-- Floating Action Buttons -->
         <div class="fab-container" id="fabContainer" style="display: none;">
+            <button class="fab fab-sync" id="fabSync" aria-label="Sync collection" onclick="manualSync()" title="Sync with cloud">
+                <span>☁️</span>
+            </button>
             <!-- FIXED: was onclick="document.getElementById('fileInput').click()" -->
             <button class="fab" id="fabScan" aria-label="Scan new card">
                 <span>+</span>
