@@ -59,9 +59,12 @@ function openExportModal() {
                 <button class="modal-close" onclick="document.getElementById('exportModal').remove()">×</button>
             </div>
             <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
-                <p style="color:#666;font-size:13px;margin:0 0 16px;">
-                    ${allCards.length} card${allCards.length !== 1 ? 's' : ''} across all collections.
-                    Choose which fields to include:
+
+                <!-- Templates first — load a template to pre-fill fields below -->
+                <div id="exportTemplateSelectorSection" style="margin-bottom:16px;">${templateHtml}</div>
+
+                <p style="color:#666;font-size:13px;margin:0 0 12px;">
+                    ${allCards.length} card${allCards.length !== 1 ? 's' : ''} · Select fields to include:
                 </p>
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
@@ -80,27 +83,8 @@ function openExportModal() {
                     `).join('')}
                 </div>
 
-                <!-- Price multiplier -->
-                <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;">
-                    <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
-                        Suggested Price Setting
-                    </div>
-                    <p style="font-size:12px;color:#6b7280;margin:0 0 8px;">
-                        Suggested Price = Radish 30-day avg × multiplier (coming soon).
-                        Set your multiplier below for future use.
-                    </p>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="range" id="priceMult" min="0.5" max="1.2" step="0.05"
-                               value="${mult}" oninput="updatePriceMultLabel(this.value)"
-                               style="flex:1;">
-                        <span id="priceMultLabel" style="font-size:14px;font-weight:700;color:#1d4ed8;min-width:36px;">
-                            ${Math.round(mult * 100)}%
-                        </span>
-                    </div>
-                </div>
-
                 <!-- Scope + filter -->
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
                     <div style="flex:1;min-width:140px;">
                         <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Scope</label>
                         <select id="exportScope" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
@@ -120,11 +104,26 @@ function openExportModal() {
                     </div>
                 </div>
 
-                <!-- Template section -->
-                <div id="exportTemplateSelectorSection">${templateHtml}</div>
+                <!-- Price multiplier -->
+                <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:16px;">
+                    <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">
+                        Suggested Price Setting
+                    </div>
+                    <p style="font-size:12px;color:#6b7280;margin:0 0 8px;">
+                        Suggested Price = Radish 30-day avg × multiplier (coming soon).
+                    </p>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="range" id="priceMult" min="0.5" max="1.2" step="0.05"
+                               value="${mult}" oninput="updatePriceMultLabel(this.value)"
+                               style="flex:1;">
+                        <span id="priceMultLabel" style="font-size:14px;font-weight:700;color:#1d4ed8;min-width:36px;">
+                            ${Math.round(mult * 100)}%
+                        </span>
+                    </div>
+                </div>
 
-                <!-- Save template -->
-                <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:16px;">
+                <!-- Save current field selection as a new template -->
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
                     <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
                         Save as Template
                     </div>
@@ -134,6 +133,7 @@ function openExportModal() {
                         <button onclick="saveExportTemplate()" class="btn-tag-add">Save</button>
                     </div>
                 </div>
+
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="document.getElementById('exportModal').remove()" style="flex:1;">Cancel</button>
