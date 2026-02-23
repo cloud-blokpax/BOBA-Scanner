@@ -638,6 +638,35 @@ window.openCardDetail = function(index) {
     document.body.insertAdjacentHTML('beforeend', html);
 };
 
+// Open card detail from collection modal — takes colId + index directly
+// (collection modal shows cards from all collections, not just current)
+window.openCollectionCardDetail = function(colId, index) {
+    const collections = getCollections();
+    const collection  = collections.find(c => c.id === colId);
+    if (!collection?.cards[index]) return;
+
+    // Temporarily switch active collection so updateCard() / toggleReadyToList()
+    // write back to the correct place, then restore previous on close
+    const prevId = getCurrentCollectionId();
+    if (colId !== prevId) setCurrentCollectionId(colId);
+
+    // Reuse the standard card detail modal — openCardDetail uses getCurrentCollectionId
+    if (typeof openCardDetail === 'function') {
+        openCardDetail(index);
+    }
+
+    // When the detail modal is closed, restore previous active collection
+    if (colId !== prevId) {
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById('cardDetailModal')) {
+                setCurrentCollectionId(prevId);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: false });
+    }
+};
+
 window.removeCardFromDetail = function(index) {
     if (!confirm('Remove this card from your collection?')) return;
     document.getElementById('cardDetailModal')?.remove();
