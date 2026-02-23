@@ -94,6 +94,37 @@ window.openEbaySearch = function(cardIndex) {
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
+// ── Fetch average eBay market price for a card ────────────────────────────────
+// Calls the ebay-browse serverless endpoint in keyword-search mode.
+// Returns { avgPrice, lowPrice, highPrice, count } or null on failure.
+window.fetchEbayAvgPrice = async function(card) {
+  const query = buildEbayQuery(card);
+  if (!query) return null;
+
+  try {
+    const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+    const headers  = { 'Content-Type': 'application/json' };
+    if (apiToken) headers['X-Api-Token'] = apiToken;
+
+    const res = await fetch('/api/ebay-browse', {
+      method:  'POST',
+      headers,
+      body: JSON.stringify({
+        query,
+        cardNumber: card.cardNumber || '',
+        hero:       card.hero       || ''
+      })
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.count === 0 || data.avgPrice === null) return { count: 0 };
+    return data;
+  } catch {
+    return null;
+  }
+};
+
 // ── Expose for use in collection modal (tags.js) ──────────────────────────────
 window.buildEbaySearchUrl = buildEbaySearchUrl;
 window.buildEbayQuery     = buildEbayQuery;
