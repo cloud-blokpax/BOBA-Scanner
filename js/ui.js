@@ -324,7 +324,9 @@ window.signOut = function() {
         google.accounts.id.disableAutoSelect();
     }
     
-    localStorage.clear();
+    // Only clear auth data — preserve collections and settings
+    localStorage.removeItem('googleUser');
+    localStorage.removeItem('currentCollectionId');
     sessionStorage.clear();
     
     if (typeof googleUser !== 'undefined') {
