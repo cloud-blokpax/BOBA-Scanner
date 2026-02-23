@@ -335,9 +335,9 @@ function searchDatabase(query) {
   if (!ready.db || !database.length) return [];
   const q = query.toUpperCase().trim();
   return database.filter(card => {
-    return (card['Card Number'] || '').toUpperCase().includes(q) ||
-           (card.Name || '').toUpperCase().includes(q) ||
-           (card.Set  || '').toUpperCase().includes(q);
+    return String(card['Card Number'] ?? '').toUpperCase().includes(q) ||
+           String(card.Name           ?? '').toUpperCase().includes(q) ||
+           String(card.Set            ?? '').toUpperCase().includes(q);
   });
 }
 
