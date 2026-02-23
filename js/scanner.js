@@ -376,6 +376,23 @@ function ensurePriceCheckCollection() {
 }
 window.ensurePriceCheckCollection = ensurePriceCheckCollection;
 
+// Retry Supabase image upload up to 8 times over 20 seconds.
+// On mobile, the auth session may not be restored yet when a scan finishes.
+async function uploadWithRetry(imageBase64, fileName, maxAttempts = 8, delayMs = 2500) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+    if (typeof uploadCardImage !== 'function') return null;
+    const url = await uploadCardImage(imageBase64, fileName);
+    if (url) return url;
+    // If currentUser still null, keep waiting
+    console.log(`⏳ Image upload attempt ${attempt + 1}/${maxAttempts} — waiting for auth...`);
+  }
+  return null;
+}
+window.uploadWithRetry = uploadWithRetry;
+
 function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null) {
   console.log('Adding card:', match['Card Number']);
 
@@ -456,22 +473,31 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   if (type === 'free') collection.stats.free++;
   if (type === 'ai')   collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
 
+  const newCardIndex = collection.cards.length - 1; // index of the card we just pushed
+
   saveCollections(collections);
 
-  // Async Supabase upload — card saved immediately with blob URL for instant display.
-  // When upload finishes, swap to the permanent Supabase URL and re-render.
-  if (imageBase64 && typeof uploadCardImage === 'function') {
-    const savedCardIndex = collection.cards.length - 1;
-    const savedColId     = isPriceCheck ? 'price_check' : getCurrentCollectionId();
-    uploadCardImage(imageBase64, fileName).then(uploadedUrl => {
-      if (!uploadedUrl) return;
+  // Async Supabase upload — uses retry so mobile auth delays don't lose the image.
+  // Card is already saved with blob URL for instant display; URL is swapped when upload succeeds.
+  if (imageBase64) {
+    const savedColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
+    uploadWithRetry(imageBase64, fileName).then(uploadedUrl => {
+      if (!uploadedUrl) {
+        console.warn('⚠️ Image upload failed after retries — image will not persist across sessions');
+        return;
+      }
       const cols = getCollections();
       const col  = cols.find(c => c.id === savedColId);
-      if (col && col.cards[savedCardIndex]) {
-        col.cards[savedCardIndex].imageUrl = uploadedUrl;
+      if (col && col.cards[newCardIndex]) {
+        col.cards[newCardIndex].imageUrl = uploadedUrl;
         saveCollections(cols);
         renderCards();
         if (typeof renderCollectionModal === 'function') renderCollectionModal();
+        // Refresh detail modal image if still open
+        const detailImg = document.querySelector('#cardDetailModal img[data-card-index]');
+        if (detailImg && parseInt(detailImg.dataset.cardIndex) === newCardIndex) {
+          detailImg.src = uploadedUrl;
+        }
       }
     }).catch(() => {});
   }
@@ -488,6 +514,11 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
+
+  // Auto-open card detail for regular collection scans (not price check, not batch)
+  if (!isPriceCheck && typeof openCardDetail === 'function') {
+    setTimeout(() => openCardDetail(newCardIndex), 200);
+  }
 
   if (isPriceCheck) {
     // Auto-fetch eBay prices for price check cards
