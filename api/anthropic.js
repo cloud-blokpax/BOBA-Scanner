@@ -61,15 +61,23 @@ export default async function handler(req, res) {
       });
     }
 
-    const cardPrompt = prompt || `Analyze this Bo Jackson trading card and extract:
-1. CARD NUMBER from BOTTOM LEFT corner (format: letters-numbers e.g. "BLBF-84", "BF-108")
-2. HERO NAME printed prominently near top
-3. YEAR (usually 2023 or 2024)
-4. SET NAME (near bottom or on a banner)
-5. POWER number from TOP RIGHT corner circle (just a number, NOT the card number)
+    const cardPrompt = prompt || `Analyze this Bo Jackson Battle Arena trading card image carefully and extract:
+
+1. CARD NUMBER — bottom left corner (format: letters-numbers e.g. "BLBF-84", "BF-108", "MIX-16")
+2. HERO NAME — read ALL text on the card, especially any large printed name or label (e.g. "Unibrow", "Howitzer", "Chill", "Grill")
+3. YEAR — usually 2024 or 2025
+4. SET NAME — near bottom or on a banner
+5. POWER — number in top right corner circle (just a number, NOT the card number)
+6. VISUAL THEME — describe the card's dominant color and visual style in 2-3 words:
+   - Fire, flames, red, orange = "fire red"
+   - Ice, frost, blue, snowflakes = "ice blue"
+   - Lightning, yellow, electric = "lightning yellow"
+   - Dark, purple, shadow = "dark purple"
+
+CRITICAL: Cards with very similar names (like "Chill" vs "Grill") look different visually — fire/red/orange = Grill, ice/blue/frost = Chill. Read every word printed on the card carefully.
 
 Return ONLY valid JSON, no markdown:
-{"cardNumber":"BLBF-84","hero":"NAME","year":"2024","set":"Set Name","pose":"Base","weapon":"None","power":"125"}`;
+{"cardNumber":"BLBF-84","hero":"NAME","year":"2024","set":"Set Name","pose":"Base","weapon":"None","power":"125","visualTheme":"fire red","confidence":90}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
