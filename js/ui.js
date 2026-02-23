@@ -127,10 +127,15 @@ function renderCards() {
                 ? `<span class="conf-badge conf-ok" title="OCR confidence: ${Math.round(card.confidence)}%">${Math.round(card.confidence)}%</span>`
                 : '');
 
-        const listingBadge = card.listingStatus === 'listed'
-            ? `<span class="listing-badge listed" title="Listed on eBay: ${escapeHtml(card.listingPrice || '')}">🟢 Listed${card.listingPrice ? ' ' + escapeHtml(card.listingPrice) : ''}</span>`
+        const listingBadge = card.listingStatus === 'listed' && card.listingUrl
+            ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener noreferrer"
+                  class="listing-badge listed" title="View your eBay listing${card.listingPrice ? ': ' + card.listingPrice : ''}">
+                 🟢 Listed${card.listingPrice ? ' ' + escapeHtml(card.listingPrice) : ''}
+               </a>`
+            : card.listingStatus === 'listed'
+            ? `<span class="listing-badge listed">🟢 Listed</span>`
             : card.listingStatus === 'sold'
-            ? `<span class="listing-badge sold">🔴 Sold</span>`
+            ? `<span class="listing-badge sold">🔴 Sold${card.soldAt ? ' ' + new Date(card.soldAt).toLocaleDateString() : ''}</span>`
             : '';
 
         const rtlActive = card.readyToList ? 'active' : '';
@@ -495,6 +500,30 @@ function wireUpEvents() {
     const settingsModalBackdrop = document.getElementById('settingsModalBackdrop');
     if (settingsModalBackdrop) settingsModalBackdrop.addEventListener('click', closeSettings);
 
+    // Tool buttons — wired here (not inline onclick) to survive SES lockdown from browser extensions
+    const btnBatchScan = document.getElementById('btnBatchScan');
+    if (btnBatchScan) btnBatchScan.addEventListener('click', function() {
+        if (typeof openBatchScanner === 'function') openBatchScanner();
+        else if (typeof window.openBatchScanner === 'function') window.openBatchScanner();
+    });
+
+    const btnReadyToList = document.getElementById('btnReadyToList');
+    if (btnReadyToList) btnReadyToList.addEventListener('click', function() {
+        if (typeof openReadyToListView === 'function') openReadyToListView();
+        else if (typeof window.openReadyToListView === 'function') window.openReadyToListView();
+    });
+
+    const btnCollectionStats = document.getElementById('btnCollectionStats');
+    if (btnCollectionStats) btnCollectionStats.addEventListener('click', function() {
+        if (typeof openStatsModal === 'function') openStatsModal();
+        else if (typeof showStatsModal === 'function') showStatsModal();
+    });
+
+    const btnScanHistory = document.getElementById('btnScanHistory');
+    if (btnScanHistory) btnScanHistory.addEventListener('click', function() {
+        if (typeof openScanHistoryModal === 'function') openScanHistoryModal();
+    });
+
     console.log('✅ Button events wired');
 }
 
@@ -527,13 +556,18 @@ window.openCardDetail = function(index) {
 
     const listingHtml = card.listingStatus === 'listed'
         ? `<div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-             <strong>🟢 Currently listed on eBay</strong>
-             ${card.listingPrice ? ` — ${escapeHtml(card.listingPrice)}` : ''}
-             ${card.listingUrl ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener" style="margin-left:8px;color:#059669;font-size:12px;">View listing →</a>` : ''}
+             <div style="font-weight:700;color:#065f46;margin-bottom:4px;">🟢 Currently Listed on eBay</div>
+             ${card.listingTitle ? `<div style="font-size:12px;color:#374151;margin-bottom:6px;">${escapeHtml(card.listingTitle)}</div>` : ''}
+             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+               ${card.listingPrice ? `<span style="font-size:16px;font-weight:800;color:#065f46;">${escapeHtml(card.listingPrice)}</span>` : ''}
+               ${card.listingUrl   ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener"
+                                        style="color:#2563eb;font-size:13px;font-weight:600;text-decoration:none;">
+                                        View Listing →</a>` : ''}
+             </div>
            </div>`
         : card.listingStatus === 'sold'
         ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-             <strong>🔴 Sold</strong>${card.soldAt ? ` — ${new Date(card.soldAt).toLocaleDateString()}` : ''}
+             <strong>🔴 Sold</strong>${card.soldAt ? ` on ${new Date(card.soldAt).toLocaleDateString()}` : ''}
            </div>`
         : '';
 
