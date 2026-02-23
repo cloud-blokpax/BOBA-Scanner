@@ -82,6 +82,7 @@ async function handleUserSignIn(googleUser) {
 
     if (existing) {
       currentUser = existing;
+      window.currentUser = currentUser; // expose for image-storage.js
       await checkAndResetMonthlyLimits();
     } else {
       const { data: newUser, error: createError } = await window.supabaseClient
@@ -102,6 +103,7 @@ async function handleUserSignIn(googleUser) {
 
       if (createError) throw createError;
       currentUser = newUser;
+      window.currentUser = currentUser; // expose for image-storage.js
       console.log('✅ New user created:', currentUser.email);
     }
 
