@@ -56,9 +56,6 @@ function buildEbayQuery(card) {
   return parts.join(' ');
 }
 
-  return parts.join(' ');
-}
-
 // ── Append EPN affiliate params ───────────────────────────────────────────────
 function appendAffiliateParams(url) {
   const separator = url.includes('?') ? '&' : '?';
