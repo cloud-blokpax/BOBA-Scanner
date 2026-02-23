@@ -2552,3 +2552,19 @@ a.listing-badge:hover { opacity: .85; }
   color: white !important;
   font-weight: 700;
 }
+
+/* ── Card grid price row ──────────────────────────────── */
+.card-price-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+.price-avg {
+  font-size: 11px; font-weight: 700;
+  color: #1d4ed8; background: #eff6ff;
+  padding: 2px 6px; border-radius: 6px;
+}
+.price-low {
+  font-size: 11px; font-weight: 700;
+  color: #065f46; background: #d1fae5;
+  padding: 2px 6px; border-radius: 6px;
+}
