@@ -134,7 +134,8 @@ function renderCards() {
 
         const listingBadge = card.listingStatus === 'listed' && card.listingUrl
             ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener noreferrer"
-                  class="listing-badge listed" title="View your eBay listing${card.listingPrice ? ': ' + card.listingPrice : ''}">
+                  class="listing-badge listed" title="View your eBay listing${card.listingPrice ? ': ' + card.listingPrice : ''}"
+                  onclick="event.stopPropagation()">
                  🟢 Listed${card.listingPrice ? ' ' + escapeHtml(card.listingPrice) : ''}
                </a>`
             : card.listingStatus === 'listed'
@@ -154,7 +155,7 @@ function renderCards() {
 
         return `
         <div class="card-item" id="card_item_${i}">
-            <div class="card-image-container" onclick="openCardDetail(${i})" style="cursor:pointer;" title="View details">
+            <div class="card-image-container" onclick="openCardDetail(${i})" style="cursor:pointer;" title="Tap to view details">
                 <img class="card-image"
                      src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
                      alt="${escapeHtml(card.cardNumber)}"
@@ -166,7 +167,7 @@ function renderCards() {
                 ${lowConfBadge}
                 ${listingBadge}
             </div>
-            <div class="card-content">
+            <div class="card-content" onclick="openCardDetail(${i})" style="cursor:pointer;">
                 <div class="card-title-row">
                     <div class="card-title">${escapeHtml(card.hero || 'Unknown Card')}</div>
                     <span id="rtl_badge_${i}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
@@ -176,48 +177,21 @@ function renderCards() {
                     ${card.ebayAvgPrice ? `<span class="price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
                     ${card.ebayLowPrice ? `<span class="price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
                 </div>` : ''}
-                <div class="card-meta" style="margin-top:4px;">
-                    <span class="meta-tag">${escapeHtml(card.year || '')}</span>
-                    <span class="meta-tag">${escapeHtml(card.set || '')}</span>
-                    <span class="meta-tag">${escapeHtml(card.cardNumber || '')}</span>
+                <div class="card-info-grid">
+                    ${card.cardNumber ? `<div class="card-info-row"><span class="card-info-label">Card #</span><span class="card-info-value">${escapeHtml(card.cardNumber)}</span></div>` : ''}
+                    ${card.year       ? `<div class="card-info-row"><span class="card-info-label">Year</span><span class="card-info-value">${escapeHtml(card.year)}</span></div>` : ''}
+                    ${card.set        ? `<div class="card-info-row"><span class="card-info-label">Set</span><span class="card-info-value">${escapeHtml(card.set)}</span></div>` : ''}
+                    ${card.pose       ? `<div class="card-info-row"><span class="card-info-label">Parallel</span><span class="card-info-value">${escapeHtml(card.pose)}</span></div>` : ''}
+                    ${card.weapon     ? `<div class="card-info-row"><span class="card-info-label">Weapon</span><span class="card-info-value">${escapeHtml(card.weapon)}</span></div>` : ''}
+                    ${card.power      ? `<div class="card-info-row"><span class="card-info-label">Power</span><span class="card-info-value">${escapeHtml(card.power)}</span></div>` : ''}
+                    ${card.condition  ? `<div class="card-info-row"><span class="card-info-label">Condition</span><span class="card-info-value">${escapeHtml(card.condition)}</span></div>` : ''}
                 </div>
-                <div style="margin:2px 0 8px;">
-                    <button class="btn-ebay" onclick="openEbaySearch(${i})" title="Search eBay"
-                            style="width:100%;justify-content:center;">
-                        <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
-                    </button>
-                </div>
-                <div class="card-fields">
-                    ${renderField('Card ID', 'cardId', i, card.cardId, true)}
-                    ${renderField('Name', 'hero', i, card.hero, true)}
-                    ${renderField('Year', 'year', i, card.year, true)}
-                    ${renderField('Set', 'set', i, card.set, true)}
-                    ${renderField('Card #', 'cardNumber', i, card.cardNumber, false)}
-                    ${renderField('Parallel', 'pose', i, card.pose, true)}
-                    ${renderField('Weapon', 'weapon', i, card.weapon, true)}
-                    ${renderField('Power', 'power', i, card.power, true)}
-                </div>
-                <div class="card-condition-row">
-                    <div class="field" style="flex:1;">
-                        <div class="field-label">Condition</div>
-                        <select class="field-input" onchange="updateCard(${i}, 'condition', this.value)">
-                            ${conditionOptions}
-                        </select>
-                    </div>
-                </div>
-                <div class="card-notes-row">
-                    <div class="field-label">Notes</div>
-                    <textarea class="field-notes" rows="2" placeholder="Purchase price, provenance, notes..."
-                              onchange="updateCard(${i}, 'notes', this.value)">${escapeHtml(card.notes || '')}</textarea>
-                </div>
-                <div class="card-actions">
-                    <button id="rtl_btn_${i}" class="btn-rtl ${rtlActive}"
-                            onclick="toggleReadyToList(${i})" title="${card.readyToList ? 'Remove from listing queue' : 'Mark ready to list'}">
-                        🏷️
-                    </button>
-                    <button class="btn-detail" onclick="openCardDetail(${i})" title="View full details">🔍</button>
-                    <button class="btn-remove" onclick="removeCard(${i})">🗑️</button>
-                </div>
+            </div>
+            <div class="card-footer" onclick="event.stopPropagation()">
+                <button class="btn-ebay card-footer-ebay" onclick="event.stopPropagation();openEbaySearch(${i})" title="Search eBay">
+                    <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
+                </button>
+                <button class="btn-detail card-footer-detail" onclick="event.stopPropagation();openCardDetail(${i})" title="Edit / View full details">✏️ Edit</button>
             </div>
         </div>`;
     }).join('');
@@ -562,7 +536,6 @@ function wireUpEvents() {
 function updateCollectionNavCounts() {
     try {
         const collections = getCollections();
-        // Main collection (default or first non-pricecheck)
         const mainCol = collections.find(c => c.id === 'default') || collections.find(c => c.id !== 'price_check');
         const pcCol   = collections.find(c => c.id === 'price_check');
 
@@ -574,6 +547,9 @@ function updateCollectionNavCounts() {
 
         if (mainEl) mainEl.textContent = mainCount > 0 ? ` (${mainCount})` : '';
         if (pcEl)   pcEl.textContent   = pcCount   > 0 ? ` (${pcCount})`   : '';
+
+        // Also refresh the slider counts
+        if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
     } catch(e) {}
 }
 window.updateCollectionNavCounts = updateCollectionNavCounts;
