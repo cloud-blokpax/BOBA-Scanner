@@ -73,7 +73,14 @@ async function processImage(file) {
 
   // FIXED: Single compression pass up-front.
   const imageBase64 = await compressImage(file);
-  const imageUrl    = `data:image/jpeg;base64,${imageBase64}`;
+
+  // Try to upload to Supabase Storage for permanent cross-device image URLs.
+  // Falls back to base64 data URL if storage is unavailable (guest mode, network error, etc.)
+  let imageUrl = `data:image/jpeg;base64,${imageBase64}`;
+  if (typeof uploadCardImage === 'function') {
+    const uploadedUrl = await uploadCardImage(imageBase64, file.name);
+    if (uploadedUrl) imageUrl = uploadedUrl;
+  }
 
   // Keep a raw Object URL only for display in the card grid (not for processing)
   const displayUrl = URL.createObjectURL(file);
@@ -311,6 +318,9 @@ function removeCard(index) {
 
   // Record this deletion as a tombstone so sync doesn't re-add the card from cloud
   recordDeletedCard(card);
+
+  // Delete from Supabase Storage (fire-and-forget)
+  if (typeof deleteCardImage === 'function') deleteCardImage(card.imageUrl);
 
   // Revoke the display Object URL to free memory
   if (card.imageUrl && card.imageUrl.startsWith('blob:')) {
