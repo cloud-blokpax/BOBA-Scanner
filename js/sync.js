@@ -149,10 +149,11 @@ async function pushCollections() {
             .from('collections')
             .upsert(
                 {
-                    user_id:      currentUser.id,
-                    data:         toSave,
+                    user_id:       currentUser.id,
+                    data:          toSave,
                     deleted_cards: getDeletedCards(),
-                    updated_at:   new Date().toISOString()
+                    user_tags:     (typeof getAllTags === 'function') ? getAllTags() : [],
+                    updated_at:    new Date().toISOString()
                 },
                 { onConflict: 'user_id' }
             );
@@ -170,7 +171,7 @@ async function pullCollections() {
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
-            .select('data, deleted_cards, updated_at')
+            .select('data, deleted_cards, user_tags, updated_at')
             .eq('user_id', currentUser.id)
             .single();
 
@@ -190,6 +191,13 @@ async function pullCollections() {
         const cloudTombstones  = data.deleted_cards || [];
         const allTombstones    = [...new Set([...localTombstones, ...cloudTombstones])];
         saveDeletedCards(allTombstones);
+
+        // Merge user tags from cloud
+        if (typeof saveAllTags === 'function' && data.user_tags?.length) {
+            const localTags = getAllTags();
+            const merged    = [...new Set([...localTags, ...data.user_tags])];
+            saveAllTags(merged);
+        }
 
         const local       = getCollections();
         const merged      = mergeCollections(local, data.data, allTombstones);
@@ -236,7 +244,7 @@ async function forceSync() {
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
-            .select('data, deleted_cards')
+            .select('data, deleted_cards, user_tags')
             .eq('user_id', currentUser.id)
             .single();
 
@@ -245,6 +253,11 @@ async function forceSync() {
         const cloudTombstones = (!error && data?.deleted_cards) ? data.deleted_cards : [];
         const allTombstones   = [...new Set([...localTombstones, ...cloudTombstones])];
         saveDeletedCards(allTombstones);
+
+        // Merge tags
+        if (typeof saveAllTags === 'function' && data?.user_tags?.length) {
+            saveAllTags([...new Set([...getAllTags(), ...data.user_tags])]);
+        }
 
         const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
         let merged        = local;
@@ -267,6 +280,7 @@ async function forceSync() {
                     user_id:       currentUser.id,
                     data:          safe,
                     deleted_cards: allTombstones,
+                    user_tags:     (typeof getAllTags === 'function') ? getAllTags() : [],
                     updated_at:    new Date().toISOString()
                 },
                 { onConflict: 'user_id' }
@@ -295,14 +309,8 @@ async function forceSync() {
     }
 }
 
-// ── Collection Modal ──────────────────────────────────────────────────────────
-function openCollectionModal() {
-    const modal = document.getElementById('collectionModal');
-    if (!modal) { console.error('collectionModal not found'); return; }
-    modal.classList.add('active');
-    renderCollectionModal();
-}
-
+// ── Collection Modal ── (rendered by tags.js)
+// closeCollectionModal kept here for the backdrop onclick in HTML
 function closeCollectionModal() {
     const modal = document.getElementById('collectionModal');
     if (modal) modal.classList.remove('active');
@@ -312,7 +320,8 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeCollectionModal();
 });
 
-function renderCollectionModal() {
+// Legacy stub — real implementation in tags.js
+function _syncRenderCollectionModal_LEGACY() {
     const body  = document.getElementById('collectionModalBody');
     const count = document.getElementById('collectionCount');
     if (!body) return;
