@@ -3,6 +3,43 @@
 const SYNC_DEBOUNCE_MS = 2000;
 let _syncTimer = null;
 
+// ── Tombstones ────────────────────────────────────────────────────────────────
+// A tombstone records a deliberate card deletion so the merge won't re-add it.
+// Key: cardNumber + ":" + timestamp (the card's own timestamp, not deletion time)
+
+function getDeletedCards() {
+    try {
+        return JSON.parse(localStorage.getItem('deletedCards') || '[]');
+    } catch { return []; }
+}
+
+function saveDeletedCards(list) {
+    try {
+        localStorage.setItem('deletedCards', JSON.stringify(list));
+    } catch (e) { console.warn('Could not save tombstones:', e); }
+}
+
+function recordDeletedCard(card) {
+    const key = cardTombstoneKey(card);
+    const list = getDeletedCards();
+    if (!list.includes(key)) {
+        list.push(key);
+        saveDeletedCards(list);
+    }
+    // Also push immediately so other devices learn about this deletion ASAP
+    schedulePush();
+}
+
+function cardTombstoneKey(card) {
+    // Use cardNumber + timestamp as a stable unique key for each scanned card
+    return (card.cardNumber || '') + ':' + (card.timestamp || '');
+}
+
+function isDeleted(card, tombstones) {
+    return tombstones.includes(cardTombstoneKey(card));
+}
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
 function setupAutoSync() {
     if (isGuestMode() || !window.supabaseClient) {
         console.log('⏭️ Sync skipped (guest mode or no Supabase)');
@@ -19,6 +56,7 @@ function schedulePush() {
     _syncTimer = setTimeout(pushCollections, SYNC_DEBOUNCE_MS);
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function stripBlobUrls(collections) {
     return collections.map(col => ({
         ...col,
@@ -30,10 +68,16 @@ function stripBlobUrls(collections) {
     }));
 }
 
-// Merge two card arrays — dedupe by cardNumber+timestamp
-function mergeCardArrays(localCards, remoteCards) {
-    const merged = [...localCards];
+// Merge two card arrays, respecting tombstones from BOTH devices
+function mergeCardArrays(localCards, remoteCards, tombstones) {
+    // Start with local cards that haven't been deleted
+    const merged = localCards.filter(c => !isDeleted(c, tombstones));
+
     for (const remoteCard of remoteCards) {
+        // Skip if this card was deleted on any device
+        if (isDeleted(remoteCard, tombstones)) continue;
+
+        // Skip if already present (dedup by cardNumber + timestamp within 10s)
         const isDupe = merged.some(c =>
             c.cardNumber === remoteCard.cardNumber &&
             Math.abs(new Date(c.timestamp) - new Date(remoteCard.timestamp)) < 10000
@@ -43,27 +87,30 @@ function mergeCardArrays(localCards, remoteCards) {
     return merged;
 }
 
-function mergeCollections(local, remote) {
+function mergeCollections(local, remote, tombstones) {
     const colMap = {};
 
-    // Seed with local
     for (const col of local) {
         colMap[col.id] = { ...col, cards: [...col.cards] };
     }
 
-    // Merge remote into each collection
     for (const remoteCol of remote) {
         if (!colMap[remoteCol.id]) {
             colMap[remoteCol.id] = { ...remoteCol, cards: [...remoteCol.cards] };
         } else {
             colMap[remoteCol.id].cards = mergeCardArrays(
                 colMap[remoteCol.id].cards,
-                remoteCol.cards
+                remoteCol.cards,
+                tombstones
             );
         }
     }
 
-    // Rebuild stats
+    // Apply tombstones to any collection that only exists remotely
+    for (const id of Object.keys(colMap)) {
+        colMap[id].cards = colMap[id].cards.filter(c => !isDeleted(c, tombstones));
+    }
+
     return Object.values(colMap).map(col => ({
         ...col,
         stats: {
@@ -75,31 +122,38 @@ function mergeCollections(local, remote) {
     }));
 }
 
-// Push = read cloud first, merge, then write
-// This prevents any device from overwriting another device's cards
+// ── Push ──────────────────────────────────────────────────────────────────────
+// Read cloud → merge with local (respecting tombstones) → write back
 async function pushCollections() {
     if (!window.supabaseClient || !currentUser) return;
     try {
-        // 1. Read current cloud state
         const { data, error } = await window.supabaseClient
             .from('collections')
             .select('data')
             .eq('user_id', currentUser.id)
             .single();
 
-        const local = stripBlobUrls(getCollections());
+        const local      = getCollections();
+        const tombstones = getDeletedCards();
+        let toSave = stripBlobUrls(local);
 
-        let toSave = local;
         if (!error && data?.data) {
-            // 2. Merge cloud into local before writing
-            toSave = mergeCollections(local, data.data);
+            // Merge with cloud, tombstones remove deleted cards from both sides
+            const cloudTombstones = data.deletedCards || [];
+            const allTombstones = [...new Set([...tombstones, ...cloudTombstones])];
+            saveDeletedCards(allTombstones); // adopt cloud deletions locally too
+            toSave = stripBlobUrls(mergeCollections(local, data.data, allTombstones));
         }
 
-        // 3. Write merged result
         const { error: writeError } = await window.supabaseClient
             .from('collections')
             .upsert(
-                { user_id: currentUser.id, data: toSave, updated_at: new Date().toISOString() },
+                {
+                    user_id:      currentUser.id,
+                    data:         toSave,
+                    deleted_cards: getDeletedCards(),
+                    updated_at:   new Date().toISOString()
+                },
                 { onConflict: 'user_id' }
             );
 
@@ -110,18 +164,18 @@ async function pushCollections() {
     }
 }
 
+// ── Pull ──────────────────────────────────────────────────────────────────────
 async function pullCollections() {
     if (!window.supabaseClient || !currentUser) return;
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
-            .select('data, updated_at')
+            .select('data, deleted_cards, updated_at')
             .eq('user_id', currentUser.id)
             .single();
 
         if (error) {
             if (error.code === 'PGRST116') {
-                // No cloud data yet — push local up
                 await pushCollections();
             } else {
                 throw error;
@@ -131,27 +185,31 @@ async function pullCollections() {
 
         if (!data?.data) return;
 
-        const local  = getCollections();
-        const merged = mergeCollections(local, data.data);
+        // Merge tombstones from cloud with local tombstones
+        const localTombstones  = getDeletedCards();
+        const cloudTombstones  = data.deleted_cards || [];
+        const allTombstones    = [...new Set([...localTombstones, ...cloudTombstones])];
+        saveDeletedCards(allTombstones);
+
+        const local       = getCollections();
+        const merged      = mergeCollections(local, data.data, allTombstones);
 
         const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
         const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
 
-        // Save merged without triggering another push (avoid loop)
-        try {
-            localStorage.setItem('collections', JSON.stringify(merged));
-        } catch (e) {
-            console.error('Storage full:', e);
-        }
+        localStorage.setItem('collections', JSON.stringify(merged));
 
-        if (typeof renderCards  === 'function') renderCards();
-        if (typeof updateStats  === 'function') updateStats();
+        if (typeof renderCards === 'function') renderCards();
+        if (typeof updateStats === 'function') updateStats();
 
-        if (mergedTotal > localTotal) {
-            const added = mergedTotal - localTotal;
-            showToast(`Synced ${added} new card${added !== 1 ? 's' : ''} from cloud`, '☁️');
-            console.log(`☁️ Merged ${added} new cards from cloud`);
-            // Push the merged result back so cloud is complete
+        const diff = mergedTotal - localTotal;
+        if (diff > 0) {
+            showToast(`Synced +${diff} card${diff !== 1 ? 's' : ''} from cloud`, '☁️');
+            console.log(`☁️ Merged +${diff} cards from cloud`);
+            await pushCollections(); // write merged + tombstones back
+        } else if (diff < 0) {
+            showToast(`Removed ${Math.abs(diff)} deleted card${Math.abs(diff) !== 1 ? 's' : ''}`, '🗑️');
+            console.log(`☁️ Applied ${Math.abs(diff)} deletions from cloud`);
             await pushCollections();
         } else {
             console.log('☁️ Already up to date');
@@ -161,37 +219,7 @@ async function pullCollections() {
     }
 }
 
-// Manual sync — called by the ☁️ FAB button
-async function manualSync() {
-    if (isGuestMode()) {
-        showToast('Sign in to sync across devices', '🔒');
-        return;
-    }
-    if (!window.supabaseClient || !currentUser) {
-        showToast('Not connected — try refreshing', '⚠️');
-        return;
-    }
-
-    const btn = document.getElementById('fabSync');
-    if (btn) btn.classList.add('syncing');
-    showToast('Syncing...', '☁️');
-
-    try {
-        await pullCollections();
-        showToast('Sync complete ✓', '✅');
-    } catch (err) {
-        showToast('Sync failed — check connection', '❌');
-        console.error('Manual sync error:', err);
-    } finally {
-        if (btn) btn.classList.remove('syncing');
-    }
-}
-
-console.log('✅ Sync module loaded');
-
-// ── Force Sync — called by header ☁️ Sync button ─────────────────────────────
-// Does a full bidirectional merge: pull cloud → merge with local → push back.
-// Shows count of cards added from each side.
+// ── Force Sync ────────────────────────────────────────────────────────────────
 async function forceSync() {
     if (isGuestMode()) {
         showToast('Sign in to sync across devices', '🔒');
@@ -206,56 +234,58 @@ async function forceSync() {
     if (btn) { btn.classList.add('syncing'); btn.textContent = '⏳'; }
 
     try {
-        // Step 1: get cloud data
         const { data, error } = await window.supabaseClient
             .from('collections')
-            .select('data')
+            .select('data, deleted_cards')
             .eq('user_id', currentUser.id)
             .single();
 
-        const local = getCollections();
-        const localTotal = local.reduce((s, c) => s + c.cards.length, 0);
+        const local           = getCollections();
+        const localTombstones = getDeletedCards();
+        const cloudTombstones = (!error && data?.deleted_cards) ? data.deleted_cards : [];
+        const allTombstones   = [...new Set([...localTombstones, ...cloudTombstones])];
+        saveDeletedCards(allTombstones);
 
-        if (error && error.code !== 'PGRST116') throw error;
-
-        let merged = local;
-        let cloudTotal = 0;
+        const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
+        let merged        = local;
+        let cloudTotal    = 0;
 
         if (!error && data?.data) {
             cloudTotal = data.data.reduce((s, c) => s + c.cards.length, 0);
-            merged = mergeCollections(local, data.data);
+            merged     = mergeCollections(local, data.data, allTombstones);
         }
 
         const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
-        const fromCloud   = mergedTotal - localTotal;
-        const toCloud     = mergedTotal - cloudTotal;
 
-        // Save locally
         localStorage.setItem('collections', JSON.stringify(merged));
 
-        // Push merged back to cloud
         const safe = stripBlobUrls(merged);
         await window.supabaseClient
             .from('collections')
             .upsert(
-                { user_id: currentUser.id, data: safe, updated_at: new Date().toISOString() },
+                {
+                    user_id:       currentUser.id,
+                    data:          safe,
+                    deleted_cards: allTombstones,
+                    updated_at:    new Date().toISOString()
+                },
                 { onConflict: 'user_id' }
             );
 
-        // Re-render
         if (typeof renderCards === 'function') renderCards();
         if (typeof updateStats === 'function') updateStats();
 
-        // Build result message
-        if (fromCloud === 0 && toCloud <= 0) {
+        const fromCloud = mergedTotal - localTotal;
+        const toCloud   = mergedTotal - cloudTotal;
+        if (fromCloud === 0 && toCloud <= 0 && mergedTotal === localTotal) {
             showToast('Already in sync ✓', '✅');
         } else {
             const parts = [];
             if (fromCloud > 0) parts.push(`+${fromCloud} from cloud`);
-            if (toCloud  > 0) parts.push(`+${toCloud} to cloud`);
+            if (toCloud   > 0) parts.push(`+${toCloud} to cloud`);
+            if (mergedTotal < localTotal) parts.push(`${localTotal - mergedTotal} deletions applied`);
             showToast(`Sync complete — ${parts.join(', ')}`, '✅');
         }
-        console.log(`☁️ Force sync: local=${localTotal} cloud=${cloudTotal} merged=${mergedTotal}`);
 
     } catch (err) {
         showToast('Sync failed — check connection', '❌');
@@ -265,41 +295,32 @@ async function forceSync() {
     }
 }
 
-// ── View Collection Modal ──────────────────────────────────────────────────────
+// ── Collection Modal ──────────────────────────────────────────────────────────
 function openCollectionModal() {
     const modal = document.getElementById('collectionModal');
-    if (!modal) {
-        console.error('collectionModal element not found');
-        return;
-    }
+    if (!modal) { console.error('collectionModal not found'); return; }
     modal.classList.add('active');
     renderCollectionModal();
 }
-
-// Close modal on ESC key
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeCollectionModal();
-});
 
 function closeCollectionModal() {
     const modal = document.getElementById('collectionModal');
     if (modal) modal.classList.remove('active');
 }
 
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeCollectionModal();
+});
+
 function renderCollectionModal() {
     const body  = document.getElementById('collectionModalBody');
     const count = document.getElementById('collectionCount');
     if (!body) return;
 
-    // Gather ALL cards across ALL collections
     const allCards = [];
     for (const col of getCollections()) {
-        for (const card of col.cards) {
-            allCards.push(card);
-        }
+        for (const card of col.cards) allCards.push(card);
     }
-
-    // Sort newest first
     allCards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     if (count) count.textContent = `(${allCards.length} card${allCards.length !== 1 ? 's' : ''})`;
@@ -314,23 +335,23 @@ function renderCollectionModal() {
         return;
     }
 
-    body.innerHTML = `<div class="collection-grid">${allCards.map((card, i) => {
+    body.innerHTML = `<div class="collection-grid">${allCards.map(card => {
         const hasImage = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
-        const imgHtml = hasImage
-            ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-            : '';
-        const placeholderHtml = `<div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>`;
-
         return `
             <div class="collection-card">
-                ${imgHtml}${placeholderHtml}
+                ${hasImage
+                    ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                    : ''}
+                <div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>
                 <div class="collection-card-info">
                     <div class="collection-card-name">${escapeHtml(card.hero || 'Unknown')}</div>
                     <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
                     <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
-                        ${card.scanType === 'free' ? 'Free' : 'AI'}
+                        ${card.scanType === 'free' ? 'Free OCR' : 'AI'}
                     </span>
                 </div>
             </div>`;
     }).join('')}</div>`;
 }
+
+console.log('✅ Sync module loaded');
