@@ -64,22 +64,18 @@ async function processImage(file) {
 
   const imageBase64 = await compressImage(file);
 
-  // imageUrl = what gets STORED on the card (Supabase URL or empty — never base64)
-  // imageBase64 is used only for OCR/AI processing, not for storage
-  let imageUrl = '';
-  if (typeof uploadCardImage === 'function') {
-    const uploadedUrl = await uploadCardImage(imageBase64, file.name);
-    if (uploadedUrl) imageUrl = uploadedUrl;
-  }
-
+  // Use blob URL for immediate display — stored temporarily on the card for this session.
+  // Supabase upload happens async AFTER the card is saved, then updates the card record.
+  // This means images always show immediately, even if upload is slow or user isn't logged in yet.
   const displayUrl = URL.createObjectURL(file);
 
   try {
-    return await _doProcessImage(imageBase64, imageUrl, displayUrl, file.name);
+    // Pass displayUrl as imageUrl — card shows immediately, blob URL lasts for session
+    return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64);
   } finally {}
 }
 
-async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
+async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null) {
   let match      = null;
   let cardNum    = null;
   let heroName   = null;
@@ -104,7 +100,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
         if (match) {
           console.log('OCR match:', match.Name);
           showLoading(false);
-          addCard(match, imageUrl, fileName, 'free', ocrResult.confidence);
+          addCard(match, imageUrl, fileName, 'free', ocrResult.confidence, false, storedBase64);
           setProgress(100);
           if (typeof addToScanHistory === 'function') {
             addToScanHistory({
@@ -140,13 +136,14 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName) {
     cardNum    = extracted.cardNumber;
     heroName   = extracted.hero;
     confidence = extracted.confidence || 85;
+    const visualTheme = extracted.visualTheme || '';
 
-    match = findCard(cardNum, heroName);
+    match = findCard(cardNum, heroName, visualTheme);
 
     if (match) {
       showLoading(false);
       const lowConf = confidence < 70;
-      addCard(match, imageUrl, fileName, 'ai', confidence, lowConf);
+      addCard(match, imageUrl, fileName, 'ai', confidence, lowConf, storedBase64);
       setProgress(100);
 
       if (typeof addToScanHistory === 'function') {
@@ -379,7 +376,7 @@ function ensurePriceCheckCollection() {
 }
 window.ensurePriceCheckCollection = ensurePriceCheckCollection;
 
-function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false) {
+function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null) {
   console.log('Adding card:', match['Card Number']);
 
   // Determine target collection based on scan mode
@@ -460,6 +457,24 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   if (type === 'ai')   collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
 
   saveCollections(collections);
+
+  // Async Supabase upload — card saved immediately with blob URL for instant display.
+  // When upload finishes, swap to the permanent Supabase URL and re-render.
+  if (imageBase64 && typeof uploadCardImage === 'function') {
+    const savedCardIndex = collection.cards.length - 1;
+    const savedColId     = isPriceCheck ? 'price_check' : getCurrentCollectionId();
+    uploadCardImage(imageBase64, fileName).then(uploadedUrl => {
+      if (!uploadedUrl) return;
+      const cols = getCollections();
+      const col  = cols.find(c => c.id === savedColId);
+      if (col && col.cards[savedCardIndex]) {
+        col.cards[savedCardIndex].imageUrl = uploadedUrl;
+        saveCollections(cols);
+        renderCards();
+        if (typeof renderCollectionModal === 'function') renderCollectionModal();
+      }
+    }).catch(() => {});
+  }
 
   if (typeof trackCardAdded === 'function') trackCardAdded();
 
