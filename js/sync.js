@@ -188,3 +188,141 @@ async function manualSync() {
 }
 
 console.log('✅ Sync module loaded');
+
+// ── Force Sync — called by header ☁️ Sync button ─────────────────────────────
+// Does a full bidirectional merge: pull cloud → merge with local → push back.
+// Shows count of cards added from each side.
+async function forceSync() {
+    if (isGuestMode()) {
+        showToast('Sign in to sync across devices', '🔒');
+        return;
+    }
+    if (!window.supabaseClient || !currentUser) {
+        showToast('Not connected — try refreshing', '⚠️');
+        return;
+    }
+
+    const btn = document.getElementById('btnForceSync');
+    if (btn) { btn.classList.add('syncing'); btn.textContent = '⏳'; }
+
+    try {
+        // Step 1: get cloud data
+        const { data, error } = await window.supabaseClient
+            .from('collections')
+            .select('data')
+            .eq('user_id', currentUser.id)
+            .single();
+
+        const local = getCollections();
+        const localTotal = local.reduce((s, c) => s + c.cards.length, 0);
+
+        if (error && error.code !== 'PGRST116') throw error;
+
+        let merged = local;
+        let cloudTotal = 0;
+
+        if (!error && data?.data) {
+            cloudTotal = data.data.reduce((s, c) => s + c.cards.length, 0);
+            merged = mergeCollections(local, data.data);
+        }
+
+        const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
+        const fromCloud   = mergedTotal - localTotal;
+        const toCloud     = mergedTotal - cloudTotal;
+
+        // Save locally
+        localStorage.setItem('collections', JSON.stringify(merged));
+
+        // Push merged back to cloud
+        const safe = stripBlobUrls(merged);
+        await window.supabaseClient
+            .from('collections')
+            .upsert(
+                { user_id: currentUser.id, data: safe, updated_at: new Date().toISOString() },
+                { onConflict: 'user_id' }
+            );
+
+        // Re-render
+        if (typeof renderCards === 'function') renderCards();
+        if (typeof updateStats === 'function') updateStats();
+
+        // Build result message
+        if (fromCloud === 0 && toCloud <= 0) {
+            showToast('Already in sync ✓', '✅');
+        } else {
+            const parts = [];
+            if (fromCloud > 0) parts.push(`+${fromCloud} from cloud`);
+            if (toCloud  > 0) parts.push(`+${toCloud} to cloud`);
+            showToast(`Sync complete — ${parts.join(', ')}`, '✅');
+        }
+        console.log(`☁️ Force sync: local=${localTotal} cloud=${cloudTotal} merged=${mergedTotal}`);
+
+    } catch (err) {
+        showToast('Sync failed — check connection', '❌');
+        console.error('Force sync error:', err);
+    } finally {
+        if (btn) { btn.classList.remove('syncing'); btn.textContent = '☁️ Sync'; }
+    }
+}
+
+// ── View Collection Modal ──────────────────────────────────────────────────────
+function openCollectionModal() {
+    const modal = document.getElementById('collectionModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    renderCollectionModal();
+}
+
+function closeCollectionModal() {
+    const modal = document.getElementById('collectionModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function renderCollectionModal() {
+    const body  = document.getElementById('collectionModalBody');
+    const count = document.getElementById('collectionCount');
+    if (!body) return;
+
+    // Gather ALL cards across ALL collections
+    const allCards = [];
+    for (const col of getCollections()) {
+        for (const card of col.cards) {
+            allCards.push(card);
+        }
+    }
+
+    // Sort newest first
+    allCards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    if (count) count.textContent = `(${allCards.length} card${allCards.length !== 1 ? 's' : ''})`;
+
+    if (allCards.length === 0) {
+        body.innerHTML = `
+            <div class="collection-empty">
+                <div class="collection-empty-icon">📭</div>
+                <h3>No cards yet</h3>
+                <p>Scan your first Bo Jackson card to get started!</p>
+            </div>`;
+        return;
+    }
+
+    body.innerHTML = `<div class="collection-grid">${allCards.map((card, i) => {
+        const hasImage = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
+        const imgHtml = hasImage
+            ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+            : '';
+        const placeholderHtml = `<div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>`;
+
+        return `
+            <div class="collection-card">
+                ${imgHtml}${placeholderHtml}
+                <div class="collection-card-info">
+                    <div class="collection-card-name">${escapeHtml(card.hero || 'Unknown')}</div>
+                    <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
+                    <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
+                        ${card.scanType === 'free' ? 'Free' : 'AI'}
+                    </span>
+                </div>
+            </div>`;
+    }).join('')}</div>`;
+}
