@@ -49,7 +49,8 @@
                             <div class="user-email" id="userEmail"></div>
                         </div>
                         <img class="user-avatar" id="userAvatar" alt="User" onclick="toggleUserMenu()">
-                        <!-- FIXED: was onclick="signOut()" -->
+                        <button class="btn-collection" id="btnViewCollection" onclick="openCollectionModal()">🎴 Collection</button>
+                        <button class="btn-force-sync" id="btnForceSync" onclick="forceSync()">☁️ Sync</button>
                         <button class="btn-sign-out" id="btnSignOut" onclick="signOut()">Sign Out</button>
                     </div>
                 </div>
@@ -149,6 +150,20 @@
             
         </main>
         
+        <!-- Collection Modal -->
+        <div class="modal" id="collectionModal">
+            <div class="modal-backdrop" onclick="closeCollectionModal()"></div>
+            <div class="modal-content modal-large modal-fullscreen">
+                <div class="modal-header">
+                    <h2>🎴 My Collection <span id="collectionCount" style="font-size:16px;font-weight:normal;color:#666;"></span></h2>
+                    <button class="modal-close" onclick="closeCollectionModal()">×</button>
+                </div>
+                <div class="modal-body" id="collectionModalBody" style="padding: 16px;">
+                    <div style="text-align:center;color:#999;padding:40px;">Loading...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Floating Action Buttons -->
         <div class="fab-container" id="fabContainer" style="display: none;">
             <button class="fab fab-sync" id="fabSync" aria-label="Sync collection" onclick="manualSync()" title="Sync with cloud">
