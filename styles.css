@@ -643,10 +643,11 @@ body {
 }
 
 .card-title {
-    font-size: 1.4rem;  /* 25% larger than --text-lg (18px) → ~22px */
+    font-size: 1.25rem;
     font-weight: var(--font-bold);
     color: var(--gray-900);
-    margin-bottom: var(--space-1);
+    margin-bottom: var(--space-2);
+    line-height: 1.2;
 }
 
 .card-meta {
@@ -663,6 +664,70 @@ body {
     color: var(--gray-600);
     background: var(--gray-100);
     border-radius: var(--radius-sm);
+}
+
+/* Clean read-only info grid on cards */
+.card-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.card-info-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.4;
+}
+
+.card-info-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    min-width: 62px;
+    flex-shrink: 0;
+}
+
+.card-info-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+    word-break: break-word;
+}
+
+/* Card footer with action buttons */
+.card-footer {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px 14px;
+    border-top: 1px solid #f3f4f6;
+}
+
+.card-footer-ebay {
+    flex: 1;
+    justify-content: center;
+    font-size: 13px;
+    padding: 9px 12px;
+}
+
+.card-footer-detail {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #374151;
+    border-radius: var(--radius-lg);
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s;
+}
+
+.card-footer-detail:hover {
+    background: #e2e8f0;
 }
 
 .card-fields {
