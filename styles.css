@@ -536,6 +536,28 @@ body {
     transform: scale(0.95);
 }
 
+/* Stacked FAB layout for sync + scan buttons */
+.fab-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.fab-sync {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    font-size: 24px;
+}
+
+.fab-sync.syncing {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
 /* ========================================
    CARD GRID - MODERN LAYOUT
    ======================================== */
