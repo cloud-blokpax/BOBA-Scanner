@@ -61,6 +61,9 @@ function initGoogleAuth() {
         console.error('❌ Google Auth init error:', err);
       }
 
+      // Restore session from localStorage BEFORE resolving
+      // so app.js sees googleUser immediately after await initGoogleAuth()
+      await restoreSession();
       resolve();
     };
 
