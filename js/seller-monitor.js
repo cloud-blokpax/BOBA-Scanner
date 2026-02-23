@@ -55,43 +55,49 @@ async function fetchSellerListings(sellerUsername) {
 
 function scoreListingAgainstCard(title, card) {
   const t = title.toUpperCase();
+  const s = v => String(v ?? '').trim().toUpperCase();
   let score = 0;
 
-  // Card number: highest weight — very specific identifier
-  if (card.cardNumber && t.includes(card.cardNumber.toUpperCase())) score += 40;
+  // ── CARD NUMBER (high confidence bonus, not required) ────────────────────
+  // If present in title, very strong signal — boosts score significantly
+  const cardNum = s(card.cardNumber);
+  if (cardNum && t.includes(cardNum)) score += 50;
 
-  // Hero name
+  // ── HERO NAME ─────────────────────────────────────────────────────────────
   if (card.hero) {
-    const heroWords = card.hero.toUpperCase().split(/\s+/);
-    const allMatch  = heroWords.every(w => t.includes(w));
-    if (allMatch) score += 30;
+    const heroWords = s(card.hero).split(/\s+/).filter(w => w.length > 1);
+    if (heroWords.every(w => t.includes(w))) score += 30;
   }
 
-  // Parallel/pose
+  // ── PARALLEL — extract first meaningful keyword only ─────────────────────
+  // "Blizzard Battlefoil Glow" → check for "BLIZZARD"
+  // "RAD Steel" → check for "RAD"
+  // This prevents "Blizzard" card matching "RAD Steel" listing
   if (card.pose) {
-    const pose = card.pose.trim().toLowerCase();
-    if (pose && pose !== 'base' && pose !== 'none' && t.includes(card.pose.toUpperCase())) score += 20;
+    const pose = s(card.pose);
+    if (pose && pose !== 'BASE' && pose !== 'NONE' && pose !== 'UNKNOWN') {
+      const firstKeyword = pose.split(/\s+/)[0]; // "BLIZZARD", "RAD", "FOIL", etc.
+      if (firstKeyword && firstKeyword.length > 2 && t.includes(firstKeyword)) {
+        score += 20;
+      }
+    }
   }
 
-  // Year
-  if (card.year && t.includes(String(card.year))) score += 15;
-
-  // Set name (partial match)
-  if (card.set) {
-    const setWords = card.set.toUpperCase().split(/\s+/).filter(w => w.length > 3);
-    if (setWords.some(w => t.includes(w))) score += 10;
-  }
-
-  // Weapon
+  // ── WEAPON ────────────────────────────────────────────────────────────────
   if (card.weapon) {
-    const weapon = card.weapon.trim().toLowerCase();
-    if (weapon && weapon !== 'none' && weapon !== 'n/a' && t.includes(card.weapon.toUpperCase())) score += 10;
+    const weapon = s(card.weapon);
+    if (weapon && weapon !== 'NONE' && weapon !== 'N/A' && t.includes(weapon)) score += 10;
   }
+
+  // ── YEAR (bonus, not critical since card number already unique) ───────────
+  if (card.year && t.includes(String(card.year))) score += 5;
 
   return score;
 }
 
-const MATCH_THRESHOLD = 55; // Points needed to consider a match
+const MATCH_THRESHOLD = 55; // Without card number: hero(30) + parallel(20) + weapon(10) + year(5) = 65 max
+                              // Requires at minimum hero + parallel to match
+                              // With card number: 50 + 30 + 20 = 100 — very high confidence
 
 function matchListingsToCollection(listings, collections) {
   const matches = {}; // cardKey → {listing, score}
