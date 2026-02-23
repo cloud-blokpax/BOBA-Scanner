@@ -7,7 +7,11 @@ const IMAGE_BUCKET = 'card-images';
 // Upload a base64 JPEG to Supabase Storage.
 // Returns the public URL on success, or null on failure.
 async function uploadCardImage(base64Jpeg, originalFilename) {
-    if (!window.supabaseClient || !currentUser) return null;
+    const user = window.currentUser;
+    if (!window.supabaseClient || !user) {
+        console.warn('⚠️ uploadCardImage: no supabaseClient or currentUser', { hasClient: !!window.supabaseClient, hasUser: !!user });
+        return null;
+    }
 
     try {
         // Convert base64 to Blob
@@ -20,7 +24,7 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
 
         // Path: userId/timestamp_filename.jpg
         const safeName = (originalFilename || 'card').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const path     = `${currentUser.id}/${Date.now()}_${safeName}.jpg`;
+        const path     = `${user.id}/${Date.now()}_${safeName}.jpg`;
 
         const { error } = await window.supabaseClient.storage
             .from(IMAGE_BUCKET)
@@ -52,7 +56,7 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
 // Delete a card's image from Supabase Storage when the card is removed.
 // Only deletes if the URL belongs to our bucket (not base64 or external).
 async function deleteCardImage(imageUrl) {
-    if (!window.supabaseClient || !currentUser) return;
+    if (!window.supabaseClient || !window.currentUser) return;
     if (!imageUrl || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return;
 
     try {
