@@ -31,34 +31,30 @@ const EBAY_SEARCH_BASE = 'https://www.ebay.com/sch/i.html';
 // Parallel and weapon are included when non-trivial (skip "Base", "None", etc.)
 
 function buildEbayQuery(card) {
-  const parts = [];
   // Helper: safely coerce any value to trimmed string
   const s = v => String(v ?? '').trim();
 
-  // Year — helps disambiguate across set releases
-  if (card.year) parts.push(s(card.year));
+  const parts = [];
 
-  // Always anchor to Bo Jackson
-  parts.push('bo jackson');
+  // "bo jackson battle arena" — anchors to the game, not just the player
+  parts.push('bo jackson battle arena');
 
-  // Card number — single most important identifier
-  if (card.cardNumber) parts.push(s(card.cardNumber));
+  // Card number — most specific identifier (e.g. BLBF-84)
+  const cardNum = s(card.cardNumber);
+  if (cardNum) parts.push(cardNum);
 
-  // Set name — cleaned up
-  const set = s(card.set);
-  if (set && set.toLowerCase() !== 'unknown') parts.push(set);
+  // Hero name — helps narrow parallel variants
+  const hero = s(card.hero);
+  if (hero && hero.toLowerCase() !== 'unknown') parts.push(hero);
 
-  // Parallel — skip generic/blank values
-  const pose = s(card.pose).toLowerCase();
-  if (pose && pose !== 'base' && pose !== 'base card' && pose !== 'none' && pose !== 'unknown' && pose !== '-') {
-    parts.push(s(card.pose));
-  }
+  // Intentionally excluded:
+  //   set name  (Alpha Update, Battle Arena, etc) — too verbose, hurts results
+  //   parallel  (Blizzard Battlefoil Glow, etc)   — most sellers don't include this
+  //   weapon    — rarely in listing titles
+  //   year      — card number already disambiguates
 
-  // Weapon — skip "None" / blank
-  const weapon = s(card.weapon).toLowerCase();
-  if (weapon && weapon !== 'none' && weapon !== 'unknown' && weapon !== 'n/a' && weapon !== '-') {
-    parts.push(s(card.weapon));
-  }
+  return parts.join(' ');
+}
 
   return parts.join(' ');
 }
