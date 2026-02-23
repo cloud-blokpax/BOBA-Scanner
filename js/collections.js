@@ -42,6 +42,34 @@ function saveCollections(collections) {
   }
 }
 
+// One-time migration: strip base64 imageUrls from existing cards to free localStorage space.
+// Base64 data URLs start with "data:" and can be hundreds of KB each.
+// Cards get their image from Supabase Storage — base64 is only needed during scan, not for storage.
+function migrateStripBase64Images() {
+  try {
+    const stored = localStorage.getItem('collections');
+    if (!stored) return;
+    const cols = JSON.parse(stored);
+    if (!Array.isArray(cols)) return;
+    let changed = false;
+    for (const col of cols) {
+      if (!Array.isArray(col.cards)) continue;
+      for (const card of col.cards) {
+        if (card.imageUrl && card.imageUrl.startsWith('data:')) {
+          card.imageUrl = ''; // drop the base64, keep the rest of the card
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      localStorage.setItem('collections', JSON.stringify(cols));
+      console.log('🧹 Migrated: stripped base64 images from localStorage');
+    }
+  } catch (e) {
+    console.warn('Migration error (non-fatal):', e);
+  }
+}
+
 function getCurrentCollectionId() {
   return localStorage.getItem('currentCollectionId') || 'default';
 }
@@ -237,6 +265,9 @@ function importCollections(file) {
   reader.readAsText(file);
 }
 
-document.addEventListener('DOMContentLoaded', initCollections);
+document.addEventListener('DOMContentLoaded', () => {
+  migrateStripBase64Images(); // run once to free up any base64 images from old scans
+  initCollections();
+});
 
 console.log('✅ Collections module loaded');
