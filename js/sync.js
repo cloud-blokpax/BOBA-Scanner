@@ -77,12 +77,27 @@ function mergeCardArrays(localCards, remoteCards, tombstones) {
         // Skip if this card was deleted on any device
         if (isDeleted(remoteCard, tombstones)) continue;
 
-        // Skip if already present (dedup by cardNumber + timestamp within 10s)
-        const isDupe = merged.some(c =>
+        // Check for duplicate (same card scanned at same time)
+        const existingIdx = merged.findIndex(c =>
             c.cardNumber === remoteCard.cardNumber &&
             Math.abs(new Date(c.timestamp) - new Date(remoteCard.timestamp)) < 10000
         );
-        if (!isDupe) merged.push(remoteCard);
+
+        if (existingIdx === -1) {
+            // New card — add it
+            merged.push(remoteCard);
+        } else {
+            // Duplicate card — merge tags from BOTH versions so neither device loses edits.
+            // Union of local tags + remote tags, deduplicated.
+            const localTags  = merged[existingIdx].tags || [];
+            const remoteTags = remoteCard.tags || [];
+            if (remoteTags.length > 0) {
+                merged[existingIdx] = {
+                    ...merged[existingIdx],
+                    tags: [...new Set([...localTags, ...remoteTags])]
+                };
+            }
+        }
     }
     return merged;
 }
