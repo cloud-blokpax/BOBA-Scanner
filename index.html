@@ -49,7 +49,7 @@
                             <div class="user-email" id="userEmail"></div>
                         </div>
                         <img class="user-avatar" id="userAvatar" alt="User" onclick="toggleUserMenu()">
-                        <button class="btn-collection" id="btnViewCollection" onclick="openCollectionModal()">🎴 Collection</button>
+                        <button class="btn-header-settings" id="btnHeaderSettings">⚙️ Settings</button>
                         <button class="btn-force-sync" id="btnForceSync" onclick="forceSync()">☁️ Sync</button>
                         <button class="btn-sign-out" id="btnSignOut" onclick="signOut()">Sign Out</button>
                     </div>
@@ -96,29 +96,41 @@
             <section class="upload-section" id="uploadArea">
                 <div class="upload-icon">📷</div>
                 <h1 class="upload-title">Upload or Capture</h1>
-                <p class="upload-subtitle">Choose from gallery or take a photo</p>
                 
                 <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                <input type="file" id="fileInputPriceCheck" accept="image/*" style="display: none;">
                 
-                <button class="btn-primary" id="btnChooseImage" >
-                    <span class="btn-icon">🖼️</span>
-                    <span>Choose Image</span>
-                </button>
-                
-                <div class="button-group">
-                    <!-- FIXED: was onclick="capturePhoto()" -->
-                    <button class="btn-group-item" id="btnCapture" >
-                        <span class="btn-icon">📸</span>
-                        <span>Take Photo</span>
-                    </button>
-                    <button class="btn-group-item" id="btnBatchScan">
+                <!-- Two primary scan actions -->
+                <div class="scan-actions-row">
+                    <button class="btn-scan-primary" id="btnChooseImage">
                         <span class="btn-icon">📚</span>
+                        <span>Upload to Collection</span>
+                    </button>
+                    <button class="btn-scan-secondary" id="btnPriceCheck">
+                        <span class="btn-icon">💰</span>
+                        <span>Check eBay Prices</span>
+                    </button>
+                </div>
+                
+                <!-- Secondary tools -->
+                <div class="button-group" style="margin-top:12px;">
+                    <button class="btn-group-item" id="btnBatchScan">
+                        <span class="btn-icon">📦</span>
                         <span>Batch Scan</span>
                     </button>
-                    <!-- FIXED: was onclick="openSettings()" -->
-                    <button class="btn-group-item" id="btnSettings" >
-                        <span class="btn-icon">⚙️</span>
-                        <span>Settings</span>
+                </div>
+                
+                <!-- Collection quick-access buttons -->
+                <div class="collection-nav-row">
+                    <button class="btn-collection-nav" id="btnOpenCollection">
+                        <span class="btn-icon">🎴</span>
+                        <span>My Collection</span>
+                        <span class="collection-nav-count" id="collectionNavCount"></span>
+                    </button>
+                    <button class="btn-pricecheck-nav" id="btnOpenPriceCheck">
+                        <span class="btn-icon">💰</span>
+                        <span>Price Check</span>
+                        <span class="collection-nav-count" id="priceCheckNavCount"></span>
                     </button>
                 </div>
             </section>
@@ -182,7 +194,7 @@
             <div class="modal-backdrop" onclick="closeCollectionModal()"></div>
             <div class="modal-content modal-large modal-fullscreen">
                 <div class="modal-header">
-                    <h2>🎴 My Collection <span id="collectionCount" style="font-size:16px;font-weight:normal;color:#666;"></span></h2>
+                    <h2><span id="collectionModalTitle">🎴 My Collection</span> <span id="collectionCount" style="font-size:16px;font-weight:normal;color:#666;"></span></h2>
                     <button class="modal-close" onclick="closeCollectionModal()">×</button>
                 </div>
                 <div class="modal-body" id="collectionModalBody" style="padding: 16px;">
