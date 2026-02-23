@@ -161,4 +161,30 @@ async function pullCollections() {
     }
 }
 
+// Manual sync — called by the ☁️ FAB button
+async function manualSync() {
+    if (isGuestMode()) {
+        showToast('Sign in to sync across devices', '🔒');
+        return;
+    }
+    if (!window.supabaseClient || !currentUser) {
+        showToast('Not connected — try refreshing', '⚠️');
+        return;
+    }
+
+    const btn = document.getElementById('fabSync');
+    if (btn) btn.classList.add('syncing');
+    showToast('Syncing...', '☁️');
+
+    try {
+        await pullCollections();
+        showToast('Sync complete ✓', '✅');
+    } catch (err) {
+        showToast('Sync failed — check connection', '❌');
+        console.error('Manual sync error:', err);
+    } finally {
+        if (btn) btn.classList.remove('syncing');
+    }
+}
+
 console.log('✅ Sync module loaded');
