@@ -276,13 +276,32 @@ window.chooseFromGallery = function(e) {
 };
 
 window.showSignInPrompt = function() {
-    if (typeof google !== 'undefined' && google.accounts) {
+    // Show the sign-in modal which contains the rendered Google button.
+    // google.accounts.id.prompt() does not work on iOS Safari (blocked by ITP).
+    // The rendered button opens a proper popup/tab that iOS allows.
+    const modal = document.getElementById('signInModal');
+    if (modal) {
+        modal.classList.add('active');
+        // Render Google button inside modal if not already rendered
+        const container = document.getElementById('googleSignInButton');
+        if (container && typeof google !== 'undefined' && google.accounts) {
+            container.innerHTML = '';
+            google.accounts.id.renderButton(container, {
+                theme: 'outline', size: 'large', width: 280,
+                text: 'signin_with', shape: 'rectangular'
+            });
+        }
+    } else if (typeof google !== 'undefined' && google.accounts) {
+        // Fallback: try prompt (works on desktop)
         google.accounts.id.prompt();
-    } else if (typeof initGoogleAuth === 'function') {
-        initGoogleAuth();
     } else {
-        showToast('Please enable Google Sign-In', '🔐');
+        showToast('Sign-in not available — try refreshing', '🔐');
     }
+};
+
+window.closeSignInModal = function() {
+    const modal = document.getElementById('signInModal');
+    if (modal) modal.classList.remove('active');
 };
 
 window.updateAuthUI = function(user) {
