@@ -93,7 +93,7 @@ function showStatsModal() {
 
 function _tally(cards, field) {
   return cards.reduce((acc, card) => {
-    const val = (card[field] || '').trim() || '(blank)';
+    const val = String(card[field] ?? '').trim() || '(blank)';
     acc[val] = (acc[val] || 0) + 1;
     return acc;
   }, {});
