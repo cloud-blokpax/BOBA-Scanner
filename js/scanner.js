@@ -201,12 +201,13 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
             </div>` : ''}
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input type="text" id="manualSearchInput"
-                   placeholder="e.g. BF-108 or Bo Jackson"
+                   placeholder="e.g. BF-108 or Unibrow"
                    value="${escapeHtml(suggestedCardNum || '')}"
-                   style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
-            <button id="manualSearchBtn" class="btn-tag-add">Search</button>
+                   style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;"
+                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <button type="button" id="manualSearchBtn" class="btn-tag-add">Search</button>
           </div>
-          <div id="manualSearchResults" style="max-height:320px;overflow-y:auto;display:none;"></div>
+          <div id="manualSearchResults" style="max-height:320px;overflow-y:auto;"></div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" id="manualSearchCancel">Cancel</button>
@@ -223,31 +224,65 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
   const cancelBtn = document.getElementById('manualSearchCancel');
   const backdrop = document.getElementById('manualSearchBackdrop');
 
-  if (input) {
-    input.focus();
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') runManualSearch(); });
+  // Helper: fire search, blur input first so iOS keyboard dismisses
+  function triggerSearch() {
+    if (input) input.blur();
+    runManualSearch();
   }
-  if (searchBtn)  searchBtn.addEventListener('click', () => runManualSearch());
-  if (closeBtn)   closeBtn.addEventListener('click', () => closeManualSearch());
-  if (cancelBtn)  cancelBtn.addEventListener('click', () => closeManualSearch());
-  if (backdrop)   backdrop.addEventListener('click', () => closeManualSearch());
+
+  if (input) {
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); triggerSearch(); } });
+  }
+
+  if (searchBtn) {
+    searchBtn.addEventListener('click', e => { e.preventDefault(); triggerSearch(); });
+    // touchend backup for iOS Chrome where click can be swallowed while keyboard is open
+    searchBtn.addEventListener('touchend', e => { e.preventDefault(); triggerSearch(); });
+  }
+
+  if (closeBtn)  closeBtn.addEventListener('click', () => closeManualSearch());
+  if (cancelBtn) cancelBtn.addEventListener('click', () => closeManualSearch());
+  if (backdrop)  backdrop.addEventListener('click', () => closeManualSearch());
   if (suggestedCardNum) setTimeout(runManualSearch, 100);
 }
 
 window.runManualSearch = function() {
-  const query = document.getElementById('manualSearchInput')?.value.trim();
-  if (!query) return;
-  const results = searchDatabase(query);
-  const el = document.getElementById('manualSearchResults');
+  const input = document.getElementById('manualSearchInput');
+  const el    = document.getElementById('manualSearchResults');
   if (!el) return;
 
-  if (results.length === 0) {
-    el.style.display = 'block';
-    el.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:20px 0;">No cards found for "${escapeHtml(query)}"</p>`;
+  const query = (input?.value || '').trim();
+
+  // Show feedback immediately so the user knows the tap registered
+  el.style.display = 'block';
+
+  if (!query) {
+    el.innerHTML = `<p style="text-align:center;color:#f59e0b;padding:16px 0;">⚠️ Please type a card number or name first</p>`;
     return;
   }
 
-  el.style.display = 'block';
+  if (!ready.db || !database.length) {
+    el.innerHTML = `<p style="text-align:center;color:#6b7280;padding:16px 0;">⏳ Database still loading — try again in a moment</p>`;
+    // Auto-retry once db is ready
+    const retryPoll = setInterval(() => {
+      if (ready.db && database.length) {
+        clearInterval(retryPoll);
+        runManualSearch();
+      }
+    }, 500);
+    setTimeout(() => clearInterval(retryPoll), 15000);
+    return;
+  }
+
+  el.innerHTML = `<p style="text-align:center;color:#6b7280;padding:8px 0;">Searching...</p>`;
+
+  const results = searchDatabase(query);
+
+  if (results.length === 0) {
+    el.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:20px 0;">No cards found for "<strong>${escapeHtml(query)}</strong>"<br><span style="font-size:12px;">Try the card number (e.g. BF-108) or just the hero name</span></p>`;
+    return;
+  }
+
   el.innerHTML = results.slice(0, 20).map(card => `
     <div class="manual-search-row" data-card-id="${escapeHtml(String(card['Card ID']))}">
       <div class="manual-search-info">
@@ -261,11 +296,15 @@ window.runManualSearch = function() {
     </div>
   `).join('');
 
-  // Use event delegation — safe on mobile, no inline onclick needed
+  // Event delegation — covers both tap and click, safe on mobile
   el.onclick = function(e) {
     const row = e.target.closest('[data-card-id]');
     if (row) selectManualCard(row.dataset.cardId);
   };
+  el.addEventListener('touchend', function(e) {
+    const row = e.target.closest('[data-card-id]');
+    if (row) { e.preventDefault(); selectManualCard(row.dataset.cardId); }
+  });
 };
 
 window.selectManualCard = function(cardId) {
