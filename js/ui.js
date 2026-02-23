@@ -171,6 +171,11 @@ function renderCards() {
                     <span class="meta-tag">${escapeHtml(card.set || '')}</span>
                     <span class="meta-tag">${escapeHtml(card.cardNumber || '')}</span>
                 </div>
+                ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
+                <div class="card-price-row">
+                    ${card.ebayAvgPrice ? `<span class="price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
+                    ${card.ebayLowPrice ? `<span class="price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
+                </div>` : ''}
                 <div class="card-fields">
                     ${renderField('Card ID', 'cardId', i, card.cardId, true)}
                     ${renderField('Name', 'hero', i, card.hero, true)}
@@ -695,11 +700,26 @@ window.openCardDetail = function(index) {
                 el.textContent = 'N/A';
                 el.style.color = '#9ca3af';
                 document.getElementById('detailEbayPriceLink').style.display = 'none';
+                // Cache as null so we don't refetch every open
+                updateCard(index, 'ebayAvgPrice', null);
+                updateCard(index, 'ebayLowPrice', null);
+                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
             } else {
-                el.textContent = `$${result.avgPrice.toFixed(2)} avg`;
-                if (result.count > 1) {
-                    el.innerHTML += ` <span style="font-size:11px;color:#6b7280;font-weight:400;">(${result.count} listings · $${result.lowPrice}–$${result.highPrice})</span>`;
-                }
+                const avg = result.avgPrice;
+                const low = result.lowPrice;
+                const high = result.highPrice;
+                const count = result.count;
+                el.innerHTML = `$${avg.toFixed(2)} avg`
+                    + (low !== null ? ` &nbsp;·&nbsp; <span style="color:#065f46;font-weight:700;">↓ $${low.toFixed(2)} low</span>` : '')
+                    + (count > 1 ? ` <span style="font-size:11px;color:#6b7280;font-weight:400;">(${count} listings · $${low}–$${high})</span>` : '');
+
+                // Save to card so grid + stats can use without re-fetching
+                updateCard(index, 'ebayAvgPrice',    avg);
+                updateCard(index, 'ebayLowPrice',    low);
+                updateCard(index, 'ebayHighPrice',   high);
+                updateCard(index, 'ebayListingCount', count);
+                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
+                renderCards(); // refresh grid price row
             }
         }).catch(() => {
             const el = document.getElementById('detailEbayPriceValue');
