@@ -20,6 +20,8 @@ const EXPORT_FIELDS = [
     { key: 'ebaySearchUrl',   label: 'eBay Search URL',   default: false },
     { key: 'scanMethod',      label: 'Scan Method',       default: false },
     { key: 'tags',            label: 'Tags',              default: true  },
+    { key: 'ebayAvgPrice',     label: 'eBay Avg Price',    default: false },
+    { key: 'ebayLowPrice',     label: 'eBay Low Price',    default: false },
     { key: 'timestamp',       label: 'Date Scanned',      default: false },
     { key: 'imageUrl',        label: 'Image URL',         default: false },
 ];
@@ -229,6 +231,9 @@ function generateCSV(cards, fields) {
         if (f.key === 'readyToList')  val = val ? 'Yes' : 'No';
         if (f.key === 'ebaySearchUrl' && typeof buildEbaySearchUrl === 'function') {
             val = buildEbaySearchUrl(card) || '';
+        }
+        if (f.key === 'ebayAvgPrice' || f.key === 'ebayLowPrice' || f.key === 'ebayHighPrice') {
+            val = val != null ? Number(val).toFixed(2) : '';
         }
         if (f.key === 'suggestedPrice') {
             // Placeholder — will be populated once Radish integration is live
