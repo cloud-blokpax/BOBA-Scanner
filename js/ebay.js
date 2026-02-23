@@ -32,36 +32,32 @@ const EBAY_SEARCH_BASE = 'https://www.ebay.com/sch/i.html';
 
 function buildEbayQuery(card) {
   const parts = [];
+  // Helper: safely coerce any value to trimmed string
+  const s = v => String(v ?? '').trim();
 
   // Year — helps disambiguate across set releases
-  if (card.year) parts.push(card.year.trim());
+  if (card.year) parts.push(s(card.year));
 
   // Always anchor to Bo Jackson
   parts.push('bo jackson');
 
   // Card number — single most important identifier
-  if (card.cardNumber) parts.push(card.cardNumber.trim());
+  if (card.cardNumber) parts.push(s(card.cardNumber));
 
   // Set name — cleaned up
-  if (card.set) {
-    const set = card.set.trim();
-    if (set && set.toLowerCase() !== 'unknown') parts.push(set);
-  }
+  const set = s(card.set);
+  if (set && set.toLowerCase() !== 'unknown') parts.push(set);
 
   // Parallel — skip generic/blank values
-  if (card.pose) {
-    const pose = card.pose.trim().toLowerCase();
-    if (pose && pose !== 'base' && pose !== 'base card' && pose !== 'none' && pose !== 'unknown' && pose !== '-') {
-      parts.push(card.pose.trim());
-    }
+  const pose = s(card.pose).toLowerCase();
+  if (pose && pose !== 'base' && pose !== 'base card' && pose !== 'none' && pose !== 'unknown' && pose !== '-') {
+    parts.push(s(card.pose));
   }
 
   // Weapon — skip "None" / blank
-  if (card.weapon) {
-    const weapon = card.weapon.trim().toLowerCase();
-    if (weapon && weapon !== 'none' && weapon !== 'unknown' && weapon !== 'n/a' && weapon !== '-') {
-      parts.push(card.weapon.trim());
-    }
+  const weapon = s(card.weapon).toLowerCase();
+  if (weapon && weapon !== 'none' && weapon !== 'unknown' && weapon !== 'n/a' && weapon !== '-') {
+    parts.push(s(card.weapon));
   }
 
   return parts.join(' ');
