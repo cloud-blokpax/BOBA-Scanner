@@ -1,5 +1,5 @@
 // ============================================================
-// js/scanner.js — UPDATED v1.1
+// js/scanner.js — UPDATED v1.2
 // New features:
 //   - Condition grading field per card
 //   - Notes field per card
@@ -11,6 +11,8 @@
 // ============================================================
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+// scanMode: 'collection' (default) or 'pricecheck'
+window.scanMode = window.scanMode || 'collection';
 
 async function handleFiles(e) {
   const files = e.target.files || e.dataTransfer?.files;
@@ -342,12 +344,33 @@ function _extractHeroFromOCR(text) {
 
 // ── Add card ──────────────────────────────────────────────────────────────────
 
+// ── Price Check Collection ────────────────────────────────────────────────────
+// Ensures a dedicated "Price Check" collection exists for eBay price lookups
+function ensurePriceCheckCollection() {
+    const collections = getCollections();
+    if (!collections.find(c => c.id === 'price_check')) {
+        collections.push({
+            id:    'price_check',
+            name:  '💰 Price Check',
+            cards: [],
+            stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 }
+        });
+        saveCollections(collections);
+        console.log('✅ Price Check collection created');
+    }
+}
+window.ensurePriceCheckCollection = ensurePriceCheckCollection;
+
 function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false) {
   console.log('Adding card:', match['Card Number']);
 
+  // Determine target collection based on scan mode
+  const isPriceCheck = (window.scanMode === 'pricecheck');
+  if (isPriceCheck) ensurePriceCheckCollection();
+
   const collections = getCollections();
-  const currentId   = getCurrentCollectionId();
-  const collection  = collections.find(c => c.id === currentId);
+  const targetId    = isPriceCheck ? 'price_check' : getCurrentCollectionId();
+  const collection  = collections.find(c => c.id === targetId);
 
   if (!collection) {
     showToast('Failed to save card — no collection found', '❌');
@@ -413,6 +436,9 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   if (typeof trackCardAdded === 'function') trackCardAdded();
 
+  // Update nav counts on the quick-access buttons
+  if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
+
   updateStats();
   renderCards();
 
@@ -420,10 +446,44 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
-  showToast(`Added: ${card.hero} (${card.cardNumber})${dupeNote}${confNote}`,
-            lowConfidence ? '⚠️' : '✅');
 
-  console.log(`Added. Collection now has ${collection.cards.length} cards`);
+  if (isPriceCheck) {
+    // Auto-fetch eBay prices for price check cards
+    showToast(`Price Check: ${card.hero} (${card.cardNumber}) — fetching eBay prices...`, '💰');
+    if (typeof fetchEbayAvgPrice === 'function') {
+      fetchEbayAvgPrice(card).then(priceData => {
+        if (priceData && priceData.count > 0) {
+          // Save prices back onto the card
+          const cols2 = getCollections();
+          const pc    = cols2.find(c => c.id === 'price_check');
+          if (pc) {
+            const savedCard = pc.cards[pc.cards.length - 1];
+            if (savedCard) {
+              savedCard.ebayAvgPrice    = priceData.avgPrice;
+              savedCard.ebayLowPrice    = priceData.lowPrice;
+              savedCard.ebayHighPrice   = priceData.highPrice;
+              savedCard.ebayPriceFetched = new Date().toISOString();
+              saveCollections(cols2);
+              renderCards();
+              showToast(
+                `${card.hero}: Avg $${priceData.avgPrice?.toFixed(2)} · Low $${priceData.lowPrice?.toFixed(2)} (${priceData.count} listing${priceData.count!==1?'s':''})`,
+                '💰'
+              );
+            }
+          }
+        } else {
+          showToast(`${card.hero}: No eBay listings found`, '⚠️');
+        }
+      }).catch(() => showToast(`${card.hero}: eBay price lookup failed`, '⚠️'));
+    }
+    // Reset scan mode after price check
+    window.scanMode = 'collection';
+  } else {
+    showToast(`Added: ${card.hero} (${card.cardNumber})${dupeNote}${confNote}`,
+              lowConfidence ? '⚠️' : '✅');
+  }
+
+  console.log(`Added to ${isPriceCheck ? 'Price Check' : 'Collection'}. Cards: ${collection.cards.length}`);
 }
 
 function removeCard(index) {
