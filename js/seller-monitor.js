@@ -203,13 +203,14 @@ async function checkSellerListings(manual = false) {
     localStorage.setItem(LAST_CHECK_KEY, new Date().toISOString());
 
     const listedCount = Object.keys(matches).length;
-    if (manual) {
-      showToast(
-        `Found ${listedCount} listed card${listedCount !== 1 ? 's' : ''}` +
-        (updated > 0 ? ` · ${updated} status update${updated !== 1 ? 's' : ''}` : ''),
-        '✅'
-      );
+
+    if (manual && listedCount > 0) {
+      // Show toast with "View" button that scrolls to first matched card
+      showMonitorResultsToast(listedCount, updated, matches);
+    } else if (manual) {
+      showToast('No active listings matched your collection', 'ℹ️');
     }
+
     console.log(`📦 eBay Monitor: ${listedCount} active listings, ${updated} status updates`);
 
   } catch (err) {
@@ -224,6 +225,48 @@ async function checkSellerListings(manual = false) {
   } finally {
     _isChecking = false;
   }
+}
+
+function showMonitorResultsToast(listedCount, updated, matches) {
+  // Remove any existing monitor toast
+  document.getElementById('monitorResultsToast')?.remove();
+
+  // Get first matched card's index in the current collection for "View" link
+  const currentId = getCurrentCollectionId();
+  const firstMatchKey = Object.keys(matches).find(k => k.startsWith(currentId + ':'));
+  const firstCardIndex = firstMatchKey ? parseInt(firstMatchKey.split(':')[1]) : null;
+
+  const toast = document.createElement('div');
+  toast.id = 'monitorResultsToast';
+  toast.style.cssText = `
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:#065f46; color:white; border-radius:12px;
+    padding:12px 16px; display:flex; align-items:center; gap:12px;
+    box-shadow:0 4px 20px rgba(0,0,0,.25); z-index:9999;
+    font-size:13px; font-weight:600; max-width:320px;
+    animation: slideUp .25s ease;
+  `;
+
+  const updateNote = updated > 0 ? ` · ${updated} new` : '';
+  toast.innerHTML = `
+    <span>🟢 ${listedCount} card${listedCount !== 1 ? 's' : ''} listed on eBay${updateNote}</span>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+      ${firstCardIndex !== null ? `
+        <button onclick="scrollToCard(${firstCardIndex});document.getElementById('monitorResultsToast')?.remove();"
+                style="background:rgba(255,255,255,.2);border:none;color:white;padding:4px 10px;
+                       border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;">
+          View
+        </button>` : ''}
+      <button onclick="document.getElementById('monitorResultsToast')?.remove();"
+              style="background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;font-size:16px;padding:0 2px;">
+        ✕
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(toast);
+  // Auto-dismiss after 8 seconds
+  setTimeout(() => document.getElementById('monitorResultsToast')?.remove(), 8000);
 }
 
 // ── Auto-poll setup ───────────────────────────────────────────────────────────
