@@ -378,6 +378,14 @@ function renderCollectionModal() {
         const hasImage   = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
         const isSelected = _selectedCards.has(card._key);
         const cardTags   = (card.tags || []).filter(Boolean);
+        const ebayUrl    = (typeof buildEbaySearchUrl === 'function') ? buildEbaySearchUrl(card) : null;
+
+        const listingBadge = card.listingStatus === 'listed' && card.listingUrl
+            ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener noreferrer"
+                  class="collection-ebay-link listing-active" title="View your eBay listing">🟢 Listed</a>`
+            : card.listingStatus === 'sold'
+            ? `<span class="collection-card-badge" style="background:#fee2e2;color:#991b1b;">🔴 Sold</span>`
+            : '';
 
         return `
         <div class="collection-card${isSelected ? ' selected' : ''}" data-key="${escapeHtml(card._key)}">
@@ -386,14 +394,21 @@ function renderCollectionModal() {
                      onclick="toggleCardSelection('${escapeHtml(card._key)}')">
                     ${isSelected ? '✓' : '+'}
                 </div>` : ''}
-            ${hasImage
-                ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
-                        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-                : ''}
-            <div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>
+            <div class="collection-card-img-wrap" onclick="openCollectionCardDetail('${escapeHtml(card._colId)}', ${card._idx})"
+                 style="cursor:pointer;" title="View details">
+                ${hasImage
+                    ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
+                            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                    : ''}
+                <div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>
+            </div>
             <div class="collection-card-info">
-                <div class="collection-card-name">${escapeHtml(card.hero || 'Unknown')}</div>
+                <div class="collection-card-name" onclick="openCollectionCardDetail('${escapeHtml(card._colId)}', ${card._idx})"
+                     style="cursor:pointer;" title="View details">
+                    ${escapeHtml(card.hero || 'Unknown')}
+                </div>
                 <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
+                ${card.condition ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;">${escapeHtml(card.condition)}</div>` : ''}
                 ${cardTags.length > 0
                     ? `<div class="card-tags-row">${cardTags.map(t => `<span class="tag-chip tag-chip-sm">${escapeHtml(t)}</span>`).join('')}</div>`
                     : ''}
@@ -401,8 +416,9 @@ function renderCollectionModal() {
                     <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
                         ${card.scanType === 'free' ? 'Free OCR' : 'AI'}
                     </span>
-                    ${(typeof buildEbaySearchUrl === 'function' && buildEbaySearchUrl(card))
-                        ? `<a href="${buildEbaySearchUrl(card)}" target="_blank" rel="noopener noreferrer"
+                    ${listingBadge}
+                    ${!listingBadge && ebayUrl
+                        ? `<a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener noreferrer"
                               class="collection-ebay-link" title="Search eBay">🛒 eBay</a>`
                         : ''}
                 </div>
