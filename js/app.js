@@ -57,20 +57,10 @@ async function init() {
             loadCollections();
         }
 
-        // Initialize Google Auth (needs appConfig.googleClientId)
+        // Initialize Google Auth — restoreSession() is called inside,
+        // which calls handleUserSignIn and setupAutoSync if user is logged in.
         if (typeof initGoogleAuth === 'function') {
             await initGoogleAuth();
-
-            if (typeof googleUser !== 'undefined' && googleUser) {
-                if (typeof handleUserSignIn === 'function') {
-                    await handleUserSignIn(googleUser);
-                }
-            }
-        }
-
-        // Setup auto-sync if available
-        if (typeof setupAutoSync === 'function') {
-            setupAutoSync();
         }
 
         // Load DB, OCR, and OpenCV in parallel
