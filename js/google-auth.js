@@ -107,30 +107,43 @@ async function handleCredentialResponse(response) {
 
 // ── Restore existing session ──────────────────────────────────────────────────
 async function restoreSession() {
+  // Step 1: Parse saved session — if corrupt, clear it.
+  let saved;
   try {
-    const saved = localStorage.getItem('googleUser');
-    if (!saved) {
+    const raw = localStorage.getItem('googleUser');
+    if (!raw) {
       updateAuthUI(null);
       return false;
     }
-
-    googleUser = JSON.parse(saved);
-    console.log('✅ Session restored:', googleUser.email);
-
-    updateAuthUI(googleUser);
-
-    // Re-run user management setup with restored user
-    if (typeof handleUserSignIn === 'function') {
-      await handleUserSignIn(googleUser);
-    }
-
-    return true;
-  } catch (err) {
-    console.error('Session restore error:', err);
+    saved = JSON.parse(raw);
+  } catch (parseErr) {
+    // Only remove if the data is genuinely unparseable
+    console.warn('Corrupt session data, clearing:', parseErr.message);
     localStorage.removeItem('googleUser');
     updateAuthUI(null);
     return false;
   }
+
+  // Step 2: Apply session to UI immediately — before any network calls.
+  // User sees themselves as logged in right away.
+  googleUser = saved;
+  console.log('✅ Session restored:', googleUser.email);
+  updateAuthUI(googleUser);
+
+  // Step 3: Sync with Supabase in background.
+  // If this fails (mobile network, timeout, etc.), the UI session is preserved.
+  // We never delete the saved session just because a network call failed.
+  try {
+    if (typeof handleUserSignIn === 'function') {
+      await handleUserSignIn(googleUser);
+    }
+  } catch (networkErr) {
+    // Network/Supabase error — stay logged in with cached identity,
+    // limits will use defaults until next successful sync.
+    console.warn('Session sync failed (offline?), using cached identity:', networkErr.message);
+  }
+
+  return true;
 }
 
 // ── Sign out ──────────────────────────────────────────────────────────────────
