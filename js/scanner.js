@@ -182,11 +182,11 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
 
   const html = `
     <div class="modal active" id="manualSearchModal">
-      <div class="modal-backdrop" onclick="closeManualSearch()"></div>
+      <div class="modal-backdrop" id="manualSearchBackdrop"></div>
       <div class="modal-content" style="max-width:480px;">
         <div class="modal-header">
           <h2>🔍 Identify Card Manually</h2>
-          <button class="modal-close" onclick="closeManualSearch()">×</button>
+          <button class="modal-close" id="manualSearchClose">×</button>
         </div>
         <div class="modal-body" style="padding:20px;">
           <p style="color:#6b7280;font-size:13px;margin:0 0 16px;">
@@ -205,12 +205,12 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
                    placeholder="e.g. BF-108 or Bo Jackson"
                    value="${escapeHtml(suggestedCardNum || '')}"
                    style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
-            <button onclick="runManualSearch()" class="btn-tag-add">Search</button>
+            <button id="manualSearchBtn" class="btn-tag-add">Search</button>
           </div>
           <div id="manualSearchResults" style="max-height:320px;overflow-y:auto;display:none;"></div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" onclick="closeManualSearch()">Cancel</button>
+          <button class="btn-secondary" id="manualSearchCancel">Cancel</button>
         </div>
       </div>
     </div>`;
@@ -219,10 +219,19 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
   window._manualSearchContext = { imageUrl, fileName };
 
   const input = document.getElementById('manualSearchInput');
+  const searchBtn = document.getElementById('manualSearchBtn');
+  const closeBtn = document.getElementById('manualSearchClose');
+  const cancelBtn = document.getElementById('manualSearchCancel');
+  const backdrop = document.getElementById('manualSearchBackdrop');
+
   if (input) {
     input.focus();
     input.addEventListener('keydown', e => { if (e.key === 'Enter') runManualSearch(); });
   }
+  if (searchBtn)  searchBtn.addEventListener('click', () => runManualSearch());
+  if (closeBtn)   closeBtn.addEventListener('click', () => closeManualSearch());
+  if (cancelBtn)  cancelBtn.addEventListener('click', () => closeManualSearch());
+  if (backdrop)   backdrop.addEventListener('click', () => closeManualSearch());
   if (suggestedCardNum) setTimeout(runManualSearch, 100);
 }
 
@@ -241,7 +250,7 @@ window.runManualSearch = function() {
 
   el.style.display = 'block';
   el.innerHTML = results.slice(0, 20).map(card => `
-    <div class="manual-search-row" onclick="selectManualCard('${escapeHtml(String(card['Card ID']))}')">
+    <div class="manual-search-row" data-card-id="${escapeHtml(String(card['Card ID']))}">
       <div class="manual-search-info">
         <div class="manual-search-name">${escapeHtml(card.Name || '')}</div>
         <div class="manual-search-meta">
@@ -252,6 +261,12 @@ window.runManualSearch = function() {
       <span class="btn-tag-add" style="font-size:12px;padding:6px 12px;cursor:pointer;white-space:nowrap;">+ Add</span>
     </div>
   `).join('');
+
+  // Use event delegation — safe on mobile, no inline onclick needed
+  el.onclick = function(e) {
+    const row = e.target.closest('[data-card-id]');
+    if (row) selectManualCard(row.dataset.cardId);
+  };
 };
 
 window.selectManualCard = function(cardId) {
