@@ -1,51 +1,48 @@
-// js/image-storage.js — Supabase Storage for card images
-// Uploads compressed card images to Supabase Storage so they are permanent,
-// cross-device, and don't bloat the JSONB collections column.
+// js/image-storage.js
+// ─────────────────────────────────────────────────────────────────────────────
+// WHY THIS APPROACH:
+//   The app uses Google OAuth directly — NOT Supabase Auth.
+//   The browser Supabase client only has the anon key and will never have a
+//   Supabase session, so auth.role() is always "anon".
+//   Supabase Storage RLS policies requiring auth.role() = 'authenticated'
+//   will ALWAYS fail from the browser — retrying is pointless.
+//
+//   Solution: upload through /api/upload-image (Vercel serverless function)
+//   which uses the SERVICE ROLE key server-side, bypassing RLS entirely.
+// ─────────────────────────────────────────────────────────────────────────────
 
-const IMAGE_BUCKET = 'card-images';
-
-// Upload a base64 JPEG to Supabase Storage.
-// Returns the public URL on success, or null on failure.
 async function uploadCardImage(base64Jpeg, originalFilename) {
     const user = window.currentUser;
-    if (!window.supabaseClient || !user) {
-        console.warn('⚠️ uploadCardImage: no supabaseClient or currentUser', { hasClient: !!window.supabaseClient, hasUser: !!user });
+    if (!user) {
+        console.warn('⚠️ uploadCardImage: no currentUser — skipping');
         return null;
     }
 
+    const apiToken = window.appConfig?.apiToken || '';
+
     try {
-        // Convert base64 to Blob
-        const byteChars = atob(base64Jpeg);
-        const byteNums  = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) {
-            byteNums[i] = byteChars.charCodeAt(i);
-        }
-        const blob = new Blob([byteNums], { type: 'image/jpeg' });
+        const response = await fetch('/api/upload-image', {
+            method:  'POST',
+            headers: {
+                'Content-Type':  'application/json',
+                'Authorization': apiToken ? `Bearer ${apiToken}` : ''
+            },
+            body: JSON.stringify({
+                base64:   base64Jpeg,
+                filename: originalFilename || 'card',
+                userId:   user.id
+            })
+        });
 
-        // Path: userId/timestamp_filename.jpg
-        const safeName = (originalFilename || 'card').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const path     = `${user.id}/${Date.now()}_${safeName}.jpg`;
-
-        const { error } = await window.supabaseClient.storage
-            .from(IMAGE_BUCKET)
-            .upload(path, blob, {
-                contentType:  'image/jpeg',
-                cacheControl: '31536000', // 1 year cache
-                upsert:       false
-            });
-
-        if (error) {
-            console.warn('⚠️ Image upload failed:', error.message);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.warn('⚠️ Image upload failed:', err.error || response.status);
             return null;
         }
 
-        // Get public URL
-        const { data } = window.supabaseClient.storage
-            .from(IMAGE_BUCKET)
-            .getPublicUrl(path);
-
-        console.log('☁️ Image uploaded:', data.publicUrl);
-        return data.publicUrl;
+        const data = await response.json();
+        console.log('☁️ Image uploaded via API:', data.url);
+        return data.url || null;
 
     } catch (err) {
         console.warn('⚠️ Image upload error:', err.message);
@@ -53,30 +50,10 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
     }
 }
 
-// Delete a card's image from Supabase Storage when the card is removed.
-// Only deletes if the URL belongs to our bucket (not base64 or external).
+// Best-effort delete — non-critical, no-op if no service role exposed on client
 async function deleteCardImage(imageUrl) {
-    if (!window.supabaseClient || !window.currentUser) return;
     if (!imageUrl || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return;
-
-    try {
-        // Extract path from public URL: .../storage/v1/object/public/card-images/USER/FILE
-        const marker = `/object/public/${IMAGE_BUCKET}/`;
-        const idx    = imageUrl.indexOf(marker);
-        if (idx === -1) return; // Not our bucket
-
-        const path = imageUrl.substring(idx + marker.length);
-
-        const { error } = await window.supabaseClient.storage
-            .from(IMAGE_BUCKET)
-            .remove([path]);
-
-        if (error) console.warn('⚠️ Image delete failed:', error.message);
-        else       console.log('🗑️ Image deleted from storage:', path);
-
-    } catch (err) {
-        console.warn('⚠️ Image delete error:', err.message);
-    }
+    // Deletion handled server-side if needed; skip silently on client
 }
 
-console.log('✅ Image storage module loaded');
+console.log('✅ Image storage module loaded (API-based)');
