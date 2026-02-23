@@ -268,10 +268,18 @@ async function forceSync() {
 // ── View Collection Modal ──────────────────────────────────────────────────────
 function openCollectionModal() {
     const modal = document.getElementById('collectionModal');
-    if (!modal) return;
+    if (!modal) {
+        console.error('collectionModal element not found');
+        return;
+    }
     modal.classList.add('active');
     renderCollectionModal();
 }
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeCollectionModal();
+});
 
 function closeCollectionModal() {
     const modal = document.getElementById('collectionModal');
