@@ -66,8 +66,12 @@ async function handleFiles(e) {
 async function processImage(file) {
   console.log(`📷 Processing: ${file.name}`);
 
+  // Ask user if they want to tag this card before processing
+  if (typeof promptForTags === 'function') {
+    await promptForTags();
+  }
+
   // FIXED: Single compression pass up-front.
-  // Previously: preprocessImage() resized, then callAPI() re-converted, wasting bandwidth.
   const imageBase64 = await compressImage(file);
   const imageUrl    = `data:image/jpeg;base64,${imageBase64}`;
 
@@ -261,8 +265,12 @@ function addCard(match, displayUrl, fileName, type, confidence = null) {
     fileName,
     scanType:   type,
     scanMethod: type === 'free' ? `Free OCR (${Math.round(confidence || 0)}%)` : 'AI + Database',
-    timestamp:  new Date().toISOString()
+    timestamp:  new Date().toISOString(),
+    tags:       (typeof getPendingTags === 'function') ? getPendingTags() : []
   };
+
+  // Clear pending tags after consuming them
+  if (typeof clearPendingTags === 'function') clearPendingTags();
 
   collection.cards.push(card);
   collection.stats.scanned++;
