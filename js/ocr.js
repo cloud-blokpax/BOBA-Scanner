@@ -60,9 +60,12 @@ async function runOCROnRegion(sourceCanvas, region) {
         const cardNumber = extractCardNumber(text);
         return { text, confidence, cardNumber };
     } catch (err) {
-        // Worker became invalid — recreate it and retry once
+        // Worker became invalid — terminate it cleanly before recreating
         console.warn('OCR worker error, recreating...', err.message);
         try {
+            try { await tesseractWorker.terminate(); } catch (_) {}
+            tesseractWorker = null;
+            ready.ocr = false;
             tesseractWorker = await Tesseract.createWorker('eng');
             ready.ocr = true;
             const result     = await tesseractWorker.recognize(dataUrl);
