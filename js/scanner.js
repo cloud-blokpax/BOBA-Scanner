@@ -551,6 +551,13 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   if (typeof trackCardAdded === 'function') trackCardAdded();
 
+  // For price check scans: switch the active collection view BEFORE any render
+  // so we never flash the main collection on screen before jumping to price_check.
+  if (isPriceCheck) {
+    if (typeof setCurrentCollectionId === 'function') setCurrentCollectionId('price_check');
+    if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
+  }
+
   // Update nav counts on the quick-access buttons
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
 
@@ -564,12 +571,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   // Auto-open card detail after every single-card scan
   if (typeof openCardDetail === 'function') {
-    if (isPriceCheck) {
-      // Switch slider to price_check so the view and openCardDetail are in sync
-      if (typeof setCurrentCollectionId === 'function') setCurrentCollectionId('price_check');
-      if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
-      renderCards();
-    }
     setTimeout(() => openCardDetail(newCardIndex), 200);
   }
 
