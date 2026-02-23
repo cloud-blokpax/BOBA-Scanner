@@ -42,7 +42,7 @@ function setupFloatingActionButton() {
                 } else {
                     // Upload area scrolled out of view
                     const hasCards = cardsGrid.children.length > 0;
-                    fabContainer.style.display = hasCards ? 'block' : 'none';
+                    fabContainer.style.display = hasCards ? 'flex' : 'none';
                 }
             }
         });
