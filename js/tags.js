@@ -457,6 +457,9 @@ window.openCollectionModal   = function() {
     _selectionMode = false;
     _selectedCards.clear();
     _activeFilters.clear();
+    // Reset title to default (openPriceCheckModal may have changed it)
+    const titleEl = document.getElementById('collectionModalTitle');
+    if (titleEl) titleEl.textContent = '🎴 My Collection';
     modal.classList.add('active');
     renderCollectionModal();
 };
