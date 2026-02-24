@@ -58,9 +58,9 @@ async function handleFiles(e) {
 async function processImage(file) {
   console.log(`Processing: ${file.name}`);
 
-  if (typeof promptForTags === 'function') {
-    await promptForTags();
-  }
+  // Tags are added AFTER scan via the card detail modal — prompting before
+  // the scan is terrible UX (blocks camera, interrupts every single upload).
+  // Users can add tags from the card detail view after the card is identified.
 
   const imageBase64 = await compressImage(file);
 
@@ -319,6 +319,12 @@ window.selectManualCard = function(cardId) {
   const card = database.find(c => String(c['Card ID']) === String(cardId));
   if (!card) { showToast('Card not found', '❌'); return; }
   const ctx = window._manualSearchContext || {};
+  // Route to deck builder if active
+  if (window.scanMode === 'deckbuilder' && typeof window.deckBuilderOnCardScanned === 'function') {
+    window.deckBuilderOnCardScanned(card, ctx.imageUrl || '', ctx.fileName || 'manual', null);
+    closeManualSearch();
+    return;
+  }
   addCard(card, ctx.imageUrl || '', ctx.fileName || 'manual', 'manual', 100);
   if (typeof addToScanHistory === 'function') {
     addToScanHistory({ hero: card.Name, cardNumber: card['Card Number'], set: card.Set, scanType: 'manual' });
@@ -440,8 +446,59 @@ async function uploadWithRetry(imageBase64, fileName, maxAttempts = 8, delayMs =
 }
 window.uploadWithRetry = uploadWithRetry;
 
-function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null) {
+
+// ── Duplicate detection modal (replaces native confirm) ──────────────────────
+function showDuplicateModal(dupeCount, cardName, onConfirm) {
+  document.getElementById('dupeModal')?.remove();
+  const html = `
+    <div class="modal active" id="dupeModal" style="z-index:10001;">
+      <div class="modal-backdrop" id="dupeBackdrop"></div>
+      <div class="modal-content" style="max-width:380px;">
+        <div class="modal-header">
+          <h2>⚠️ Duplicate Detected</h2>
+          <button class="modal-close" id="dupeClose">×</button>
+        </div>
+        <div class="modal-body" style="padding:20px;text-align:center;">
+          <p style="color:#374151;font-size:15px;margin:0 0 8px;">
+            You already have <strong>${dupeCount}</strong> cop${dupeCount === 1 ? 'y' : 'ies'} of
+          </p>
+          <p style="color:#1e3a5f;font-size:17px;font-weight:700;margin:0 0 16px;">
+            ${escapeHtml(cardName)}
+          </p>
+          <p style="color:#6b7280;font-size:13px;margin:0;">
+            Add another copy anyway?
+          </p>
+        </div>
+        <div class="modal-footer" style="gap:8px;">
+          <button class="btn-secondary" id="dupeSkip" style="flex:1;">Skip</button>
+          <button class="btn-tag-add" id="dupeAdd" style="flex:1;">Add Anyway</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  const close = () => {
+    document.getElementById('dupeModal')?.remove();
+    showToast('Card skipped (duplicate)', '⚠️');
+  };
+  document.getElementById('dupeClose')?.addEventListener('click', close);
+  document.getElementById('dupeSkip')?.addEventListener('click', close);
+  document.getElementById('dupeBackdrop')?.addEventListener('click', close);
+  document.getElementById('dupeAdd')?.addEventListener('click', () => {
+    document.getElementById('dupeModal')?.remove();
+    onConfirm();
+  });
+}
+
+function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null, _skipDupeCheck = false) {
   console.log('Adding card:', match['Card Number']);
+
+  // ── Deck Builder intercept ─────────────────────────────────────────────
+  if (window.scanMode === 'deckbuilder') {
+    if (typeof window.deckBuilderOnCardScanned === 'function') {
+      window.deckBuilderOnCardScanned(match, displayUrl, fileName, imageBase64);
+    }
+    return;
+  }
 
   // Determine target collection based on scan mode
   const isPriceCheck = (window.scanMode === 'pricecheck');
@@ -474,15 +531,12 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
       (cardNum && c.cardNumber === cardNum)
     ).length, 0);
 
-  if (dupeCount > 0) {
-    const proceed = confirm(
-      `⚠️ Duplicate detected!\n\nYou already have ${dupeCount} copy(ies) of ` +
-      `"${match.Name || cardNum}" in your collection.\n\nAdd anyway?`
-    );
-    if (!proceed) {
-      showToast('Card skipped (duplicate)', '⚠️');
-      return;
-    }
+  if (dupeCount > 0 && !_skipDupeCheck) {
+    // Non-blocking custom modal replaces native confirm() which is unreliable
+    // on iOS Chrome and blocks the UI thread on every scan.
+    return void showDuplicateModal(dupeCount, match.Name || cardNum, () => {
+      addCard(match, displayUrl, fileName, type, confidence, lowConfidence, imageBase64, true);
+    });
   }
 
   const card = {
