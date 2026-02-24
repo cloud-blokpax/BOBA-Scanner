@@ -83,6 +83,7 @@ async function handleUserSignIn(googleUser) {
     if (existing) {
       currentUser = existing;
       window.currentUser = currentUser; // expose for image-storage.js
+      await checkMembershipExpiry();
       await checkAndResetMonthlyLimits();
     } else {
       const { data: newUser, error: createError } = await window.supabaseClient
@@ -110,6 +111,11 @@ async function handleUserSignIn(googleUser) {
     await loadUserLimits();
     updateLimitsUI();
 
+    // Apply the user's saved theme (non-blocking)
+    if (typeof window.loadUserTheme === 'function') {
+      window.loadUserTheme().catch(e => console.warn('Theme load error:', e));
+    }
+
     if (isAdmin()) {
       console.log('👑 Admin user detected');
       showAdminButton();
@@ -134,6 +140,38 @@ async function handleUserSignIn(googleUser) {
     };
     updateLimitsUI();
     return null;
+  }
+}
+
+// ── Membership expiry — runs at every sign-in ─────────────────────────────────
+// If the user was a member but their date has passed, auto-revoke and revert limits.
+async function checkMembershipExpiry() {
+  if (!currentUser?.is_member || !currentUser?.member_until) return;
+
+  const now    = new Date();
+  const expiry = new Date(currentUser.member_until);
+  if (expiry > now) return; // still active, nothing to do
+
+  console.log('📅 Membership expired for', currentUser.email, '— revoking automatically');
+
+  const { error } = await window.supabaseClient
+    .from('users')
+    .update({
+      is_member:      false,
+      member_until:   null,
+      card_limit:     DEFAULT_LIMITS.authenticated.maxCards,
+      api_calls_limit: DEFAULT_LIMITS.authenticated.maxApiCalls
+    })
+    .eq('id', currentUser.id);
+
+  if (!error) {
+    currentUser.is_member      = false;
+    currentUser.member_until   = null;
+    currentUser.card_limit     = DEFAULT_LIMITS.authenticated.maxCards;
+    currentUser.api_calls_limit = DEFAULT_LIMITS.authenticated.maxApiCalls;
+    console.log('✅ Membership revoked, limits reset to defaults');
+  } else {
+    console.error('Failed to revoke membership:', error);
   }
 }
 
