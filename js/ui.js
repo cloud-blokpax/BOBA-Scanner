@@ -99,27 +99,80 @@ function renderCards() {
         return;
     }
     
-    const cards = collection.cards || [];
+    const allCards = collection.cards || [];
+
+    // ── Search/filter ─────────────────────────────────────────────────────
+    const searchInput = document.getElementById('cardSearchInput');
+    const searchBar   = document.getElementById('cardSearchBar');
+    const searchClear = document.getElementById('cardSearchClear');
+    const searchCount = document.getElementById('cardSearchCount');
+    const searchQuery = (searchInput?.value || '').trim().toUpperCase();
+
+    if (searchBar) searchBar.style.display = allCards.length > 0 ? 'block' : 'none';
+
+    if (searchInput && !searchInput._wired) {
+        searchInput._wired = true;
+        searchInput.addEventListener('input', () => renderCards());
+        if (searchClear) {
+            searchClear.addEventListener('click', () => {
+                searchInput.value = '';
+                searchClear.style.display = 'none';
+                renderCards();
+                searchInput.focus();
+            });
+        }
+    }
+    if (searchClear) searchClear.style.display = searchQuery ? 'block' : 'none';
+
+    const cards = searchQuery
+        ? allCards.filter(c => {
+            const q = searchQuery;
+            return String(c.hero || '').toUpperCase().includes(q)
+                || String(c.cardNumber || '').toUpperCase().includes(q)
+                || String(c.athlete || '').toUpperCase().includes(q)
+                || String(c.set || '').toUpperCase().includes(q)
+                || String(c.pose || '').toUpperCase().includes(q)
+                || String(c.weapon || '').toUpperCase().includes(q)
+                || (Array.isArray(c.tags) && c.tags.some(t => t.toUpperCase().includes(q)));
+          })
+        : allCards;
+
+    if (searchCount) {
+        searchCount.textContent = searchQuery && cards.length !== allCards.length
+            ? `Showing ${cards.length} of ${allCards.length} cards`
+            : `${allCards.length} card${allCards.length !== 1 ? 's' : ''}`;
+    }
+
     console.log(`📊 Rendering ${cards.length} card(s)`);
-    
+
     const grid = document.getElementById('cardsGrid');
     const empty = document.getElementById('emptyState');
     const actionBar = document.getElementById('actionBar');
-    
+
     if (!grid) {
         console.error('❌ Grid element not found');
         return;
     }
-    
-    // Show/hide empty state
-    if (cards.length === 0) {
+
+    if (allCards.length === 0) {
         if (empty) empty.style.display = '';
         if (actionBar) actionBar.style.display = 'none';
         grid.innerHTML = '';
         grid.style.display = 'none';
         return;
     }
-    
+
+    if (cards.length === 0 && searchQuery) {
+        if (empty) empty.style.display = 'none';
+        if (actionBar) actionBar.style.display = '';
+        grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:#9ca3af;">
+            <div style="font-size:32px;margin-bottom:8px;">🔍</div>
+            <p style="margin:0;font-size:15px;">No cards match "${escapeHtml(searchInput.value)}"</p>
+        </div>`;
+        grid.style.display = 'grid';
+        return;
+    }
+
     if (empty) empty.style.display = 'none';
     if (actionBar) actionBar.style.display = '';
     grid.style.display = 'grid';
@@ -200,30 +253,32 @@ function renderCards() {
     console.log('Cards rendered successfully');
 
     // ── Delegated card-open handler ───────────────────────────────────────
-    // Uses touchend + preventDefault to consume the iOS ghost click that would
-    // otherwise hit the Remove button in the detail modal 300ms later.
-    // Falls back to click for desktop / non-touch devices.
-    grid.addEventListener('touchend', function(e) {
-        const target = e.target.closest('[data-open-card]');
-        if (!target) return;
-        e.preventDefault(); // kill the 300ms ghost click
-        openCardDetail(parseInt(target.dataset.openCard, 10));
-    }, { passive: false });
+    // Guard against duplicate listener registration — renderCards() is called
+    // frequently (after every save, sync, price fetch) so without this check
+    // the same 3 listeners would accumulate indefinitely, causing ghost opens.
+    if (!grid._listenersAttached) {
+        grid._listenersAttached = true;
 
-    grid.addEventListener('click', function(e) {
-        // Only fires on non-touch (desktop) — touch devices use touchend above
-        if (e.detail === 0) return; // keyboard-triggered, skip
-        const target = e.target.closest('[data-open-card]');
-        if (!target) return;
-        // Skip if this is a ghost click (fired within 600ms of a touchend)
-        const now = Date.now();
-        if (grid._lastTouchEnd && now - grid._lastTouchEnd < 600) return;
-        openCardDetail(parseInt(target.dataset.openCard, 10));
-    });
+        grid.addEventListener('touchend', function(e) {
+            const target = e.target.closest('[data-open-card]');
+            if (!target) return;
+            e.preventDefault(); // kill the 300ms ghost click
+            openCardDetail(parseInt(target.dataset.openCard, 10));
+        }, { passive: false });
 
-    grid.addEventListener('touchend', function() {
-        grid._lastTouchEnd = Date.now();
-    }, { passive: true, capture: true });
+        grid.addEventListener('click', function(e) {
+            if (e.detail === 0) return; // keyboard-triggered, skip
+            const target = e.target.closest('[data-open-card]');
+            if (!target) return;
+            const now = Date.now();
+            if (grid._lastTouchEnd && now - grid._lastTouchEnd < 600) return;
+            openCardDetail(parseInt(target.dataset.openCard, 10));
+        });
+
+        grid.addEventListener('touchend', function() {
+            grid._lastTouchEnd = Date.now();
+        }, { passive: true, capture: true });
+    }
 }
 
 function renderField(label, field, index, value, autoFilled) {
@@ -307,6 +362,15 @@ window.openSettings = function() {
             if (selectQuality) selectQuality.value = config.quality;
             if (rangeThreshold) rangeThreshold.value = config.threshold;
             if (thresholdValue) thresholdValue.textContent = config.threshold;
+        }
+
+        // Show theme section only for signed-in users, then populate it
+        const themeGroup = document.getElementById('themeSettingGroup');
+        if (themeGroup) {
+            themeGroup.style.display = window.currentUser ? '' : 'none';
+            if (window.currentUser && typeof window.renderThemeSettingsSection === 'function') {
+                window.renderThemeSettingsSection();
+            }
         }
     } else {
         showToast('Settings coming soon!', '⚙️');
@@ -668,14 +732,21 @@ window.openCardDetail = function(index) {
         </div>`;
 
     // ── eBay avg price (loads async after render) ─────────────────────────
+    const cachedPrice = card.ebayAvgPrice
+        ? `⌀ $${Number(card.ebayAvgPrice).toFixed(2)}  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)}`
+        : null;
     const priceHtml = `
         <div id="detailEbayPrice" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
             <div>
                 <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">eBay Market Price</div>
-                <div id="detailEbayPriceValue" style="font-size:15px;font-weight:700;color:#111827;">Loading...</div>
+                <div id="detailEbayPriceValue" style="font-size:15px;font-weight:700;color:#111827;">${cachedPrice || 'Loading...'}</div>
             </div>
-            <a id="detailEbayPriceLink" href="${escapeHtml(ebayUrl || '#')}" target="_blank" rel="noopener"
-               style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">View listings →</a>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <button id="detailEbayRefresh" title="Refresh eBay prices"
+                        style="background:none;border:1px solid #6ee7b7;border-radius:6px;padding:3px 8px;font-size:11px;color:#065f46;cursor:pointer;">🔄 Refresh</button>
+                <a id="detailEbayPriceLink" href="${escapeHtml(ebayUrl || '#')}" target="_blank" rel="noopener"
+                   style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">View listings →</a>
+            </div>
         </div>`;
 
     const html = `
@@ -842,7 +913,62 @@ window.openCardDetail = function(index) {
         });
     }
 
-    // Async: fetch eBay avg price after modal renders
+    // ── eBay price refresh button ─────────────────────────────────────────
+    function runEbayPriceFetch() {
+        const el = document.getElementById('detailEbayPriceValue');
+        const refreshBtn = document.getElementById('detailEbayRefresh');
+        if (el) { el.textContent = 'Loading...'; el.style.color = '#111827'; }
+        if (refreshBtn) refreshBtn.disabled = true;
+        if (typeof fetchEbayAvgPrice !== 'function') {
+            if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
+            return;
+        }
+        fetchEbayAvgPrice(card).then(result => {
+            const el2 = document.getElementById('detailEbayPriceValue');
+            const rb  = document.getElementById('detailEbayRefresh');
+            if (rb) rb.disabled = false;
+            if (!el2) return;
+            if (!result || result.count === 0) {
+                el2.textContent = 'N/A';
+                el2.style.color = '#9ca3af';
+                document.getElementById('detailEbayPriceLink')?.style.setProperty('display', 'none');
+                updateCard(index, 'ebayAvgPrice', null);
+                updateCard(index, 'ebayLowPrice', null);
+                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
+            } else {
+                const avg = result.avgPrice, low = result.lowPrice, high = result.highPrice, count = result.count;
+                el2.innerHTML = `$${avg.toFixed(2)} avg`
+                    + (low !== null ? ` &nbsp;·&nbsp; <span style="color:#065f46;font-weight:700;">↓ $${low.toFixed(2)} low</span>` : '')
+                    + (count > 1 ? ` <span style="font-size:11px;color:#6b7280;font-weight:400;">(${count} listings · $${low}–$${high})</span>` : '');
+                updateCard(index, 'ebayAvgPrice', avg);
+                updateCard(index, 'ebayLowPrice', low);
+                updateCard(index, 'ebayHighPrice', high);
+                updateCard(index, 'ebayListingCount', count);
+                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
+                renderCards();
+            }
+        }).catch(() => {
+            const el2 = document.getElementById('detailEbayPriceValue');
+            const rb  = document.getElementById('detailEbayRefresh');
+            if (el2) { el2.textContent = 'Unavailable'; el2.style.color = '#9ca3af'; }
+            if (rb)  rb.disabled = false;
+        });
+    }
+
+    document.getElementById('detailEbayRefresh')?.addEventListener('click', runEbayPriceFetch);
+
+    // Async: fetch eBay avg price after modal renders (skip if we have a recent price)
+    const lastFetch = card.ebayPriceFetched ? new Date(card.ebayPriceFetched) : null;
+    const ageMs = lastFetch ? (Date.now() - lastFetch.getTime()) : Infinity;
+    // Only auto-fetch if no cached price or price is more than 24 hours old
+    if (!card.ebayAvgPrice || ageMs > 86400000) {
+        runEbayPriceFetch();
+    } else {
+        const el = document.getElementById('detailEbayPriceValue');
+        if (el) el.textContent = `$${Number(card.ebayAvgPrice).toFixed(2)} avg  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)} low`;
+    }
+
+    if (false) {  // original block kept for reference, replaced above
     if (typeof fetchEbayAvgPrice === 'function') {
         fetchEbayAvgPrice(card).then(result => {
             const el = document.getElementById('detailEbayPriceValue');
@@ -880,6 +1006,7 @@ window.openCardDetail = function(index) {
         const el = document.getElementById('detailEbayPriceValue');
         if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
     }
+    } // end if(false)
 };
 
 // Open card detail from collection modal — takes colId + index directly
