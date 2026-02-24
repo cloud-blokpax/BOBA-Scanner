@@ -267,9 +267,19 @@ window.openThemeEditor = function(initialConfig, isAdmin = false, onSave) {
   let editConfig = JSON.parse(JSON.stringify(initialConfig || defaultThemeConfig()));
 
   function buildEditorHTML() {
-    // Section order/visibility rows
-    const sectionsHTML = THEME_SECTIONS.map((s, idx) => {
-      const sc = editConfig.sections[s.id] || { visible: true, order: s.defaultOrder };
+    // ── Sort sections by their CURRENT order in editConfig so the list always
+    //    reflects the real order, and up/down arrows are disabled correctly.
+    const sortedSections = [...THEME_SECTIONS].sort((a, b) => {
+      const oa = editConfig.sections[a.id]?.order ?? a.defaultOrder;
+      const ob = editConfig.sections[b.id]?.order ?? b.defaultOrder;
+      return oa - ob;
+    });
+
+    // Section order/visibility rows — rendered in sorted order
+    const sectionsHTML = sortedSections.map((s, sortedIdx) => {
+      const sc       = editConfig.sections[s.id] || { visible: true, order: s.defaultOrder };
+      const isFirst  = sortedIdx === 0;
+      const isLast   = sortedIdx === sortedSections.length - 1;
       return `
         <div class="theme-section-row" data-section-id="${s.id}" style="
           display:flex;align-items:center;gap:10px;padding:10px 12px;
@@ -278,13 +288,17 @@ window.openThemeEditor = function(initialConfig, isAdmin = false, onSave) {
           ${s.canMove ? `
             <div style="display:flex;flex-direction:column;gap:2px;">
               <button class="theme-move-up" data-section-id="${s.id}"
-                      title="Move up" style="background:none;border:1px solid #d1d5db;border-radius:4px;
-                      padding:2px 6px;cursor:pointer;font-size:11px;line-height:1.4;"
-                      ${idx === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button>
+                      title="Move up"
+                      ${isFirst ? 'disabled' : ''}
+                      style="background:none;border:1px solid #d1d5db;border-radius:4px;
+                             padding:2px 6px;font-size:11px;line-height:1.4;
+                             ${isFirst ? 'opacity:.3;cursor:not-allowed;' : 'cursor:pointer;'}">▲</button>
               <button class="theme-move-down" data-section-id="${s.id}"
-                      title="Move down" style="background:none;border:1px solid #d1d5db;border-radius:4px;
-                      padding:2px 6px;cursor:pointer;font-size:11px;line-height:1.4;"
-                      ${idx === THEME_SECTIONS.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button>
+                      title="Move down"
+                      ${isLast ? 'disabled' : ''}
+                      style="background:none;border:1px solid #d1d5db;border-radius:4px;
+                             padding:2px 6px;font-size:11px;line-height:1.4;
+                             ${isLast ? 'opacity:.3;cursor:not-allowed;' : 'cursor:pointer;'}">▼</button>
             </div>` : ''}
           ${s.canHide ? `
             <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#374151;cursor:pointer;white-space:nowrap;">
