@@ -524,8 +524,7 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   saveCollections(collections);
 
-  // Async Supabase upload — uses retry so mobile auth delays don't lose the image.
-  // Card is already saved with blob URL for instant display; URL is swapped when upload succeeds.
+  // Async Supabase upload — blob URL shown immediately, swapped to permanent URL on success.
   if (imageBase64) {
     const savedColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
     uploadWithRetry(imageBase64, fileName).then(uploadedUrl => {
@@ -540,10 +539,27 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
         saveCollections(cols);
         renderCards();
         if (typeof renderCollectionModal === 'function') renderCollectionModal();
-        // Refresh detail modal image if still open
-        const detailImg = document.querySelector('#cardDetailModal img[data-card-index]');
-        if (detailImg && parseInt(detailImg.dataset.cardIndex) === newCardIndex) {
-          detailImg.src = uploadedUrl;
+        // Update detail modal if still open for this card
+        const modal = document.getElementById('cardDetailModal');
+        if (modal) {
+          const detailImg = modal.querySelector('img[data-card-index]');
+          if (detailImg && parseInt(detailImg.dataset.cardIndex) === newCardIndex) {
+            // Swap blob → permanent URL in-place
+            detailImg.src = uploadedUrl;
+          } else {
+            // Modal opened before upload finished — replace the no-image placeholder
+            const noImgDiv = modal.querySelector('#detailNoImgMsg');
+            if (noImgDiv) {
+              const wrap = noImgDiv.parentElement;
+              if (wrap) {
+                wrap.outerHTML = `<div id="detailImgWrap" style="position:relative;text-align:center;margin-bottom:16px;cursor:zoom-in;">
+                  <img id="detailCardImg" data-card-index="${newCardIndex}"
+                       src="${uploadedUrl}" style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f9fafb;">
+                  <div id="detailZoomHint" style="position:absolute;bottom:6px;right:8px;background:rgba(0,0,0,.45);color:#fff;font-size:10px;border-radius:4px;padding:2px 6px;">Tap to zoom</div>
+                </div>`;
+              }
+            }
+          }
         }
       }
     }).catch(() => {});
