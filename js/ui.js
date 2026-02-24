@@ -603,6 +603,25 @@ function wireUpEvents() {
         else if (typeof window.openBatchScanner === 'function') window.openBatchScanner();
     });
 
+    const btnDeckBuilder = document.getElementById('btnDeckBuilder');
+    if (btnDeckBuilder) {
+        btnDeckBuilder.addEventListener('click', function() {
+            if (typeof window.openDeckBuilder === 'function') window.openDeckBuilder();
+            else showToast('Deck Builder not loaded — please refresh', '⚠️');
+        });
+        btnDeckBuilder.addEventListener('mouseover', () => {
+            btnDeckBuilder.style.transform = 'translateY(-3px) scale(1.02)';
+            btnDeckBuilder.style.boxShadow = '0 8px 28px rgba(245,158,11,0.55)';
+        });
+        btnDeckBuilder.addEventListener('mouseout', () => {
+            btnDeckBuilder.style.transform = '';
+            btnDeckBuilder.style.boxShadow = '0 4px 18px rgba(245,158,11,0.40)';
+        });
+        btnDeckBuilder.addEventListener('mousedown', () => {
+            btnDeckBuilder.style.transform = 'scale(0.98)';
+        });
+    }
+
     const btnReadyToList = document.getElementById('btnReadyToList');
     if (btnReadyToList) btnReadyToList.addEventListener('click', function() {
         if (typeof openReadyToListView === 'function') openReadyToListView();
