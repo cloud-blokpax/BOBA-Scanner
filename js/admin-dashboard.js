@@ -113,6 +113,7 @@ function renderAdminDashboard(users, logs, stats) {
           <button class="admin-tab" data-tab="users">Users (${users.length})</button>
           <button class="admin-tab" data-tab="logs">API Logs</button>
           <button class="admin-tab" data-tab="stats">Statistics</button>
+          <button class="admin-tab" data-tab="themes">🎨 Themes</button>
           <button class="admin-tab" data-tab="activity">Activity</button>
         </div>
         <div class="admin-content">
@@ -120,6 +121,7 @@ function renderAdminDashboard(users, logs, stats) {
           <div class="admin-tab-content" id="tab-users">${renderUsersTab(users)}</div>
           <div class="admin-tab-content" id="tab-logs">${renderLogsTab(logs)}</div>
           <div class="admin-tab-content" id="tab-stats">${renderStatsTab(stats, logs)}</div>
+          <div class="admin-tab-content" id="tab-themes">${renderThemesTab()}</div>
           <div class="admin-tab-content" id="tab-activity">${renderActivityTab(users)}</div>
         </div>
       </div>
@@ -199,6 +201,7 @@ function renderUsersTab(users) {
         <option value="all">All Users</option>
         <option value="admin">Admins Only</option>
         <option value="regular">Regular Users</option>
+        <option value="member">Members Only</option>
         <option value="limit">Near Limits</option>
       </select>
     </div>
@@ -207,7 +210,7 @@ function renderUsersTab(users) {
         <thead>
           <tr>
             <th>User</th><th>Email</th><th>Discord</th><th>Cards</th>
-            <th>API Calls</th><th>Admin</th><th>Joined</th><th>Actions</th>
+            <th>API Calls</th><th>Admin</th><th>Member</th><th>Joined</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>${users.map(u => renderUserRow(u)).join('')}</tbody>
@@ -220,6 +223,34 @@ function renderUsersTab(users) {
 function renderUserRow(user) {
   const cardsPercent = Math.min(100, ((user.cards_in_collection || 0) / (user.card_limit || 1)) * 100);
   const apiPercent   = Math.min(100, ((user.api_calls_used || 0) / (user.api_calls_limit || 1)) * 100);
+
+  // Membership display
+  let memberCell = '';
+  if (user.is_member && user.member_until) {
+    const expiry    = new Date(user.member_until);
+    const now       = new Date();
+    const daysLeft  = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+    const expired   = daysLeft <= 0;
+    const expLabel  = expired
+      ? `<span style="color:#ef4444;font-size:10px;">Expired</span>`
+      : `<span style="color:#6b7280;font-size:10px;">${daysLeft}d left</span>`;
+    memberCell = `
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+        <span class="status-badge ${expired ? 'failed' : 'success'}" style="font-size:11px;">
+          ${expired ? '⚠️ Expired' : '⭐ Member'}
+        </span>
+        ${expLabel}
+        <div style="display:flex;gap:4px;margin-top:2px;">
+          <button class="btn-icon member-extend-btn" data-uid="${escapeHtml(user.id)}" title="+30 days" style="font-size:10px;padding:2px 6px;">+30d</button>
+          <button class="btn-icon member-revoke-btn" data-uid="${escapeHtml(user.id)}" title="Revoke membership" style="font-size:10px;padding:2px 6px;">✖</button>
+        </div>
+      </div>`;
+  } else {
+    memberCell = `
+      <button class="btn-icon member-grant-btn" data-uid="${escapeHtml(user.id)}" title="Grant membership" style="font-size:11px;padding:3px 8px;">
+        ⭐ Grant
+      </button>`;
+  }
 
   return `
     <tr class="user-row ${user.is_admin ? 'admin-user' : ''}" data-user-id="${escapeHtml(user.id)}">
@@ -236,6 +267,7 @@ function renderUserRow(user) {
         <div class="mini-bar"><div class="mini-fill" style="width:${apiPercent}%"></div></div>
       </div></td>
       <td><span class="status-badge ${user.is_admin ? 'admin' : 'regular'}">${user.is_admin ? 'Admin' : 'User'}</span></td>
+      <td>${memberCell}</td>
       <td>${new Date(user.created_at).toLocaleDateString()}</td>
       <td>
         <button class="btn-icon admin-edit-btn" data-uid="${escapeHtml(user.id)}" title="Edit">✏️</button>
@@ -511,6 +543,7 @@ function filterUsers(searchTerm = '') {
 
     if (filter === 'admin'   && !user.is_admin)  show = false;
     if (filter === 'regular' &&  user.is_admin)  show = false;
+    if (filter === 'member'  && !user.is_member) show = false;
     if (filter === 'limit') {
       const nearCard = (user.cards_in_collection || 0) >= (user.card_limit || 1) * 0.9;
       const nearApi  = (user.api_calls_used || 0) >= (user.api_calls_limit || 1) * 0.9;
@@ -519,6 +552,101 @@ function filterUsers(searchTerm = '') {
 
     row.style.display = show ? '' : 'none';
   });
+}
+
+// ── Membership actions ────────────────────────────────────────────────────────
+
+const MEMBER_CARD_LIMIT = 250;
+const MEMBER_API_LIMIT  = 250;
+
+async function grantMembership(userId) {
+  const user      = window.adminData?.users.find(u => u.id === userId);
+  const userName  = user?.name || user?.email || 'this user';
+  const until     = new Date();
+  until.setDate(until.getDate() + 30);
+
+  try {
+    const { error } = await window.supabaseClient
+      .from('users')
+      .update({
+        is_member:       true,
+        member_until:    until.toISOString(),
+        card_limit:      MEMBER_CARD_LIMIT,
+        api_calls_limit: MEMBER_API_LIMIT
+      })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    await logAdminAction('grant_membership', userId, 'none', `until:${until.toISOString().split('T')[0]}`);
+    showToast(`⭐ ${userName} is now a member (30 days)`, '✅');
+    setTimeout(() => { closeAdminDashboard(); openAdminDashboard(); }, 600);
+
+  } catch (err) {
+    console.error('Grant membership error:', err);
+    showToast('Failed to grant membership', '❌');
+  }
+}
+
+async function extendMembership(userId) {
+  const user = window.adminData?.users.find(u => u.id === userId);
+  if (!user) return;
+
+  // If still active, add 30 days to current expiry; if expired, start fresh from today
+  const base  = (user.member_until && new Date(user.member_until) > new Date())
+    ? new Date(user.member_until)
+    : new Date();
+  const until = new Date(base);
+  until.setDate(until.getDate() + 30);
+
+  try {
+    const { error } = await window.supabaseClient
+      .from('users')
+      .update({
+        is_member:       true,
+        member_until:    until.toISOString(),
+        card_limit:      MEMBER_CARD_LIMIT,
+        api_calls_limit: MEMBER_API_LIMIT
+      })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    await logAdminAction('extend_membership', userId, user.member_until || '', until.toISOString().split('T')[0]);
+    showToast(`+30 days — now until ${until.toLocaleDateString()}`, '📅');
+    setTimeout(() => { closeAdminDashboard(); openAdminDashboard(); }, 600);
+
+  } catch (err) {
+    console.error('Extend membership error:', err);
+    showToast('Failed to extend membership', '❌');
+  }
+}
+
+async function revokeMembership(userId) {
+  const user = window.adminData?.users.find(u => u.id === userId);
+  if (!user) return;
+
+  try {
+    const { error } = await window.supabaseClient
+      .from('users')
+      .update({
+        is_member:       false,
+        member_until:    null,
+        card_limit:      DEFAULT_LIMITS.authenticated.maxCards,
+        api_calls_limit: DEFAULT_LIMITS.authenticated.maxApiCalls
+      })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    await logAdminAction('revoke_membership', userId, 'member', 'none');
+    showToast(`Membership revoked`, '✅');
+    setTimeout(() => { closeAdminDashboard(); openAdminDashboard(); }, 600);
+
+  } catch (err) {
+    console.error('Revoke membership error:', err);
+    showToast('Failed to revoke membership', '❌');
+  }
 }
 
 // Use event delegation for admin action buttons (edit/logs)
@@ -531,6 +659,15 @@ document.addEventListener('click', (e) => {
 
   const exportBtn = e.target.closest('#exportLogsBtn');
   if (exportBtn) { exportLogs(); return; }
+
+  const grantBtn = e.target.closest('.member-grant-btn');
+  if (grantBtn) { grantMembership(grantBtn.dataset.uid); return; }
+
+  const extendBtn = e.target.closest('.member-extend-btn');
+  if (extendBtn) { extendMembership(extendBtn.dataset.uid); return; }
+
+  const revokeBtn = e.target.closest('.member-revoke-btn');
+  if (revokeBtn) { revokeMembership(revokeBtn.dataset.uid); return; }
 });
 
 function closeAdminDashboard() { document.getElementById('adminDashboard')?.remove(); }
@@ -565,6 +702,138 @@ async function exportLogs() {
 console.log('✅ Admin dashboard module loaded');
 
 
+// ── Themes Tab ────────────────────────────────────────────────────────────────
+
+function renderThemesTab() {
+  return `
+    <div id="adminThemesTab" style="padding:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:#111827;">Themes</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            Create layouts users can apply. Members can also make personal themes.
+          </div>
+        </div>
+        <button id="adminCreateThemeBtn" class="btn-tag-add" style="padding:8px 16px;font-size:13px;white-space:nowrap;">
+          + New Theme
+        </button>
+      </div>
+      <div id="adminThemesList">
+        <p style="text-align:center;color:#9ca3af;padding:24px;">Loading themes...</p>
+      </div>
+    </div>`;
+}
+
+async function loadAdminThemesList() {
+  const el = document.getElementById('adminThemesList');
+  if (!el) return;
+
+  try {
+    const { data: themes, error } = await window.supabaseClient
+      .from('themes')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (!themes || themes.length === 0) {
+      el.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:32px;">No themes yet. Create your first one!</p>`;
+      return;
+    }
+
+    el.innerHTML = themes.map(theme => `
+      <div class="admin-theme-row" data-theme-id="${escapeHtml(theme.id)}" style="
+        display:flex;align-items:flex-start;gap:12px;padding:12px 14px;
+        background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb;margin-bottom:8px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-weight:700;font-size:14px;color:#111827;">${escapeHtml(theme.name)}</span>
+            <span class="status-badge ${theme.is_public ? 'success' : 'regular'}" style="font-size:11px;">
+              ${theme.is_public ? '🌐 Published' : '🔒 Draft'}
+            </span>
+          </div>
+          ${theme.description ? `<div style="font-size:12px;color:#6b7280;margin-top:3px;">${escapeHtml(theme.description)}</div>` : ''}
+          <div style="font-size:11px;color:#9ca3af;margin-top:4px;">
+            Created ${new Date(theme.created_at).toLocaleDateString()}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+          <button class="btn-icon admin-theme-edit-btn" data-theme-id="${escapeHtml(theme.id)}" title="Edit theme">✏️</button>
+          <button class="btn-icon admin-theme-toggle-btn" data-theme-id="${escapeHtml(theme.id)}"
+                  data-is-public="${theme.is_public}" title="${theme.is_public ? 'Unpublish' : 'Publish'}">
+            ${theme.is_public ? '🔒 Unpublish' : '🌐 Publish'}
+          </button>
+          <button class="btn-icon admin-theme-delete-btn" data-theme-id="${escapeHtml(theme.id)}" title="Delete theme"
+                  style="color:#ef4444;">🗑️</button>
+        </div>
+      </div>`).join('');
+
+  } catch (err) {
+    el.innerHTML = `<p style="text-align:center;color:#ef4444;padding:24px;">Failed to load themes: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+// Event delegation for theme buttons
+document.addEventListener('click', async (e) => {
+  // Create new theme
+  if (e.target.closest('#adminCreateThemeBtn')) {
+    const defaultCfg = typeof defaultThemeConfig === 'function' ? defaultThemeConfig() : {};
+    defaultCfg._name = '';
+    defaultCfg._description = '';
+    defaultCfg._isPublic = false;
+    if (typeof window.openThemeEditor === 'function') {
+      window.openThemeEditor(defaultCfg, true, async (config) => {
+        await window.adminSaveTheme(config);
+        loadAdminThemesList();
+      });
+    }
+    return;
+  }
+
+  // Edit existing theme
+  const editBtn = e.target.closest('.admin-theme-edit-btn');
+  if (editBtn) {
+    const themeId = editBtn.dataset.themeId;
+    const { data: theme } = await window.supabaseClient.from('themes').select('*').eq('id', themeId).single();
+    if (theme) {
+      const editCfg = { ...theme.config, _name: theme.name, _description: theme.description, _isPublic: theme.is_public };
+      if (typeof window.openThemeEditor === 'function') {
+        window.openThemeEditor(editCfg, true, async (config) => {
+          await window.adminSaveTheme(config, themeId);
+          loadAdminThemesList();
+        });
+      }
+    }
+    return;
+  }
+
+  // Toggle publish/unpublish
+  const toggleBtn = e.target.closest('.admin-theme-toggle-btn');
+  if (toggleBtn) {
+    const themeId   = toggleBtn.dataset.themeId;
+    const isPublic  = toggleBtn.dataset.isPublic === 'true';
+    const { error } = await window.supabaseClient
+      .from('themes').update({ is_public: !isPublic }).eq('id', themeId);
+    if (!error) {
+      showToast(isPublic ? 'Theme unpublished' : 'Theme published', '🌐');
+      loadAdminThemesList();
+    }
+    return;
+  }
+
+  // Delete theme
+  const deleteBtn = e.target.closest('.admin-theme-delete-btn');
+  if (deleteBtn) {
+    const themeId = deleteBtn.dataset.themeId;
+    if (typeof window.adminDeleteTheme === 'function') {
+      const ok = await window.adminDeleteTheme(themeId);
+      if (ok) loadAdminThemesList();
+    }
+    return;
+  }
+});
+
+// Auto-load themes list when tab is clicked
 // ── Activity Log Tab ──────────────────────────────────────────────────────────
 // Shows admin_actions from Supabase in a readable timeline format
 
@@ -660,11 +929,14 @@ function formatAdminAction(a) {
   }
 }
 
-// Auto-load activity log when tab is clicked
+// Auto-load activity log and themes when their tabs are clicked
 const _origShowAdminTab = window.showAdminTab;
 window.showAdminTab = function(tab, btn) {
   if (typeof _origShowAdminTab === 'function') _origShowAdminTab(tab, btn);
   if (tab === 'activity') {
     setTimeout(loadActivityLog, 50);
+  }
+  if (tab === 'themes') {
+    setTimeout(loadAdminThemesList, 50);
   }
 };
