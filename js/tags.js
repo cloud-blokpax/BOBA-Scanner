@@ -320,21 +320,157 @@ function renderCollectionModal() {
     const count = document.getElementById('collectionCount');
     if (!body) return;
 
+    const isDeckView = _viewCollectionId === 'deck_building';
+
     // Gather cards from the currently-viewed collection only
     const allCards = [];
     for (const col of getCollections()) {
-        // My Collection shows everything except price_check
-        // Price Check shows only price_check
         if (_viewCollectionId === 'price_check') {
             if (col.id !== 'price_check') continue;
+        } else if (isDeckView) {
+            if (col.id !== 'deck_building') continue;
         } else {
-            if (col.id === 'price_check') continue;
+            if (col.id === 'price_check' || col.id === 'deck_building') continue;
         }
         col.cards.forEach((card, idx) => {
             allCards.push({ ...card, _colId: col.id, _idx: idx, _key: `${col.id}:${idx}` });
         });
     }
     allCards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Build tag filter bar
+    const allTagsUsed = [...new Set(allCards.flatMap(c => c.tags || []))].sort();
+
+    // Filter cards
+    const filtered = _activeFilters.size === 0
+        ? allCards
+        : allCards.filter(c => [..._activeFilters].every(f => (c.tags || []).includes(f)));
+
+    if (count) count.textContent = `(${filtered.length}${filtered.length !== allCards.length ? `/${allCards.length}` : ''} card${allCards.length !== 1 ? 's' : ''})`;
+
+    // For deck view: label the filter bar as "Deck:" and show deck count per tag
+    const filterLabel = isDeckView ? 'Deck:' : 'Filter:';
+    const filterBar = allTagsUsed.length > 0 ? `
+        <div class="tag-filter-bar">
+            <span class="tag-filter-label">${filterLabel}</span>
+            ${allTagsUsed.map(t => {
+                const tagCount = isDeckView ? allCards.filter(c => (c.tags||[]).includes(t)).length : null;
+                return `<button class="tag-chip tag-filter-chip${_activeFilters.has(t) ? ' tag-chip-on' : ''}"
+                        onclick="toggleCollectionFilter('${escapeHtml(t)}')">${escapeHtml(t)}${tagCount !== null ? ` <span style="opacity:.65;font-size:10px;">(${tagCount})</span>` : ''}</button>`;
+            }).join('')}
+            ${_activeFilters.size > 0 ? `<button class="tag-clear-btn" onclick="clearCollectionFilters()">Clear</button>` : ''}
+        </div>` : '';
+
+    const bulkBar = `
+        <div id="bulkActionBar" style="display:none;align-items:center;gap:8px;padding:8px 0;flex-wrap:wrap;">
+            <span id="bulkCount" style="font-size:13px;font-weight:600;color:#555;flex:1;"></span>
+            <button class="btn-tag-add" onclick="openBulkTagModal('add')">+ Add Tags</button>
+            <button class="btn-tag-remove" onclick="openBulkTagModal('remove')">− Remove Tags</button>
+            <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="toggleSelectionMode(false)">Cancel</button>
+        </div>`;
+
+    const selectToggle = `
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <button class="btn-secondary" style="font-size:12px;padding:5px 12px;"
+                    onclick="toggleSelectionMode(${!_selectionMode})">
+                ${_selectionMode ? '✓ Done Selecting' : '☑ Select Cards'}
+            </button>
+        </div>`;
+
+    if (filtered.length === 0) {
+        const emptyMsg = isDeckView
+            ? (_activeFilters.size > 0 ? 'No cards in this deck' : 'No deck cards yet — use Deck Builder to scan cards')
+            : (_activeFilters.size > 0 ? 'No cards match this filter' : 'No cards yet');
+        body.innerHTML = filterBar + bulkBar + selectToggle + `
+            <div class="collection-empty">
+                <div class="collection-empty-icon">${isDeckView ? '🃏' : (_activeFilters.size > 0 ? '🔍' : '📭')}</div>
+                <h3>${_activeFilters.size > 0 ? (isDeckView ? 'No cards in this deck' : 'No cards match this filter') : (isDeckView ? 'No deck cards yet' : 'No cards yet')}</h3>
+                <p>${emptyMsg}</p>
+            </div>`;
+        return;
+    }
+
+    const cardsHtml = filtered.map(card => {
+        const hasImage   = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
+        const isSelected = _selectedCards.has(card._key);
+        const cardTags   = (card.tags || []).filter(Boolean);
+        const ebayUrl    = (typeof buildEbaySearchUrl === 'function') ? buildEbaySearchUrl(card) : null;
+
+        const listingBadge = card.listingStatus === 'listed' && card.listingUrl
+            ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener noreferrer"
+                  class="collection-ebay-link listing-active" title="View your eBay listing">🟢 Listed</a>`
+            : card.listingStatus === 'sold'
+            ? `<span class="collection-card-badge" style="background:#fee2e2;color:#991b1b;">🔴 Sold</span>`
+            : '';
+
+        // DBS data row — shown in deck view
+        const dbsRow = isDeckView && (card.dbs != null || card.dbsCost != null || card.ability)
+            ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 2px;">
+                ${card.dbs     != null ? `<span style="font-size:10px;font-weight:700;background:#f5f3ff;color:#6d28d9;padding:1px 5px;border-radius:4px;">DBS ${card.dbs}</span>` : ''}
+                ${card.dbsCost != null ? `<span style="font-size:10px;font-weight:700;background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;">Cost ${card.dbsCost}</span>` : ''}
+               </div>
+               ${card.ability ? `<div style="font-size:10px;color:#6b7280;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(card.ability)}">${escapeHtml(card.ability.substring(0,55))}${card.ability.length>55?'…':''}</div>` : ''}`
+            : (isDeckView ? `<div style="font-size:10px;color:#d97706;margin:2px 0;">⏳ DBS pending</div>` : '');
+
+        // Parallel type badge for deck view
+        const parallelBadge = isDeckView
+            ? (() => {
+                const p = (card.pose || '').toLowerCase();
+                if (p.includes('bonus')) return `<span style="font-size:10px;font-weight:700;background:#f5f3ff;color:#7c3aed;padding:1px 5px;border-radius:4px;margin-bottom:3px;display:inline-block;">⭐ Bonus Play</span>`;
+                if (p.includes('play'))  return `<span style="font-size:10px;font-weight:700;background:#eff6ff;color:#2563eb;padding:1px 5px;border-radius:4px;margin-bottom:3px;display:inline-block;">▶ Play</span>`;
+                return '';
+            })()
+            : '';
+
+        return `
+        <div class="collection-card${isSelected ? ' selected' : ''}" data-key="${escapeHtml(card._key)}">
+            ${_selectionMode ? `
+                <div class="card-select-btn${isSelected ? ' active' : ''}"
+                     onclick="toggleCardSelection('${escapeHtml(card._key)}')">
+                    ${isSelected ? '✓' : '+'}
+                </div>` : ''}
+            <div class="collection-card-img-wrap" onclick="openCollectionCardDetail('${escapeHtml(card._colId)}', ${card._idx})"
+                 style="cursor:pointer;" title="View details">
+                ${hasImage
+                    ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
+                            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                    : ''}
+                <div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>
+            </div>
+            <div class="collection-card-info">
+                <div class="collection-card-name" onclick="openCollectionCardDetail('${escapeHtml(card._colId)}', ${card._idx})"
+                     style="cursor:pointer;" title="View details">
+                    ${escapeHtml(card.hero || 'Unknown')}
+                </div>
+                ${parallelBadge}
+                ${dbsRow}
+                ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
+                <div class="coll-price-row">
+                    ${card.ebayAvgPrice ? `<span class="coll-price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
+                    ${card.ebayLowPrice ? `<span class="coll-price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
+                </div>` : ''}
+                ${listingBadge
+                    ? `<div style="margin-bottom:4px;">${listingBadge}</div>`
+                    : ebayUrl && !isDeckView ? `<div style="margin-bottom:4px;"><a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener noreferrer"
+                          class="collection-ebay-link" title="Search eBay">🛒 eBay</a></div>` : ''}
+                <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
+                ${card.condition ? `<div style="font-size:10px;color:#6b7280;margin-top:1px;">${escapeHtml(card.condition)}</div>` : ''}
+                ${cardTags.length > 0
+                    ? `<div class="card-tags-row">${cardTags.map(t => `<span class="tag-chip tag-chip-sm">${escapeHtml(t)}</span>`).join('')}</div>`
+                    : ''}
+                <div class="collection-card-footer">
+                    <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
+                        ${card.scanType === 'deck' ? 'Deck' : card.scanType === 'free' ? 'Free OCR' : 'AI'}
+                    </span>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = filterBar + bulkBar + selectToggle + `<div class="collection-grid">${cardsHtml}</div>`;
+
+    updateBulkBar();
+}
 
     // Build tag filter bar
     const allTagsUsed = [...new Set(allCards.flatMap(c => c.tags || []))].sort();
@@ -483,6 +619,21 @@ window.openPriceCheckCollectionModal = function() {
     _viewCollectionId = 'price_check';
     const titleEl = document.getElementById('collectionModalTitle');
     if (titleEl) titleEl.textContent = '💰 Price Check';
+    modal.classList.add('active');
+    renderCollectionModal();
+};
+
+// Deck Builder collection view — shows cards in deck_building, grouped/filtered by deck tag
+window.openDeckBuildingModal = function() {
+    if (typeof ensureDeckBuildingCollection === 'function') ensureDeckBuildingCollection();
+    const modal = document.getElementById('collectionModal');
+    if (!modal) return;
+    _selectionMode = false;
+    _selectedCards.clear();
+    _activeFilters.clear();
+    _viewCollectionId = 'deck_building';
+    const titleEl = document.getElementById('collectionModalTitle');
+    if (titleEl) titleEl.textContent = '🃏 Deck Builder';
     modal.classList.add('active');
     renderCollectionModal();
 };
