@@ -15,6 +15,8 @@
     
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
+    <!-- Theme engine injects rules here at runtime -->
+    <style id="bobaThemeStyle"></style>
     
     <!-- External Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -57,33 +59,34 @@
             </div>
         </header>
         
-        <!-- Main Content -->
+        <!-- Main Content — sections are flex children so CSS `order:` works for theme reordering -->
         <main class="app-main">
+          <div class="main-sections">
             
             <!-- Stats Dashboard -->
-            <div class="stats-container" id="statsContainer">
-                <div class="stat-card">
+            <div class="stats-container" id="statsContainer" data-section="statsContainer">
+                <div class="stat-card" id="statCardScanned">
                     <div class="stat-icon cards">🎴</div>
                     <div class="stat-label">Cards Scanned</div>
                     <div class="stat-value" id="statCards">0 / 5</div>
                     <div class="stat-sublabel" id="statCardsLabel">Guest limit</div>
                 </div>
                 
-                <div class="stat-card">
+                <div class="stat-card" id="statCardAI">
                     <div class="stat-icon ai">🤖</div>
                     <div class="stat-label">AI Lookups</div>
                     <div class="stat-value" id="statAI">0 / 1</div>
                     <div class="stat-sublabel" id="statAILabel">Remaining</div>
                 </div>
                 
-                <div class="stat-card">
+                <div class="stat-card" id="statCardCost">
                     <div class="stat-icon cost">💰</div>
                     <div class="stat-label">Total Cost</div>
                     <div class="stat-value" id="statCost">$0.00</div>
                     <div class="stat-sublabel">This session</div>
                 </div>
                 
-                <div class="stat-card">
+                <div class="stat-card" id="statCardRate">
                     <div class="stat-icon rate">📊</div>
                     <div class="stat-label">Free Rate</div>
                     <div class="stat-value" id="statRate">0%</div>
@@ -91,9 +94,9 @@
                 </div>
             </div>
             
-            <!-- Upload Section -->
+            <!-- Upload / Scan Section -->
             <!-- FIXED: Buttons have IDs; no onclick="" attributes -->
-            <section class="upload-section" id="uploadArea">
+            <section class="upload-section" id="uploadArea" data-section="uploadArea">
                 <div class="upload-icon">📷</div>
                 <h1 class="upload-title">Upload or Capture</h1>
                 
@@ -136,7 +139,7 @@
             </section>
 
             <!-- Export Section -->
-            <section class="export-section" style="padding: 20px; text-align: center;">
+            <section class="export-section" id="exportSection" data-section="exportSection" style="padding: 20px; text-align: center;">
                 <h3 style="margin-bottom: 16px;">Tools &amp; Export</h3>
                 <div class="button-group" style="flex-wrap:wrap;justify-content:center;gap:8px;">
                     <button class="btn-group-item" id="btnExportCSV" onclick="openExportModal()">
@@ -158,6 +161,9 @@
                 </div>
                 <p class="affiliate-disclosure">eBay prices and links via eBay Partner Network. BOBA Scanner may earn commission on purchases.</p>
             </section>
+            
+            <!-- End of themeable sections — everything below is locked in place -->
+          </div><!-- .main-sections -->
             
             <!-- Collection Slider (replaces collectionsBar pills) -->
             <div id="collectionSliderWrap" style="display:none;padding:12px 16px 0;">
@@ -201,6 +207,19 @@
                 <p class="empty-text">Upload your first Bo Jackson card to get started!</p>
             </div>
             
+            <!-- Card Search/Filter Bar -->
+            <div id="cardSearchBar" style="display:none;padding:0 4px 12px;">
+                <div style="position:relative;">
+                    <input type="text" id="cardSearchInput"
+                           placeholder="Search by hero, card #, athlete, set..."
+                           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                           style="width:100%;box-sizing:border-box;padding:10px 36px 10px 14px;border:1.5px solid #d1d5db;border-radius:10px;font-size:14px;background:#fff;">
+                    <button id="cardSearchClear" title="Clear search"
+                            style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;color:#9ca3af;">✕</button>
+                </div>
+                <div id="cardSearchCount" style="font-size:12px;color:#9ca3af;margin-top:6px;text-align:right;"></div>
+            </div>
+
             <!-- Cards Grid -->
             <div class="cards-grid" id="cardsGrid"></div>
             
@@ -303,6 +322,12 @@
                         <span><span id="thresholdValue">60</span>%</span>
                     </div>
                 </div>
+                <div class="setting-group" id="themeSettingGroup" style="display:none;">
+                    <h3>🎨 Theme</h3>
+                    <div id="themeSettingsSection">
+                        <p style="font-size:13px;color:#9ca3af;">Loading...</p>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="settingsCloseBtn" onclick="closeSettings()">Close</button>
@@ -354,6 +379,7 @@
     <script src="js/scan-history.js"></script>     <!-- Scan history log -->
     <script src="js/templates.js"></script>        <!-- Export templates (user + admin) -->
     <script src="js/seller-monitor.js"></script>   <!-- eBay seller monitoring Phase 1 -->
+    <script src="js/themes.js"></script>       <!-- theme engine — load before app.js -->
     <script src="js/app.js"></script>              <!-- MUST BE LAST: orchestrates init -->
     <script src="js/ui-enhancements.js"></script>
 </body>
