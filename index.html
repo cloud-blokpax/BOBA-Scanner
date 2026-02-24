@@ -118,6 +118,21 @@
                         <span>Check eBay Prices</span>
                     </button>
                 </div>
+
+                <!-- Deck Builder primary button -->
+                <div style="display:flex;justify-content:center;margin-top:10px;">
+                    <button id="btnDeckBuilder" style="
+                        display:inline-flex;flex-direction:column;align-items:center;gap:5px;
+                        padding:14px 32px;border-radius:14px;border:none;cursor:pointer;
+                        background:linear-gradient(150deg,#f59e0b 0%,#d97706 100%);
+                        color:#0d1524;font-size:14px;font-weight:700;font-family:inherit;
+                        box-shadow:0 4px 18px rgba(245,158,11,0.40);
+                        transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s;
+                        width:100%;max-width:480px;">
+                        <span style="font-size:24px;">🃏</span>
+                        <span>Deck Builder</span>
+                    </button>
+                </div>
                 
                 <!-- Secondary tools -->
                 <div class="button-group" style="margin-top:12px;">
@@ -385,6 +400,7 @@
     <script src="js/templates.js"></script>        <!-- Export templates (user + admin) -->
     <script src="js/seller-monitor.js"></script>   <!-- eBay seller monitoring Phase 1 -->
     <script src="js/themes.js"></script>       <!-- theme engine — load before app.js -->
+    <script src="js/deck-builder.js"></script> <!-- Deck Builder workflow -->
     <script src="js/app.js"></script>              <!-- MUST BE LAST: orchestrates init -->
     <script src="js/ui-enhancements.js"></script>
 </body>
