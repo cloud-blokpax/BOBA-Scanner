@@ -488,6 +488,7 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   const card = {
     cardId:        String(match['Card ID']     || ''),
     hero:          match.Name                  || '',
+    athlete:       (typeof getAthleteForHero === 'function') ? (getAthleteForHero(match.Name) || '') : '',
     year:          match.Year                  || '',
     set:           match.Set                   || '',
     cardNumber:    match['Card Number']        || '',
