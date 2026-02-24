@@ -47,9 +47,14 @@ function buildEbayQuery(card) {
   const hero = s(card.hero);
   if (hero && hero.toLowerCase() !== 'unknown') parts.push(hero);
 
+  // Athlete inspiration — same weight as hero name; sellers often use the real
+  // athlete's name in their listing title (e.g. "Tongue-Twister Tua Tagovailoa")
+  const athlete = s(card.athlete);
+  if (athlete) parts.push(athlete);
+
   // Intentionally excluded:
-  //   set name  (Alpha Update, Battle Arena, etc) — too verbose, hurts results
-  //   parallel  (Blizzard Battlefoil Glow, etc)   — most sellers don't include this
+  //   set name  — too verbose, hurts results
+  //   parallel  — most sellers don't include this
   //   weapon    — rarely in listing titles
   //   year      — card number already disambiguates
 
@@ -112,7 +117,8 @@ window.fetchEbayAvgPrice = async function(card) {
       body: JSON.stringify({
         query,
         cardNumber: card.cardNumber || '',
-        hero:       card.hero       || ''
+        hero:       card.hero       || '',
+        athlete:    card.athlete    || ''
       })
     });
 
