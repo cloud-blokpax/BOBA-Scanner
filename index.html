@@ -184,35 +184,44 @@
             <!-- End of themeable sections — everything below is locked in place -->
           </div><!-- .main-sections -->
             
-            <!-- Collection Slider (replaces collectionsBar pills) -->
+            <!-- Collection Slider — 3 tabs: My Collection / Price Check / Deck Builder -->
             <div id="collectionSliderWrap" style="display:none;padding:12px 16px 0;">
                 <div id="collectionSlider" style="
                     display:flex;position:relative;background:rgba(13,21,36,0.8);border-radius:999px;
-                    padding:4px;gap:0;width:100%;max-width:480px;margin:0 auto;
+                    padding:4px;gap:0;width:100%;max-width:600px;margin:0 auto;
                     box-shadow:inset 0 1px 3px rgba(0,0,0,.4);border:1px solid rgba(148,163,184,0.1);">
                     <div id="sliderThumb" style="
                         position:absolute;top:4px;bottom:4px;left:4px;
-                        width:calc(50% - 4px);background:rgba(255,255,255,0.06);border-radius:999px;
+                        width:calc(33.333% - 4px);background:rgba(255,255,255,0.06);border-radius:999px;
                         box-shadow:0 2px 8px rgba(0,0,0,.3);
                         transition:transform .22s cubic-bezier(.4,0,.2,1);pointer-events:none;
                         border:1px solid rgba(245,158,11,0.2);"></div>
                     <button id="sliderBtnCollection" onclick="sliderSwitch('collection')" style="
-                        flex:1;padding:10px 16px;border:none;background:transparent;cursor:pointer;
-                        border-radius:999px;font-size:14px;font-weight:700;color:#e2e8f0;
-                        position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:6px;
+                        flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
+                        border-radius:999px;font-size:13px;font-weight:700;color:#e2e8f0;
+                        position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
                         transition:color .2s;">
                         🎴 My Collection <span id="sliderCountCollection" style="
                             background:rgba(245,158,11,0.85);color:#0d1524;border-radius:999px;
-                            padding:1px 7px;font-size:12px;font-weight:700;"></span>
+                            padding:1px 6px;font-size:11px;font-weight:700;"></span>
                     </button>
                     <button id="sliderBtnPriceCheck" onclick="sliderSwitch('price_check')" style="
-                        flex:1;padding:10px 16px;border:none;background:transparent;cursor:pointer;
-                        border-radius:999px;font-size:14px;font-weight:700;color:#64748b;
-                        position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:6px;
+                        flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
+                        border-radius:999px;font-size:13px;font-weight:700;color:#64748b;
+                        position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
                         transition:color .2s;">
                         💰 Price Check <span id="sliderCountPriceCheck" style="
                             background:rgba(148,163,184,0.15);color:#94a3b8;border-radius:999px;
-                            padding:1px 7px;font-size:12px;font-weight:700;"></span>
+                            padding:1px 6px;font-size:11px;font-weight:700;"></span>
+                    </button>
+                    <button id="sliderBtnDeckBuilder" onclick="sliderSwitch('deck_building')" style="
+                        flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
+                        border-radius:999px;font-size:13px;font-weight:700;color:#64748b;
+                        position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
+                        transition:color .2s;">
+                        🃏 Deck Builder <span id="sliderCountDeckBuilder" style="
+                            background:rgba(148,163,184,0.15);color:#94a3b8;border-radius:999px;
+                            padding:1px 6px;font-size:11px;font-weight:700;"></span>
                     </button>
                 </div>
             </div>
