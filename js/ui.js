@@ -155,7 +155,7 @@ function renderCards() {
 
         return `
         <div class="card-item" id="card_item_${i}">
-            <div class="card-image-container" onclick="openCardDetail(${i})" style="cursor:pointer;" title="Tap to view details">
+            <div class="card-image-container" data-open-card="${i}" style="cursor:pointer;" title="Tap to view details">
                 <img class="card-image"
                      src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
                      alt="${escapeHtml(card.cardNumber)}"
@@ -167,7 +167,7 @@ function renderCards() {
                 ${lowConfBadge}
                 ${listingBadge}
             </div>
-            <div class="card-content" onclick="openCardDetail(${i})" style="cursor:pointer;">
+            <div class="card-content" data-open-card="${i}" style="cursor:pointer;">
                 <div class="card-title-row">
                     <div class="card-title">${escapeHtml(card.hero || 'Unknown Card')}</div>
                     <span id="rtl_badge_${i}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
@@ -192,12 +192,38 @@ function renderCards() {
                 <button class="btn-ebay card-footer-ebay" onclick="event.stopPropagation();openEbaySearch(${i})" title="Search eBay">
                     <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
                 </button>
-                <button class="btn-detail card-footer-detail" onclick="event.stopPropagation();openCardDetail(${i})" title="Edit / View full details">✏️ Edit</button>
+                <button class="btn-detail card-footer-detail" data-open-card="${i}" title="Edit / View full details">✏️ Edit</button>
             </div>
         </div>`;
     }).join('');
 
     console.log('Cards rendered successfully');
+
+    // ── Delegated card-open handler ───────────────────────────────────────
+    // Uses touchend + preventDefault to consume the iOS ghost click that would
+    // otherwise hit the Remove button in the detail modal 300ms later.
+    // Falls back to click for desktop / non-touch devices.
+    grid.addEventListener('touchend', function(e) {
+        const target = e.target.closest('[data-open-card]');
+        if (!target) return;
+        e.preventDefault(); // kill the 300ms ghost click
+        openCardDetail(parseInt(target.dataset.openCard, 10));
+    }, { passive: false });
+
+    grid.addEventListener('click', function(e) {
+        // Only fires on non-touch (desktop) — touch devices use touchend above
+        if (e.detail === 0) return; // keyboard-triggered, skip
+        const target = e.target.closest('[data-open-card]');
+        if (!target) return;
+        // Skip if this is a ghost click (fired within 600ms of a touchend)
+        const now = Date.now();
+        if (grid._lastTouchEnd && now - grid._lastTouchEnd < 600) return;
+        openCardDetail(parseInt(target.dataset.openCard, 10));
+    });
+
+    grid.addEventListener('touchend', function() {
+        grid._lastTouchEnd = Date.now();
+    }, { passive: true, capture: true });
 }
 
 function renderField(label, field, index, value, autoFilled) {
@@ -753,6 +779,9 @@ window.openCardDetail = function(index) {
     </div>`;
 
     document.body.insertAdjacentHTML('beforeend', html);
+    // Record open time so ghost-click guard can block Remove calls within 600ms
+    const modalEl = document.getElementById('cardDetailModal');
+    if (modalEl) modalEl.dataset.openedAt = Date.now();
 
     // ── Zoom on card image ────────────────────────────────────────────────
     const imgWrap = document.getElementById('detailImgWrap');
@@ -883,6 +912,15 @@ window.openCollectionCardDetail = function(colId, index) {
 };
 
 window.removeCardFromDetail = function(index) {
+    // iOS ghost-click guard: ignore Remove if modal just opened (< 600ms ago).
+    // When tapping a card to open its detail, iOS fires a synthetic 300ms ghost
+    // click at the same coordinates. If the Remove button is near that spot the
+    // confirm dialog fires immediately. Blocking for 600ms eliminates this.
+    const modal = document.getElementById('cardDetailModal');
+    if (modal) {
+        const age = Date.now() - parseInt(modal.dataset.openedAt || '0', 10);
+        if (age < 600) return; // too soon — ghost click, not intentional
+    }
     if (!confirm('Remove this card from your collection?')) return;
     document.getElementById('cardDetailModal')?.remove();
     removeCard(index);
