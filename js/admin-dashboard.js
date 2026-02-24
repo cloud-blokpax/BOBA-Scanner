@@ -60,16 +60,17 @@ async function fetchRecentLogs(limit = 100) {
 async function fetchSystemStats() {
   try {
     const today = new Date().toISOString().split('T')[0];
+    // NOTE: No .single() — that returns HTTP 406 on zero rows, logged as a network
+    // error in the browser console even when JS catches it. Array fetch is always 200.
     const { data, error } = await window.supabaseClient
       .from('system_stats')
       .select('*')
       .eq('date', today)
-      .single();
-    // 406 = table doesn't exist, PGRST116 = no row — both are fine
-    if (error && error.code !== 'PGRST116' && error.status !== 406) throw error;
-    return data || await calculateTodayStats();
-  } catch (err) {
-    console.warn('system_stats not available, calculating live:', err.message);
+      .limit(1);
+    if (error) throw error;
+    return (data && data.length > 0) ? data[0] : await calculateTodayStats();
+  } catch (_err) {
+    // system_stats table may not exist — silently fall back to live calculation
     return await calculateTodayStats();
   }
 }
