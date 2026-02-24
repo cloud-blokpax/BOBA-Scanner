@@ -470,6 +470,8 @@ function renderCollectionModal() {
     body.innerHTML = filterBar + bulkBar + selectToggle + `<div class="collection-grid">${cardsHtml}</div>`;
 
     updateBulkBar();
+} // ← closing brace for renderCollectionModal
+
 window.toggleCollectionFilter = function(tag) {
     if (_activeFilters.has(tag)) { _activeFilters.delete(tag); }
     else                         { _activeFilters.add(tag); }
