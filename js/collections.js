@@ -215,11 +215,21 @@ function updateCollectionSlider() {
   if (elPC) elPC.textContent = pcCount;
   if (elDB) elDB.textContent = dbCount;
 
-  // Thumb position — 3 equal slots: 0%, 33.333%, 66.666%
+  // Thumb position — each tab is 1/3 of the slider width
+  // thumb width = calc(33.333% - 4px), so stepping right by one slot = translate by 33.333% of the container
+  // We use a CSS custom property trick: set left dynamically instead of transform
   const thumb = document.getElementById('sliderThumb');
   if (thumb) {
-    const pos = isColl ? '0%' : isPC ? 'calc(33.333%)' : 'calc(66.666%)';
-    thumb.style.transform = `translateX(${pos})`;
+    if (isColl) {
+      thumb.style.left      = '4px';
+      thumb.style.transform = 'translateX(0)';
+    } else if (isPC) {
+      thumb.style.left      = 'calc(33.333%)';
+      thumb.style.transform = 'translateX(0)';
+    } else {
+      thumb.style.left      = 'calc(66.666%)';
+      thumb.style.transform = 'translateX(0)';
+    }
   }
 
   // Button colours
@@ -252,17 +262,23 @@ window.sliderSwitch = function(targetId) {
     const collections = getCollections();
     if (!collections.find(c => c.id === 'price_check')) return;
     switchCollection('price_check');
+    updateCollectionSlider();
+    if (typeof renderCards === 'function') renderCards();
   } else if (targetId === 'deck_building') {
-    // Open the deck builder collection modal instead of switching the main grid
+    // Open deck building modal — don't switch the main grid
+    // Temporarily highlight the tab, then de-highlight when modal closes
+    const btnDB = document.getElementById('sliderBtnDeckBuilder');
+    if (btnDB) { btnDB.style.color = '#e2e8f0'; btnDB.style.fontWeight = '800'; }
     if (typeof window.openDeckBuildingModal === 'function') {
       window.openDeckBuildingModal();
     }
-    return; // don't switch the main card grid
+    // Re-sync after modal interaction (collectionModal close button doesn't fire this)
+    setTimeout(updateCollectionSlider, 100);
   } else {
     switchCollection('default');
+    updateCollectionSlider();
+    if (typeof renderCards === 'function') renderCards();
   }
-  updateCollectionSlider();
-  if (typeof renderCards === 'function') renderCards();
 };
 
 function loadCollections(collectionsData) {
