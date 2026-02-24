@@ -172,6 +172,7 @@ function renderCards() {
                     <div class="card-title">${escapeHtml(card.hero || 'Unknown Card')}</div>
                     <span id="rtl_badge_${i}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
                 </div>
+                ${card.athlete ? `<div class="card-athlete">${escapeHtml(card.athlete)}</div>` : ''}
                 ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
                 <div class="card-price-row">
                     ${card.ebayAvgPrice ? `<span class="price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
@@ -656,7 +657,10 @@ window.openCardDetail = function(index) {
         <div class="modal-backdrop" onclick="document.getElementById('cardDetailModal').remove()"></div>
         <div class="modal-content" style="max-width:520px;max-height:90vh;display:flex;flex-direction:column;">
             <div class="modal-header">
-                <h2>${escapeHtml(card.hero || 'Card Detail')}</h2>
+                <div>
+                    <h2>${escapeHtml(card.hero || 'Card Detail')}</h2>
+                    ${card.athlete ? `<div style="font-size:13px;color:#6b7280;margin-top:2px;">${escapeHtml(card.athlete)}</div>` : ''}
+                </div>
                 <button class="modal-close" onclick="document.getElementById('cardDetailModal').remove()">×</button>
             </div>
             <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
@@ -679,6 +683,11 @@ window.openCardDetail = function(index) {
                 ${priceHtml}
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+                    ${card.athlete ? `
+                    <div style="background:#eff6ff;border-radius:8px;padding:10px;grid-column:1/-1;">
+                        <div style="font-size:11px;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Athlete Inspiration</div>
+                        <div style="font-size:15px;font-weight:700;color:#1e3a5f;margin-top:2px;">${escapeHtml(card.athlete)}</div>
+                    </div>` : ''}
                     ${[
                         ['Card #', card.cardNumber], ['Year', card.year],
                         ['Set', card.set], ['Parallel', card.pose],
