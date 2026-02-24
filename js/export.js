@@ -48,6 +48,32 @@ function openExportModal() {
 
     const rtlCount = allCards.filter(c => c.readyToList).length;
 
+    // ── Deck Export section ───────────────────────────────────────────────
+    const deckTags = (typeof window.getDeckTags === 'function') ? window.getDeckTags() : [];
+    const deckExportHtml = deckTags.length > 0 ? `
+        <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+                🃏 Deck Export (BoBA Format)
+            </div>
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px;">
+                Exports slots 1–30 (plays) + B1–B15 (bonus plays) in BoBA Deck format.
+                Field selection above is ignored — deck format is fixed.
+            </p>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                <div style="flex:1;min-width:160px;">
+                    <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Select Deck</label>
+                    <select id="deckExportTag" style="width:100%;padding:8px 10px;border:1px solid #c4b5fd;border-radius:8px;font-size:13px;background:white;">
+                        <option value="">— choose a deck —</option>
+                        ${deckTags.map(t => `<option value="${escapeHtmlAttr(t)}">${escapeHtml(t)}</option>`).join('')}
+                    </select>
+                </div>
+                <button onclick="runDeckExport()" class="btn-tag-add"
+                        style="background:linear-gradient(135deg,#7c3aed,#6d28d9);white-space:nowrap;padding:9px 16px;">
+                    ⬇ Download Deck CSV
+                </button>
+            </div>
+        </div>` : '';
+
     // Template section (from templates.js)
     const templateHtml = (typeof renderTemplateSelectorHtml === 'function')
         ? renderTemplateSelectorHtml(activeFields)
@@ -86,7 +112,7 @@ function openExportModal() {
                     `).join('')}
                 </div>
 
-                <!-- Scope + filter -->
+                <!-- Scope + filter + deck export -->
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
                     <div style="flex:1;min-width:140px;">
                         <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Scope</label>
@@ -106,6 +132,9 @@ function openExportModal() {
                         </select>
                     </div>
                 </div>
+
+                <!-- Deck Export — separate section, bypasses field checkboxes -->
+                ${deckExportHtml}
 
                 <!-- Price multiplier -->
                 <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:16px;">
@@ -250,8 +279,77 @@ function sanitizeFilename(name) {
     return (name || 'collection').replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_').substring(0, 100);
 }
 
-function downloadFile(content, filename, type) {
-    const blob = new Blob(['\ufeff' + content], { type: type + ';charset=utf-8' });
+function escapeHtmlAttr(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Deck Export — BoBA Deck CSV format ────────────────────────────────────
+// Slots 1–30 = Play parallel cards (in whatever order they were scanned)
+// Slots B1–B15 = Bonus Play parallel cards (0–15)
+// Columns: Slot, Card #, Name, Cost, Ability, DBS
+window.runDeckExport = function() {
+    const tag = document.getElementById('deckExportTag')?.value;
+    if (!tag) { showToast('Select a deck first', '⚠️'); return; }
+
+    const cards = (typeof window.getDeckCards === 'function') ? window.getDeckCards(tag) : [];
+    if (!cards.length) { showToast(`No cards found for deck "${tag}"`, '⚠️'); return; }
+
+    // Split by parallel type
+    const plays  = cards.filter(c => {
+        const p = (c.pose || '').toLowerCase();
+        return p.includes('play') && !p.includes('bonus');
+    });
+    const bonuses = cards.filter(c => {
+        const p = (c.pose || '').toLowerCase();
+        return p.includes('bonus');
+    });
+
+    // Warn if under 30 plays — still export, just leave slots empty
+    if (plays.length < 30) {
+        showToast(`Note: only ${plays.length}/30 play slots filled`, '⚠️');
+    }
+
+    const ec = val => `"${String(val ?? '').replace(/"/g, '""')}"`;
+
+    const rows = [];
+    // Header
+    rows.push(['Slot','Card #','Name','Cost','Ability','DBS'].map(ec).join(','));
+
+    // Play slots 1–30
+    for (let i = 1; i <= 30; i++) {
+        const card = plays[i - 1] || null;
+        rows.push([
+            ec(i),
+            ec(card?.cardNumber ?? ''),
+            ec(card?.hero       ?? ''),
+            ec(card?.dbsCost    ?? ''),
+            ec(card?.ability    ?? ''),
+            ec(card?.dbs        ?? ''),
+        ].join(','));
+    }
+
+    // Bonus slots B1–B15 (stop early if no more bonus plays)
+    for (let i = 1; i <= Math.min(15, bonuses.length); i++) {
+        const card = bonuses[i - 1];
+        rows.push([
+            ec(`B${i}`),
+            ec(card?.cardNumber ?? ''),
+            ec(card?.hero       ?? ''),
+            ec(card?.dbsCost    ?? ''),
+            ec(card?.ability    ?? ''),
+            ec(card?.dbs        ?? ''),
+        ].join(','));
+    }
+
+    const csv   = rows.join('\n');
+    const today = new Date().toISOString().split('T')[0];
+    const name  = sanitizeFilename(tag);
+    downloadFile(csv, `BoBA_Deck_${name}_${today}.csv`, 'text/csv');
+    document.getElementById('exportModal')?.remove();
+    showToast(`Exported deck "${tag}" (${plays.length} plays, ${bonuses.length} bonus)`, '✅');
+};
+
+console.log('Export module loaded (v1.2 — deck export)');    const blob = new Blob(['\ufeff' + content], { type: type + ';charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(a);
@@ -259,5 +357,3 @@ function downloadFile(content, filename, type) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
-
-console.log('Export module loaded (v1.1)');
