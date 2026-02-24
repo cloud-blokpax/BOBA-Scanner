@@ -349,11 +349,14 @@ window.runDeckExport = function() {
     showToast(`Exported deck "${tag}" (${plays.length} plays, ${bonuses.length} bonus)`, '✅');
 };
 
-console.log('Export module loaded (v1.2 — deck export)');    const blob = new Blob(['\ufeff' + content], { type: type + ';charset=utf-8' });
+function downloadFile(content, filename, type) {
+    const blob = new Blob(['\ufeff' + content], { type: type + ';charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
 
+console.log('Export module loaded (v1.2 — deck export)');
