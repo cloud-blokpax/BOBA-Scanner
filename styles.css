@@ -382,7 +382,6 @@ body {
   text-align: center;
   transition: border-color var(--transition-base);
   position: relative;
-  overflow: hidden;
 }
 /* Subtle radial glow at top — makes it feel lit from above */
 .upload-section::before {
@@ -393,6 +392,11 @@ body {
   width: 280px; height: 160px;
   background: radial-gradient(ellipse, rgba(245,158,11,0.08) 0%, transparent 70%);
   pointer-events: none;
+  z-index: 0;
+}
+.upload-section > * {
+  position: relative;
+  z-index: 1;
 }
 .upload-section:hover {
   border-color: var(--border-strong);
