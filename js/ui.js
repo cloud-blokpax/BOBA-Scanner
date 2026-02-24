@@ -660,7 +660,7 @@ window.openCardDetail = function(index) {
                 <button class="modal-close" onclick="document.getElementById('cardDetailModal').remove()">×</button>
             </div>
             <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
-                ${card.imageUrl && !card.imageUrl.startsWith('blob:')
+                ${card.imageUrl
                     ? `<div id="detailImgWrap" style="position:relative;text-align:center;margin-bottom:16px;cursor:zoom-in;">
                            <img id="detailCardImg" data-card-index="${index}"
                                 src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
