@@ -45,6 +45,31 @@ function saveCollections(collections) {
 // One-time migration: strip base64 imageUrls from existing cards to free localStorage space.
 // Base64 data URLs start with "data:" and can be hundreds of KB each.
 // Cards get their image from Supabase Storage — base64 is only needed during scan, not for storage.
+function migrateBackfillAthletes() {
+  // One-time migration: add athlete field to cards that were scanned before
+  // heroes.js was added or before the batch scanner was updated.
+  try {
+    if (typeof getAthleteForHero !== 'function') return;
+    if (localStorage.getItem('athletesBackfilled') === 'v1') return; // already done
+    const cols = JSON.parse(localStorage.getItem('collections') || '[]');
+    if (!Array.isArray(cols)) return;
+    let changed = false;
+    for (const col of cols) {
+      for (const card of (col.cards || [])) {
+        if (!card.athlete && card.hero) {
+          const athlete = getAthleteForHero(card.hero);
+          if (athlete) { card.athlete = athlete; changed = true; }
+        }
+      }
+    }
+    if (changed) {
+      localStorage.setItem('collections', JSON.stringify(cols));
+      console.log('🏃 Migrated: backfilled athlete names on existing cards');
+    }
+    localStorage.setItem('athletesBackfilled', 'v1');
+  } catch(e) { console.warn('Athlete backfill error (non-fatal):', e); }
+}
+
 function migrateStripBase64Images() {
   try {
     const stored = localStorage.getItem('collections');
@@ -166,50 +191,56 @@ function updateCollectionSlider() {
 
   const collections  = getCollections();
   const currentId    = getCurrentCollectionId();
-  const mainCols     = collections.filter(c => c.id !== 'price_check');
+  const mainCols     = collections.filter(c => c.id !== 'price_check' && c.id !== 'deck_building');
   const priceCheck   = collections.find(c => c.id === 'price_check');
+  const deckBuilding = collections.find(c => c.id === 'deck_building');
   const mainCount    = mainCols.reduce((sum, c) => sum + c.cards.length, 0);
-  const pcCount      = priceCheck ? priceCheck.cards.length : 0;
+  const pcCount      = priceCheck   ? priceCheck.cards.length   : 0;
+  const dbCount      = deckBuilding ? deckBuilding.cards.length : 0;
 
-  // Show slider only if price check collection exists and has cards, or is active
-  if (!priceCheck && currentId !== 'price_check') {
-    wrap.style.display = 'none';
-  } else {
-    wrap.style.display = 'block';
-  }
+  // Show slider whenever any secondary collection exists or is active
+  const hasSecondary = priceCheck || deckBuilding ||
+                       currentId === 'price_check' || currentId === 'deck_building';
+  wrap.style.display = hasSecondary ? 'block' : 'none';
 
   const isPC = currentId === 'price_check';
+  const isDB = currentId === 'deck_building';
+  const isColl = !isPC && !isDB;
 
-  // Update counts
+  // Counts
   const elC  = document.getElementById('sliderCountCollection');
   const elPC = document.getElementById('sliderCountPriceCheck');
-  const btnC  = document.getElementById('sliderBtnCollection');
-  const btnPC = document.getElementById('sliderBtnPriceCheck');
-  const thumb = document.getElementById('sliderThumb');
-
+  const elDB = document.getElementById('sliderCountDeckBuilder');
   if (elC)  elC.textContent  = mainCount;
   if (elPC) elPC.textContent = pcCount;
+  if (elDB) elDB.textContent = dbCount;
 
+  // Thumb position — 3 equal slots: 0%, 33.333%, 66.666%
+  const thumb = document.getElementById('sliderThumb');
   if (thumb) {
-    thumb.style.transform = isPC ? 'translateX(100%)' : 'translateX(0)';
+    const pos = isColl ? '0%' : isPC ? 'calc(33.333%)' : 'calc(66.666%)';
+    thumb.style.transform = `translateX(${pos})`;
   }
 
-  if (btnC) {
-    btnC.style.color     = isPC ? '#9ca3af' : '#1e3a5f';
-    btnC.style.fontWeight = isPC ? '600' : '800';
-  }
-  if (btnPC) {
-    btnPC.style.color     = isPC ? '#1e3a5f' : '#9ca3af';
-    btnPC.style.fontWeight = isPC ? '800' : '600';
-  }
-  if (elC) {
-    elC.style.background = isPC ? '#d1d5db' : '#2563eb';
-    elC.style.color      = isPC ? '#374151' : 'white';
-  }
-  if (elPC) {
-    elPC.style.background = isPC ? '#059669' : '#d1d5db';
-    elPC.style.color      = isPC ? 'white'   : '#374151';
-  }
+  // Button colours
+  const btnC  = document.getElementById('sliderBtnCollection');
+  const btnPC = document.getElementById('sliderBtnPriceCheck');
+  const btnDB = document.getElementById('sliderBtnDeckBuilder');
+
+  const activeStyle   = { color: '#e2e8f0', fontWeight: '800' };
+  const inactiveStyle = { color: '#64748b', fontWeight: '600' };
+
+  [btnC, btnPC, btnDB].forEach(btn => {
+    if (!btn) return;
+    const isActive = (btn === btnC && isColl) || (btn === btnPC && isPC) || (btn === btnDB && isDB);
+    btn.style.color      = isActive ? activeStyle.color      : inactiveStyle.color;
+    btn.style.fontWeight = isActive ? activeStyle.fontWeight : inactiveStyle.fontWeight;
+  });
+
+  // Badge colours
+  if (elC)  { elC.style.background  = isColl ? 'rgba(245,158,11,0.85)' : 'rgba(148,163,184,0.15)'; elC.style.color  = isColl ? '#0d1524' : '#94a3b8'; }
+  if (elPC) { elPC.style.background = isPC   ? 'rgba(16,185,129,0.85)' : 'rgba(148,163,184,0.15)'; elPC.style.color = isPC   ? 'white'   : '#94a3b8'; }
+  if (elDB) { elDB.style.background = isDB   ? 'rgba(124,58,237,0.85)' : 'rgba(148,163,184,0.15)'; elDB.style.color = isDB   ? 'white'   : '#94a3b8'; }
 }
 
 window.updateCollectionSlider = updateCollectionSlider;
@@ -219,11 +250,15 @@ window.setCurrentCollectionId = setCurrentCollectionId;
 window.sliderSwitch = function(targetId) {
   if (targetId === 'price_check') {
     const collections = getCollections();
-    const pc = collections.find(c => c.id === 'price_check');
-    if (!pc) return;
+    if (!collections.find(c => c.id === 'price_check')) return;
     switchCollection('price_check');
+  } else if (targetId === 'deck_building') {
+    // Open the deck builder collection modal instead of switching the main grid
+    if (typeof window.openDeckBuildingModal === 'function') {
+      window.openDeckBuildingModal();
+    }
+    return; // don't switch the main card grid
   } else {
-    // Switch to default collection
     switchCollection('default');
   }
   updateCollectionSlider();
@@ -308,7 +343,9 @@ function importCollections(file) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  migrateStripBase64Images(); // run once to free up any base64 images from old scans
+  migrateStripBase64Images();   // free up base64 images from old scans
+  // Athletes backfill runs after heroes.js loads — DOMContentLoaded is safe
+  setTimeout(migrateBackfillAthletes, 500);
   initCollections();
 });
 
