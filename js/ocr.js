@@ -6,25 +6,13 @@
 // via the options parameter, which is the correct v4 API.
 
 async function initTesseract() {
-    setStatus('ocr', 'loading');
-    try {
-        let attempts = 0;
-        while (typeof Tesseract === 'undefined' && attempts < 50) {
-            await new Promise(r => setTimeout(r, 100));
-            attempts++;
-        }
-        if (typeof Tesseract === 'undefined') throw new Error('Tesseract not loaded');
-
-        // createWorker with language only — no setParameters() here
-        tesseractWorker = await Tesseract.createWorker('eng');
-
-        ready.ocr = true;
-        setStatus('ocr', 'ready');
-        console.log('✅ OCR ready (worker initialized)');
-    } catch (err) {
-        console.error('❌ OCR failed:', err);
-        setStatus('ocr', 'error');
-    }
+    // OCR requires SharedArrayBuffer which needs COOP/COEP HTTP headers.
+    // Without those headers (Vercel default), the Tesseract worker crashes on
+    // every scan with "Cannot read properties of null (reading 'SetImageFile')".
+    // The AI path identifies every card correctly, so OCR is disabled.
+    ready.ocr = false;
+    setStatus('ocr', 'disabled');
+    console.log('⏭️ OCR disabled — AI identification active');
 }
 
 // Tesseract.js v4 does NOT accept options as a second arg to recognize().
