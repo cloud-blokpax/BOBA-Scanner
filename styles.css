@@ -2771,3 +2771,14 @@ a.listing-badge:hover { opacity: .85; }
   transition: background 0.15s;
 }
 .btn-header-settings:hover { background: rgba(255,255,255,0.15); }
+
+/* ── Theme engine: flex column wrapper enables CSS `order:` for section reordering ── */
+.main-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Default section orders (themes override these via injected <style>) */
+#statsContainer { order: 1; }
+#uploadArea     { order: 2; }
+#exportSection  { order: 3; }
