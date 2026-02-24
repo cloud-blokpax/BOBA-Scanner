@@ -51,20 +51,20 @@ function openExportModal() {
     // ── Deck Export section ───────────────────────────────────────────────
     const deckTags = (typeof window.getDeckTags === 'function') ? window.getDeckTags() : [];
     const deckExportHtml = deckTags.length > 0 ? `
-        <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
-            <div style="font-size:12px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+        <div style="background:#1a1033;border:1.5px solid #6d28d9;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
                 🃏 Deck Export (BoBA Format)
             </div>
-            <p style="font-size:12px;color:#6b7280;margin:0 0 10px;">
+            <p style="font-size:12px;color:#94a3b8;margin:0 0 10px;">
                 Exports slots 1–30 (plays) + B1–B15 (bonus plays) in BoBA Deck format.
                 Field selection above is ignored — deck format is fixed.
             </p>
             <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
                 <div style="flex:1;min-width:160px;">
-                    <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Select Deck</label>
-                    <select id="deckExportTag" style="width:100%;padding:8px 10px;border:1px solid #c4b5fd;border-radius:8px;font-size:13px;background:white;">
-                        <option value="">— choose a deck —</option>
-                        ${deckTags.map(t => `<option value="${escapeHtmlAttr(t)}">${escapeHtml(t)}</option>`).join('')}
+                    <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px;">Select Deck</label>
+                    <select id="deckExportTag" style="width:100%;padding:8px 10px;border:1px solid #6d28d9;border-radius:8px;font-size:13px;background:#0d1524;color:#e2e8f0;">
+                        <option value="" style="background:#0d1524;color:#9ca3af;">— choose a deck —</option>
+                        ${deckTags.map(t => `<option value="${escapeHtmlAttr(t)}" style="background:#0d1524;color:#e2e8f0;">${escapeHtml(t)}</option>`).join('')}
                     </select>
                 </div>
                 <button onclick="runDeckExport()" class="btn-tag-add"
