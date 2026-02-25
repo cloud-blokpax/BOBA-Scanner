@@ -4,8 +4,9 @@
 //   - REMOVED duplicate showToast() — ui.js is the single source of truth
 //   - REMOVED duplicate showLoading() — ui.js is the single source of truth
 //   - REMOVED duplicate setStatus() — ui.js is the single source of truth
-//   - Kept: ready flags, global state vars (database, tesseractWorker, apiToken)
+//   - Kept: ready flags, global state vars (database, tesseractWorker)
 //   - Added: appConfig loaded from /api/config
+//   - REMOVED: apiToken — the API secret is never exposed to the browser
 // ============================================================
 
 // ── Readiness flags ──────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ async function loadAppConfig() {
   } catch (err) {
     console.error('❌ Failed to load app config:', err);
     // Fall back to empty config — app will degrade gracefully
-    appConfig = { supabaseUrl: '', supabaseKey: '', apiToken: '', googleClientId: '' };
+    appConfig = { supabaseUrl: '', supabaseKey: '', googleClientId: '' };
   }
 }
 

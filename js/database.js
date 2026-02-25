@@ -6,12 +6,88 @@
 //   - Levenshtein performance is now acceptable even on large databases
 // ============================================================
 
+// ── IndexedDB cache for card database ─────────────────────────────────────────
+// On first load: fetch card-database.json, store in IDB.
+// On subsequent loads: read from IDB, only re-fetch if version.json is newer.
+const IDB_NAME    = 'boba-scanner';
+const IDB_STORE   = 'card-db';
+const IDB_VERSION = 1;
+
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function idbGet(db, key) {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function idbPut(db, key, value) {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE, 'readwrite');
+    const req = tx.objectStore(IDB_STORE).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
 async function loadDatabase() {
   setStatus('db', 'loading');
   try {
+    let idb = null;
+    try { idb = await openIDB(); } catch { /* IDB not available, fall through to fetch */ }
+
+    if (idb) {
+      // Check current remote version
+      let remoteVersion = null;
+      try {
+        const vRes = await fetch('./version.json', { cache: 'no-store' });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          remoteVersion = vData.version || vData.timestamp || null;
+        }
+      } catch { /* version check failed — skip cache invalidation */ }
+
+      const cachedVersion = await idbGet(idb, 'version');
+      const cachedData    = await idbGet(idb, 'data');
+
+      if (cachedData && cachedVersion && cachedVersion === remoteVersion) {
+        // Cache hit — use stored data
+        database = cachedData;
+        buildCardIndex();
+        ready.db = true;
+        setStatus('db', 'ready');
+        console.log(`✅ DB: ${database.length} cards loaded from IndexedDB cache`);
+        return;
+      }
+    }
+
+    // Cache miss or IDB unavailable — fetch from network
     const res = await fetch('./card-database.json');
     if (!res.ok) throw new Error('DB not found');
     database = await res.json();
+
+    if (idb) {
+      // Store in IDB for next visit
+      try {
+        let remoteVersion = null;
+        try {
+          const vRes = await fetch('./version.json', { cache: 'no-store' });
+          if (vRes.ok) { const v = await vRes.json(); remoteVersion = v.version || v.timestamp || null; }
+        } catch {}
+        await idbPut(idb, 'data', database);
+        if (remoteVersion) await idbPut(idb, 'version', remoteVersion);
+      } catch (e) { console.warn('IDB write failed:', e); }
+    }
 
     // FIXED: Build a lookup index at load time so searches are fast.
     buildCardIndex();

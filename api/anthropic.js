@@ -1,20 +1,44 @@
 // api/anthropic.js
 
-const rateLimitStore = new Map();
 const RATE_LIMIT_MAX    = 30;
-const RATE_LIMIT_WINDOW = 60_000;
+const RATE_LIMIT_WINDOW = 60; // seconds
 
-function checkRateLimit(ip) {
-  const now   = Date.now();
-  const entry = rateLimitStore.get(ip) || { count: 0, windowStart: now };
-  if (now - entry.windowStart > RATE_LIMIT_WINDOW) {
-    rateLimitStore.set(ip, { count: 1, windowStart: now });
+// Supabase-backed rate limiting — works across all serverless instances.
+// Falls back to allowing the request if Supabase is unavailable.
+async function checkRateLimit(identifier) {
+  const supabaseUrl     = process.env.SUPABASE_URL;
+  const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) return true; // no Supabase — skip limit
+
+  try {
+    const now        = Math.floor(Date.now() / 1000);
+    const windowStart = now - RATE_LIMIT_WINDOW;
+
+    // Count requests in the current window
+    const countRes = await fetch(
+      `${supabaseUrl}/rest/v1/rate_limits?select=id&identifier=eq.${encodeURIComponent(identifier)}&created_at=gte.${new Date(windowStart * 1000).toISOString()}`,
+      { headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` } }
+    );
+    if (!countRes.ok) return true; // on error, allow the request
+
+    const rows = await countRes.json();
+    if (rows.length >= RATE_LIMIT_MAX) return false;
+
+    // Record this request
+    await fetch(`${supabaseUrl}/rest/v1/rate_limits`, {
+      method: 'POST',
+      headers: {
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ identifier, created_at: new Date().toISOString() })
+    });
     return true;
+  } catch {
+    return true; // on error, allow the request
   }
-  if (entry.count >= RATE_LIMIT_MAX) return false;
-  entry.count++;
-  rateLimitStore.set(ip, entry);
-  return true;
 }
 
 export default async function handler(req, res) {
@@ -29,19 +53,10 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
-  // Auth token check (only enforced if BOBA_API_SECRET is set)
-  const expectedToken = process.env.BOBA_API_SECRET;
-  if (expectedToken) {
-    const sentToken = req.headers['x-api-token'];
-    if (!sentToken || sentToken !== expectedToken) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-  }
-
   // Rate limiting
   const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown';
-  if (!checkRateLimit(clientIp)) {
+  if (!await checkRateLimit(clientIp)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a moment.' });
   }
 
@@ -61,30 +76,18 @@ export default async function handler(req, res) {
       });
     }
 
-    const cardPrompt = prompt || `Analyze this Bo Jackson Battle Arena trading card image carefully and extract:
-
-1. CARD NUMBER — bottom left corner (format: letters-numbers e.g. "BLBF-84", "BF-108", "MIX-16")
-2. HERO NAME — read ALL text on the card, especially any large printed name or label (e.g. "Unibrow", "Howitzer", "Chill", "Grill")
-3. YEAR — usually 2024 or 2025
-4. SET NAME — near bottom or on a banner
-5. POWER — number in top right corner circle (just a number, NOT the card number)
-6. VISUAL THEME — describe the card's dominant color and visual style in 2-3 words:
-   - Fire, flames, red, orange = "fire red"
-   - Ice, frost, blue, snowflakes = "ice blue"
-   - Lightning, yellow, electric = "lightning yellow"
-   - Dark, purple, shadow = "dark purple"
-
-CRITICAL: Cards with very similar names (like "Chill" vs "Grill") look different visually — fire/red/orange = Grill, ice/blue/frost = Chill. Read every word printed on the card carefully.
-
-Return ONLY valid JSON, no markdown:
-{"cardNumber":"BLBF-84","hero":"NAME","year":"2024","set":"Set Name","pose":"Base","weapon":"None","power":"125","visualTheme":"fire red","confidence":90}`;
+    // Prompt must be provided by the client. If missing, return an error.
+    if (!prompt) {
+      return res.status(400).json({ error: 'Missing prompt in request body' });
+    }
+    const cardPrompt = prompt;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type':      'application/json',
         'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2025-04-15'
       },
       body: JSON.stringify({
         model:      'claude-haiku-4-5-20251001',

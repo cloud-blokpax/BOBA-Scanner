@@ -21,8 +21,20 @@ function initGoogleAuth() {
       return;
     }
 
+    const MAX_ATTEMPTS = 50; // 50 × 200ms = 10 seconds max
+    let attempts = 0;
+
     const tryInit = async () => {
       if (typeof google === 'undefined' || !google.accounts) {
+        attempts++;
+        if (attempts >= MAX_ATTEMPTS) {
+          console.warn('⚠️ Google SDK failed to load after 10s — sign-in unavailable');
+          if (typeof showToast === 'function') {
+            showToast('Google sign-in unavailable. Check your connection.', '⚠️');
+          }
+          resolve();
+          return;
+        }
         setTimeout(tryInit, 200);
         return;
       }

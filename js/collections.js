@@ -13,7 +13,12 @@ const DEFAULT_COLLECTION = {
   stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 }
 };
 
+// In-memory cache — avoids repeated JSON.parse on every operation.
+// Invalidated on saveCollections() and on cross-tab storage events.
+let _collectionsCache = null;
+
 function getCollections() {
+  if (_collectionsCache) return _collectionsCache;
   try {
     const stored = localStorage.getItem('collections');
     if (stored && stored !== 'undefined' && stored !== 'null') {
@@ -22,17 +27,21 @@ function getCollections() {
         if (!parsed.find(c => c.id === 'default')) {
           parsed.unshift({ ...DEFAULT_COLLECTION });
         }
+        _collectionsCache = parsed;
         return parsed;
       }
     }
   } catch (err) {
     console.error('Error loading collections:', err);
   }
-  return [{ ...DEFAULT_COLLECTION, cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } }];
+  const fresh = [{ ...DEFAULT_COLLECTION, cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } }];
+  _collectionsCache = fresh;
+  return fresh;
 }
 
 function saveCollections(collections) {
   try {
+    _collectionsCache = collections; // update cache immediately
     localStorage.setItem('collections', JSON.stringify(collections));
     // Push to cloud after every save (debounced 2s)
     if (typeof schedulePush === 'function') schedulePush();
@@ -41,6 +50,11 @@ function saveCollections(collections) {
     showToast('Storage full — export your collection to free space', '⚠️');
   }
 }
+
+// Invalidate cache when another tab writes to localStorage
+window.addEventListener('storage', (e) => {
+  if (e.key === 'collections') _collectionsCache = null;
+});
 
 // One-time migration: strip base64 imageUrls from existing cards to free localStorage space.
 // Base64 data URLs start with "data:" and can be hundreds of KB each.
@@ -131,15 +145,46 @@ function deleteCollection(id) {
     showToast('Cannot delete the default collection', '⚠️');
     return;
   }
-  if (!confirm('Delete this collection? All cards will be lost.')) return;
+  // Use custom modal instead of blocking confirm()
+  showDeleteCollectionModal(id);
+}
 
-  let collections = getCollections().filter(c => c.id !== id);
-  if (getCurrentCollectionId() === id) setCurrentCollectionId('default');
-
-  saveCollections(collections);
-  renderCollections();
-  renderCards();
-  showToast('Collection deleted', '🗑️');
+function showDeleteCollectionModal(id) {
+  document.getElementById('deleteColModal')?.remove();
+  const col = getCollections().find(c => c.id === id);
+  const name = col ? escapeHtml(col.name) : 'this collection';
+  const html = `
+    <div class="modal active" id="deleteColModal" style="z-index:10002;">
+      <div class="modal-backdrop" id="deleteColBackdrop"></div>
+      <div class="modal-content" style="max-width:360px;">
+        <div class="modal-header">
+          <h2>🗑️ Delete Collection</h2>
+          <button class="modal-close" id="deleteColClose">×</button>
+        </div>
+        <div class="modal-body" style="padding:20px;text-align:center;">
+          <p style="color:#374151;font-size:15px;margin:0 0 8px;">Delete <strong>${name}</strong>?</p>
+          <p style="color:#6b7280;font-size:13px;margin:0;">All cards in this collection will be permanently lost.</p>
+        </div>
+        <div class="modal-footer" style="gap:8px;">
+          <button class="btn-secondary" id="deleteColCancel" style="flex:1;">Cancel</button>
+          <button class="btn-tag-add" id="deleteColConfirm" style="flex:1;background:#ef4444;">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  const close = () => document.getElementById('deleteColModal')?.remove();
+  document.getElementById('deleteColClose')?.addEventListener('click', close);
+  document.getElementById('deleteColCancel')?.addEventListener('click', close);
+  document.getElementById('deleteColBackdrop')?.addEventListener('click', close);
+  document.getElementById('deleteColConfirm')?.addEventListener('click', () => {
+    close();
+    let collections = getCollections().filter(c => c.id !== id);
+    if (getCurrentCollectionId() === id) setCurrentCollectionId('default');
+    saveCollections(collections);
+    renderCollections();
+    renderCards();
+    showToast('Collection deleted', '🗑️');
+  });
 }
 
 function renameCollection(id, newName) {

@@ -112,11 +112,17 @@ function renderCards() {
 
     if (searchInput && !searchInput._wired) {
         searchInput._wired = true;
-        searchInput.addEventListener('input', () => renderCards());
+        // Debounce to avoid re-rendering on every keystroke (noticeable on 100+ cards)
+        let _searchDebounceTimer = null;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(_searchDebounceTimer);
+            _searchDebounceTimer = setTimeout(() => renderCards(), 150);
+        });
         if (searchClear) {
             searchClear.addEventListener('click', () => {
                 searchInput.value = '';
                 searchClear.style.display = 'none';
+                clearTimeout(_searchDebounceTimer);
                 renderCards();
                 searchInput.focus();
             });
@@ -124,26 +130,46 @@ function renderCards() {
     }
     if (searchClear) searchClear.style.display = searchQuery ? 'block' : 'none';
 
-    const cards = searchQuery
-        ? allCards.filter(c => {
-            const q = searchQuery;
-            return String(c.hero || '').toUpperCase().includes(q)
-                || String(c.cardNumber || '').toUpperCase().includes(q)
-                || String(c.athlete || '').toUpperCase().includes(q)
-                || String(c.set || '').toUpperCase().includes(q)
-                || String(c.pose || '').toUpperCase().includes(q)
-                || String(c.weapon || '').toUpperCase().includes(q)
-                || (Array.isArray(c.tags) && c.tags.some(t => t.toUpperCase().includes(q)));
-          })
-        : allCards;
+    // Build filtered array while preserving original indices (needed for card operations)
+    const filteredWithIdx = allCards.reduce((acc, card, idx) => {
+        const q = searchQuery;
+        if (!q ||
+            String(card.hero       || '').toUpperCase().includes(q) ||
+            String(card.cardNumber || '').toUpperCase().includes(q) ||
+            String(card.athlete    || '').toUpperCase().includes(q) ||
+            String(card.set        || '').toUpperCase().includes(q) ||
+            String(card.pose       || '').toUpperCase().includes(q) ||
+            String(card.weapon     || '').toUpperCase().includes(q) ||
+            (Array.isArray(card.tags) && card.tags.some(t => t.toUpperCase().includes(q)))
+        ) {
+            acc.push({ card, idx });
+        }
+        return acc;
+    }, []);
+
+    // ── Pagination ────────────────────────────────────────────────────────
+    const PAGE_SIZE = 50;
+    if (!renderCards._page) renderCards._page = {};
+    const pageKey = currentId + '|' + searchQuery;
+    if (renderCards._lastKey !== pageKey) {
+        renderCards._page[pageKey] = 0;
+        renderCards._lastKey = pageKey;
+    }
+    const page       = renderCards._page[pageKey] || 0;
+    const totalCards = filteredWithIdx.length;
+    const totalPages = Math.ceil(totalCards / PAGE_SIZE) || 1;
+    const pagedItems = filteredWithIdx.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
     if (searchCount) {
-        searchCount.textContent = searchQuery && cards.length !== allCards.length
-            ? `Showing ${cards.length} of ${allCards.length} cards`
+        const showing = pagedItems.length + page * PAGE_SIZE;
+        searchCount.textContent = searchQuery && totalCards !== allCards.length
+            ? `Showing ${Math.min(showing, totalCards)} of ${totalCards} (filtered from ${allCards.length})`
+            : totalPages > 1
+            ? `${totalCards} cards — page ${page + 1} of ${totalPages}`
             : `${allCards.length} card${allCards.length !== 1 ? 's' : ''}`;
     }
 
-    console.log(`📊 Rendering ${cards.length} card(s)`);
+    console.log(`📊 Rendering ${pagedItems.length} card(s) (page ${page + 1}/${totalPages})`);
 
     const grid = document.getElementById('cardsGrid');
     const empty = document.getElementById('emptyState');
@@ -162,7 +188,7 @@ function renderCards() {
         return;
     }
 
-    if (cards.length === 0 && searchQuery) {
+    if (totalCards === 0 && searchQuery) {
         if (empty) empty.style.display = 'none';
         if (actionBar) actionBar.style.display = '';
         grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:#9ca3af;">
@@ -176,9 +202,9 @@ function renderCards() {
     if (empty) empty.style.display = 'none';
     if (actionBar) actionBar.style.display = '';
     grid.style.display = 'grid';
-    
-    // Render cards
-    grid.innerHTML = cards.map((card, i) => {
+
+    // Render paginated cards — use original index (idx) for all card operations
+    grid.innerHTML = pagedItems.map(({ card, idx }) => {
         const lowConfBadge = card.lowConfidence
             ? `<span class="conf-badge conf-low" title="Low confidence scan — please verify">⚠️ Verify</span>`
             : (card.confidence && card.scanType === 'free'
@@ -197,8 +223,6 @@ function renderCards() {
             ? `<span class="listing-badge sold">🔴 Sold${card.soldAt ? ' ' + new Date(card.soldAt).toLocaleDateString() : ''}</span>`
             : '';
 
-        const rtlActive = card.readyToList ? 'active' : '';
-
         const conditionOptions = [
             '', 'Raw', 'PSA 1', 'PSA 2', 'PSA 3', 'PSA 4', 'PSA 5',
             'PSA 6', 'PSA 7', 'PSA 8', 'PSA 9', 'PSA 10',
@@ -207,8 +231,8 @@ function renderCards() {
         ].map(opt => `<option value="${opt}" ${card.condition === opt ? 'selected' : ''}>${opt || 'Condition...'}</option>`).join('');
 
         return `
-        <div class="card-item" id="card_item_${i}">
-            <div class="card-image-container" data-open-card="${i}" style="cursor:pointer;" title="Tap to view details">
+        <div class="card-item" id="card_item_${idx}">
+            <div class="card-image-container" data-open-card="${idx}" style="cursor:pointer;" title="Tap to view details">
                 <img class="card-image"
                      src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
                      alt="${escapeHtml(card.cardNumber)}"
@@ -220,10 +244,10 @@ function renderCards() {
                 ${lowConfBadge}
                 ${listingBadge}
             </div>
-            <div class="card-content" data-open-card="${i}" style="cursor:pointer;">
+            <div class="card-content" data-open-card="${idx}" style="cursor:pointer;">
                 <div class="card-title-row">
                     <div class="card-title">${escapeHtml(card.hero || 'Unknown Card')}</div>
-                    <span id="rtl_badge_${i}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
+                    <span id="rtl_badge_${idx}" class="rtl-badge" style="${card.readyToList ? '' : 'display:none'}">🏷️ List</span>
                 </div>
                 ${card.athlete ? `<div class="card-athlete">${escapeHtml(card.athlete)}</div>` : ''}
                 ${(card.ebayAvgPrice || card.ebayLowPrice) ? `
@@ -242,13 +266,28 @@ function renderCards() {
                 </div>
             </div>
             <div class="card-footer" onclick="event.stopPropagation()">
-                <button class="btn-ebay card-footer-ebay" onclick="event.stopPropagation();openEbaySearch(${i})" title="Search eBay">
+                <button class="btn-ebay card-footer-ebay" onclick="event.stopPropagation();openEbaySearch(${idx})" title="Search eBay">
                     <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
                 </button>
-                <button class="btn-detail card-footer-detail" data-open-card="${i}" title="Edit / View full details">✏️ Edit</button>
+                <button class="btn-detail card-footer-detail" data-open-card="${idx}" title="Edit / View full details">✏️ Edit</button>
             </div>
         </div>`;
     }).join('');
+
+    // ── Pagination controls ───────────────────────────────────────────────
+    if (totalPages > 1) {
+        const paginationHtml = `
+        <div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 0;color:#94a3b8;font-size:14px;">
+            <button onclick="renderCards._goToPage('${pageKey}', ${page - 1})"
+                    style="padding:6px 16px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;${page === 0 ? 'opacity:0.4;pointer-events:none' : ''}"
+                    ${page === 0 ? 'disabled' : ''}>← Prev</button>
+            <span>Page ${page + 1} of ${totalPages}</span>
+            <button onclick="renderCards._goToPage('${pageKey}', ${page + 1})"
+                    style="padding:6px 16px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;${page >= totalPages - 1 ? 'opacity:0.4;pointer-events:none' : ''}"
+                    ${page >= totalPages - 1 ? 'disabled' : ''}>Next →</button>
+        </div>`;
+        grid.insertAdjacentHTML('beforeend', paginationHtml);
+    }
 
     console.log('Cards rendered successfully');
 
@@ -280,6 +319,15 @@ function renderCards() {
         }, { passive: true, capture: true });
     }
 }
+
+// Pagination helper — used by inline onclick handlers in the pagination controls
+renderCards._goToPage = function(pageKey, newPage) {
+    if (!renderCards._page) renderCards._page = {};
+    renderCards._page[pageKey] = newPage;
+    renderCards._lastKey = pageKey;
+    renderCards();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
 function renderField(label, field, index, value, autoFilled) {
     return `
@@ -638,6 +686,83 @@ function wireUpEvents() {
     if (btnScanHistory) btnScanHistory.addEventListener('click', function() {
         if (typeof openScanHistoryModal === 'function') openScanHistoryModal();
     });
+
+    // Force sync button
+    const btnForceSync = document.getElementById('btnForceSync');
+    if (btnForceSync) btnForceSync.addEventListener('click', function() {
+        if (typeof forceSync === 'function') forceSync();
+    });
+
+    // User avatar menu toggle
+    const userAvatar = document.getElementById('userAvatar');
+    if (userAvatar) userAvatar.addEventListener('click', function() {
+        if (typeof toggleUserMenu === 'function') toggleUserMenu();
+    });
+
+    // FAB sync button
+    const fabSync = document.getElementById('fabSync');
+    if (fabSync) fabSync.addEventListener('click', function() {
+        if (typeof manualSync === 'function') manualSync();
+    });
+
+    // Collection slider tabs
+    ['collection', 'price_check', 'deck_building'].forEach(id => {
+        const btn = document.getElementById(
+            id === 'collection' ? 'sliderBtnCollection' :
+            id === 'price_check' ? 'sliderBtnPriceCheck' : 'sliderBtnDeckBuilder'
+        );
+        if (btn) btn.addEventListener('click', () => {
+            if (typeof sliderSwitch === 'function') sliderSwitch(id);
+        });
+    });
+
+    // Sign-in modal backdrop and close button
+    const signInModalBackdrop = document.querySelector('#signInModal .modal-backdrop');
+    if (signInModalBackdrop) signInModalBackdrop.addEventListener('click', function() {
+        if (typeof closeSignInModal === 'function') closeSignInModal();
+    });
+    const signInModalClose = document.querySelector('#signInModal .modal-close');
+    if (signInModalClose) signInModalClose.addEventListener('click', function() {
+        if (typeof closeSignInModal === 'function') closeSignInModal();
+    });
+
+    // Collection modal backdrop and close button
+    const collectionModalBackdrop = document.querySelector('#collectionModal .modal-backdrop');
+    if (collectionModalBackdrop) collectionModalBackdrop.addEventListener('click', function() {
+        if (typeof closeCollectionModal === 'function') closeCollectionModal();
+    });
+    const collectionModalClose = document.querySelector('#collectionModal .modal-close');
+    if (collectionModalClose) collectionModalClose.addEventListener('click', function() {
+        if (typeof closeCollectionModal === 'function') closeCollectionModal();
+    });
+
+    // Settings inputs
+    const toggleAutoDetect = document.getElementById('toggleAutoDetect');
+    if (toggleAutoDetect) toggleAutoDetect.addEventListener('change', function() {
+        if (typeof updateSetting === 'function') updateSetting('autoDetect', this.checked);
+    });
+    const togglePerspective = document.getElementById('togglePerspective');
+    if (togglePerspective) togglePerspective.addEventListener('change', function() {
+        if (typeof updateSetting === 'function') updateSetting('perspective', this.checked);
+    });
+    const toggleRegionOcr = document.getElementById('toggleRegionOcr');
+    if (toggleRegionOcr) toggleRegionOcr.addEventListener('change', function() {
+        if (typeof updateSetting === 'function') updateSetting('regionOcr', this.checked);
+    });
+    const selectQuality = document.getElementById('selectQuality');
+    if (selectQuality) selectQuality.addEventListener('change', function() {
+        if (typeof updateSetting === 'function') updateSetting('quality', this.value);
+    });
+    const rangeThreshold = document.getElementById('rangeThreshold');
+    if (rangeThreshold) {
+        rangeThreshold.addEventListener('input', function() {
+            const el = document.getElementById('thresholdValue');
+            if (el) el.textContent = this.value;
+        });
+        rangeThreshold.addEventListener('change', function() {
+            if (typeof updateSetting === 'function') updateSetting('threshold', this.value);
+        });
+    }
 
     console.log('✅ Button events wired');
 }

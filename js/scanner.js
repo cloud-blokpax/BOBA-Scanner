@@ -379,27 +379,47 @@ Return ONLY valid JSON with no markdown or extra text:
 }`;
 
   const headers = { 'Content-Type': 'application/json' };
-  if (appConfig.apiToken) headers['X-Api-Token'] = appConfig.apiToken;
 
-  const response = await fetch('/api/anthropic', {
-    method:  'POST',
-    headers,
-    body:    JSON.stringify({ imageData: imageBase64, image: imageBase64, prompt })
-  });
+  // Retry with exponential backoff on transient failures (network blips, 5xx)
+  const MAX_RETRIES  = 2;
+  const RETRY_DELAYS = [1000, 2000]; // ms
+  let lastError;
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `API error: ${response.status}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      showLoading(true, `Retrying (${attempt}/${MAX_RETRIES})...`);
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt - 1]));
+    }
+    try {
+      const response = await fetch('/api/anthropic', {
+        method:  'POST',
+        headers,
+        body:    JSON.stringify({ imageData: imageBase64, image: imageBase64, prompt })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        const errMsg = err.error || `API error: ${response.status}`;
+        // Don't retry on 4xx client errors
+        if (response.status >= 400 && response.status < 500) throw new Error(errMsg);
+        lastError = new Error(errMsg);
+        continue; // retry on 5xx
+      }
+
+      const data        = await response.json();
+      const textContent = data.content?.find(c => c.type === 'text');
+      if (!textContent) throw new Error('No text in API response');
+
+      const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON found in API response');
+
+      return JSON.parse(jsonMatch[0]);
+    } catch (err) {
+      if (err.message.includes('API error: 4')) throw err; // don't retry 4xx
+      lastError = err;
+    }
   }
-
-  const data        = await response.json();
-  const textContent = data.content?.find(c => c.type === 'text');
-  if (!textContent) throw new Error('No text in API response');
-
-  const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in API response');
-
-  return JSON.parse(jsonMatch[0]);
+  throw lastError;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -522,9 +542,19 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     return;
   }
 
-  // ── Duplicate detection ──────────────────────────────────────────────────
+  // ── Duplicate detection — O(1) Set lookup instead of O(n) reduce+filter ──
   const cardId  = match['Card ID']     || '';
   const cardNum = match['Card Number'] || '';
+  // Build lookup Sets once across all collections
+  const cardIdSet  = new Set();
+  const cardNumSet = new Set();
+  for (const col of collections) {
+    for (const c of col.cards) {
+      if (c.cardId)     cardIdSet.add(c.cardId);
+      if (c.cardNumber) cardNumSet.add(c.cardNumber);
+    }
+  }
+  // Count actual duplicates (still need the count for the modal message)
   const dupeCount = collections.reduce((total, col) =>
     total + col.cards.filter(c =>
       (cardId  && c.cardId    === String(cardId))  ||

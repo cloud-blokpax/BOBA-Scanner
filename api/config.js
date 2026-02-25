@@ -23,11 +23,11 @@ export default function handler(req, res) {
   }
 
   // Only expose what the client actually needs.
-  // NEVER expose ANTHROPIC_API_KEY here.
+  // NEVER expose ANTHROPIC_API_KEY or BOBA_API_SECRET here —
+  // the API secret must stay server-side only.
   return res.status(200).json({
     supabaseUrl:    process.env.SUPABASE_URL     || '',
     supabaseKey:    process.env.SUPABASE_ANON_KEY || '',
-    apiToken:       process.env.BOBA_API_SECRET   || '',
     googleClientId: process.env.GOOGLE_CLIENT_ID  || ''
   });
 }

@@ -8,9 +8,39 @@
 // ============================================================
 
 // Compress and resize an image File before sending to the API.
-// This is the single compression pass — scanner.js calls this instead of
-// doing its own resize AND then re-converting.
+// Uses createImageBitmap() + OffscreenCanvas when available (off-main-thread)
+// to avoid freezing the UI on large images. Falls back to synchronous canvas.
 async function compressImage(file) {
+  const maxDim  = config.maxSize || 1000;
+  const quality = config.quality || 0.85;
+
+  // ── Fast path: OffscreenCanvas (Chrome 69+, Firefox 105+) ────────────────
+  if (typeof createImageBitmap !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      let { width, height } = bitmap;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) { height = Math.round((height / width) * maxDim); width = maxDim; }
+        else                { width  = Math.round((width / height) * maxDim); height = maxDim; }
+      }
+
+      const oc = new OffscreenCanvas(width, height);
+      oc.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+      bitmap.close();
+
+      const blob   = await oc.convertToBlob({ type: 'image/jpeg', quality });
+      const buffer = await blob.arrayBuffer();
+      const bytes  = new Uint8Array(buffer);
+      let binary   = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    } catch {
+      // OffscreenCanvas failed — fall through to synchronous canvas
+    }
+  }
+
+  // ── Fallback: synchronous main-thread canvas ──────────────────────────────
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -19,24 +49,15 @@ async function compressImage(file) {
         const canvas = document.createElement('canvas');
         let { width, height } = img;
 
-        // Respect config.maxSize (default 1000px on longest edge)
-        const maxDim = config.maxSize || 1000;
         if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height / width) * maxDim);
-            width  = maxDim;
-          } else {
-            width  = Math.round((width / height) * maxDim);
-            height = maxDim;
-          }
+          if (width > height) { height = Math.round((height / width) * maxDim); width = maxDim; }
+          else                { width  = Math.round((width / height) * maxDim); height = maxDim; }
         }
 
         canvas.width  = width;
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-
-        // Return base64 without the data: prefix
-        resolve(canvas.toDataURL('image/jpeg', config.quality).split(',')[1]);
+        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
       };
       img.onerror = reject;
       img.src = e.target.result;

@@ -18,14 +18,11 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
         return null;
     }
 
-    const apiToken = window.appConfig?.apiToken || '';
-
     try {
         const response = await fetch('/api/upload-image', {
             method:  'POST',
             headers: {
-                'Content-Type':  'application/json',
-                'Authorization': apiToken ? `Bearer ${apiToken}` : ''
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 base64:   base64Jpeg,

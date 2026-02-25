@@ -39,6 +39,20 @@ function isDeleted(card, tombstones) {
     return tombstones.includes(cardTombstoneKey(card));
 }
 
+// Prune tombstones older than 30 days to prevent unbounded localStorage growth.
+// Tombstone keys embed the card's ISO timestamp: "cardNumber:isoTimestamp"
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function pruneTombstones(list) {
+    const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+    return list.filter(key => {
+        const colonIdx = key.indexOf(':');
+        if (colonIdx === -1) return true; // malformed — keep (safe default)
+        const ts = new Date(key.slice(colonIdx + 1)).getTime();
+        return isNaN(ts) || ts > cutoff; // keep if unparseable or recent
+    });
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 function setupAutoSync() {
     if (isGuestMode() || !window.supabaseClient) {
@@ -149,7 +163,10 @@ async function pushCollections() {
             .single();
 
         const local      = getCollections();
-        const tombstones = getDeletedCards();
+        // Prune old tombstones before syncing to keep localStorage lean
+        const rawTombstones = getDeletedCards();
+        const tombstones = pruneTombstones(rawTombstones);
+        if (tombstones.length !== rawTombstones.length) saveDeletedCards(tombstones);
         let toSave = stripBlobUrls(local);
 
         if (!error && data?.data) {
@@ -201,10 +218,11 @@ async function pullCollections() {
 
         if (!data?.data) return;
 
-        // Merge tombstones from cloud with local tombstones
+        // Merge tombstones from cloud with local tombstones, then prune old ones
         const localTombstones  = getDeletedCards();
         const cloudTombstones  = data.deleted_cards || [];
-        const allTombstones    = [...new Set([...localTombstones, ...cloudTombstones])];
+        const merged           = [...new Set([...localTombstones, ...cloudTombstones])];
+        const allTombstones    = pruneTombstones(merged);
         saveDeletedCards(allTombstones);
 
         // Merge user tags from cloud

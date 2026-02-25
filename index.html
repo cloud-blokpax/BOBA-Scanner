@@ -45,19 +45,19 @@
                 <!-- User Profile -->
                 <!-- FIXED: All onclick="" removed — handlers wired in ui.js wireUpEvents() -->
                 <div class="user-profile" id="userProfile">
-                    <button class="btn-secondary" id="btnSignIn" onclick="showSignInPrompt()" style="display: none;">
+                    <button class="btn-secondary" id="btnSignIn" aria-label="Sign in with Google" style="display: none;">
                         Sign In
                     </button>
-                    
+
                     <div id="userAuthenticated" style="display: none;">
                         <div class="user-info">
                             <div class="user-name" id="userName">Loading...</div>
                             <div class="user-email" id="userEmail"></div>
                         </div>
-                        <img class="user-avatar" id="userAvatar" alt="User" onclick="toggleUserMenu()">
+                        <img class="user-avatar" id="userAvatar" alt="User" role="button" tabindex="0" aria-haspopup="true" aria-label="User menu">
                         <button class="btn-header-settings" id="btnHeaderSettings">⚙️ Settings</button>
-                        <button class="btn-force-sync" id="btnForceSync" onclick="forceSync()">☁️ Sync</button>
-                        <button class="btn-sign-out" id="btnSignOut" onclick="signOut()">Sign Out</button>
+                        <button class="btn-force-sync" id="btnForceSync" aria-label="Force cloud sync">☁️ Sync</button>
+                        <button class="btn-sign-out" id="btnSignOut" aria-label="Sign out">Sign Out</button>
                     </div>
                 </div>
             </div>
@@ -161,7 +161,7 @@
             <section class="export-section" id="exportSection" data-section="exportSection">
                 <h3>Tools &amp; Export</h3>
                 <div class="button-group" style="flex-wrap:wrap;justify-content:center;gap:8px;">
-                    <button class="btn-group-item" id="btnExportCSV" onclick="openExportModal()">
+                    <button class="btn-group-item" id="btnExportCSV">
                         <span class="btn-icon">📄</span>
                         <span>Export CSV</span>
                     </button>
@@ -196,7 +196,7 @@
                         box-shadow:0 2px 8px rgba(0,0,0,.3);
                         transition:left .22s cubic-bezier(.4,0,.2,1);pointer-events:none;
                         border:1px solid rgba(245,158,11,0.2);"></div>
-                    <button id="sliderBtnCollection" onclick="sliderSwitch('collection')" style="
+                    <button id="sliderBtnCollection" aria-label="My Collection tab" style="
                         flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
                         border-radius:999px;font-size:13px;font-weight:700;color:#e2e8f0;
                         position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
@@ -205,7 +205,7 @@
                             background:rgba(245,158,11,0.85);color:#0d1524;border-radius:999px;
                             padding:1px 6px;font-size:11px;font-weight:700;"></span>
                     </button>
-                    <button id="sliderBtnPriceCheck" onclick="sliderSwitch('price_check')" style="
+                    <button id="sliderBtnPriceCheck" aria-label="Price Check tab" style="
                         flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
                         border-radius:999px;font-size:13px;font-weight:700;color:#64748b;
                         position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
@@ -214,7 +214,7 @@
                             background:rgba(148,163,184,0.15);color:#94a3b8;border-radius:999px;
                             padding:1px 6px;font-size:11px;font-weight:700;"></span>
                     </button>
-                    <button id="sliderBtnDeckBuilder" onclick="sliderSwitch('deck_building')" style="
+                    <button id="sliderBtnDeckBuilder" aria-label="Deck Builder tab" style="
                         flex:1;padding:10px 10px;border:none;background:transparent;cursor:pointer;
                         border-radius:999px;font-size:13px;font-weight:700;color:#64748b;
                         position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:5px;
@@ -239,11 +239,13 @@
             <!-- Card Search/Filter Bar -->
             <div id="cardSearchBar" style="display:none;padding:0 4px 12px;">
                 <div style="position:relative;">
+                    <label for="cardSearchInput" class="sr-only">Search cards</label>
                     <input type="text" id="cardSearchInput"
                            placeholder="Search by hero, card #, athlete, set..."
+                           aria-label="Search cards"
                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                            style="width:100%;box-sizing:border-box;padding:10px 36px 10px 14px;border:1px solid rgba(148,163,184,0.15);border-radius:10px;font-size:14px;background:rgba(13,21,36,0.8);color:#e2e8f0;font-family:inherit;">
-                    <button id="cardSearchClear" title="Clear search"
+                    <button id="cardSearchClear" title="Clear search" aria-label="Clear search"
                             style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:16px;cursor:pointer;color:#64748b;">✕</button>
                 </div>
                 <div id="cardSearchCount" style="font-size:12px;color:#475569;margin-top:5px;text-align:right;"></div>
@@ -255,12 +257,12 @@
         </main>
         
         <!-- Sign-In Modal (works on iOS Safari) -->
-        <div class="modal" id="signInModal">
-            <div class="modal-backdrop" onclick="closeSignInModal()"></div>
+        <div class="modal" id="signInModal" role="dialog" aria-modal="true" aria-labelledby="signInModalTitle">
+            <div class="modal-backdrop"></div>
             <div class="modal-content" style="max-width:360px;text-align:center;">
                 <div class="modal-header" style="justify-content:center;border-bottom:none;padding-bottom:8px;">
-                    <h2>Sign In</h2>
-                    <button class="modal-close" style="position:absolute;right:16px;top:16px;" onclick="closeSignInModal()">×</button>
+                    <h2 id="signInModalTitle">Sign In</h2>
+                    <button class="modal-close" style="position:absolute;right:16px;top:16px;" aria-label="Close sign-in dialog">×</button>
                 </div>
                 <div class="modal-body" style="padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px;">
                     <p style="color:#666;margin:0;">Sign in with your Google account to sync cards across devices.</p>
@@ -270,12 +272,12 @@
         </div>
 
         <!-- Collection Modal -->
-        <div class="modal" id="collectionModal">
-            <div class="modal-backdrop" onclick="closeCollectionModal()"></div>
+        <div class="modal" id="collectionModal" role="dialog" aria-modal="true" aria-labelledby="collectionModalTitleText">
+            <div class="modal-backdrop"></div>
             <div class="modal-content modal-large modal-fullscreen">
                 <div class="modal-header">
-                    <h2><span id="collectionModalTitle">🎴 My Collection</span> <span id="collectionCount" style="font-size:16px;font-weight:normal;color:#666;"></span></h2>
-                    <button class="modal-close" onclick="closeCollectionModal()">×</button>
+                    <h2><span id="collectionModalTitle" id="collectionModalTitleText">🎴 My Collection</span> <span id="collectionCount" style="font-size:16px;font-weight:normal;color:#666;"></span></h2>
+                    <button class="modal-close" aria-label="Close collection">×</button>
                 </div>
                 <div class="modal-body" id="collectionModalBody" style="padding: 16px;">
                     <div style="text-align:center;color:#999;padding:40px;">Loading...</div>
@@ -285,7 +287,7 @@
 
         <!-- Floating Action Buttons -->
         <div class="fab-container" id="fabContainer" style="display: none;">
-            <button class="fab fab-sync" id="fabSync" aria-label="Sync collection" onclick="manualSync()" title="Sync with cloud">
+            <button class="fab fab-sync" id="fabSync" aria-label="Sync collection" title="Sync with cloud">
                 <span>☁️</span>
             </button>
             <!-- FIXED: was onclick="document.getElementById('fileInput').click()" -->
@@ -305,40 +307,40 @@
         </div>
     </div>
     
-    <!-- Toast -->
-    <div class="toast" id="toast">
+    <!-- Toast — role="status" ensures screen readers announce messages without interrupting -->
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true">
         <span class="toast-icon" id="toastIcon">✓</span>
         <span class="toast-message" id="toastMessage">Success!</span>
     </div>
     
-    <!-- Settings Modal -->
-    <!-- FIXED: onchange="" attributes removed — wired in ui.js wireUpEvents() -->
-    <div id="settingsModal" class="modal">
-        <div class="modal-backdrop" id="settingsModalBackdrop" onclick="closeSettings()"></div>
+    <!-- Settings Modal — all event handlers wired in ui.js wireUpEvents() -->
+    <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+        <div class="modal-backdrop" id="settingsModalBackdrop"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Settings</h2>
-                <button class="modal-close" id="settingsModalClose" onclick="closeSettings()">×</button>
+                <h2 id="settingsModalTitle">Settings</h2>
+                <button class="modal-close" id="settingsModalClose" aria-label="Close settings">×</button>
             </div>
             <div class="modal-body">
                 <div class="setting-group">
                     <h3>Scan Settings</h3>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleAutoDetect" checked onchange="updateSetting('autoDetect', this.checked)">
+                        <input type="checkbox" id="toggleAutoDetect" checked>
                         <span>Auto-detect card edges</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="togglePerspective" checked onchange="updateSetting('perspective', this.checked)">
+                        <input type="checkbox" id="togglePerspective" checked>
                         <span>Perspective correction</span>
                     </label>
                     <label class="setting-item">
-                        <input type="checkbox" id="toggleRegionOcr" checked onchange="updateSetting('regionOcr', this.checked)">
+                        <input type="checkbox" id="toggleRegionOcr" checked>
                         <span>Region-based OCR</span>
                     </label>
                 </div>
                 <div class="setting-group">
                     <h3>Quality</h3>
-                    <select id="selectQuality" class="setting-select" onchange="updateSetting('quality', this.value)">
+                    <label for="selectQuality" class="sr-only">Image quality</label>
+                    <select id="selectQuality" class="setting-select">
                         <option value="0.5">Low (Fast)</option>
                         <option value="0.7" selected>Medium</option>
                         <option value="0.9">High (Slow)</option>
@@ -347,7 +349,8 @@
                 <div class="setting-group">
                     <h3>OCR Confidence Threshold</h3>
                     <div class="setting-range-container">
-                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range" oninput="document.getElementById('thresholdValue').textContent=this.value" onchange="updateSetting('threshold', this.value)">
+                        <label for="rangeThreshold" class="sr-only">OCR confidence threshold</label>
+                        <input type="range" id="rangeThreshold" min="0" max="100" value="60" class="setting-range" aria-valuetext="60%">
                         <span><span id="thresholdValue">60</span>%</span>
                     </div>
                 </div>
@@ -359,7 +362,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" id="settingsCloseBtn" onclick="closeSettings()">Close</button>
+                <button class="btn-secondary" id="settingsCloseBtn">Close</button>
             </div>
         </div>
     </div>
