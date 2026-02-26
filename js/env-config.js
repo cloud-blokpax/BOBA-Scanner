@@ -1,21 +1,12 @@
-'use strict';
+// env-config.js
+// This file is designed to manage environment variables securely.
 
-const Joi = require('joi');
+const dotenv = require('dotenv');
 
-// Environment variable schema
-const envSchema = Joi.object({
-    NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
-    PORT: Joi.number().integer().default(3000),
-    DATABASE_URL: Joi.string().uri().required(),
-    API_KEY: Joi.string().required(),
-}).unknown();
+dotenv.config();
 
-// Validate environment variables
-const { error, value: envVars } = envSchema.validate(process.env);
-
-if (error) {
-    console.error('Invalid environment variables:', error.details);
-    process.exit(1);
-}
-
-module.exports = envVars;
+module.exports = {
+    DB_URI: process.env.DB_URI,
+    API_KEY: process.env.API_KEY,
+    // Add any other environment variables needed
+};
