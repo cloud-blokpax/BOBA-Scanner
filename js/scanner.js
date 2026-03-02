@@ -160,23 +160,23 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
         addToScanHistory({ hero: heroName || 'Unknown', cardNumber: cardNum || '?', scanType: 'ai', success: false });
       }
       showLoading(false);
-      showManualSearchModal(cardNum, heroName, imageUrl, fileName);
-      URL.revokeObjectURL(displayUrl);
+      showManualSearchModal(cardNum, heroName, imageUrl, fileName, storedBase64);
+      if (window.scanMode !== 'deckbuilder') URL.revokeObjectURL(displayUrl);
     }
   } catch (err) {
     showLoading(false);
-    URL.revokeObjectURL(displayUrl);
+    if (window.scanMode !== 'deckbuilder') URL.revokeObjectURL(displayUrl);
     console.error('Scan failed:', err.message);
     if (typeof addToScanHistory === 'function') {
       addToScanHistory({ hero: 'Failed', cardNumber: '?', scanType: 'ai', success: false });
     }
-    showManualSearchModal(null, null, imageUrl, fileName);
+    showManualSearchModal(null, null, imageUrl, fileName, storedBase64);
   }
 }
 
 // ── Manual Override Modal ─────────────────────────────────────────────────────
 
-function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileName) {
+function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileName, imageBase64) {
   document.getElementById('manualSearchModal')?.remove();
 
   const html = `
@@ -216,7 +216,7 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
     </div>`;
 
   document.body.insertAdjacentHTML('beforeend', html);
-  window._manualSearchContext = { imageUrl, fileName };
+  window._manualSearchContext = { imageUrl, fileName, imageBase64 };
 
   const input = document.getElementById('manualSearchInput');
   const searchBtn = document.getElementById('manualSearchBtn');
@@ -321,7 +321,7 @@ window.selectManualCard = function(cardId) {
   const ctx = window._manualSearchContext || {};
   // Route to deck builder if active
   if (window.scanMode === 'deckbuilder' && typeof window.deckBuilderOnCardScanned === 'function') {
-    window.deckBuilderOnCardScanned(card, ctx.imageUrl || '', ctx.fileName || 'manual', null);
+    window.deckBuilderOnCardScanned(card, ctx.imageUrl || '', ctx.fileName || 'manual', ctx.imageBase64 || null);
     closeManualSearch();
     return;
   }

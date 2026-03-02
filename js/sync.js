@@ -221,6 +221,8 @@ async function pullCollections() {
         // Merge tombstones from cloud with local tombstones, then prune old ones
         const localTombstones  = getDeletedCards();
         const cloudTombstones  = data.deleted_cards || [];
+        const merged           = [...new Set([...localTombstones, ...cloudTombstones])];
+        const allTombstones    = pruneTombstones(merged);
         const mergedTombstones = [...new Set([...localTombstones, ...cloudTombstones])];
         const allTombstones    = pruneTombstones(mergedTombstones);
         saveDeletedCards(allTombstones);
