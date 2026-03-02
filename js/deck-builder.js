@@ -1,29 +1,30 @@
 // ============================================================
-// js/deck-builder.js — Deck Builder v1.0
+// js/deck-builder.js — Deck Builder v2.0
 //
 // Workflow:
-//  1. User opens Deck Builder modal
-//  2. Scans cards one at a time (photo or upload)
-//  3. Play Parallel     → plays queue  (max 30, must be unique)
-//  4. Bonus Play Parallel → bonus queue (max 15, must be unique)
-//  5. On Complete Deck  → prompt for name → tag all scanned cards
-//                         → upsert into "Deck Building" collection
+//  1. User opens Deck Builder → prompted for deck name + composition
+//  2. Name becomes the tag applied to all cards in this deck
+//  3. User sets target counts: Heroes, Plays, Bonus Plays (each >= 0)
+//  4. Scans cards one at a time (photo or upload)
+//  5. Manual card additions count toward deck + retain scanned image
+//  6. User can finish early before reaching target counts
+//  7. On Finish → tag all scanned cards → save to Deck Building collection
 //
 // BoBA API: GET https://www.bobaleagues.com/api/cards
 // Returns DBS score, Cost, Ability per card.
 //
-// Export: handled in export.js — "BoBA Deck" template, slot 1–30 / B1–B15
+// Export: handled in export.js — "BoBA Deck" template
 // ============================================================
 
 const DECK_BUILDING_COLLECTION_ID = 'deck_building';
 const BOBA_API_BASE = 'https://www.bobaleagues.com/api/cards';
-const MAX_PLAYS = 30;
-const MAX_BONUS = 15;
 
 // ── In-memory deck being built ─────────────────────────────────────────────
-// Each entry: { card, dbsData: { dbs, cost, ability }, parallel: 'play'|'bonus', timestamp }
+// Each entry: { card, dbsData: { dbs, cost, ability }, parallel: 'hero'|'play'|'bonus', imageBase64 }
 window._deckBuilderQueue  = window._deckBuilderQueue  || [];
 window._deckBuilderActive = window._deckBuilderActive || false;
+// Config from setup modal: { name, tag, maxHeroes, maxPlays, maxBonus, totalTarget }
+window._deckBuilderConfig = window._deckBuilderConfig || null;
 
 // ── Ensure the Deck Building collection exists ─────────────────────────────
 function ensureDeckBuildingCollection() {
@@ -47,7 +48,7 @@ function getParallelType(match) {
   const p = (match.Parallel || match.pose || '').toLowerCase();
   if (p.includes('bonus')) return 'bonus';
   if (p.includes('play'))  return 'play';
-  return null; // not a play card
+  return 'hero'; // base cards and other parallels are heroes
 }
 
 // ── BoBA API lookup ────────────────────────────────────────────────────────
@@ -69,7 +70,6 @@ async function lookupBobaCard(card) {
     try {
       const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' },
-        // Some APIs need credentials omitted for cross-origin
         credentials: 'omit',
       });
       if (!resp.ok) continue;
@@ -92,7 +92,7 @@ async function lookupBobaCard(card) {
       const match = list.find(r => {
         const rNum = (r.card_number || r.cardNumber || r.number || r.card_num || '').toString().trim().toLowerCase();
         return rNum === numLower;
-      }) || (url === BOBA_API_BASE ? null : list[0]); // only use list[0] for filtered URLs
+      }) || (url === BOBA_API_BASE ? null : list[0]);
 
       if (!match) continue;
 
@@ -114,37 +114,155 @@ async function lookupBobaCard(card) {
   return null;
 }
 
-// ── Open the Deck Builder modal ────────────────────────────────────────────
+// ── Open the Deck Builder — show setup modal first ──────────────────────────
 window.openDeckBuilder = function() {
-  if (typeof checkUserLimit === 'function') {
-    // Allow entry — actual per-card limits checked in addCard
-  }
   window._deckBuilderActive = true;
   window._deckBuilderQueue  = [];
-  renderDeckBuilderModal();
+  window._deckBuilderConfig = null;
+  showDeckSetupModal();
 };
+
+// ── Deck Setup Modal — collect name + composition before scanning ────────────
+function showDeckSetupModal() {
+  document.getElementById('deckSetupModal')?.remove();
+
+  const html = `
+  <div class="modal active" id="deckSetupModal">
+    <div class="modal-backdrop" id="deckSetupBackdrop"></div>
+    <div class="modal-content" style="max-width:420px;">
+      <div class="modal-header">
+        <h2>🃏 New Deck</h2>
+        <button class="modal-close" id="deckSetupClose">×</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <p style="font-size:13px;color:#6b7280;margin:0 0 16px;">
+          Name your deck and set how many cards you plan to add.
+          The name will be applied as a tag to all cards in this deck.
+        </p>
+
+        <label for="deckSetupName" style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Deck Name</label>
+        <input type="text" id="deckSetupName"
+               placeholder="e.g. Fire Deck v1, Tournament Build..."
+               autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
+               style="width:100%;box-sizing:border-box;padding:11px 14px;border:1.5px solid #d1d5db;
+                      border-radius:10px;font-size:15px;font-family:inherit;margin-bottom:4px;">
+        <div id="deckSetupNameError" style="color:#ef4444;font-size:12px;margin-bottom:12px;display:none;"></div>
+
+        <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:8px;">Deck Composition</div>
+        <div style="display:flex;gap:10px;margin-bottom:6px;">
+          <div style="flex:1;text-align:center;">
+            <label for="deckSetupHeroes" style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">🦸 Heroes</label>
+            <input type="number" id="deckSetupHeroes" min="0" value="0"
+                   style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #d1d5db;
+                          border-radius:8px;font-size:16px;text-align:center;font-family:inherit;">
+          </div>
+          <div style="flex:1;text-align:center;">
+            <label for="deckSetupPlays" style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">▶ Plays</label>
+            <input type="number" id="deckSetupPlays" min="0" value="30"
+                   style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #d1d5db;
+                          border-radius:8px;font-size:16px;text-align:center;font-family:inherit;">
+          </div>
+          <div style="flex:1;text-align:center;">
+            <label for="deckSetupBonus" style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">⭐ Bonus</label>
+            <input type="number" id="deckSetupBonus" min="0" value="15"
+                   style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #d1d5db;
+                          border-radius:8px;font-size:16px;text-align:center;font-family:inherit;">
+          </div>
+        </div>
+        <div style="font-size:11px;color:#9ca3af;text-align:center;margin-top:4px;">
+          Total target: <strong id="deckSetupTotal">45</strong> cards
+        </div>
+      </div>
+      <div class="modal-footer" style="gap:8px;">
+        <button class="btn-secondary" id="deckSetupCancel" style="flex:1;">Cancel</button>
+        <button class="btn-tag-add" id="deckSetupStart" style="flex:2;padding:12px;font-size:14px;">
+          🃏 Start Building
+        </button>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Close handlers
+  const closeSetup = () => {
+    document.getElementById('deckSetupModal')?.remove();
+    window._deckBuilderActive = false;
+  };
+  document.getElementById('deckSetupClose')?.addEventListener('click', closeSetup);
+  document.getElementById('deckSetupBackdrop')?.addEventListener('click', closeSetup);
+  document.getElementById('deckSetupCancel')?.addEventListener('click', closeSetup);
+
+  // Live total update
+  const updateTotal = () => {
+    const h = Math.max(0, parseInt(document.getElementById('deckSetupHeroes')?.value) || 0);
+    const p = Math.max(0, parseInt(document.getElementById('deckSetupPlays')?.value) || 0);
+    const b = Math.max(0, parseInt(document.getElementById('deckSetupBonus')?.value) || 0);
+    const el = document.getElementById('deckSetupTotal');
+    if (el) el.textContent = h + p + b;
+  };
+  ['deckSetupHeroes', 'deckSetupPlays', 'deckSetupBonus'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', updateTotal);
+  });
+
+  // Start building
+  const startBuilding = () => {
+    const nameInput = document.getElementById('deckSetupName');
+    const name = (nameInput?.value || '').trim();
+    const errEl = document.getElementById('deckSetupNameError');
+
+    if (!name) {
+      if (errEl) { errEl.textContent = 'Please enter a deck name.'; errEl.style.display = 'block'; }
+      nameInput?.focus();
+      return;
+    }
+
+    window._deckBuilderConfig = {
+      name,
+      tag:       name.replace(/[|,]/g, '-').trim(),
+      maxHeroes: Math.max(0, parseInt(document.getElementById('deckSetupHeroes')?.value) || 0),
+      maxPlays:  Math.max(0, parseInt(document.getElementById('deckSetupPlays')?.value) || 0),
+      maxBonus:  Math.max(0, parseInt(document.getElementById('deckSetupBonus')?.value) || 0),
+    };
+    window._deckBuilderConfig.totalTarget =
+      window._deckBuilderConfig.maxHeroes +
+      window._deckBuilderConfig.maxPlays +
+      window._deckBuilderConfig.maxBonus;
+
+    document.getElementById('deckSetupModal')?.remove();
+    renderDeckBuilderModal();
+  };
+
+  document.getElementById('deckSetupStart')?.addEventListener('click', startBuilding);
+  document.getElementById('deckSetupName')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') startBuilding();
+  });
+
+  setTimeout(() => document.getElementById('deckSetupName')?.focus(), 80);
+}
 
 // ── Card scanned callback — registered on open, cleared on close ───────────
 // scanner.js calls this when scanMode === 'deckbuilder' instead of addCard.
 window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imageBase64) {
+  const cfg   = window._deckBuilderConfig;
   const pType = getParallelType(match);
-
-  if (!pType) {
-    showToast('Not a Play card — only Play and Bonus Play parallels can be added to a deck', '⚠️');
-    refreshDeckBuilderUI();
-    return;
-  }
-
   const queue = window._deckBuilderQueue;
-  const plays  = queue.filter(e => e.parallel === 'play');
+
+  const heroes  = queue.filter(e => e.parallel === 'hero');
+  const plays   = queue.filter(e => e.parallel === 'play');
   const bonuses = queue.filter(e => e.parallel === 'bonus');
 
-  // ── Capacity check ─────────────────────────────────────────────────────
-  if (pType === 'play'  && plays.length  >= MAX_PLAYS) {
-    showToast(`Deck already has ${MAX_PLAYS} plays — slot full`, '⚠️'); refreshDeckBuilderUI(); return;
-  }
-  if (pType === 'bonus' && bonuses.length >= MAX_BONUS) {
-    showToast(`Deck already has ${MAX_BONUS} bonus plays — slot full`, '⚠️'); refreshDeckBuilderUI(); return;
+  // Soft capacity warnings — inform user but don't block adding
+  if (cfg) {
+    if (pType === 'hero'  && cfg.maxHeroes > 0 && heroes.length  >= cfg.maxHeroes) {
+      showToast(`Heroes target (${cfg.maxHeroes}) already reached`, '⚠️');
+    }
+    if (pType === 'play'  && cfg.maxPlays  > 0 && plays.length   >= cfg.maxPlays) {
+      showToast(`Plays target (${cfg.maxPlays}) already reached`, '⚠️');
+    }
+    if (pType === 'bonus' && cfg.maxBonus  > 0 && bonuses.length >= cfg.maxBonus) {
+      showToast(`Bonus target (${cfg.maxBonus}) already reached`, '⚠️');
+    }
   }
 
   // ── Uniqueness check — same card number + set = duplicate ──────────────
@@ -190,7 +308,8 @@ window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imag
   const entry = { card, dbsData: null, parallel: pType, imageBase64 };
   queue.push(entry);
   refreshDeckBuilderUI();
-  showToast(`${pType === 'play' ? '🎴' : '⭐'} Added: ${card.hero} (${card.cardNumber})`, '✅');
+  const icon = pType === 'hero' ? '🦸' : pType === 'play' ? '🎴' : '⭐';
+  showToast(`${icon} Added: ${card.hero} (${card.cardNumber})`, '✅');
 
   // Upload image async
   if (imageBase64 && typeof uploadWithRetry === 'function') {
@@ -210,12 +329,17 @@ window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imag
     }
   });
 
-  // Auto-complete if full
-  const plays2  = queue.filter(e => e.parallel === 'play').length;
-  const bonuses2 = queue.filter(e => e.parallel === 'bonus').length;
-  if (plays2 >= MAX_PLAYS && bonuses2 >= MAX_BONUS) {
-    showToast('Deck is full (30 plays + 15 bonus plays)!', '🎉');
-    refreshDeckBuilderUI();
+  // Check if all targets met
+  if (cfg && cfg.totalTarget > 0) {
+    const h2 = queue.filter(e => e.parallel === 'hero').length;
+    const p2 = queue.filter(e => e.parallel === 'play').length;
+    const b2 = queue.filter(e => e.parallel === 'bonus').length;
+    const heroMet  = cfg.maxHeroes === 0 || h2 >= cfg.maxHeroes;
+    const playMet  = cfg.maxPlays  === 0 || p2 >= cfg.maxPlays;
+    const bonusMet = cfg.maxBonus  === 0 || b2 >= cfg.maxBonus;
+    if (heroMet && playMet && bonusMet) {
+      showToast('All deck targets reached!', '🎉');
+    }
   }
 };
 
@@ -223,34 +347,66 @@ window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imag
 function renderDeckBuilderModal() {
   document.getElementById('deckBuilderModal')?.remove();
 
+  const cfg     = window._deckBuilderConfig || { name: 'Deck', maxHeroes: 0, maxPlays: 30, maxBonus: 15, totalTarget: 45 };
   const queue   = window._deckBuilderQueue;
+  const heroes  = queue.filter(e => e.parallel === 'hero');
   const plays   = queue.filter(e => e.parallel === 'play');
   const bonuses = queue.filter(e => e.parallel === 'bonus');
   const total   = queue.length;
-  const isFull  = plays.length >= MAX_PLAYS && bonuses.length >= MAX_BONUS;
 
+  // Progress percentage based on total target
+  const progressPct = cfg.totalTarget > 0
+    ? Math.min(100, Math.round((total / cfg.totalTarget) * 100))
+    : (total > 0 ? 100 : 0);
+
+  // All targets met?
+  const heroMet  = cfg.maxHeroes === 0 || heroes.length  >= cfg.maxHeroes;
+  const playMet  = cfg.maxPlays  === 0 || plays.length   >= cfg.maxPlays;
+  const bonusMet = cfg.maxBonus  === 0 || bonuses.length >= cfg.maxBonus;
+  const allMet   = heroMet && playMet && bonusMet && total > 0;
+
+  // Build status line for header
+  const statusParts = [];
+  if (cfg.maxHeroes > 0) statusParts.push(`${heroes.length}/${cfg.maxHeroes} heroes`);
+  if (cfg.maxPlays  > 0) statusParts.push(`${plays.length}/${cfg.maxPlays} plays`);
+  else statusParts.push(`${plays.length} plays`);
+  if (cfg.maxBonus  > 0) statusParts.push(`${bonuses.length}/${cfg.maxBonus} bonus`);
+  else statusParts.push(`${bonuses.length} bonus`);
+
+  // Queue HTML — show each section that has cards or a target > 0
   const queueHtml = total === 0
     ? `<div style="text-align:center;padding:28px 16px;color:#9ca3af;font-size:14px;">
          <div style="font-size:32px;margin-bottom:8px;">🃏</div>
-         No cards scanned yet. Start by scanning a Play or Bonus Play card.
+         No cards scanned yet. Start by scanning a card.
        </div>`
     : `
-      ${plays.length > 0 ? `
+      ${heroes.length > 0 || cfg.maxHeroes > 0 ? `
         <div style="margin-bottom:12px;">
           <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
-            ▶ Plays (${plays.length}/${MAX_PLAYS})
+            🦸 Heroes (${heroes.length}${cfg.maxHeroes > 0 ? '/' + cfg.maxHeroes : ''})${cfg.maxHeroes > 0 && heroes.length >= cfg.maxHeroes ? ' ✓' : ''}
           </div>
-          ${plays.map((e, i) => renderQueueRow(e, i, 'play')).join('')}
+          ${heroes.length > 0
+            ? heroes.map((e, i) => renderQueueRow(e, i, 'hero')).join('')
+            : '<div style="font-size:12px;color:#d1d5db;padding:4px 10px;">No heroes added yet</div>'}
         </div>` : ''}
-      ${bonuses.length > 0 ? `
+      ${plays.length > 0 || cfg.maxPlays > 0 ? `
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+            ▶ Plays (${plays.length}${cfg.maxPlays > 0 ? '/' + cfg.maxPlays : ''})${cfg.maxPlays > 0 && plays.length >= cfg.maxPlays ? ' ✓' : ''}
+          </div>
+          ${plays.length > 0
+            ? plays.map((e, i) => renderQueueRow(e, i, 'play')).join('')
+            : '<div style="font-size:12px;color:#d1d5db;padding:4px 10px;">No plays added yet</div>'}
+        </div>` : ''}
+      ${bonuses.length > 0 || cfg.maxBonus > 0 ? `
         <div>
           <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
-            ⭐ Bonus Plays (${bonuses.length}/${MAX_BONUS})
+            ⭐ Bonus Plays (${bonuses.length}${cfg.maxBonus > 0 ? '/' + cfg.maxBonus : ''})${cfg.maxBonus > 0 && bonuses.length >= cfg.maxBonus ? ' ✓' : ''}
           </div>
-          ${bonuses.map((e, i) => renderQueueRow(e, i, 'bonus')).join('')}
+          ${bonuses.length > 0
+            ? bonuses.map((e, i) => renderQueueRow(e, i, 'bonus')).join('')
+            : '<div style="font-size:12px;color:#d1d5db;padding:4px 10px;">No bonus plays added yet</div>'}
         </div>` : ''}`;
-
-  const progressPct = Math.round((total / (MAX_PLAYS + MAX_BONUS)) * 100);
 
   const html = `
   <div class="modal active" id="deckBuilderModal">
@@ -258,9 +414,9 @@ function renderDeckBuilderModal() {
     <div class="modal-content" style="max-width:520px;max-height:92vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <div>
-          <h2>🃏 Deck Builder</h2>
+          <h2>🃏 ${escapeHtml(cfg.name)}</h2>
           <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-            ${plays.length}/${MAX_PLAYS} plays · ${bonuses.length}/${MAX_BONUS} bonus plays
+            ${statusParts.join(' · ')}
           </div>
         </div>
         <button class="modal-close" id="deckBuilderClose">×</button>
@@ -274,7 +430,9 @@ function renderDeckBuilderModal() {
         </div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#9ca3af;margin-top:4px;">
           <span>${total} card${total !== 1 ? 's' : ''} added</span>
-          <span>${MAX_PLAYS + MAX_BONUS - total} slots remaining</span>
+          <span>${cfg.totalTarget > 0
+            ? (cfg.totalTarget - total > 0 ? (cfg.totalTarget - total) + ' remaining' : 'target reached ✓')
+            : ''}</span>
         </div>
       </div>
 
@@ -290,8 +448,7 @@ function renderDeckBuilderModal() {
             display:inline-flex;align-items:center;gap:6px;
             padding:10px 18px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;
             background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;
-            box-shadow:0 4px 12px rgba(37,99,235,0.35);transition:all .15s;
-            ${isFull ? 'opacity:.4;pointer-events:none;' : ''}">
+            box-shadow:0 4px 12px rgba(37,99,235,0.35);transition:all .15s;">
             📷 Take Photo
             <input type="file" id="deckScanPhoto" accept="image/*" capture="environment" style="display:none;">
           </label>
@@ -299,16 +456,15 @@ function renderDeckBuilderModal() {
             display:inline-flex;align-items:center;gap:6px;
             padding:10px 18px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;
             background:linear-gradient(135deg,#7c3aed,#6d28d9);color:white;
-            box-shadow:0 4px 12px rgba(124,58,237,0.35);transition:all .15s;
-            ${isFull ? 'opacity:.4;pointer-events:none;' : ''}">
+            box-shadow:0 4px 12px rgba(124,58,237,0.35);transition:all .15s;">
             🖼️ Upload Image
             <input type="file" id="deckScanUpload" accept="image/*" style="display:none;">
           </label>
         </div>
-        ${isFull ? `<p style="text-align:center;font-size:12px;color:#10b981;margin:8px 0 0;font-weight:600;">
-            ✅ Deck is full! Click Complete Deck to finish.
+        ${allMet ? `<p style="text-align:center;font-size:12px;color:#10b981;margin:8px 0 0;font-weight:600;">
+            ✅ All targets reached! Click Finish Deck to save.
           </p>` : `<p style="text-align:center;font-size:11px;color:#9ca3af;margin:6px 0 0;">
-            Scan Play or Bonus Play parallel cards only
+            Scan any card to add it to your deck
           </p>`}
       </div>
 
@@ -316,7 +472,7 @@ function renderDeckBuilderModal() {
       <div class="modal-footer" style="gap:8px;">
         <button class="btn-secondary" id="deckBuilderCancel" style="flex:1;">Cancel</button>
         ${total > 0 ? `<button id="deckCompleteBtn" class="btn-tag-add" style="flex:2;padding:12px;font-size:14px;">
-          Complete Deck (${total} card${total !== 1 ? 's' : ''})
+          Finish Deck (${total} card${total !== 1 ? 's' : ''})
         </button>` : ''}
       </div>
     </div>
@@ -328,15 +484,24 @@ function renderDeckBuilderModal() {
 
 function renderQueueRow(entry, idx, type) {
   const { card, dbsData } = entry;
-  const slotLabel = type === 'play'
+  const slotLabel = type === 'hero'
+    ? `H${idx + 1}`
+    : type === 'play'
     ? `Slot ${idx + 1}`
     : `B${idx + 1}`;
   const hasApiData = dbsData !== null;
 
+  const colors = {
+    hero:  { bg: '#f0fdf4', border: '#bbf7d0', badge: '#166534', badgeBg: '#dcfce7' },
+    play:  { bg: '#eff6ff', border: '#bfdbfe', badge: '#1d4ed8', badgeBg: '#dbeafe' },
+    bonus: { bg: '#f5f3ff', border: '#ddd6fe', badge: '#7c3aed', badgeBg: '#ede9fe' },
+  };
+  const c = colors[type] || colors.play;
+
   return `
     <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;
-                background:${type === 'play' ? '#eff6ff' : '#f5f3ff'};
-                border-radius:10px;margin-bottom:6px;border:1px solid ${type === 'play' ? '#bfdbfe' : '#ddd6fe'};">
+                background:${c.bg};
+                border-radius:10px;margin-bottom:6px;border:1px solid ${c.border};">
       <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;overflow:hidden;background:#e5e7eb;">
         ${card.imageUrl
           ? `<img src="${card.imageUrl}" style="width:100%;height:100%;object-fit:cover;">`
@@ -357,8 +522,8 @@ function renderQueueRow(entry, idx, type) {
         ${hasApiData && dbsData.ability ? `<div style="font-size:11px;color:#4b5563;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(dbsData.ability)}">${escapeHtml(dbsData.ability.substring(0, 60))}${dbsData.ability.length > 60 ? '…' : ''}</div>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
-        <span style="font-size:11px;font-weight:700;color:${type === 'play' ? '#1d4ed8' : '#7c3aed'};
-                     background:${type === 'play' ? '#dbeafe' : '#ede9fe'};
+        <span style="font-size:11px;font-weight:700;color:${c.badge};
+                     background:${c.badgeBg};
                      padding:2px 7px;border-radius:99px;">${slotLabel}</span>
         <button data-remove-idx="${window._deckBuilderQueue.indexOf(entry)}"
                 style="background:none;border:none;cursor:pointer;font-size:14px;color:#9ca3af;padding:2px;" title="Remove">✕</button>
@@ -373,8 +538,8 @@ function wireDeckBuilderEvents() {
   document.getElementById('deckBuilderBackdrop')?.addEventListener('click', closeDeckBuilder);
   document.getElementById('deckBuilderCancel')?.addEventListener('click', closeDeckBuilder);
 
-  // Complete deck
-  document.getElementById('deckCompleteBtn')?.addEventListener('click', promptDeckName);
+  // Complete deck — name already collected, go straight to finalize
+  document.getElementById('deckCompleteBtn')?.addEventListener('click', finalizeDeck);
 
   // File inputs — delegate scan to the deck builder callback
   ['deckScanPhoto', 'deckScanUpload'].forEach(id => {
@@ -420,7 +585,9 @@ async function processDeckScan(file) {
     showToast('Scan failed — try again', '❌');
   } finally {
     showLoading(false);
-    window.scanMode = 'collection'; // always reset
+    // NOTE: Do NOT reset scanMode here. The manual search modal may still be
+    // open and needs scanMode='deckbuilder' to route the selection correctly.
+    // scanMode is reset when the deck builder is closed or finalized.
   }
 }
 
@@ -440,73 +607,23 @@ function refreshDeckBuilderUI() {
   renderDeckBuilderModal();
 }
 
-// ── Prompt for deck name and finalize ─────────────────────────────────────
-function promptDeckName() {
-  document.getElementById('deckNameModal')?.remove();
-
-  const html = `
-  <div class="modal active" id="deckNameModal" style="z-index:10002;">
-    <div class="modal-backdrop" id="deckNameBackdrop"></div>
-    <div class="modal-content" style="max-width:400px;">
-      <div class="modal-header">
-        <h2>🏷️ Name Your Deck</h2>
-        <button class="modal-close" id="deckNameClose">×</button>
-      </div>
-      <div class="modal-body" style="padding:20px;">
-        <p style="font-size:13px;color:#6b7280;margin:0 0 14px;">
-          This name will be added as a tag to all ${window._deckBuilderQueue.length} cards and saved to the Deck Building collection.
-        </p>
-        <input type="text" id="deckNameInput"
-               placeholder="e.g. Fire Deck v1, Tournament Build..."
-               autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
-               style="width:100%;box-sizing:border-box;padding:11px 14px;border:1.5px solid #d1d5db;
-                      border-radius:10px;font-size:15px;font-family:inherit;"
-               autofocus>
-        <div id="deckNameError" style="color:#ef4444;font-size:12px;margin-top:6px;display:none;"></div>
-      </div>
-      <div class="modal-footer" style="gap:8px;">
-        <button class="btn-secondary" id="deckNameCancel" style="flex:1;">Back</button>
-        <button class="btn-tag-add" id="deckNameSave" style="flex:2;padding:12px;font-size:14px;">
-          💾 Save Deck
-        </button>
-      </div>
-    </div>
-  </div>`;
-
-  document.body.insertAdjacentHTML('beforeend', html);
-
-  const closeModal = () => document.getElementById('deckNameModal')?.remove();
-  document.getElementById('deckNameClose')?.addEventListener('click', closeModal);
-  document.getElementById('deckNameBackdrop')?.addEventListener('click', closeModal);
-  document.getElementById('deckNameCancel')?.addEventListener('click', closeModal);
-
-  document.getElementById('deckNameInput')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') finalizeDeck();
-  });
-  document.getElementById('deckNameSave')?.addEventListener('click', finalizeDeck);
-
-  setTimeout(() => document.getElementById('deckNameInput')?.focus(), 80);
-}
-
 // ── Finalize: save all cards to Deck Building collection ──────────────────
+// Deck name was collected in the setup modal — no second prompt needed.
 async function finalizeDeck() {
-  const nameInput = document.getElementById('deckNameInput');
-  const deckName  = (nameInput?.value || '').trim();
-  const errEl     = document.getElementById('deckNameError');
-
-  if (!deckName) {
-    if (errEl) { errEl.textContent = 'Please enter a deck name.'; errEl.style.display = 'block'; }
-    nameInput?.focus();
+  const cfg = window._deckBuilderConfig;
+  if (!cfg || !cfg.tag) {
+    showToast('Deck configuration missing — please try again', '❌');
     return;
   }
 
-  // Sanitize the tag (no pipes or commas that break tag storage)
-  const deckTag = deckName.replace(/[|,]/g, '-').trim();
+  const deckTag  = cfg.tag;
+  const deckName = cfg.name;
 
-  document.getElementById('deckNameSave').disabled = true;
-  document.getElementById('deckNameSave').textContent = 'Saving...';
+  // Disable button to prevent double-tap
+  const btn = document.getElementById('deckCompleteBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
-  const cols = ensureDeckBuildingCollection();
+  const cols    = ensureDeckBuildingCollection();
   const deckCol = cols.find(c => c.id === DECK_BUILDING_COLLECTION_ID);
   const queue   = window._deckBuilderQueue;
   let added = 0, updated = 0;
@@ -546,13 +663,13 @@ async function finalizeDeck() {
     c.id === DECK_BUILDING_COLLECTION_ID ? deckCol : c
   ));
 
-  // Close both modals
-  document.getElementById('deckNameModal')?.remove();
+  // Close the modal
   document.getElementById('deckBuilderModal')?.remove();
 
   // Reset state
   window._deckBuilderQueue  = [];
   window._deckBuilderActive = false;
+  window._deckBuilderConfig = null;
   window.scanMode = 'collection';
 
   showToast(
@@ -597,11 +714,13 @@ function closeDeckBuilder() {
       document.getElementById('deckBuilderModal')?.remove();
       window._deckBuilderQueue  = [];
       window._deckBuilderActive = false;
+      window._deckBuilderConfig = null;
       window.scanMode = 'collection';
     });
   } else {
     document.getElementById('deckBuilderModal')?.remove();
     window._deckBuilderActive = false;
+    window._deckBuilderConfig = null;
     window.scanMode = 'collection';
   }
 }
