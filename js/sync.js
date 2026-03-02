@@ -221,8 +221,6 @@ async function pullCollections() {
         // Merge tombstones from cloud with local tombstones, then prune old ones
         const localTombstones  = getDeletedCards();
         const cloudTombstones  = data.deleted_cards || [];
-        const merged           = [...new Set([...localTombstones, ...cloudTombstones])];
-        const allTombstones    = pruneTombstones(merged);
         const mergedTombstones = [...new Set([...localTombstones, ...cloudTombstones])];
         const allTombstones    = pruneTombstones(mergedTombstones);
         saveDeletedCards(allTombstones);
@@ -234,13 +232,13 @@ async function pullCollections() {
             saveAllTags(mergedTags);
         }
 
-        const local          = getCollections();
-        const merged         = mergeCollections(local, data.data, allTombstones);
+        const local            = getCollections();
+        const mergedCollections = mergeCollections(local, data.data, allTombstones);
 
         const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
-        const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
+        const mergedTotal = mergedCollections.reduce((s, c) => s + c.cards.length, 0);
 
-        localStorage.setItem('collections', JSON.stringify(merged));
+        localStorage.setItem('collections', JSON.stringify(mergedCollections));
 
         if (typeof renderCards === 'function') renderCards();
         if (typeof updateStats === 'function') updateStats();

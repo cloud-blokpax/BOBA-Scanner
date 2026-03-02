@@ -18,8 +18,6 @@
 
 const DECK_BUILDING_COLLECTION_ID = 'deck_building';
 const BOBA_API_BASE = 'https://www.bobaleagues.com/api/cards';
-const MAX_PLAYS = 30;
-const MAX_BONUS = 15;
 
 // ── Local BoBA play card database ─────────────────────────────────────────
 // 411 play/bonus-play cards with DBS score, cost, and ability.
@@ -98,62 +96,6 @@ function getParallelType(match) {
   return 'hero'; // base cards and other parallels are heroes
 }
 
-// ── BoBA API lookup ────────────────────────────────────────────────────────
-// Fetches DBS score, Cost, and Ability for a card from the BoBA Leagues API.
-// Tries ?card_number= first, then bare list + client-side match as fallback.
-async function lookupBobaCard(card) {
-  const cardNum = (card.cardNumber || card['Card Number'] || '').trim();
-  if (!cardNum) return null;
-
-  // Attempt 1: filtered by card number
-  const urls = [
-    `${BOBA_API_BASE}?card_number=${encodeURIComponent(cardNum)}`,
-    `${BOBA_API_BASE}?cardNumber=${encodeURIComponent(cardNum)}`,
-    `${BOBA_API_BASE}?number=${encodeURIComponent(cardNum)}`,
-    BOBA_API_BASE,  // full list fallback
-  ];
-
-  for (const url of urls) {
-    try {
-      const resp = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        credentials: 'omit',
-      });
-      if (!resp.ok) continue;
-
-      const raw = await resp.text();
-      if (!raw || raw.trim() === '') continue;
-
-      let data;
-      try { data = JSON.parse(raw); } catch { continue; }
-
-      // Normalise to array
-      const list = Array.isArray(data)
-        ? data
-        : (data.cards || data.data || data.results || (data.card ? [data.card] : [data]));
-
-      if (!Array.isArray(list) || !list.length) continue;
-
-      // Best match on card number (case-insensitive)
-      const numLower = cardNum.toLowerCase();
-      const match = list.find(r => {
-        const rNum = (r.card_number || r.cardNumber || r.number || r.card_num || '').toString().trim().toLowerCase();
-        return rNum === numLower;
-      }) || (url === BOBA_API_BASE ? null : list[0]);
-
-      if (!match) continue;
-
-      // Extract fields — handle many possible key names
-      const dbs     = match.dbs     ?? match.DBS     ?? match.score     ?? match.dbs_score ?? null;
-      const cost    = match.cost    ?? match.Cost    ?? match.mana_cost ?? match.manaCost  ?? null;
-      const ability = match.ability ?? match.Ability ?? match.text      ?? match.card_text ?? match.description ?? match.effect ?? null;
-
-      console.log(`🃏 BoBA API match for ${cardNum}:`, { dbs, cost, ability });
-      return { dbs, cost, ability };
-
-    } catch (err) {
-      console.warn(`BoBA API attempt failed for ${url}:`, err.message);
-      continue;
 // ── Local play card lookup (no external API needed) ───────────────────────
 // Matches by card number first, then falls back to play name matching.
 // Returns { dbs, cost, ability } or null if not found.
