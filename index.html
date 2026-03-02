@@ -119,30 +119,19 @@
                     </button>
                 </div>
 
-                <!-- Deck Builder primary button -->
-                <div style="display:flex;justify-content:center;margin-top:10px;">
-                    <button id="btnDeckBuilder" style="
-                        display:inline-flex;flex-direction:column;align-items:center;gap:5px;
-                        padding:14px 32px;border-radius:14px;border:none;cursor:pointer;
-                        background:linear-gradient(150deg,#f59e0b 0%,#d97706 100%);
-                        color:#0d1524;font-size:14px;font-weight:700;font-family:inherit;
-                        box-shadow:0 4px 18px rgba(245,158,11,0.40);
-                        transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s;
-                        width:100%;max-width:480px;">
-                        <span style="font-size:24px;">🃏</span>
-                        <span>Deck Builder</span>
-                    </button>
-                </div>
-                
-                <!-- Secondary tools -->
-                <div class="button-group" style="margin-top:12px;">
-                    <button class="btn-group-item" id="btnBatchScan">
+                <!-- Secondary tools: Batch Scan + Deck Builder (equal, side by side) -->
+                <div class="scan-tools-row">
+                    <button class="btn-tool-item" id="btnBatchScan">
                         <span class="btn-icon">📦</span>
                         <span>Batch Scan</span>
                     </button>
+                    <button class="btn-tool-item btn-tool-deck" id="btnDeckBuilder">
+                        <span class="btn-icon">🃏</span>
+                        <span>Deck Builder</span>
+                    </button>
                 </div>
-                
-                <!-- Collection quick-access buttons -->
+
+                <!-- Collection quick-access: My Collection / Price Check / Deck Builder -->
                 <div class="collection-nav-row">
                     <button class="btn-collection-nav" id="btnOpenCollection">
                         <span class="btn-icon">🎴</span>
@@ -153,6 +142,11 @@
                         <span class="btn-icon">💰</span>
                         <span>Price Check</span>
                         <span class="collection-nav-count" id="priceCheckNavCount"></span>
+                    </button>
+                    <button class="btn-deckbuilder-nav" id="btnOpenDeckBuilderNav">
+                        <span class="btn-icon">🃏</span>
+                        <span>Deck Builder</span>
+                        <span class="collection-nav-count" id="deckBuilderNavCount"></span>
                     </button>
                 </div>
             </section>

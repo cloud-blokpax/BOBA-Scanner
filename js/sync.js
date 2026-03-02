@@ -223,17 +223,19 @@ async function pullCollections() {
         const cloudTombstones  = data.deleted_cards || [];
         const merged           = [...new Set([...localTombstones, ...cloudTombstones])];
         const allTombstones    = pruneTombstones(merged);
+        const mergedTombstones = [...new Set([...localTombstones, ...cloudTombstones])];
+        const allTombstones    = pruneTombstones(mergedTombstones);
         saveDeletedCards(allTombstones);
 
         // Merge user tags from cloud
         if (typeof saveAllTags === 'function' && data.user_tags?.length) {
-            const localTags = getAllTags();
-            const merged    = [...new Set([...localTags, ...data.user_tags])];
-            saveAllTags(merged);
+            const localTags    = getAllTags();
+            const mergedTags   = [...new Set([...localTags, ...data.user_tags])];
+            saveAllTags(mergedTags);
         }
 
-        const local       = getCollections();
-        const merged      = mergeCollections(local, data.data, allTombstones);
+        const local          = getCollections();
+        const merged         = mergeCollections(local, data.data, allTombstones);
 
         const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
         const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);

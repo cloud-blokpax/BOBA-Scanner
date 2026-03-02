@@ -141,6 +141,20 @@
   border-width: 0;
 }
 
+/* ── Accessibility ──────────────────────────────────────── */
+/* Visually hides elements while keeping them accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* ── Reset ─────────────────────────────────────────────── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -611,6 +625,77 @@ body {
   font-size: 12px;
   opacity: 0.7;
   font-weight: 500;
+}
+
+/* ── Scan tools row: Batch Scan + Deck Builder equal tiles ─ */
+.scan-tools-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+  max-width: 480px;
+  margin: 10px auto 0;
+}
+
+.btn-tool-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+}
+.btn-tool-item:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.2);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+.btn-tool-item .btn-icon { font-size: 16px; }
+
+.btn-tool-deck {
+  background: rgba(245,158,11,0.1);
+  border-color: rgba(245,158,11,0.25);
+  color: #fcd34d;
+}
+.btn-tool-deck:hover {
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.4);
+  color: #fde68a;
+}
+
+/* ── Deck Builder nav button (3rd tab) ─────────────────── */
+.btn-deckbuilder-nav {
+  flex: 1;
+  min-width: 90px;
+  max-width: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 11px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1.5px solid rgba(245,158,11,0.25);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: rgba(245,158,11,0.08);
+  color: #fcd34d;
+}
+.btn-deckbuilder-nav:hover {
+  background: rgba(245,158,11,0.14);
+  border-color: rgba(245,158,11,0.4);
 }
 
 /* ── Export / Tools Section ───────────────────────────── */

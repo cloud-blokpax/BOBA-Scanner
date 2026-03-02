@@ -657,16 +657,13 @@ function wireUpEvents() {
             if (typeof window.openDeckBuilder === 'function') window.openDeckBuilder();
             else showToast('Deck Builder not loaded — please refresh', '⚠️');
         });
-        btnDeckBuilder.addEventListener('mouseover', () => {
-            btnDeckBuilder.style.transform = 'translateY(-3px) scale(1.02)';
-            btnDeckBuilder.style.boxShadow = '0 8px 28px rgba(245,158,11,0.55)';
-        });
-        btnDeckBuilder.addEventListener('mouseout', () => {
-            btnDeckBuilder.style.transform = '';
-            btnDeckBuilder.style.boxShadow = '0 4px 18px rgba(245,158,11,0.40)';
-        });
-        btnDeckBuilder.addEventListener('mousedown', () => {
-            btnDeckBuilder.style.transform = 'scale(0.98)';
+    }
+
+    // Deck Builder nav shortcut (bottom row → jumps to slider tab)
+    const btnOpenDeckBuilderNav = document.getElementById('btnOpenDeckBuilderNav');
+    if (btnOpenDeckBuilderNav) {
+        btnOpenDeckBuilderNav.addEventListener('click', function() {
+            if (typeof window.sliderSwitch === 'function') sliderSwitch('deck_building');
         });
     }
 
@@ -771,17 +768,21 @@ function wireUpEvents() {
 function updateCollectionNavCounts() {
     try {
         const collections = getCollections();
-        const mainCol = collections.find(c => c.id === 'default') || collections.find(c => c.id !== 'price_check');
+        const mainCol = collections.find(c => c.id === 'default') || collections.find(c => c.id !== 'price_check' && c.id !== 'deck_building');
         const pcCol   = collections.find(c => c.id === 'price_check');
+        const dbCol   = collections.find(c => c.id === 'deck_building');
 
         const mainCount = mainCol?.cards?.length || 0;
-        const pcCount   = pcCol?.cards?.length || 0;
+        const pcCount   = pcCol?.cards?.length   || 0;
+        const dbCount   = dbCol?.cards?.length   || 0;
 
         const mainEl = document.getElementById('collectionNavCount');
         const pcEl   = document.getElementById('priceCheckNavCount');
+        const dbEl   = document.getElementById('deckBuilderNavCount');
 
         if (mainEl) mainEl.textContent = mainCount > 0 ? ` (${mainCount})` : '';
         if (pcEl)   pcEl.textContent   = pcCount   > 0 ? ` (${pcCount})`   : '';
+        if (dbEl)   dbEl.textContent   = dbCount   > 0 ? ` (${dbCount})`   : '';
 
         // Also refresh the slider counts
         if (typeof updateCollectionSlider === 'function') updateCollectionSlider();

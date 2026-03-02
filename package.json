@@ -1,3 +1,1 @@
-{
-  "type": "module"
-}
+{\n  "scripts": {\n    "build": "esbuild src/index.js --bundle --outfile=dist/bundle.js",\n    "watch": "esbuild src/index.js --bundle --outfile=dist/bundle.js --watch"\n  },\n  "devDependencies": {\n    "esbuild": "^0.14.0"\n  },\n  "deployment": {\n    "provider": "github-actions",\n    "script": "npm run build"\n  }\n}
