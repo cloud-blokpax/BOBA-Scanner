@@ -146,11 +146,23 @@ function lookupBobaCard(card) {
   return { dbs: match.dbs, cost: match.cost, ability: match.ability };
 }
 
-// ── Open the Deck Builder — show setup modal first ──────────────────────────
+// ── Open the Deck Builder — membership/tournament gate ──────────────────────
 window.openDeckBuilder = function() {
+  // Check if user has deck builder access (member or admin)
+  if (typeof hasDeckBuilderAccess === 'function' && !hasDeckBuilderAccess()) {
+    // Non-member — show gate with tournament code option
+    if (typeof showDeckBuilderGate === 'function') {
+      showDeckBuilderGate();
+    } else {
+      showToast('Deck Builder is a paid member feature', '🔒');
+    }
+    return;
+  }
+
   window._deckBuilderActive = true;
   window._deckBuilderQueue  = [];
   window._deckBuilderConfig = null;
+  window._activeTournament  = null;
   showDeckSetupModal();
 };
 
