@@ -1,11 +1,14 @@
 // js/sync.js — Cloud sync for card collections
 
 const SYNC_DEBOUNCE_MS = 2000;
-let _syncTimer = null;
+const TOMBSTONE_DELIM  = '|||';   // safe delimiter — colons appear in card numbers
+let _syncTimer    = null;
+let _syncLock     = false;        // prevents push-during-pull and pull-during-push
+let _pushFailures = 0;            // consecutive push failure counter
 
 // ── Tombstones ────────────────────────────────────────────────────────────────
 // A tombstone records a deliberate card deletion so the merge won't re-add it.
-// Key: cardNumber + ":" + timestamp (the card's own timestamp, not deletion time)
+// Key: cardNumber + "|||" + timestamp (the card's own timestamp, not deletion time)
 
 function getDeletedCards() {
     try {
@@ -32,11 +35,16 @@ function recordDeletedCard(card) {
 
 function cardTombstoneKey(card) {
     // Use cardNumber + timestamp as a stable unique key for each scanned card
-    return (card.cardNumber || '') + ':' + (card.timestamp || '');
+    // Delimiter is ||| because colons can appear in card numbers (e.g. "1999:P1000")
+    return (card.cardNumber || '') + TOMBSTONE_DELIM + (card.timestamp || '');
 }
 
 function isDeleted(card, tombstones) {
-    return tombstones.includes(cardTombstoneKey(card));
+    const newKey = cardTombstoneKey(card);
+    if (tombstones.includes(newKey)) return true;
+    // Backward compat: also check old colon-delimited key format
+    const oldKey = (card.cardNumber || '') + ':' + (card.timestamp || '');
+    return oldKey !== newKey && tombstones.includes(oldKey);
 }
 
 // Prune tombstones older than 30 days to prevent unbounded localStorage growth.
@@ -46,10 +54,38 @@ const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 function pruneTombstones(list) {
     const cutoff = Date.now() - TOMBSTONE_TTL_MS;
     return list.filter(key => {
-        const colonIdx = key.indexOf(':');
-        if (colonIdx === -1) return true; // malformed — keep (safe default)
-        const ts = new Date(key.slice(colonIdx + 1)).getTime();
+        // Try new delimiter first, then fall back to old colon delimiter
+        let tsStr;
+        const delimIdx = key.indexOf(TOMBSTONE_DELIM);
+        if (delimIdx !== -1) {
+            tsStr = key.slice(delimIdx + TOMBSTONE_DELIM.length);
+        } else {
+            // Old format: find LAST colon (timestamp is an ISO string which contains colons,
+            // but starts with a date like "2025-..." so look for the date pattern after last colon group)
+            const match = key.match(/^(.+?)(\d{4}-\d{2}-\d{2}T.+)$/);
+            if (match) {
+                tsStr = match[2];
+            } else {
+                return true; // can't parse — keep (safe default)
+            }
+        }
+        const ts = new Date(tsStr).getTime();
         return isNaN(ts) || ts > cutoff; // keep if unparseable or recent
+    });
+}
+
+// Migrate old colon-delimited tombstones to new ||| delimiter
+function migrateTombstoneKeys(list) {
+    return list.map(key => {
+        if (key.includes(TOMBSTONE_DELIM)) return key; // already new format
+        // Old format: cardNumber:ISOtimestamp — find the ISO date boundary
+        const match = key.match(/^(.+?)(\d{4}-\d{2}-\d{2}T.+)$/);
+        if (match) {
+            // Remove trailing colon from cardNumber part if present
+            const cardNum = match[1].replace(/:$/, '');
+            return cardNum + TOMBSTONE_DELIM + match[2];
+        }
+        return key; // can't parse — keep as-is
     });
 }
 
@@ -67,7 +103,15 @@ function setupAutoSync() {
 function schedulePush() {
     if (isGuestMode() || !window.supabaseClient || !currentUser) return;
     clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(pushCollections, SYNC_DEBOUNCE_MS);
+    _syncTimer = setTimeout(() => {
+        // Don't push while a pull or another push is in progress
+        if (_syncLock) {
+            console.log('☁️ Push deferred — sync in progress');
+            schedulePush(); // re-schedule
+            return;
+        }
+        pushCollections();
+    }, SYNC_DEBOUNCE_MS);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -155,26 +199,36 @@ function mergeCollections(local, remote, tombstones) {
 // Read cloud → merge with local (respecting tombstones) → write back
 async function pushCollections() {
     if (!window.supabaseClient || !currentUser) return;
+    if (_syncLock) { schedulePush(); return; }
+    _syncLock = true;
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
-            .select('data')
+            .select('data, deleted_cards, user_tags')
             .eq('user_id', currentUser.id)
             .single();
 
         const local      = getCollections();
-        // Prune old tombstones before syncing to keep localStorage lean
-        const rawTombstones = getDeletedCards();
+        // Prune & migrate old tombstones before syncing
+        const rawTombstones = migrateTombstoneKeys(getDeletedCards());
         const tombstones = pruneTombstones(rawTombstones);
         if (tombstones.length !== rawTombstones.length) saveDeletedCards(tombstones);
         let toSave = stripBlobUrls(local);
 
         if (!error && data?.data) {
             // Merge with cloud, tombstones remove deleted cards from both sides
-            const cloudTombstones = data.deletedCards || [];
+            const cloudTombstones = migrateTombstoneKeys(data.deleted_cards || []);
             const allTombstones = [...new Set([...tombstones, ...cloudTombstones])];
             saveDeletedCards(allTombstones); // adopt cloud deletions locally too
             toSave = stripBlobUrls(mergeCollections(local, data.data, allTombstones));
+        }
+
+        // ── Tag merge on push (symmetric with pull) ──
+        // Merge local tags with cloud tags so neither device loses edits
+        let mergedTags = (typeof getAllTags === 'function') ? getAllTags() : [];
+        if (!error && data?.user_tags?.length) {
+            mergedTags = [...new Set([...mergedTags, ...data.user_tags])];
+            if (typeof saveAllTags === 'function') saveAllTags(mergedTags);
         }
 
         const { error: writeError } = await window.supabaseClient
@@ -184,22 +238,32 @@ async function pushCollections() {
                     user_id:       currentUser.id,
                     data:          toSave,
                     deleted_cards: getDeletedCards(),
-                    user_tags:     (typeof getAllTags === 'function') ? getAllTags() : [],
+                    user_tags:     mergedTags,
                     updated_at:    new Date().toISOString()
                 },
                 { onConflict: 'user_id' }
             );
 
         if (writeError) throw writeError;
+        _pushFailures = 0;
         console.log('☁️ Pushed to cloud');
     } catch (err) {
-        console.warn('⚠️ Push failed:', err.message);
+        _pushFailures++;
+        console.warn(`⚠️ Push failed (attempt ${_pushFailures}):`, err.message);
+        if (_pushFailures >= 3 && typeof showToast === 'function') {
+            showToast('Sync issues — check connection', '⚠️');
+            _pushFailures = 0; // reset so we don't spam toasts
+        }
+    } finally {
+        _syncLock = false;
     }
 }
 
 // ── Pull ──────────────────────────────────────────────────────────────────────
 async function pullCollections() {
     if (!window.supabaseClient || !currentUser) return;
+    if (_syncLock) { console.log('☁️ Pull deferred — sync in progress'); return; }
+    _syncLock = true;
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
@@ -209,6 +273,7 @@ async function pullCollections() {
 
         if (error) {
             if (error.code === 'PGRST116') {
+                _syncLock = false; // release before push acquires it
                 await pushCollections();
             } else {
                 throw error;
@@ -218,9 +283,9 @@ async function pullCollections() {
 
         if (!data?.data) return;
 
-        // Merge tombstones from cloud with local tombstones, then prune old ones
-        const localTombstones  = getDeletedCards();
-        const cloudTombstones  = data.deleted_cards || [];
+        // Merge & migrate tombstones from cloud with local, then prune old ones
+        const localTombstones  = migrateTombstoneKeys(getDeletedCards());
+        const cloudTombstones  = migrateTombstoneKeys(data.deleted_cards || []);
         const mergedTombstones = [...new Set([...localTombstones, ...cloudTombstones])];
         const allTombstones    = pruneTombstones(mergedTombstones);
         saveDeletedCards(allTombstones);
@@ -247,16 +312,20 @@ async function pullCollections() {
         if (diff > 0) {
             showToast(`Synced +${diff} card${diff !== 1 ? 's' : ''} from cloud`, '☁️');
             console.log(`☁️ Merged +${diff} cards from cloud`);
+            _syncLock = false; // release before push acquires it
             await pushCollections(); // write merged + tombstones back
         } else if (diff < 0) {
             showToast(`Removed ${Math.abs(diff)} deleted card${Math.abs(diff) !== 1 ? 's' : ''}`, '🗑️');
             console.log(`☁️ Applied ${Math.abs(diff)} deletions from cloud`);
+            _syncLock = false;
             await pushCollections();
         } else {
             console.log('☁️ Already up to date');
         }
     } catch (err) {
         console.warn('⚠️ Pull failed:', err.message);
+    } finally {
+        _syncLock = false;
     }
 }
 
@@ -274,6 +343,7 @@ async function forceSync() {
     const btn = document.getElementById('btnForceSync');
     if (btn) { btn.classList.add('syncing'); btn.textContent = '⏳'; }
 
+    _syncLock = true;
     try {
         const { data, error } = await window.supabaseClient
             .from('collections')
@@ -282,9 +352,9 @@ async function forceSync() {
             .single();
 
         const local           = getCollections();
-        const localTombstones = getDeletedCards();
-        const cloudTombstones = (!error && data?.deleted_cards) ? data.deleted_cards : [];
-        const allTombstones   = [...new Set([...localTombstones, ...cloudTombstones])];
+        const localTombstones = migrateTombstoneKeys(getDeletedCards());
+        const cloudTombstones = migrateTombstoneKeys((!error && data?.deleted_cards) ? data.deleted_cards : []);
+        const allTombstones   = pruneTombstones([...new Set([...localTombstones, ...cloudTombstones])]);
         saveDeletedCards(allTombstones);
 
         // Merge tags
@@ -338,6 +408,7 @@ async function forceSync() {
         showToast('Sync failed — check connection', '❌');
         console.error('Force sync error:', err);
     } finally {
+        _syncLock = false;
         if (btn) { btn.classList.remove('syncing'); btn.textContent = '☁️ Sync'; }
     }
 }
