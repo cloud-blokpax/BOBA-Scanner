@@ -816,9 +816,73 @@ async function saveSystemSettings() {
     setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
   } catch (err) {
     console.error('Save settings error:', err);
-    if (statusEl) statusEl.textContent = 'Failed to save — check console';
-    showToast('Failed to save settings', '❌');
+    // Detect missing table and show helpful SQL instructions
+    const isMissing = err?.message?.includes('system_settings') || err?.code === '42P01';
+    if (isMissing) {
+      if (statusEl) statusEl.innerHTML = '';
+      showSystemSettingsSetupModal();
+    } else {
+      if (statusEl) statusEl.textContent = 'Failed to save — check console';
+      showToast('Failed to save settings', '❌');
+    }
   }
+}
+
+// Show modal with SQL instructions to create the system_settings table
+function showSystemSettingsSetupModal() {
+  document.getElementById('sysSettSetupModal')?.remove();
+  const sql = `CREATE TABLE system_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+
+-- Admins can read/write, everyone else can read
+CREATE POLICY "Anyone can read settings"
+  ON system_settings FOR SELECT USING (true);
+
+CREATE POLICY "Admins can write settings"
+  ON system_settings FOR ALL USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = true)
+  );`;
+
+  const html = `
+    <div class="modal active" id="sysSettSetupModal" style="z-index:10003;">
+      <div class="modal-backdrop" id="sysSettSetupBackdrop"></div>
+      <div class="modal-content" style="max-width:560px;">
+        <div class="modal-header">
+          <h2>⚙️ Table Setup Required</h2>
+          <button class="modal-close" id="sysSettSetupClose">×</button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+          <p style="margin:0 0 12px;color:#374151;">
+            The <strong>system_settings</strong> table doesn't exist in Supabase yet.
+            Run this SQL in your Supabase dashboard → SQL Editor:
+          </p>
+          <pre id="sysSettSQL" style="background:#1e293b;color:#e2e8f0;padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre;cursor:pointer;"
+               title="Click to copy">${sql.replace(/</g,'&lt;')}</pre>
+          <button id="copySysSettSQL" style="margin-top:8px;padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;">
+            📋 Copy SQL
+          </button>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" id="sysSettSetupDone">Done</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+  const close = () => document.getElementById('sysSettSetupModal')?.remove();
+  document.getElementById('sysSettSetupClose')?.addEventListener('click', close);
+  document.getElementById('sysSettSetupBackdrop')?.addEventListener('click', close);
+  document.getElementById('sysSettSetupDone')?.addEventListener('click', close);
+  document.getElementById('copySysSettSQL')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(sql).then(() => showToast('SQL copied to clipboard', '📋'));
+  });
+  document.getElementById('sysSettSQL')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(sql).then(() => showToast('SQL copied to clipboard', '📋'));
+  });
 }
 
 // Wire save button via event delegation

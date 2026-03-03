@@ -894,6 +894,10 @@ window.openCardDetail = function(index) {
     const cachedPrice = card.ebayAvgPrice
         ? `⌀ $${Number(card.ebayAvgPrice).toFixed(2)}  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)}`
         : null;
+    const ebaySoldUrl = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
+    const cachedSold = card.ebaySoldPrice
+        ? `$${Number(card.ebaySoldPrice).toFixed(2)}${card.ebaySoldDate ? ' · ' + escapeHtml(card.ebaySoldDate) : ''}`
+        : null;
     const priceHtml = `
         <div id="detailEbayPrice" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
             <div>
@@ -905,6 +909,17 @@ window.openCardDetail = function(index) {
                         style="background:none;border:1px solid #6ee7b7;border-radius:6px;padding:3px 8px;font-size:11px;color:#065f46;cursor:pointer;">🔄 Refresh</button>
                 <a id="detailEbayPriceLink" href="${escapeHtml(ebayUrl || '#')}" target="_blank" rel="noopener"
                    style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">View listings →</a>
+            </div>
+        </div>
+        <div id="detailEbaySold" style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Last Sold on eBay</div>
+                <div id="detailEbaySoldValue" style="font-size:15px;font-weight:700;color:#78350f;">${cachedSold || 'Loading...'}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <button id="detailEbaySoldRefresh" title="Refresh sold data"
+                        style="background:none;border:1px solid #fcd34d;border-radius:6px;padding:3px 8px;font-size:11px;color:#92400e;cursor:pointer;">🔄 Refresh</button>
+                ${ebaySoldUrl ? '<a id="detailEbaySoldLink" href="' + escapeHtml(ebaySoldUrl) + '" target="_blank" rel="noopener" style="font-size:12px;color:#92400e;text-decoration:none;font-weight:600;">View sold →</a>' : ''}
             </div>
         </div>`;
 
@@ -1126,6 +1141,58 @@ window.openCardDetail = function(index) {
 
     document.getElementById('detailEbayRefresh')?.addEventListener('click', runEbayPriceFetch);
 
+    // ── eBay sold data fetch ──────────────────────────────────────────────
+    function runEbaySoldFetch() {
+        const el = document.getElementById('detailEbaySoldValue');
+        const rb = document.getElementById('detailEbaySoldRefresh');
+        if (el) { el.textContent = 'Loading...'; el.style.color = '#78350f'; }
+        if (rb) rb.disabled = true;
+        if (typeof fetchEbaySoldData !== 'function') {
+            if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
+            return;
+        }
+        fetchEbaySoldData(card).then(result => {
+            const el2 = document.getElementById('detailEbaySoldValue');
+            const rb2 = document.getElementById('detailEbaySoldRefresh');
+            if (rb2) rb2.disabled = false;
+            if (!el2) return;
+            if (!result || result.soldCount === 0 || !result.lastSold) {
+                el2.textContent = 'No recent sales found';
+                el2.style.color = '#9ca3af';
+                updateCard(index, 'ebaySoldPrice', null);
+                updateCard(index, 'ebaySoldDate', null);
+                updateCard(index, 'ebaySoldUrl', null);
+                updateCard(index, 'ebaySoldFetched', new Date().toISOString());
+            } else {
+                const ls = result.lastSold;
+                const avg = result.avgSoldPrice;
+                const count = result.soldCount;
+                let display = `$${ls.price.toFixed(2)}`;
+                if (ls.date) display += ` · ${ls.date}`;
+                if (count > 1 && avg) display += ` <span style="font-size:11px;color:#92400e;font-weight:400;">(avg $${avg.toFixed(2)} across ${count} sale${count!==1?'s':''})</span>`;
+                el2.innerHTML = display;
+                // Update the "View sold" link to point to the actual listing if available
+                const soldLink = document.getElementById('detailEbaySoldLink');
+                if (soldLink && ls.url) { soldLink.href = ls.url; soldLink.textContent = 'View sale →'; }
+                // Persist on card
+                updateCard(index, 'ebaySoldPrice', ls.price);
+                updateCard(index, 'ebaySoldDate', ls.date || null);
+                updateCard(index, 'ebaySoldUrl', ls.url || null);
+                updateCard(index, 'ebaySoldAvgPrice', avg);
+                updateCard(index, 'ebaySoldCount', count);
+                updateCard(index, 'ebaySoldFetched', new Date().toISOString());
+                renderCards();
+            }
+        }).catch(() => {
+            const el2 = document.getElementById('detailEbaySoldValue');
+            const rb2 = document.getElementById('detailEbaySoldRefresh');
+            if (el2) { el2.textContent = 'Unavailable'; el2.style.color = '#9ca3af'; }
+            if (rb2) rb2.disabled = false;
+        });
+    }
+
+    document.getElementById('detailEbaySoldRefresh')?.addEventListener('click', runEbaySoldFetch);
+
     // Async: fetch eBay avg price after modal renders (skip if we have a recent price)
     const lastFetch = card.ebayPriceFetched ? new Date(card.ebayPriceFetched) : null;
     const ageMs = lastFetch ? (Date.now() - lastFetch.getTime()) : Infinity;
@@ -1135,6 +1202,21 @@ window.openCardDetail = function(index) {
     } else {
         const el = document.getElementById('detailEbayPriceValue');
         if (el) el.textContent = `$${Number(card.ebayAvgPrice).toFixed(2)} avg  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)} low`;
+    }
+
+    // Auto-fetch sold data (separate 24h cache)
+    const lastSoldFetch = card.ebaySoldFetched ? new Date(card.ebaySoldFetched) : null;
+    const soldAgeMs = lastSoldFetch ? (Date.now() - lastSoldFetch.getTime()) : Infinity;
+    if (!card.ebaySoldPrice || soldAgeMs > 86400000) {
+        runEbaySoldFetch();
+    } else {
+        const el = document.getElementById('detailEbaySoldValue');
+        if (el) {
+            let display = `$${Number(card.ebaySoldPrice).toFixed(2)}`;
+            if (card.ebaySoldDate) display += ` · ${card.ebaySoldDate}`;
+            if (card.ebaySoldCount > 1 && card.ebaySoldAvgPrice) display += ` (avg $${Number(card.ebaySoldAvgPrice).toFixed(2)} across ${card.ebaySoldCount} sales)`;
+            el.textContent = display;
+        }
     }
 
     if (false) {  // original block kept for reference, replaced above

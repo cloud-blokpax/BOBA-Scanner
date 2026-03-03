@@ -449,6 +449,12 @@ function renderCollectionModal() {
                     ${card.ebayAvgPrice ? `<span class="coll-price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
                     ${card.ebayLowPrice ? `<span class="coll-price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
                 </div>` : ''}
+                ${card.ebaySoldPrice ? `
+                <div class="coll-price-row" style="margin-top:2px;">
+                    <span style="font-size:10px;font-weight:700;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;" title="Last sold on eBay${card.ebaySoldDate ? ' (' + card.ebaySoldDate + ')' : ''}">
+                        🏷️ Sold $${Number(card.ebaySoldPrice).toFixed(2)}
+                    </span>
+                </div>` : ''}
                 ${listingBadge
                     ? `<div style="margin-bottom:4px;">${listingBadge}</div>`
                     : ebayUrl && !isDeckView ? `<div style="margin-bottom:4px;"><a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener noreferrer"
