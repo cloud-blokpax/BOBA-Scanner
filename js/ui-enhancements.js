@@ -252,69 +252,12 @@ function refreshApp() {
 // ========================================
 
 function setupSwipeGestures() {
-    let touchStartX = 0;
-    let touchCurrentX = 0;
-    let swipeCard = null;
-    
-    document.addEventListener('touchstart', (e) => {
-        const card = e.target.closest('.card-item');
-        if (!card) return;
-        
-        touchStartX = e.touches[0].clientX;
-        swipeCard = card;
-    }, { passive: true });
-    
-    document.addEventListener('touchmove', (e) => {
-        if (!swipeCard) return;
-        
-        touchCurrentX = e.touches[0].clientX;
-        const swipeDistance = touchCurrentX - touchStartX;
-        
-        // Only allow left swipe (delete)
-        if (swipeDistance < 0) {
-            swipeCard.style.transform = `translateX(${swipeDistance}px)`;
-            swipeCard.style.opacity = `${1 + (swipeDistance / 200)}`;
-        }
-    }, { passive: true });
-    
-    document.addEventListener('touchend', () => {
-        if (!swipeCard) return;
-        
-        const swipeDistance = touchCurrentX - touchStartX;
-        
-        if (swipeDistance < -120) {
-            // Delete card
-            const cardIndex = Array.from(swipeCard.parentElement.children).indexOf(swipeCard);
-            
-            if (confirm('Delete this card?')) {
-                swipeCard.style.transform = 'translateX(-100%)';
-                swipeCard.style.opacity = '0';
-                
-                setTimeout(() => {
-                    if (typeof removeCard === 'function') {
-                        removeCard(cardIndex);
-                    }
-                }, 300);
-            } else {
-                // Reset
-                swipeCard.style.transform = '';
-                swipeCard.style.opacity = '';
-            }
-        } else {
-            // Reset
-            swipeCard.style.transform = '';
-            swipeCard.style.opacity = '';
-        }
-        
-        swipeCard.style.transition = 'all 0.3s ease';
-        setTimeout(() => {
-            if (swipeCard) swipeCard.style.transition = '';
-        }, 300);
-        
-        swipeCard = null;
-        touchStartX = 0;
-        touchCurrentX = 0;
-    });
+    // Disabled — swipe-to-delete had critical bugs on iOS Safari:
+    // 1. touchCurrentX was never updated on simple taps, so any tap with X > 120
+    //    was misinterpreted as a left swipe, triggering the delete confirm dialog.
+    // 2. Used DOM child index instead of data-open-card, deleting the wrong card
+    //    when pagination was active.
+    // Card deletion is available via the Remove button in the card detail modal.
 }
 
 // ========================================

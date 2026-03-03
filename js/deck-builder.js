@@ -146,11 +146,23 @@ function lookupBobaCard(card) {
   return { dbs: match.dbs, cost: match.cost, ability: match.ability };
 }
 
-// ── Open the Deck Builder — show setup modal first ──────────────────────────
+// ── Open the Deck Builder — membership/tournament gate ──────────────────────
 window.openDeckBuilder = function() {
+  // Check if user has deck builder access (member or admin)
+  if (typeof hasDeckBuilderAccess === 'function' && !hasDeckBuilderAccess()) {
+    // Non-member — show gate with tournament code option
+    if (typeof showDeckBuilderGate === 'function') {
+      showDeckBuilderGate();
+    } else {
+      showToast('Deck Builder is a paid member feature', '🔒');
+    }
+    return;
+  }
+
   window._deckBuilderActive = true;
   window._deckBuilderQueue  = [];
   window._deckBuilderConfig = null;
+  window._activeTournament  = null;
   showDeckSetupModal();
 };
 
@@ -444,9 +456,9 @@ function renderDeckBuilderModal() {
     <div class="modal-content" style="max-width:520px;max-height:92vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <div>
-          <h2>🃏 ${escapeHtml(cfg.name)}</h2>
+          <h2>${cfg.isTournament ? '🏆' : '🃏'} ${escapeHtml(cfg.name)}</h2>
           <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-            ${statusParts.join(' · ')}
+            ${cfg.isTournament ? '<span style="background:#7c3aed;color:white;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:6px;">TOURNAMENT</span>' : ''}${statusParts.join(' · ')}
           </div>
         </div>
         <button class="modal-close" id="deckBuilderClose">×</button>
@@ -501,9 +513,17 @@ function renderDeckBuilderModal() {
       <!-- Footer -->
       <div class="modal-footer" style="gap:8px;">
         <button class="btn-secondary" id="deckBuilderCancel" style="flex:1;">Cancel</button>
-        ${total > 0 ? `<button id="deckCompleteBtn" class="btn-tag-add" style="flex:2;padding:12px;font-size:14px;">
-          Finish Deck (${total} card${total !== 1 ? 's' : ''})
-        </button>` : ''}
+        ${total > 0 ? (() => {
+          // In tournament mode, check if exact requirements are met for button state
+          const canFinish = !cfg.isTournament || (heroMet && playMet && bonuses.length <= (cfg.maxBonus || 0));
+          const btnLabel = cfg.isTournament && !canFinish
+            ? 'Requirements not met'
+            : `Finish Deck (${total} card${total !== 1 ? 's' : ''})`;
+          return `<button id="deckCompleteBtn" class="btn-tag-add" style="flex:2;padding:12px;font-size:14px;${!canFinish ? 'opacity:0.5;' : ''}"
+            ${!canFinish ? 'disabled' : ''}>
+            ${btnLabel}
+          </button>`;
+        })() : ''}
       </div>
     </div>
   </div>`;
@@ -646,6 +666,27 @@ async function finalizeDeck() {
     return;
   }
 
+  const queue   = window._deckBuilderQueue;
+  const heroes  = queue.filter(e => e.parallel === 'hero');
+  const plays   = queue.filter(e => e.parallel === 'play');
+  const bonuses = queue.filter(e => e.parallel === 'bonus');
+
+  // Tournament mode — enforce exact hero + play counts, bonus 0..max
+  if (cfg.isTournament) {
+    if (cfg.maxHeroes > 0 && heroes.length !== cfg.maxHeroes) {
+      showToast(`You must have exactly ${cfg.maxHeroes} heroes (currently ${heroes.length})`, '⚠️');
+      return;
+    }
+    if (cfg.maxPlays > 0 && plays.length !== cfg.maxPlays) {
+      showToast(`You must have exactly ${cfg.maxPlays} plays (currently ${plays.length})`, '⚠️');
+      return;
+    }
+    if (bonuses.length > cfg.maxBonus) {
+      showToast(`Maximum ${cfg.maxBonus} bonus plays allowed (currently ${bonuses.length})`, '⚠️');
+      return;
+    }
+  }
+
   const deckTag  = cfg.tag;
   const deckName = cfg.name;
 
@@ -711,7 +752,82 @@ async function finalizeDeck() {
   if (typeof renderCards === 'function') renderCards();
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
 
+  // Tournament mode — track usage and auto-export CSV
+  if (cfg.isTournament && cfg.tournamentId) {
+    if (typeof incrementTournamentUsage === 'function') {
+      incrementTournamentUsage(cfg.tournamentId);
+    }
+    // Auto-export the deck as CSV after a short delay so the save toast is visible
+    setTimeout(() => {
+      autoExportTournamentDeck(deckTag, deckName, queue);
+    }, 500);
+  }
+
+  // Clear tournament reference
+  window._activeTournament = null;
+
   console.log(`🃏 Deck "${deckName}" saved: ${added} new cards, ${updated} tag updates`);
+}
+
+// ── Auto-export tournament deck as CSV ──────────────────────────────────────
+function autoExportTournamentDeck(deckTag, deckName, queue) {
+  const plays   = queue.filter(e => e.parallel === 'play');
+  const bonuses = queue.filter(e => e.parallel === 'bonus');
+  const heroes  = queue.filter(e => e.parallel === 'hero');
+
+  const ec = val => `"${String(val ?? '').replace(/"/g, '""')}"`;
+  const rows = [];
+
+  // Header
+  rows.push(['Slot','Card #','Name','Parallel','Cost','Ability','DBS'].map(ec).join(','));
+
+  // Hero slots
+  heroes.forEach((entry, i) => {
+    const c = entry.card;
+    const d = entry.dbsData;
+    rows.push([
+      ec(`Hero ${i + 1}`), ec(c.cardNumber), ec(c.hero), ec(c.pose),
+      ec(d?.cost ?? ''), ec(d?.ability ?? ''), ec(d?.dbs ?? '')
+    ].join(','));
+  });
+
+  // Play slots 1-N
+  plays.forEach((entry, i) => {
+    const c = entry.card;
+    const d = entry.dbsData;
+    rows.push([
+      ec(i + 1), ec(c.cardNumber), ec(c.hero), ec(c.pose),
+      ec(d?.cost ?? ''), ec(d?.ability ?? ''), ec(d?.dbs ?? '')
+    ].join(','));
+  });
+
+  // Bonus slots B1-N
+  bonuses.forEach((entry, i) => {
+    const c = entry.card;
+    const d = entry.dbsData;
+    rows.push([
+      ec(`B${i + 1}`), ec(c.cardNumber), ec(c.hero), ec(c.pose),
+      ec(d?.cost ?? ''), ec(d?.ability ?? ''), ec(d?.dbs ?? '')
+    ].join(','));
+  });
+
+  const csv   = rows.join('\n');
+  const today = new Date().toISOString().split('T')[0];
+  const name  = (deckName || 'tournament').replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_').substring(0, 100);
+
+  // Use the same download helper from export.js if available, otherwise inline
+  if (typeof downloadFile === 'function') {
+    downloadFile(csv, `BoBA_Tournament_${name}_${today}.csv`, 'text/csv');
+  } else {
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: `BoBA_Tournament_${name}_${today}.csv` });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  }
+
+  showToast('Tournament deck exported as CSV', '📄');
 }
 
 // ── Close deck builder ─────────────────────────────────────────────────────
@@ -745,12 +861,14 @@ function closeDeckBuilder() {
       window._deckBuilderQueue  = [];
       window._deckBuilderActive = false;
       window._deckBuilderConfig = null;
+      window._activeTournament  = null;
       window.scanMode = 'collection';
     });
   } else {
     document.getElementById('deckBuilderModal')?.remove();
     window._deckBuilderActive = false;
     window._deckBuilderConfig = null;
+    window._activeTournament  = null;
     window.scanMode = 'collection';
   }
 }

@@ -355,8 +355,12 @@ function downloadFile(content, filename, type) {
     const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Delay cleanup — iOS Safari needs a tick to initiate the download before
+    // the blob URL is revoked, otherwise the download silently fails.
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
 }
 
 console.log('Export module loaded (v1.2 — deck export)');
