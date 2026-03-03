@@ -619,7 +619,7 @@ function wireUpEvents() {
 
     const btnExportCSV = document.getElementById('btnExportCSV');
     if (btnExportCSV) btnExportCSV.addEventListener('click', function() {
-        if (typeof exportCurrentCSV === 'function') exportCurrentCSV();
+        if (typeof openExportModal === 'function') openExportModal();
     });
 
     const btnExportExcel = document.getElementById('btnExportExcel');
@@ -1185,17 +1185,41 @@ window.openCollectionCardDetail = function(colId, index) {
 
 window.removeCardFromDetail = function(index) {
     // iOS ghost-click guard: ignore Remove if modal just opened (< 600ms ago).
-    // When tapping a card to open its detail, iOS fires a synthetic 300ms ghost
-    // click at the same coordinates. If the Remove button is near that spot the
-    // confirm dialog fires immediately. Blocking for 600ms eliminates this.
     const modal = document.getElementById('cardDetailModal');
     if (modal) {
         const age = Date.now() - parseInt(modal.dataset.openedAt || '0', 10);
         if (age < 600) return; // too soon — ghost click, not intentional
     }
-    if (!confirm('Remove this card from your collection?')) return;
-    document.getElementById('cardDetailModal')?.remove();
-    removeCard(index);
+
+    // Non-blocking inline confirmation (replaces native confirm() which is
+    // unreliable on iOS Safari and can fire from ghost clicks)
+    const btn = modal?.querySelector('.modal-footer button[style*="ef4444"]');
+    if (!btn) return;
+
+    // If already showing confirm state, this is the second tap — execute delete
+    if (btn.dataset.confirming === 'true') {
+        document.getElementById('cardDetailModal')?.remove();
+        removeCard(index);
+        return;
+    }
+
+    // First tap: switch button to confirm state
+    btn.dataset.confirming = 'true';
+    btn.textContent = 'Tap again to confirm';
+    btn.style.background = '#ef4444';
+    btn.style.color = '#fff';
+    btn.style.borderColor = '#ef4444';
+
+    // Auto-reset after 3 seconds if not confirmed
+    setTimeout(() => {
+        if (btn.isConnected && btn.dataset.confirming === 'true') {
+            btn.dataset.confirming = '';
+            btn.textContent = '🗑️ Remove';
+            btn.style.background = '';
+            btn.style.color = '#ef4444';
+            btn.style.borderColor = '#ef4444';
+        }
+    }, 3000);
 };
 
 // Scroll to a specific card in the grid and briefly highlight it
