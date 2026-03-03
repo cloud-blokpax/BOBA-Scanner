@@ -410,4 +410,48 @@ document.addEventListener('DOMContentLoaded', () => {
   initCollections();
 });
 
+// ── Cross-collection card movement ─────────────────────────────────────────
+// Copy a card into a target collection (if not already present there).
+// Returns true if the card was actually added.
+window.copyCardToCollection = function(card, targetCollectionId) {
+  const cols = getCollections();
+
+  // Ensure target exists (auto-create price_check / deck_building if needed)
+  let target = cols.find(c => c.id === targetCollectionId);
+  if (!target) {
+    if (targetCollectionId === 'price_check' && typeof ensurePriceCheckCollection === 'function') {
+      ensurePriceCheckCollection();
+      target = getCollections().find(c => c.id === 'price_check');
+    } else if (targetCollectionId === 'deck_building' && typeof ensureDeckBuildingCollection === 'function') {
+      ensureDeckBuildingCollection();
+      target = getCollections().find(c => c.id === 'deck_building');
+    }
+  }
+  if (!target) return false;
+
+  // Check for duplicate in target
+  const isDupe = target.cards.some(c =>
+    (card.cardId && c.cardId === card.cardId) ||
+    (card.cardNumber && c.cardNumber === card.cardNumber && c.set === card.set)
+  );
+  if (isDupe) return false;
+
+  target.cards.push({ ...card });
+  target.stats.scanned++;
+  saveCollections(cols);
+  return true;
+};
+
+// Remove a card from a specific collection by index.
+window.removeCardFromCollectionByIndex = function(collectionId, cardIndex) {
+  const cols = getCollections();
+  const col  = cols.find(c => c.id === collectionId);
+  if (!col || !col.cards[cardIndex]) return false;
+
+  col.cards.splice(cardIndex, 1);
+  col.stats.scanned = Math.max(0, (col.stats.scanned || 0) - 1);
+  saveCollections(cols);
+  return true;
+};
+
 console.log('✅ Collections module loaded');

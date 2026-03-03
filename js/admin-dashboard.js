@@ -118,6 +118,7 @@ function renderAdminDashboard(users, logs, stats, tournaments) {
           <button class="admin-tab" data-tab="stats">Statistics</button>
           <button class="admin-tab" data-tab="tournaments">🏆 Tournaments (${tournaments.length})</button>
           <button class="admin-tab" data-tab="themes">🎨 Themes</button>
+          <button class="admin-tab" data-tab="settings">⚙️ Settings</button>
           <button class="admin-tab" data-tab="activity">Activity</button>
         </div>
         <div class="admin-content">
@@ -127,6 +128,7 @@ function renderAdminDashboard(users, logs, stats, tournaments) {
           <div class="admin-tab-content" id="tab-stats">${renderStatsTab(stats, logs)}</div>
           <div class="admin-tab-content" id="tab-tournaments">${typeof renderTournamentsTab === 'function' ? renderTournamentsTab(tournaments) : ''}</div>
           <div class="admin-tab-content" id="tab-themes">${renderThemesTab()}</div>
+          <div class="admin-tab-content" id="tab-settings">${renderSettingsTab()}</div>
           <div class="admin-tab-content" id="tab-activity">${renderActivityTab(users)}</div>
         </div>
       </div>
@@ -568,8 +570,10 @@ function filterUsers(searchTerm = '') {
 
 // ── Membership actions ────────────────────────────────────────────────────────
 
-const MEMBER_CARD_LIMIT = 250;
-const MEMBER_API_LIMIT  = 250;
+// Dynamic getters — resolve at call time so admin-configured values from
+// system_settings are picked up even if loaded after this file parses.
+function getMemberCardLimit() { return DEFAULT_LIMITS.member?.maxCards || 250; }
+function getMemberApiLimit()  { return DEFAULT_LIMITS.member?.maxApiCalls || 250; }
 
 async function grantMembership(userId) {
   const user      = window.adminData?.users.find(u => u.id === userId);
@@ -583,8 +587,8 @@ async function grantMembership(userId) {
       .update({
         is_member:       true,
         member_until:    until.toISOString(),
-        card_limit:      MEMBER_CARD_LIMIT,
-        api_calls_limit: MEMBER_API_LIMIT
+        card_limit:      getMemberCardLimit(),
+        api_calls_limit: getMemberApiLimit()
       })
       .eq('id', userId);
 
@@ -617,8 +621,8 @@ async function extendMembership(userId) {
       .update({
         is_member:       true,
         member_until:    until.toISOString(),
-        card_limit:      MEMBER_CARD_LIMIT,
-        api_calls_limit: MEMBER_API_LIMIT
+        card_limit:      getMemberCardLimit(),
+        api_calls_limit: getMemberApiLimit()
       })
       .eq('id', userId);
 
@@ -724,6 +728,105 @@ async function exportLogs() {
 
 console.log('✅ Admin dashboard module loaded');
 
+
+// ── Settings Tab ──────────────────────────────────────────────────────────────
+
+function renderSettingsTab() {
+  const g = DEFAULT_LIMITS.guest;
+  const a = DEFAULT_LIMITS.authenticated;
+  const m = DEFAULT_LIMITS.member;
+
+  return `
+    <div id="settingsTabContent" style="padding:16px;">
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:700;font-size:15px;color:#111827;">System Settings</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+          Configure default limits for each user tier. Changes apply to new users and membership grants.
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+        <!-- Guest -->
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+          <div style="font-weight:700;font-size:13px;color:#6b7280;margin-bottom:12px;">👤 Guest</div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Card Limit</label>
+          <input type="number" id="settGuestCards" value="${g.maxCards}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-bottom:10px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">AI Lookup Limit</label>
+          <input type="number" id="settGuestApi" value="${g.maxApiCalls}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+        </div>
+        <!-- Authenticated -->
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+          <div style="font-weight:700;font-size:13px;color:#3b82f6;margin-bottom:12px;">🔐 Logged-in</div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Card Limit</label>
+          <input type="number" id="settAuthCards" value="${a.maxCards}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-bottom:10px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">AI Lookup Limit</label>
+          <input type="number" id="settAuthApi" value="${a.maxApiCalls}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+        </div>
+        <!-- Member -->
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+          <div style="font-weight:700;font-size:13px;color:#f59e0b;margin-bottom:12px;">⭐ Member</div>
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Card Limit</label>
+          <input type="number" id="settMemberCards" value="${m.maxCards}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-bottom:10px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">AI Lookup Limit</label>
+          <input type="number" id="settMemberApi" value="${m.maxApiCalls}" min="0" max="9999"
+                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button id="saveSystemSettings" class="btn btn-primary" style="padding:10px 24px;">Save Settings</button>
+        <span id="settingsSaveStatus" style="font-size:13px;color:#6b7280;"></span>
+      </div>
+    </div>`;
+}
+
+async function saveSystemSettings() {
+  const pairs = [
+    { key: 'guest_max_cards',  value: document.getElementById('settGuestCards')?.value  },
+    { key: 'guest_max_api',    value: document.getElementById('settGuestApi')?.value    },
+    { key: 'auth_max_cards',   value: document.getElementById('settAuthCards')?.value   },
+    { key: 'auth_max_api',     value: document.getElementById('settAuthApi')?.value     },
+    { key: 'member_max_cards', value: document.getElementById('settMemberCards')?.value },
+    { key: 'member_max_api',   value: document.getElementById('settMemberApi')?.value  }
+  ];
+
+  const statusEl = document.getElementById('settingsSaveStatus');
+  if (statusEl) statusEl.textContent = 'Saving...';
+
+  try {
+    // Upsert each setting (key is the unique column)
+    for (const { key, value } of pairs) {
+      const { error } = await window.supabaseClient
+        .from('system_settings')
+        .upsert({ key, value: String(parseInt(value) || 0) }, { onConflict: 'key' });
+      if (error) throw error;
+    }
+
+    // Reload into memory so changes take effect immediately
+    await loadSystemSettings();
+
+    await logAdminAction('update_settings', null, '', pairs.map(p => `${p.key}:${p.value}`).join(','));
+    if (statusEl) statusEl.textContent = 'Saved!';
+    showToast('System settings saved', '✅');
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+  } catch (err) {
+    console.error('Save settings error:', err);
+    if (statusEl) statusEl.textContent = 'Failed to save — check console';
+    showToast('Failed to save settings', '❌');
+  }
+}
+
+// Wire save button via event delegation
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#saveSystemSettings')) {
+    saveSystemSettings();
+  }
+});
 
 // ── Themes Tab ────────────────────────────────────────────────────────────────
 
@@ -961,5 +1064,12 @@ window.showAdminTab = function(tab, btn) {
   }
   if (tab === 'themes') {
     setTimeout(loadAdminThemesList, 50);
+  }
+  if (tab === 'settings') {
+    // Re-render with freshest values (in case another admin updated)
+    loadSystemSettings().then(() => {
+      const el = document.getElementById('tab-settings');
+      if (el) el.innerHTML = renderSettingsTab();
+    });
   }
 };
