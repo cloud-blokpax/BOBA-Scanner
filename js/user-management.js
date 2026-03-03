@@ -121,6 +121,12 @@ async function handleUserSignIn(googleUser) {
       showAdminButton();
     }
 
+    // Show tournament tools for users with can_invite role or admins
+    if (currentUser?.can_invite || currentUser?.is_admin) {
+      const tournamentRow = document.getElementById('tournamentToolsRow');
+      if (tournamentRow) tournamentRow.style.display = '';
+    }
+
     // Trigger sync now that currentUser is set
     // (setupAutoSync in app.js runs too early, before sign-in completes)
     if (typeof setupAutoSync === 'function') {

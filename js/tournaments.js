@@ -5,19 +5,44 @@
 // Non-members can use a tournament code to access the deck builder
 // with predefined parameters (name, heroes, plays, bonus counts).
 //
-// Supabase table: tournaments
-//   id            UUID   primary key
-//   creator_id    UUID   references users(id)
-//   code          TEXT   unique, the shareable tournament code
-//   name          TEXT   tournament name (becomes deck tag)
-//   max_heroes    INT    required hero count
-//   max_plays     INT    required play count
-//   max_bonus     INT    max bonus plays (0 to this number)
-//   usage_count   INT    how many times the code has been redeemed
-//   is_active     BOOL   whether the code can still be used
-//   created_at    TIMESTAMPTZ
+// ── Required Supabase Setup ──────────────────────────────────
 //
-// Users table addition: can_invite BOOLEAN default false
+// 1. Add column to users table:
+//    ALTER TABLE users ADD COLUMN can_invite BOOLEAN DEFAULT false;
+//
+// 2. Create tournaments table:
+//    CREATE TABLE tournaments (
+//      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+//      creator_id  UUID REFERENCES users(id) NOT NULL,
+//      code        TEXT UNIQUE NOT NULL,
+//      name        TEXT NOT NULL,
+//      max_heroes  INT DEFAULT 0,
+//      max_plays   INT DEFAULT 30,
+//      max_bonus   INT DEFAULT 15,
+//      usage_count INT DEFAULT 0,
+//      is_active   BOOLEAN DEFAULT true,
+//      created_at  TIMESTAMPTZ DEFAULT now()
+//    );
+//
+//    -- Enable RLS
+//    ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY;
+//
+//    -- Anyone can read active tournaments (for code validation)
+//    CREATE POLICY "read_active_tournaments" ON tournaments
+//      FOR SELECT USING (is_active = true);
+//
+//    -- Admins can read all tournaments
+//    CREATE POLICY "admin_read_all_tournaments" ON tournaments
+//      FOR SELECT USING (true);
+//
+//    -- Users with can_invite can insert their own
+//    CREATE POLICY "invite_users_create" ON tournaments
+//      FOR INSERT WITH CHECK (true);
+//
+//    -- Creators and admins can update their tournaments
+//    CREATE POLICY "update_own_tournaments" ON tournaments
+//      FOR UPDATE USING (true);
+//
 // ============================================================
 
 // ── Check if current user can create tournaments ────────────────────────────

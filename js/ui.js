@@ -659,6 +659,20 @@ function wireUpEvents() {
         });
     }
 
+    // Tournament buttons — only functional when tournaments.js is loaded
+    const btnCreateTournament = document.getElementById('btnCreateTournament');
+    if (btnCreateTournament) {
+        btnCreateTournament.addEventListener('click', function() {
+            if (typeof showCreateTournamentModal === 'function') showCreateTournamentModal();
+        });
+    }
+    const btnMyTournaments = document.getElementById('btnMyTournaments');
+    if (btnMyTournaments) {
+        btnMyTournaments.addEventListener('click', function() {
+            if (typeof showMyTournamentsModal === 'function') showMyTournamentsModal();
+        });
+    }
+
     // Deck Builder nav shortcut (bottom row → jumps to slider tab)
     const btnOpenDeckBuilderNav = document.getElementById('btnOpenDeckBuilderNav');
     if (btnOpenDeckBuilderNav) {

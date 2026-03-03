@@ -22,14 +22,15 @@ async function openAdminDashboard() {
   try {
     showLoading(true, 'Loading admin dashboard...');
 
-    const [usersData, logsData, statsData] = await Promise.all([
+    const [usersData, logsData, statsData, tournamentsData] = await Promise.all([
       fetchAllUsers(),
       fetchRecentLogs(),
-      fetchSystemStats()
+      fetchSystemStats(),
+      (typeof fetchAllTournaments === 'function') ? fetchAllTournaments() : Promise.resolve([])
     ]);
 
     showLoading(false);
-    renderAdminDashboard(usersData, logsData, statsData);
+    renderAdminDashboard(usersData, logsData, statsData, tournamentsData);
 
   } catch (err) {
     showLoading(false);
@@ -100,7 +101,8 @@ async function calculateTodayStats() {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function renderAdminDashboard(users, logs, stats) {
+function renderAdminDashboard(users, logs, stats, tournaments) {
+  tournaments = tournaments || [];
   const wrapper = document.createElement('div');
   wrapper.innerHTML = `
     <div class="modal active" id="adminDashboard">
@@ -114,6 +116,7 @@ function renderAdminDashboard(users, logs, stats) {
           <button class="admin-tab" data-tab="users">Users (${users.length})</button>
           <button class="admin-tab" data-tab="logs">API Logs</button>
           <button class="admin-tab" data-tab="stats">Statistics</button>
+          <button class="admin-tab" data-tab="tournaments">🏆 Tournaments (${tournaments.length})</button>
           <button class="admin-tab" data-tab="themes">🎨 Themes</button>
           <button class="admin-tab" data-tab="activity">Activity</button>
         </div>
@@ -122,6 +125,7 @@ function renderAdminDashboard(users, logs, stats) {
           <div class="admin-tab-content" id="tab-users">${renderUsersTab(users)}</div>
           <div class="admin-tab-content" id="tab-logs">${renderLogsTab(logs)}</div>
           <div class="admin-tab-content" id="tab-stats">${renderStatsTab(stats, logs)}</div>
+          <div class="admin-tab-content" id="tab-tournaments">${typeof renderTournamentsTab === 'function' ? renderTournamentsTab(tournaments) : ''}</div>
           <div class="admin-tab-content" id="tab-themes">${renderThemesTab()}</div>
           <div class="admin-tab-content" id="tab-activity">${renderActivityTab(users)}</div>
         </div>
@@ -130,7 +134,7 @@ function renderAdminDashboard(users, logs, stats) {
   `;
 
   document.body.appendChild(wrapper.firstElementChild);
-  window.adminData = { users, logs, stats };
+  window.adminData = { users, logs, stats, tournaments };
 
   // FIXED: Wire tab clicks without inline handlers — no more implicit event global
   document.getElementById('adminDashboardClose')?.addEventListener('click', closeAdminDashboard);
@@ -267,7 +271,7 @@ function renderUserRow(user) {
       <td><div class="limit-cell">${user.api_calls_used || 0} / ${user.api_calls_limit || 0}
         <div class="mini-bar"><div class="mini-fill" style="width:${apiPercent}%"></div></div>
       </div></td>
-      <td><span class="status-badge ${user.is_admin ? 'admin' : 'regular'}">${user.is_admin ? 'Admin' : 'User'}</span></td>
+      <td><span class="status-badge ${user.is_admin ? 'admin' : 'regular'}">${user.is_admin ? 'Admin' : 'User'}</span>${user.can_invite ? '<span style="display:block;font-size:10px;color:#7c3aed;margin-top:2px;">🏆 Invite</span>' : ''}</td>
       <td>${memberCell}</td>
       <td>${new Date(user.created_at).toLocaleDateString()}</td>
       <td>
@@ -384,6 +388,12 @@ async function editUser(userId) {
             </label>
           </div>
           <div class="form-group">
+            <label>
+              <input type="checkbox" id="editCanInvite" ${user.can_invite ? 'checked' : ''}>
+              🏆 Can Create Tournaments (invite role)
+            </label>
+          </div>
+          <div class="form-group">
             <label>Reset API Calls for This Month</label>
             <button class="btn btn-secondary" id="resetApiCallsBtn">Reset to 0</button>
           </div>
@@ -405,19 +415,20 @@ async function editUser(userId) {
 }
 
 async function saveUserChanges(userId) {
-  const cardLimit = parseInt(document.getElementById('editCardLimit').value);
-  const apiLimit  = parseInt(document.getElementById('editApiLimit').value);
+  const cardLimit  = parseInt(document.getElementById('editCardLimit').value);
+  const apiLimit   = parseInt(document.getElementById('editApiLimit').value);
   const isAdminVal = document.getElementById('editIsAdmin').checked;
+  const canInvite  = document.getElementById('editCanInvite').checked;
 
   try {
     const { error } = await window.supabaseClient
       .from('users')
-      .update({ card_limit: cardLimit, api_calls_limit: apiLimit, is_admin: isAdminVal })
+      .update({ card_limit: cardLimit, api_calls_limit: apiLimit, is_admin: isAdminVal, can_invite: canInvite })
       .eq('id', userId);
 
     if (error) throw error;
 
-    await logAdminAction('change_limit', userId, '', `cards:${cardLimit},api:${apiLimit},admin:${isAdminVal}`);
+    await logAdminAction('change_limit', userId, '', `cards:${cardLimit},api:${apiLimit},admin:${isAdminVal},invite:${canInvite}`);
     showToast('User updated', '✅');
     closeEditUserModal();
 
@@ -669,6 +680,17 @@ document.addEventListener('click', (e) => {
 
   const revokeBtn = e.target.closest('.member-revoke-btn');
   if (revokeBtn) { revokeMembership(revokeBtn.dataset.uid); return; }
+
+  // Tournament toggle in admin dashboard
+  const tournamentToggle = e.target.closest('.admin-tournament-toggle');
+  if (tournamentToggle && typeof toggleTournamentActive === 'function') {
+    const tid = tournamentToggle.dataset.tid;
+    const isActive = tournamentToggle.dataset.active === 'true';
+    toggleTournamentActive(tid, !isActive).then(() => {
+      setTimeout(() => { closeAdminDashboard(); openAdminDashboard(); }, 600);
+    });
+    return;
+  }
 });
 
 function closeAdminDashboard() { document.getElementById('adminDashboard')?.remove(); }
