@@ -751,7 +751,7 @@ async function finalizeDeck() {
   if (typeof renderCards === 'function') renderCards();
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
 
-  // Tournament mode — track usage and auto-export CSV
+  // Tournament mode — track usage, auto-export, and offer "Add to My Collection"
   if (cfg.isTournament && cfg.tournamentId) {
     if (typeof incrementTournamentUsage === 'function') {
       incrementTournamentUsage(cfg.tournamentId);
@@ -760,6 +760,10 @@ async function finalizeDeck() {
     setTimeout(() => {
       autoExportTournamentDeck(deckTag, deckName, queue);
     }, 500);
+
+    // Prompt user to copy tournament cards to My Collection (bypasses card limit)
+    const cardsCopied = queue.map(e => e.card);
+    setTimeout(() => showAddToCollectionPrompt(cardsCopied, deckName), 1200);
   }
 
   // Clear tournament reference
@@ -899,3 +903,85 @@ window.getDeckCards = function(deckTag) {
 };
 
 console.log('✅ Deck Builder module loaded');
+
+// ── Post-tournament: offer to copy cards to My Collection ───────────────────
+function showAddToCollectionPrompt(cards, deckName) {
+  document.getElementById('addToColModal')?.remove();
+  if (!cards || cards.length === 0) return;
+
+  const limit = (typeof userLimits !== 'undefined' && userLimits)
+    ? userLimits.maxCards
+    : (typeof DEFAULT_LIMITS !== 'undefined' ? DEFAULT_LIMITS.authenticated.maxCards : 25);
+  const currentTotal = (typeof getCollections === 'function')
+    ? getCollections().reduce((s, c) => s + c.cards.length, 0) : 0;
+
+  const html = `
+    <div class="modal active" id="addToColModal" style="z-index:10002;">
+      <div class="modal-backdrop" id="addToColBackdrop"></div>
+      <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+          <h2>🎴 Add to My Collection?</h2>
+          <button class="modal-close" id="addToColClose">×</button>
+        </div>
+        <div class="modal-body" style="padding:20px;text-align:center;">
+          <p style="color:#374151;font-size:15px;margin:0 0 8px;">
+            Your deck <strong>${typeof escapeHtml === 'function' ? escapeHtml(deckName) : deckName}</strong>
+            has <strong>${cards.length}</strong> card${cards.length !== 1 ? 's' : ''}.
+          </p>
+          <p style="color:#6b7280;font-size:13px;margin:0 0 12px;">
+            Copy them to <strong>My Collection</strong>?
+          </p>
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;font-size:13px;color:#0c4a6e;">
+            ${cards.length} cards will be added
+            (${currentTotal} current + ${cards.length} = ${currentTotal + cards.length} total,
+            limit: ${limit})
+          </div>
+        </div>
+        <div class="modal-footer" style="gap:8px;">
+          <button class="btn-secondary" id="addToColSkip" style="flex:1;">No Thanks</button>
+          <button class="btn-tag-add" id="addToColConfirm" style="flex:1;">Add to Collection</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  const close = () => document.getElementById('addToColModal')?.remove();
+  document.getElementById('addToColClose')?.addEventListener('click', close);
+  document.getElementById('addToColSkip')?.addEventListener('click', close);
+  document.getElementById('addToColBackdrop')?.addEventListener('click', close);
+  document.getElementById('addToColConfirm')?.addEventListener('click', () => {
+    close();
+    copyTournamentCardsToCollection(cards);
+  });
+}
+
+function copyTournamentCardsToCollection(cards) {
+  const cols = getCollections();
+  let defaultCol = cols.find(c => c.id === 'default');
+  if (!defaultCol) {
+    defaultCol = { id: 'default', name: 'My Collection', cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
+    cols.unshift(defaultCol);
+  }
+
+  let added = 0;
+  for (const card of cards) {
+    // Skip if already in default collection (same cardId + cardNumber)
+    const exists = defaultCol.cards.some(c =>
+      (card.cardId && c.cardId === card.cardId) ||
+      (card.cardNumber && c.cardNumber === card.cardNumber && c.set === card.set)
+    );
+    if (exists) continue;
+
+    defaultCol.cards.push({ ...card });
+    defaultCol.stats.scanned++;
+    added++;
+  }
+
+  saveCollections(cols);
+  if (typeof renderCards === 'function') renderCards();
+  if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
+  if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
+
+  showToast(`Added ${added} tournament card${added !== 1 ? 's' : ''} to My Collection`, '🎴');
+}

@@ -12,10 +12,45 @@
 let currentUser = null;
 let userLimits  = null;
 
+// Default limits — overwritten at runtime by loadSystemSettings() if a
+// system_settings table exists in Supabase.  Hardcoded values serve as
+// fallbacks when the DB is unreachable or the table hasn't been created yet.
 const DEFAULT_LIMITS = {
-  guest:         { maxCards: 5,  maxApiCalls: 1  },
-  authenticated: { maxCards: 25, maxApiCalls: 50 }
+  guest:         { maxCards: 5,  maxApiCalls: 1   },
+  authenticated: { maxCards: 25, maxApiCalls: 50  },
+  member:        { maxCards: 250, maxApiCalls: 250 }
 };
+
+// ── System-settings loader ─────────────────────────────────────────────────
+// Fetches key/value pairs from the `system_settings` Supabase table and
+// overwrites DEFAULT_LIMITS in place so every downstream reference picks up
+// the admin-configured values automatically.
+async function loadSystemSettings() {
+  if (!window.supabaseClient) return;
+  try {
+    const { data, error } = await window.supabaseClient
+      .from('system_settings')
+      .select('key, value');
+    if (error) throw error;
+    if (!data || data.length === 0) return;
+
+    const map = {};
+    for (const row of data) map[row.key] = row.value;
+
+    // Overwrite defaults — parse as int, keep existing if missing/NaN
+    if (map.guest_max_cards)    DEFAULT_LIMITS.guest.maxCards         = parseInt(map.guest_max_cards)    || DEFAULT_LIMITS.guest.maxCards;
+    if (map.guest_max_api)      DEFAULT_LIMITS.guest.maxApiCalls      = parseInt(map.guest_max_api)      || DEFAULT_LIMITS.guest.maxApiCalls;
+    if (map.auth_max_cards)     DEFAULT_LIMITS.authenticated.maxCards  = parseInt(map.auth_max_cards)     || DEFAULT_LIMITS.authenticated.maxCards;
+    if (map.auth_max_api)       DEFAULT_LIMITS.authenticated.maxApiCalls = parseInt(map.auth_max_api)    || DEFAULT_LIMITS.authenticated.maxApiCalls;
+    if (map.member_max_cards)   DEFAULT_LIMITS.member.maxCards         = parseInt(map.member_max_cards)   || DEFAULT_LIMITS.member.maxCards;
+    if (map.member_max_api)     DEFAULT_LIMITS.member.maxApiCalls      = parseInt(map.member_max_api)    || DEFAULT_LIMITS.member.maxApiCalls;
+
+    console.log('✅ System settings loaded from DB:', DEFAULT_LIMITS);
+  } catch (err) {
+    // Table may not exist yet — that's fine, hardcoded defaults are used
+    console.warn('System settings not available (using defaults):', err.message);
+  }
+}
 
 // ── Initialization ────────────────────────────────────────────────────────────
 // FIXED: Supabase credentials come from appConfig, not hardcoded strings.
@@ -37,6 +72,9 @@ async function initUserManagement() {
       appConfig.supabaseKey
     );
     console.log('✅ Supabase client initialized');
+
+    // Load admin-configured limits from system_settings table (non-blocking)
+    await loadSystemSettings();
   } catch (err) {
     console.error('❌ Supabase init failed:', err);
   }
@@ -263,6 +301,9 @@ function showAdminButton() {
 
 // ── Limit checks ──────────────────────────────────────────────────────────────
 async function canAddCard() {
+  // Tournament mode bypasses card limits entirely
+  if (window._activeTournament) return true;
+
   // FIXED: Use getCollections() — bare `collections` was undefined
   const total = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
   const limit = isGuestMode()
@@ -277,6 +318,9 @@ async function canAddCard() {
 }
 
 async function canMakeApiCall() {
+  // Tournament mode bypasses API call limits entirely
+  if (window._activeTournament) return true;
+
   if (isGuestMode()) {
     const used = parseInt(localStorage.getItem('guest_api_calls') || '0');
     if (used >= DEFAULT_LIMITS.guest.maxApiCalls) {
@@ -297,6 +341,9 @@ async function canMakeApiCall() {
 }
 
 async function trackCardAdded() {
+  // Tournament mode — don't count against user's card quota
+  if (window._activeTournament) return;
+
   if (isGuestMode() || !window.supabaseClient) {
     updateLimitsUI();
     return;
@@ -319,6 +366,9 @@ async function trackCardAdded() {
 }
 
 async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
+  // Tournament mode — don't count against user's API quota
+  if (window._activeTournament) return;
+
   if (isGuestMode()) {
     const current = parseInt(localStorage.getItem('guest_api_calls') || '0');
     localStorage.setItem('guest_api_calls', String(current + 1));

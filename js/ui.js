@@ -999,6 +999,16 @@ window.openCardDetail = function(index) {
                         }).join('')}
                     </div>
                 </details>
+
+                <!-- Move/Copy to another collection -->
+                <div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;">
+                    <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px;">📦 Copy to Collection</div>
+                    <div id="moveToButtons" style="display:flex;gap:8px;flex-wrap:wrap;">
+                        ${currentId !== 'default' ? '<button class="btn-tag-add" style="font-size:12px;padding:6px 12px;" onclick="moveCardToCollection(' + index + ',\x27default\x27)">📂 My Collection</button>' : ''}
+                        ${currentId !== 'price_check' ? '<button class="btn-tag-add" style="font-size:12px;padding:6px 12px;" onclick="moveCardToCollection(' + index + ',\x27price_check\x27)">💰 Price Check</button>' : ''}
+                        ${currentId !== 'deck_building' ? '<button class="btn-tag-add" style="font-size:12px;padding:6px 12px;" onclick="moveCardToCollection(' + index + ',\x27deck_building\x27)">🃏 Deck Builder</button>' : ''}
+                    </div>
+                </div>
             </div>
             <div class="modal-footer" style="gap:8px;">
                 ${ebayBtn}
@@ -1358,3 +1368,27 @@ window.removeDetailTag = function(index, tag, btnEl) {
 })();
 
 console.log('✅ UI helpers loaded');
+
+// ── Cross-collection card copy from detail modal ────────────────────────────
+window.moveCardToCollection = function(cardIndex, targetCollectionId) {
+  const collections = getCollections();
+  const currentId   = getCurrentCollectionId();
+  const collection  = collections.find(c => c.id === currentId);
+  if (!collection?.cards[cardIndex]) {
+    showToast('Card not found', '❌');
+    return;
+  }
+
+  const card = collection.cards[cardIndex];
+  const copied = copyCardToCollection(card, targetCollectionId);
+
+  if (copied) {
+    const targetNames = { default: 'My Collection', price_check: 'Price Check', deck_building: 'Deck Builder' };
+    const name = targetNames[targetCollectionId] || targetCollectionId;
+    showToast(`Copied to ${name}`, '✅');
+    if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
+    if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
+  } else {
+    showToast('Already in that collection', '⚠️');
+  }
+};
