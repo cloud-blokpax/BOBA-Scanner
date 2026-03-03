@@ -679,26 +679,48 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     // Auto-fetch eBay prices for price check cards
     showToast(`Price Check: ${card.hero} (${card.cardNumber}) — fetching eBay prices...`, '💰');
     if (typeof fetchEbayAvgPrice === 'function') {
-      fetchEbayAvgPrice(card).then(priceData => {
+      // Fetch active + sold prices in parallel
+      const soldPromise = (typeof fetchEbaySoldData === 'function')
+        ? fetchEbaySoldData(card).catch(() => null) : Promise.resolve(null);
+
+      Promise.all([fetchEbayAvgPrice(card), soldPromise]).then(([priceData, soldData]) => {
+        const cols2 = getCollections();
+        const pc    = cols2.find(c => c.id === 'price_check');
+        if (!pc) return;
+        const savedCard = pc.cards[pc.cards.length - 1];
+        if (!savedCard) return;
+
+        // Save active listing prices
         if (priceData && priceData.count > 0) {
-          // Save prices back onto the card
-          const cols2 = getCollections();
-          const pc    = cols2.find(c => c.id === 'price_check');
-          if (pc) {
-            const savedCard = pc.cards[pc.cards.length - 1];
-            if (savedCard) {
-              savedCard.ebayAvgPrice    = priceData.avgPrice;
-              savedCard.ebayLowPrice    = priceData.lowPrice;
-              savedCard.ebayHighPrice   = priceData.highPrice;
-              savedCard.ebayPriceFetched = new Date().toISOString();
-              saveCollections(cols2);
-              renderCards();
-              showToast(
-                `${card.hero}: Avg $${priceData.avgPrice?.toFixed(2)} · Low $${priceData.lowPrice?.toFixed(2)} (${priceData.count} listing${priceData.count!==1?'s':''})`,
-                '💰'
-              );
-            }
-          }
+          savedCard.ebayAvgPrice    = priceData.avgPrice;
+          savedCard.ebayLowPrice    = priceData.lowPrice;
+          savedCard.ebayHighPrice   = priceData.highPrice;
+          savedCard.ebayPriceFetched = new Date().toISOString();
+        }
+
+        // Save sold prices
+        if (soldData && soldData.lastSold) {
+          savedCard.ebaySoldPrice    = soldData.lastSold.price;
+          savedCard.ebaySoldDate     = soldData.lastSold.date || null;
+          savedCard.ebaySoldUrl      = soldData.lastSold.url  || null;
+          savedCard.ebaySoldAvgPrice = soldData.avgSoldPrice;
+          savedCard.ebaySoldCount    = soldData.soldCount;
+          savedCard.ebaySoldFetched  = new Date().toISOString();
+        }
+
+        saveCollections(cols2);
+        renderCards();
+
+        // Build toast message
+        const parts = [];
+        if (priceData?.count > 0) {
+          parts.push(`Avg $${priceData.avgPrice?.toFixed(2)} · Low $${priceData.lowPrice?.toFixed(2)} (${priceData.count} active)`);
+        }
+        if (soldData?.lastSold) {
+          parts.push(`Last sold $${soldData.lastSold.price.toFixed(2)}${soldData.lastSold.date ? ' (' + soldData.lastSold.date + ')' : ''}`);
+        }
+        if (parts.length > 0) {
+          showToast(`${card.hero}: ${parts.join(' · ')}`, '💰');
         } else {
           showToast(`${card.hero}: No eBay listings found`, '⚠️');
         }

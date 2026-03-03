@@ -26,6 +26,9 @@ function showStatsModal() {
   const collFloor     = pricedCards.reduce((sum, c) => sum + (Number(c.ebayLowPrice) || 0), 0);
   const collAvg       = pricedCards.reduce((sum, c) => sum + (Number(c.ebayAvgPrice) || 0), 0);
   const pricedCount   = pricedCards.length;
+  const soldPricedCards = cards.filter(c => c.ebaySoldPrice > 0);
+  const collSoldValue   = soldPricedCards.reduce((sum, c) => sum + (Number(c.ebaySoldPrice) || 0), 0);
+  const soldPricedCount = soldPricedCards.length;
 
   // --- Set breakdown ---
   const bySett = _tally(cards, 'set');
@@ -66,20 +69,27 @@ function showStatsModal() {
           <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">
             💰 eBay Collection Value
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
             <div style="background:#d1fae5;border-radius:10px;padding:14px;">
               <div style="font-size:11px;font-weight:600;color:#065f46;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Collection Floor</div>
               <div id="statsFloorValue" style="font-size:22px;font-weight:800;color:#065f46;">
                 ${pricedCount > 0 ? '$' + collFloor.toFixed(2) : '—'}
               </div>
-              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Sum of lowest listed prices</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Lowest listed prices</div>
             </div>
             <div style="background:#eff6ff;border-radius:10px;padding:14px;">
               <div style="font-size:11px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Collection Average</div>
               <div id="statsAvgValue" style="font-size:22px;font-weight:800;color:#1d4ed8;">
                 ${pricedCount > 0 ? '$' + collAvg.toFixed(2) : '—'}
               </div>
-              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Sum of avg listed prices</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px;">Avg listed prices</div>
+            </div>
+            <div style="background:#fef3c7;border-radius:10px;padding:14px;">
+              <div style="font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Sold Value</div>
+              <div id="statsSoldValue" style="font-size:22px;font-weight:800;color:#78350f;">
+                ${soldPricedCount > 0 ? '$' + collSoldValue.toFixed(2) : '—'}
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px;">${soldPricedCount} card${soldPricedCount!==1?'s':''} with sold data</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">

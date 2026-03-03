@@ -131,8 +131,50 @@ window.fetchEbayAvgPrice = async function(card) {
   }
 };
 
+// ── Build eBay SOLD listings search URL ──────────────────────────────────────
+function buildEbaySoldUrl(card) {
+  const query = buildEbayQuery(card);
+  if (!query.trim()) return null;
+
+  const searchUrl = `${EBAY_SEARCH_BASE}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13`;
+  return appendAffiliateParams(searchUrl);
+}
+
+// ── Fetch eBay sold/completed listing data for a card ────────────────────────
+// Calls the ebay-sold serverless endpoint.
+// Returns { lastSold: { price, date, title, url }, soldCount, avgSoldPrice, ... } or null.
+window.fetchEbaySoldData = async function(card) {
+  const query = buildEbayQuery(card);
+  if (!query) return null;
+
+  try {
+    const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+    const headers  = { 'Content-Type': 'application/json' };
+    if (apiToken) headers['X-Api-Token'] = apiToken;
+
+    const res = await fetch('/api/ebay-sold', {
+      method:  'POST',
+      headers,
+      body: JSON.stringify({
+        query,
+        cardNumber: card.cardNumber || '',
+        hero:       card.hero       || '',
+        athlete:    card.athlete    || ''
+      })
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.lastSold && data.soldCount === 0) return { soldCount: 0 };
+    return data;
+  } catch {
+    return null;
+  }
+};
+
 // ── Expose for use in collection modal (tags.js) ──────────────────────────────
 window.buildEbaySearchUrl = buildEbaySearchUrl;
+window.buildEbaySoldUrl   = buildEbaySoldUrl;
 window.buildEbayQuery     = buildEbayQuery;
 
 console.log('✅ eBay module loaded');
