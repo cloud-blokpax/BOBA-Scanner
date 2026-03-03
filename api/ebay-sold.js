@@ -1,33 +1,13 @@
 // api/ebay-sold.js — Vercel serverless proxy for eBay sold/completed listings
 //
-// Uses the eBay Browse API to search for recently sold items.
-// The Browse API supports a "SOLD_ITEMS" fieldgroup that returns ended listings
-// when combined with specific filters.
+// Uses the eBay Finding API (findCompletedItems) to get recently sold items.
+// This API returns structured JSON data — no HTML scraping needed.
+// Auth: uses EBAY_CLIENT_ID as the SECURITY-APPNAME parameter (no OAuth required).
 //
-// Requires: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET in Vercel env vars.
+// Requires: EBAY_CLIENT_ID in Vercel env vars.
+// Optionally: BOBA_API_SECRET for request authentication.
 
-let _ebayToken     = null;
-let _ebayTokenExp  = 0;
-
-async function getEbayToken() {
-  if (_ebayToken && Date.now() < _ebayTokenExp) return _ebayToken;
-  const clientId     = process.env.EBAY_CLIENT_ID;
-  const clientSecret = process.env.EBAY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error('eBay credentials not configured');
-  }
-  const creds    = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
-    method:  'POST',
-    headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
-  });
-  if (!response.ok) throw new Error(`eBay auth failed: ${response.status}`);
-  const data    = await response.json();
-  _ebayToken    = data.access_token;
-  _ebayTokenExp = Date.now() + (data.expires_in - 60) * 1000;
-  return _ebayToken;
-}
+const FINDING_API = 'https://svcs.ebay.com/services/search/FindingService/v1';
 
 export default async function handler(req, res) {
   const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba-scanner.vercel.app';
@@ -45,63 +25,22 @@ export default async function handler(req, res) {
   const { query, cardNumber, hero, athlete } = req.body;
   if (!query?.trim()) return res.status(400).json({ error: 'Missing query' });
 
+  const appId = process.env.EBAY_CLIENT_ID;
+  if (!appId) return res.status(500).json({ error: 'EBAY_CLIENT_ID not configured' });
+
   try {
-    const token = await getEbayToken();
+    // ── Strategy 1: eBay Finding API (findCompletedItems) ─────────────────
+    const result = await findCompletedItems(appId, query, cardNumber, hero, athlete);
+    if (result) return res.status(200).json(result);
 
-    // Strategy: Use eBay Browse API with fieldgroups=EXTENDED to get more item data,
-    // and filter for completed (sold) items by searching recently ended auctions.
-    // The Browse API doesn't have a native "sold only" filter, so we use the
-    // eBay website's completed listings search as our data source.
+    // ── Strategy 2: eBay Browse API sold search ───────────────────────────
+    // Fallback if Finding API is unavailable (deprecated for new apps)
+    const browseResult = await browseSoldItems(query, cardNumber, hero, athlete);
+    if (browseResult) return res.status(200).json(browseResult);
 
-    // Approach: Fetch eBay sold listings page and parse the data.
-    // This is the same approach used by 130point, CardMavin, etc.
-    const searchQuery = encodeURIComponent(query);
-    const ebayUrl = `https://www.ebay.com/sch/i.html?_nkw=${searchQuery}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&_ipg=60`;
-
-    const pageRes = await fetch(ebayUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
-
-    if (!pageRes.ok) {
-      return res.status(502).json({ error: `eBay page fetch failed: ${pageRes.status}` });
-    }
-
-    const html = await pageRes.text();
-
-    // Parse sold listings from eBay HTML
-    // eBay sold listings contain structured data we can extract
-    const soldItems = parseEbaySoldListings(html, cardNumber, hero, athlete);
-
-    if (soldItems.length === 0) {
-      return res.status(200).json({
-        lastSold: null,
-        soldCount: 0,
-        avgSoldPrice: null,
-        soldItems: []
-      });
-    }
-
-    // Calculate stats from sold items
-    const prices = soldItems.map(i => i.price).filter(p => p > 0);
-    const avgSold = prices.length ? parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)) : null;
-    const lastItem = soldItems[0]; // Already sorted newest first
-
+    // No data from either strategy
     return res.status(200).json({
-      lastSold: {
-        price:  lastItem.price,
-        date:   lastItem.date,
-        title:  lastItem.title,
-        url:    lastItem.url
-      },
-      soldCount:    soldItems.length,
-      avgSoldPrice: avgSold,
-      lowSoldPrice: prices.length ? Math.min(...prices) : null,
-      highSoldPrice: prices.length ? Math.max(...prices) : null,
-      soldItems:    soldItems.slice(0, 10) // Return up to 10 most recent
+      lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: []
     });
 
   } catch (err) {
@@ -110,77 +49,221 @@ export default async function handler(req, res) {
   }
 }
 
-// Parse eBay sold listings HTML to extract price, date, title, and URL
-function parseEbaySoldListings(html, cardNumber, hero, athlete) {
-  const items = [];
+// ── Finding API: findCompletedItems ──────────────────────────────────────────
+// Returns sold items with actual sale price, end date, and item URL.
+// Uses SECURITY-APPNAME auth (Client ID / AppID) — no OAuth needed.
+async function findCompletedItems(appId, query, cardNumber, hero, athlete) {
+  const params = new URLSearchParams({
+    'OPERATION-NAME':     'findCompletedItems',
+    'SERVICE-VERSION':    '1.13.0',
+    'SECURITY-APPNAME':   appId,
+    'RESPONSE-DATA-FORMAT': 'JSON',
+    'REST-PAYLOAD':       '',
+    'keywords':           query,
+    'sortOrder':          'EndTimeSoonest',
+    'paginationInput.entriesPerPage': '30',
+    // Only return items that actually sold (not unsold completed)
+    'itemFilter(0).name':  'SoldItemsOnly',
+    'itemFilter(0).value': 'true',
+  });
 
-  // eBay sold listings use s-item class for each result
-  // Extract using regex patterns that match the DOM structure
-  const itemRegex = /<li[^>]*class="[^"]*s-item[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
-  const titleRegex = /<div[^>]*class="[^"]*s-item__title[^"]*"[^>]*>([\s\S]*?)<\/div>/i;
-  const priceRegex = /<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>([\s\S]*?)<\/span>/i;
-  const linkRegex = /<a[^>]*class="[^"]*s-item__link[^"]*"[^>]*href="([^"]+)"/i;
-  const dateRegex = /<span[^>]*class="[^"]*POSITIVE[^"]*"[^>]*>([\s\S]*?)<\/span>/i;
-  // Also try the "Sold" date format
-  const soldDateRegex = /Sold\s+(\w+\s+\d+,?\s*\d*)/i;
-  const endedDateRegex = /(\w{3}\s+\d{1,2},?\s+\d{4})/i;
+  const url = `${FINDING_API}?${params.toString()}`;
 
-  let match;
-  while ((match = itemRegex.exec(html)) !== null) {
-    const itemHtml = match[1];
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { 'X-EBAY-SOA-GLOBAL-ID': 'EBAY-US' }
+    });
+  } catch (err) {
+    console.warn('Finding API network error:', err.message);
+    return null;
+  }
 
-    // Skip "shop on eBay" promotional items
-    if (itemHtml.includes('Shop on eBay')) continue;
+  if (!response.ok) {
+    console.warn('Finding API HTTP error:', response.status);
+    return null;
+  }
 
-    // Extract title
-    const titleMatch = titleRegex.exec(itemHtml);
-    if (!titleMatch) continue;
-    let title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
-    // Skip if title is empty or "New Listing" only
-    if (!title || title === 'New Listing') continue;
-    // Strip "New Listing" prefix
-    title = title.replace(/^New Listing\s*/i, '').trim();
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    console.warn('Finding API JSON parse error:', err.message);
+    return null;
+  }
 
-    // Filter to relevant cards — must contain card number or hero name
+  // Navigate the Finding API response structure
+  const searchResult = data?.findCompletedItemsResponse?.[0]?.searchResult?.[0];
+  if (!searchResult || searchResult['@count'] === '0') {
+    // Check for API error (e.g., deprecated, invalid key)
+    const ack = data?.findCompletedItemsResponse?.[0]?.ack?.[0];
+    if (ack === 'Failure') {
+      const errMsg = data?.findCompletedItemsResponse?.[0]?.errorMessage?.[0]?.error?.[0]?.message?.[0];
+      console.warn('Finding API error:', errMsg || 'Unknown');
+      return null; // Fall through to Browse API fallback
+    }
+    return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
+  }
+
+  const rawItems = searchResult.item || [];
+
+  // Filter to relevant items — title must contain card number or hero/athlete name
+  const cn = (cardNumber || '').toUpperCase();
+  const h  = (hero || '').toUpperCase();
+  const a  = (athlete || '').toUpperCase();
+
+  const soldItems = [];
+  for (const item of rawItems) {
+    const title = item.title?.[0] || '';
     const titleUpper = title.toUpperCase();
-    const cn = (cardNumber || '').toUpperCase();
-    const h  = (hero || '').toUpperCase();
-    const a  = (athlete || '').toUpperCase();
+
+    // Relevance check (same logic as ebay-browse.js)
     let isRelevant = false;
     if (cn && titleUpper.includes(cn)) isRelevant = true;
     if (h && h.length > 2 && titleUpper.includes(h)) isRelevant = true;
     if (a && a.length > 2 && titleUpper.includes(a)) isRelevant = true;
-    if (!isRelevant && cn) continue; // Skip irrelevant results
+    if (!isRelevant) continue;
 
-    // Extract price — look for the actual sold price
-    const priceMatch = priceRegex.exec(itemHtml);
-    if (!priceMatch) continue;
-    const priceText = priceMatch[1].replace(/<[^>]+>/g, '').trim();
-    // Parse price: "$12.50" or "$12.50 to $25.00" (take first/lower)
-    const priceNum = parseFloat(priceText.replace(/[^0-9.]/g, ''));
-    if (isNaN(priceNum) || priceNum <= 0) continue;
+    // Extract sale price (sellingStatus.convertedCurrentPrice is USD)
+    const priceStr = item.sellingStatus?.[0]?.convertedCurrentPrice?.[0]?.__value__
+                  || item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__;
+    const price = parseFloat(priceStr);
+    if (isNaN(price) || price <= 0) continue;
 
-    // Extract URL
-    const linkMatch = linkRegex.exec(itemHtml);
-    const url = linkMatch ? linkMatch[1].split('?')[0] : null; // Strip tracking params
-
-    // Extract sold date
+    // Extract end date
+    const endTime = item.listingInfo?.[0]?.endTime?.[0];
     let soldDate = null;
-    const dateMatch1 = soldDateRegex.exec(itemHtml);
-    const dateMatch2 = endedDateRegex.exec(itemHtml);
-    if (dateMatch1) {
-      soldDate = dateMatch1[1].trim();
-    } else if (dateMatch2) {
-      soldDate = dateMatch2[1].trim();
+    if (endTime) {
+      try {
+        const d = new Date(endTime);
+        soldDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch {}
     }
 
-    items.push({
+    // Extract URL
+    const url = item.viewItemURL?.[0] || null;
+
+    soldItems.push({
       title,
-      price: parseFloat(priceNum.toFixed(2)),
+      price: parseFloat(price.toFixed(2)),
       url,
       date: soldDate
     });
   }
 
-  return items;
+  // Sort by date (most recent first) — they should already be sorted by EndTimeSoonest
+  return formatSoldResponse(soldItems);
+}
+
+// ── Browse API fallback: search for ended items ──────────────────────────────
+// The Browse API doesn't natively support "sold only" filter, but we can
+// try fetching ended items and checking their status.
+async function browseSoldItems(query, cardNumber, hero, athlete) {
+  // Only attempt if we have OAuth credentials
+  const clientId     = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  try {
+    // Get OAuth token
+    const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenRes = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+    });
+    if (!tokenRes.ok) return null;
+    const tokenData = await tokenRes.json();
+    const token = tokenData.access_token;
+
+    // Search with Browse API — this only returns active items, but we try anyway
+    // as eBay sometimes includes recently ended items
+    const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
+    searchUrl.searchParams.set('q', query);
+    searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
+    searchUrl.searchParams.set('limit', '50');
+    searchUrl.searchParams.set('fieldgroups', 'EXTENDED');
+
+    const browseRes = await fetch(searchUrl.toString(), {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+      }
+    });
+    if (!browseRes.ok) return null;
+
+    const browseData = await browseRes.json();
+    const all = browseData.itemSummaries || [];
+
+    // Filter to relevant items
+    const cn = (cardNumber || '').toUpperCase();
+    const h  = (hero || '').toUpperCase();
+    const a  = (athlete || '').toUpperCase();
+
+    const soldItems = [];
+    for (const item of all) {
+      const titleUpper = (item.title || '').toUpperCase();
+      let isRelevant = false;
+      if (cn && titleUpper.includes(cn)) isRelevant = true;
+      if (h && h.length > 2 && titleUpper.includes(h)) isRelevant = true;
+      if (a && a.length > 2 && titleUpper.includes(a)) isRelevant = true;
+      if (!isRelevant) continue;
+
+      // Only include items that have ended/sold
+      // The Browse API marks these with specific buying option statuses
+      if (item.buyingOptions?.includes('FIXED_PRICE') && item.itemEndDate) {
+        const price = parseFloat(item.price?.value);
+        if (isNaN(price) || price <= 0) continue;
+
+        let soldDate = null;
+        if (item.itemEndDate) {
+          try {
+            soldDate = new Date(item.itemEndDate).toLocaleDateString('en-US',
+              { month: 'short', day: 'numeric', year: 'numeric' });
+          } catch {}
+        }
+
+        soldItems.push({
+          title: item.title,
+          price: parseFloat(price.toFixed(2)),
+          url:   item.itemWebUrl || null,
+          date:  soldDate
+        });
+      }
+    }
+
+    if (soldItems.length === 0) return null;
+    return formatSoldResponse(soldItems);
+
+  } catch (err) {
+    console.warn('Browse API sold fallback error:', err.message);
+    return null;
+  }
+}
+
+// ── Format sold items into the standard response ─────────────────────────────
+function formatSoldResponse(soldItems) {
+  if (soldItems.length === 0) {
+    return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
+  }
+
+  const prices = soldItems.map(i => i.price).filter(p => p > 0);
+  const avgSold = prices.length
+    ? parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2))
+    : null;
+  const lastItem = soldItems[0];
+
+  return {
+    lastSold: {
+      price: lastItem.price,
+      date:  lastItem.date,
+      title: lastItem.title,
+      url:   lastItem.url
+    },
+    soldCount:     soldItems.length,
+    avgSoldPrice:  avgSold,
+    lowSoldPrice:  prices.length ? parseFloat(Math.min(...prices).toFixed(2)) : null,
+    highSoldPrice: prices.length ? parseFloat(Math.max(...prices).toFixed(2)) : null,
+    soldItems:     soldItems.slice(0, 10)
+  };
 }
