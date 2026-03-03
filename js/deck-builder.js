@@ -696,7 +696,6 @@ async function finalizeDeck() {
 
   const cols    = ensureDeckBuildingCollection();
   const deckCol = cols.find(c => c.id === DECK_BUILDING_COLLECTION_ID);
-  const queue   = window._deckBuilderQueue;
   let added = 0, updated = 0;
 
   for (const entry of queue) {
