@@ -938,6 +938,93 @@ window.openCardDetail = function(index) {
             </div>
         </div>`;
 
+    // ── Metadata display helper ───────────────────────────────────────────
+    function buildMetadataHtml(c) {
+        const fmtCurrency = v => (v != null && v !== '') ? `$${Number(v).toFixed(2)}` : null;
+        const fmtDate     = v => {
+            if (!v) return null;
+            try { return new Date(v).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+            catch { return escapeHtml(String(v)); }
+        };
+        const fmtUrl      = (v, label) => v ? `<a href="${escapeHtml(v)}" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;font-weight:600;">${label||'View →'}</a>` : null;
+        const fmtStr      = v => (v != null && v !== '') ? escapeHtml(String(v)) : null;
+        const fmtPct      = v => (v != null && v !== '') ? `${Math.round(v)}%` : null;
+        const fmtArr      = v => (Array.isArray(v) && v.filter(Boolean).length) ? escapeHtml(v.filter(Boolean).join(', ')) : null;
+
+        const sections = [
+            {
+                title: 'Card Info', icon: '🃏',
+                rows: [
+                    ['Hero / Character',    fmtStr(c.hero)],
+                    ['Athlete',             fmtStr(c.athlete)],
+                    ['Card Number',         fmtStr(c.cardNumber)],
+                    ['Year',                fmtStr(c.year)],
+                    ['Set',                 fmtStr(c.set)],
+                    ['Parallel / Pose',     fmtStr(c.pose)],
+                    ['Weapon',              fmtStr(c.weapon)],
+                    ['Power',               fmtStr(c.power)],
+                    ['Condition',           fmtStr(c.condition)],
+                ]
+            },
+            {
+                title: 'eBay Active Listings', icon: '🛒',
+                rows: [
+                    ['Avg Price',       fmtCurrency(c.ebayAvgPrice)],
+                    ['Low Price',       fmtCurrency(c.ebayLowPrice)],
+                    ['High Price',      fmtCurrency(c.ebayHighPrice)],
+                    ['# Listings',      c.ebayListingCount != null ? escapeHtml(String(c.ebayListingCount)) : null],
+                    ['Last Checked',    fmtDate(c.ebayPriceFetched)],
+                ]
+            },
+            {
+                title: 'eBay Sold History', icon: '🏷️',
+                rows: [
+                    ['Last Sold Price',  fmtCurrency(c.ebaySoldPrice)],
+                    ['Last Sold Date',   fmtStr(c.ebaySoldDate)],
+                    ['Last Sold Link',   fmtUrl(c.ebaySoldUrl, 'View sale →')],
+                    ['Avg Sold Price',   fmtCurrency(c.ebaySoldAvgPrice)],
+                    ['Sales Found',      c.ebaySoldCount != null ? escapeHtml(String(c.ebaySoldCount)) : null],
+                    ['Last Checked',     fmtDate(c.ebaySoldFetched)],
+                ]
+            },
+            {
+                title: 'Collection', icon: '📦',
+                rows: [
+                    ['Tags',            fmtArr(c.tags)],
+                    ['Notes',           fmtStr(c.notes)],
+                    ['Ready to List',   c.readyToList ? 'Yes' : null],
+                    ['Listing Status',  fmtStr(c.listingStatus)],
+                    ['Listing Price',   fmtStr(c.listingPrice)],
+                    ['Listing URL',     fmtUrl(c.listingUrl, 'View listing →')],
+                    ['Sold At',         fmtDate(c.soldAt)],
+                ]
+            },
+            {
+                title: 'Scan Info', icon: '📷',
+                rows: [
+                    ['Scan Method',  fmtStr(c.scanMethod)],
+                    ['Confidence',   fmtPct(c.confidence)],
+                    ['File Name',    fmtStr(c.fileName)],
+                    ['Scanned',      fmtDate(c.timestamp)],
+                ]
+            }
+        ];
+
+        return sections.map(section => {
+            const visible = section.rows.filter(([, v]) => v != null);
+            if (!visible.length) return '';
+            return `<div style="margin-bottom:14px;">
+                <div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;padding-bottom:5px;border-bottom:1px solid #f3f4f6;margin-bottom:6px;">${section.icon} ${section.title}</div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 14px;">
+                    ${visible.map(([label, val]) =>
+                        `<span style="color:#9ca3af;font-size:11px;white-space:nowrap;padding-top:1px;">${label}</span>` +
+                        `<span style="color:#111827;font-size:12px;font-weight:500;word-break:break-word;">${val}</span>`
+                    ).join('')}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
     // ── eBay avg price (loads async after render) ─────────────────────────
     const cachedPrice = card.ebayAvgPrice
         ? `⌀ $${Number(card.ebayAvgPrice).toFixed(2)}  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)}`
@@ -1050,16 +1137,10 @@ window.openCardDetail = function(index) {
                 <!-- All Metadata collapsible -->
                 <details style="margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
                     <summary style="padding:10px 14px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;background:#f9fafb;list-style:none;display:flex;align-items:center;gap:6px;">
-                        📋 All Metadata <span style="font-size:11px;color:#9ca3af;font-weight:400;">(tap to expand)</span>
+                        📋 Card Details <span style="font-size:11px;color:#9ca3af;font-weight:400;">(tap to expand)</span>
                     </summary>
-                    <div style="padding:12px 14px;font-size:11px;font-family:monospace;background:#fff;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;max-height:260px;overflow-y:auto;">
-                        ${Object.entries(card).map(([k, v]) => {
-                            const display = v === null || v === undefined || v === '' ? '<span style="color:#d1d5db;">—</span>'
-                                : Array.isArray(v) ? escapeHtml(v.join(', ') || '—')
-                                : typeof v === 'object' ? escapeHtml(JSON.stringify(v))
-                                : escapeHtml(String(v));
-                            return `<span style="color:#6b7280;white-space:nowrap;">${escapeHtml(k)}</span><span style="color:#111827;word-break:break-all;">${display}</span>`;
-                        }).join('')}
+                    <div id="metadataContent" style="padding:12px 14px;background:#fff;max-height:340px;overflow-y:auto;">
+                        ${buildMetadataHtml(card)}
                     </div>
                 </details>
 
@@ -1085,6 +1166,17 @@ window.openCardDetail = function(index) {
     // Record open time so ghost-click guard can block Remove calls within 600ms
     const modalEl = document.getElementById('cardDetailModal');
     if (modalEl) modalEl.dataset.openedAt = Date.now();
+
+    // Refreshes the metadata section with latest card data after async fetches
+    function refreshMetadataSection() {
+        const el = document.getElementById('metadataContent');
+        if (!el) return;
+        const cols = getCollections();
+        const cId  = getCurrentCollectionId();
+        const col  = cols.find(c => c.id === cId);
+        const latest = col?.cards[index];
+        if (latest) el.innerHTML = buildMetadataHtml(latest);
+    }
 
     // ── Zoom on card image ────────────────────────────────────────────────
     const imgWrap = document.getElementById('detailImgWrap');
@@ -1178,6 +1270,7 @@ window.openCardDetail = function(index) {
                 updateCard(index, 'ebayListingCount', count);
                 updateCard(index, 'ebayPriceFetched', new Date().toISOString());
                 renderCards();
+                refreshMetadataSection();
             }
         }).catch(() => {
             const el2 = document.getElementById('detailEbayPriceValue');
@@ -1243,6 +1336,7 @@ window.openCardDetail = function(index) {
                 updateCard(index, 'ebaySoldCount', count);
                 updateCard(index, 'ebaySoldFetched', new Date().toISOString());
                 renderCards();
+                refreshMetadataSection();
             }
         }).catch(() => {
             const el2 = document.getElementById('detailEbaySoldValue');
