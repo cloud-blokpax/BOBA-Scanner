@@ -45,8 +45,11 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const ebayUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
   const scraperApiKey = process.env.SCRAPERAPI_KEY;
 
+  // render=true executes JavaScript — required because eBay's sold listings
+  // are loaded client-side after page load (the initial HTML only has a spinner).
+  // Costs 5 ScraperAPI credits/request vs 1, so 1,000 free checks/month.
   const fetchUrl = scraperApiKey
-    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us`
+    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us&render=true&wait=3000`
     : ebayUrl;
 
   const headers = scraperApiKey ? {} : {
