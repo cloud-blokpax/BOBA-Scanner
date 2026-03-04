@@ -42,9 +42,15 @@ async function runOCR(imageUrl) {
     const result1 = await runOCROnRegion(sourceCanvas, { x: 0.03, y: 0.83, w: 0.40, h: 0.14 });
     if (result1.cardNumber) return result1;
 
+    // Bail out early if the worker crashed during the first region — no point
+    // calling recognize() on a null worker two more times.
+    if (!ready.ocr || !tesseractWorker) return result1;
+
     // Try bottom-right
     const result2 = await runOCROnRegion(sourceCanvas, { x: 0.57, y: 0.83, w: 0.40, h: 0.14 });
     if (result2.cardNumber) return result2;
+
+    if (!ready.ocr || !tesseractWorker) return result2;
 
     // Final fallback: bottom-centre strip (catches centred card numbers)
     const result3 = await runOCROnRegion(sourceCanvas, { x: 0.20, y: 0.83, w: 0.60, h: 0.14 });
@@ -57,6 +63,9 @@ async function runOCR(imageUrl) {
 }
 
 async function runOCROnRegion(sourceCanvas, region) {
+    // Guard: worker may have been nulled by a previous failure in this same scan
+    if (!tesseractWorker) return { text: '', confidence: 0, cardNumber: null };
+
     const cropped  = cropAndPreprocess(sourceCanvas, region);
     const dataUrl  = cropped.toDataURL('image/png');
     try {
@@ -66,12 +75,12 @@ async function runOCROnRegion(sourceCanvas, region) {
         const cardNumber = extractCardNumber(text);
         return { text, confidence, cardNumber };
     } catch (err) {
-        // Worker became invalid — terminate it cleanly before recreating
+        // Worker became invalid — terminate it cleanly and try once to recreate.
         console.warn('OCR worker error, recreating...', err.message);
+        try { await tesseractWorker.terminate(); } catch (_) {}
+        tesseractWorker = null;
+        ready.ocr = false;
         try {
-            try { await tesseractWorker.terminate(); } catch (_) {}
-            tesseractWorker = null;
-            ready.ocr = false;
             tesseractWorker = await Tesseract.createWorker('eng');
             ready.ocr = true;
             const result     = await tesseractWorker.recognize(dataUrl);
@@ -80,6 +89,10 @@ async function runOCROnRegion(sourceCanvas, region) {
             const cardNumber = extractCardNumber(text);
             return { text, confidence, cardNumber };
         } catch (err2) {
+            // Recreation also failed — keep worker null so remaining regions skip
+            // immediately instead of crashing again.
+            tesseractWorker = null;
+            ready.ocr = false;
             console.warn('OCR worker recreation failed:', err2.message);
             return { text: '', confidence: 0, cardNumber: null };
         }
