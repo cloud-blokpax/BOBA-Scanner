@@ -145,12 +145,18 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     // Skip nav/placeholder items that have no price
     if (!fullItem.includes('$')) continue;
 
-    // Extract URL — try href first, then build from data-listingid on <li>
-    const urlMatch = fullItem.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/)
-                  || fullItem.match(/href="([^"]*ebay\.com\/itm\/[^"]+)"/);
-    const listingId = liTag.match(/data-listingid[=: ]*["']?(\d+)/i);
-    const url = urlMatch ? urlMatch[1].split('?')[0]
-              : listingId ? `https://www.ebay.com/itm/${listingId[1]}` : null;
+    // Extract URL — eBay's new markup has unquoted href attributes
+    // e.g. href=https://ebay.com/itm/206051552469?...
+    const urlMatch = fullItem.match(/href="(https?:\/\/(?:www\.)?ebay\.com\/itm\/(\d+)[^"]*)"/)
+                  || fullItem.match(/href=(https?:\/\/(?:www\.)?ebay\.com\/itm\/(\d+)\S*)/);
+    let url = null;
+    if (urlMatch) {
+      // Normalise to www.ebay.com and strip query params
+      url = `https://www.ebay.com/itm/${urlMatch[2]}`;
+    } else {
+      const listingId = liTag.match(/data-listingid[=: ]*["']?(\d+)/i);
+      if (listingId) url = `https://www.ebay.com/itm/${listingId[1]}`;
+    }
 
     // Extract title — check <li> aria-label first, then new/old class names
     const titleMatch = liTag.match(/aria-label="([^"]+)"/)
