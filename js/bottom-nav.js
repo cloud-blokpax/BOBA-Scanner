@@ -118,6 +118,9 @@
         wireMoreItem('moreExportCSV', function () {
             if (typeof window.openExportModal === 'function') window.openExportModal();
         });
+        wireMoreItem('moreEbayExport', function () {
+            if (typeof window.openEbayExportModal === 'function') window.openEbayExportModal();
+        });
         wireMoreItem('moreCollectionStats', function () {
             if (typeof window.openStatsModal === 'function') window.openStatsModal();
             else if (typeof window.showStatsModal === 'function') window.showStatsModal();

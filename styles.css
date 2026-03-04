@@ -1405,6 +1405,9 @@ body {
 .btn-remove { padding: 9px 12px; background: white; color: #ef4444; border: 1.5px solid #ef4444; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); min-height: 40px; white-space: nowrap; }
 .btn-remove:hover      { background: #fee2e2; }
 
+.btn-wrong-card { padding: 9px 10px; background: white; color: #d97706; border: 1.5px solid #fbbf24; border-radius: var(--radius-lg); font-size: 12px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); min-height: 40px; white-space: nowrap; }
+.btn-wrong-card:hover  { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+
 .affiliate-disclosure  { margin-top: 8px; font-size: 11px; color: var(--text-muted); font-style: italic; }
 
 /* ═══════════════════════════════════════════
