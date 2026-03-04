@@ -163,6 +163,9 @@ async function handleUserSignIn(googleUser) {
     if (currentUser?.can_invite || currentUser?.is_admin) {
       const tournamentRow = document.getElementById('tournamentToolsRow');
       if (tournamentRow) tournamentRow.style.display = '';
+      // Also show admin section in More sheet
+      const moreAdminSection = document.getElementById('moreAdminSection');
+      if (moreAdminSection) moreAdminSection.style.display = '';
     }
 
     // Trigger sync now that currentUser is set

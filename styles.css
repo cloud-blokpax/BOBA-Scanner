@@ -1655,3 +1655,321 @@ a.listing-badge:hover { opacity: .85; }
   .app-header, .fab-container, .upload-section, .button-group { display: none; }
   .card-item { page-break-inside: avoid; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BOTTOM NAVIGATION + MORE SHEET + STATS STRIP — UI/UX Redesign
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+    --bottom-nav-height: 56px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Bottom Navigation Bar ─────────────────────────────────────────────── */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--bottom-nav-height) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+    background: rgba(7, 11, 20, 0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: stretch;
+    z-index: var(--z-sticky);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+    position: relative;
+    font-family: var(--font-sans);
+}
+
+.bottom-nav-item.active {
+    color: var(--gold);
+}
+
+.bottom-nav-item.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: var(--gold);
+    border-radius: 0 0 3px 3px;
+    box-shadow: 0 0 8px var(--gold-glow);
+}
+
+.bottom-nav-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.bottom-nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.bottom-nav-badge {
+    position: absolute;
+    top: 5px;
+    right: calc(50% - 20px);
+    min-width: 16px;
+    height: 16px;
+    background: var(--gold);
+    color: #0d1524;
+    border-radius: 99px;
+    font-size: 9px;
+    font-weight: 800;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+}
+
+.bottom-nav-badge:not(:empty) {
+    display: flex;
+}
+
+/* Push content above the fixed nav bar */
+.app-main {
+    padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px) !important;
+}
+
+/* ── More Sheet ────────────────────────────────────────────────────────── */
+.more-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: calc(var(--z-sticky) + 10);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-base);
+}
+
+.more-sheet-backdrop.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.more-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-surface);
+    border-radius: 20px 20px 0 0;
+    border: 1px solid var(--border-strong);
+    border-bottom: none;
+    z-index: calc(var(--z-sticky) + 11);
+    transform: translateY(100%);
+    transition: transform var(--transition-slow);
+    padding-bottom: calc(var(--safe-bottom) + 16px);
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.more-sheet.active {
+    transform: translateY(0);
+}
+
+.more-sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--border-strong);
+    border-radius: 99px;
+    margin: 12px auto 8px;
+    flex-shrink: 0;
+}
+
+.more-sheet-body {
+    padding: 4px 0 0;
+}
+
+.more-sheet-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 24px;
+    border: none;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast);
+}
+
+.more-sheet-item:hover,
+.more-sheet-item:active {
+    background: var(--bg-elevated);
+}
+
+.more-sheet-item--danger {
+    color: var(--danger);
+}
+
+.more-sheet-icon {
+    font-size: 20px;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.more-sheet-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 0;
+}
+
+.more-sheet-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 4px 24px 8px;
+}
+
+.more-sheet-disclosure {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 12px 24px 4px;
+    line-height: 1.5;
+}
+
+/* ── Stats Strip ───────────────────────────────────────────────────────── */
+.stats-strip {
+    margin: 14px 0 4px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    overflow: hidden;
+}
+
+.stats-strip-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 16px;
+    border: none;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: color var(--transition-fast);
+}
+
+.stats-strip-toggle:hover {
+    color: var(--text-primary);
+}
+
+.stats-strip-arrow {
+    font-size: 10px;
+    display: inline-block;
+    transition: transform var(--transition-fast);
+}
+
+.stats-strip-toggle[aria-expanded="true"] .stats-strip-arrow {
+    transform: rotate(180deg);
+}
+
+.stats-strip-expanded {
+    padding: 0 12px 12px;
+}
+
+.stats-container-inline {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+/* ── Tab Visibility System ─────────────────────────────────────────────── */
+
+/* Elements always hidden — replaced by new UI */
+#statsContainer          { display: none !important; }
+.collection-nav-row      { display: none !important; }
+#exportSection           { display: none !important; }
+#tournamentToolsRow      { display: none !important; } /* moved to More sheet */
+
+/* Scan tab: hide collection grid area */
+body.tab-scan #collectionSliderWrap { display: none !important; }
+body.tab-scan #emptyState           { display: none !important; }
+body.tab-scan #cardSearchBar        { display: none !important; }
+body.tab-scan #cardsGrid            { display: none !important; }
+body.tab-scan #fabContainer         { display: none !important; }
+
+/* Collection tab: hide scan area */
+body.tab-collection #uploadArea  { display: none !important; }
+body.tab-collection #statsStrip  { display: none !important; }
+
+/* Header: hide old settings + sign-out buttons (kept in DOM for JS compatibility) */
+.btn-header-settings { display: none !important; }
+.btn-sign-out        { display: none !important; }
+
+/* Icon-only sync button in header */
+.btn-icon-only {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 6px 8px;
+    color: var(--text-secondary);
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+    line-height: 1;
+}
+
+.btn-icon-only:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+/* Toast: raise above bottom nav */
+.toast {
+    bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px) !important;
+}
+
+/* Scan buttons: full width on scan tab */
+body.tab-scan .scan-actions-row {
+    flex-direction: column;
+    max-width: 100%;
+}
+
+body.tab-scan .btn-scan-primary,
+body.tab-scan .btn-scan-secondary {
+    max-width: 100%;
+    flex-direction: row;
+    padding: 16px 20px;
+    gap: 12px;
+    font-size: 16px;
+    justify-content: center;
+}
