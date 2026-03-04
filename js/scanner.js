@@ -81,42 +81,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
   let heroName   = null;
   let confidence = null;
 
-  // ── OCR path ──────────────────────────────────────────────────────────────
-  if (ready.ocr && tesseractWorker) {
-    try {
-      showLoading(true, 'Reading card number...');
-      const ocrResult = await Promise.race([
-        runOCR(imageUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 12000))
-      ]);
-      cardNum    = extractCardNumber(ocrResult.text);
-      heroName   = _extractHeroFromOCR(ocrResult.text);
-      confidence = ocrResult.confidence;
-
-      console.log('OCR result:', { cardNum, heroName, confidence });
-
-      if (ocrResult.confidence >= config.threshold && cardNum) {
-        match = findCard(cardNum, heroName);
-        if (match) {
-          console.log('OCR match:', match.Name);
-          showLoading(false);
-          addCard(match, imageUrl, fileName, 'free', ocrResult.confidence, false, storedBase64);
-          setProgress(100);
-          if (typeof addToScanHistory === 'function') {
-            addToScanHistory({
-              hero: match.Name, cardNumber: match['Card Number'],
-              set: match.Set, scanType: 'free', confidence: ocrResult.confidence
-            });
-          }
-          return;
-        }
-      }
-    } catch (err) {
-      console.log('OCR failed, falling back to AI:', err.message);
-    }
-  }
-
-  // ── AI fallback path ──────────────────────────────────────────────────────
+  // ── AI identification path ────────────────────────────────────────────────
   showLoading(true, 'Identifying card with AI...');
 
   if (typeof canMakeApiCall === 'function') {

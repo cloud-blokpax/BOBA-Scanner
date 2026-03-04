@@ -12,15 +12,13 @@
 // ── Readiness flags ──────────────────────────────────────────────────────────
 let ready = {
   db:     false,
-  ocr:    false,
   cv:     false,
   config: false
 };
 
 // ── Shared globals ───────────────────────────────────────────────────────────
-let database        = [];
-let tesseractWorker = null;
-let appConfig       = {};  // Loaded from /api/config on startup
+let database  = [];
+let appConfig = {};  // Loaded from /api/config on startup
 
 // ── App config loader ─────────────────────────────────────────────────────────
 // FIXED: Credentials no longer hardcoded in user-management.js.

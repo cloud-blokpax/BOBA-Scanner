@@ -136,37 +136,9 @@ async function processBatchEntry(entry) {
     }
     entry.imageUrl = imageUrl;
 
-    // ── OCR-first attempt ─────────────────────────────────────────────────────
-    // Batch entries are processed sequentially so we can safely reuse the single
-    // Tesseract worker without conflicts. Try free OCR before the paid AI call.
+    // ── AI identification ─────────────────────────────────────────────────────
     let match = null;
-    let ocrSucceeded = false;
 
-    if (ready.ocr && tesseractWorker) {
-      try {
-        // Build a data URL from the compressed base64 so runOCR can load it
-        const dataUrl  = `data:image/jpeg;base64,${imageBase64}`;
-        const ocrResult = await Promise.race([
-          runOCR(dataUrl),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('OCR timeout')), 12000))
-        ]);
-        const cardNum = extractCardNumber(ocrResult.text);
-        if (cardNum && ocrResult.confidence >= config.threshold) {
-          const ocrMatch = findCard(cardNum);
-          if (ocrMatch) {
-            match             = ocrMatch;
-            entry.match       = match;
-            entry.scanType    = 'free';
-            entry.confidence  = ocrResult.confidence;
-            entry.status      = 'done';
-            ocrSucceeded      = true;
-          }
-        }
-      } catch (_) { /* OCR failed — fall through to AI */ }
-    }
-
-    if (!ocrSucceeded) {
-    // ── AI fallback ──────────────────────────────────────────────────────────
     const canCall = typeof canMakeApiCall === 'function' ? await canMakeApiCall() : true;
     if (!canCall) throw new Error('API limit reached');
 
@@ -182,7 +154,6 @@ async function processBatchEntry(entry) {
     entry.scanType   = 'ai';
     entry.confidence = extracted.confidence || 85;
     entry.status     = 'done';
-    }
 
     // Flag duplicates for user awareness
     const allCards = getCollections().flatMap(c => c.cards);
