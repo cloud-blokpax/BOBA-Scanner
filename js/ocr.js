@@ -1,25 +1,36 @@
 // js/ocr.js
-// Fix: Removed tesseractWorker.setParameters() call from initTesseract().
-// In Tesseract.js v4, setParameters() can fail with "Cannot read properties
-// of null (reading 'SetVariable')" if called immediately after createWorker().
-// The whitelist and PSM mode are now passed directly inside recognize() calls
-// via the options parameter, which is the correct v4 API.
+// Optimizations:
+//   - initTesseract() now checks crossOriginIsolated before attempting init.
+//     COOP/COEP headers in vercel.json unlock SharedArrayBuffer so Tesseract
+//     workers can run; graceful AI fallback when headers are absent.
+//   - cropAndPreprocess(): SCALE raised 3→4 for sharper character rendering,
+//     unsharp-mask sharpening pass added before adaptive threshold, C raised 8→10.
+//   - runOCR(): third region (bottom-centre) tried as final fallback.
+//   - extractCardNumber(): expanded prefix length limit, added Z↔2 / G↔6
+//     confusion pairs, added numeric-only pattern for Alpha Edition cards.
 
 async function initTesseract() {
-    // OCR requires SharedArrayBuffer which needs COOP/COEP HTTP headers.
-    // Without those headers (Vercel default), the Tesseract worker crashes on
-    // every scan with "Cannot read properties of null (reading 'SetImageFile')".
-    // The AI path identifies every card correctly, so OCR is disabled.
-    ready.ocr = false;
-    setStatus('ocr', 'disabled');
-    console.log('⏭️ OCR disabled — AI identification active');
+    if (!window.crossOriginIsolated) {
+        // COOP/COEP headers not active — SharedArrayBuffer unavailable.
+        // Fall back silently; every scan will use the AI path instead.
+        ready.ocr = false;
+        setStatus('ocr', 'disabled');
+        console.log('⏭️ OCR disabled — page not cross-origin isolated (AI active)');
+        return;
+    }
+    try {
+        tesseractWorker = await Tesseract.createWorker('eng');
+        ready.ocr = true;
+        setStatus('ocr', 'ready');
+        console.log('✅ OCR ready (cross-origin isolated)');
+    } catch (err) {
+        ready.ocr = false;
+        setStatus('ocr', 'disabled');
+        console.warn('OCR init failed, AI active:', err.message);
+    }
 }
 
-// Tesseract.js v4 does NOT accept options as a second arg to recognize().
-// Parameters must be set via worker.setParameters() AFTER the worker is loaded.
-// We skip the whitelist here — extractCardNumber() handles cleanup instead.
-
-// Main entry point — called by scanner.js
+// Main entry point — called by scanner.js and batch-scanner.js
 async function runOCR(imageUrl) {
     if (!ready.ocr || !tesseractWorker) {
         throw new Error('OCR not ready');
@@ -31,11 +42,18 @@ async function runOCR(imageUrl) {
     const result1 = await runOCROnRegion(sourceCanvas, { x: 0.03, y: 0.83, w: 0.40, h: 0.14 });
     if (result1.cardNumber) return result1;
 
-    // Try bottom-right if bottom-left failed
+    // Try bottom-right
     const result2 = await runOCROnRegion(sourceCanvas, { x: 0.57, y: 0.83, w: 0.40, h: 0.14 });
     if (result2.cardNumber) return result2;
 
-    return result1.confidence >= result2.confidence ? result1 : result2;
+    // Final fallback: bottom-centre strip (catches centred card numbers)
+    const result3 = await runOCROnRegion(sourceCanvas, { x: 0.20, y: 0.83, w: 0.60, h: 0.14 });
+    if (result3.cardNumber) return result3;
+
+    // Return the result with the highest confidence
+    return [result1, result2, result3].reduce((best, r) =>
+        r.confidence > best.confidence ? r : best
+    );
 }
 
 async function runOCROnRegion(sourceCanvas, region) {
@@ -92,35 +110,57 @@ function cropAndPreprocess(sourceCanvas, region) {
     const sw2 = Math.floor(sw * region.w);
     const sh2 = Math.floor(sh * region.h);
 
-    const SCALE = 3;
+    // Scale 4× (up from 3×) for crisper character rendering at small sizes
+    const SCALE = 4;
     const out   = document.createElement('canvas');
     out.width   = sw2 * SCALE;
     out.height  = sh2 * SCALE;
     const ctx   = out.getContext('2d');
     ctx.drawImage(sourceCanvas, sx, sy, sw2, sh2, 0, 0, out.width, out.height);
 
-    // Adaptive threshold
     const imageData = ctx.getImageData(0, 0, out.width, out.height);
     const data = imageData.data;
     const w    = out.width;
     const h    = out.height;
 
+    // ── Grayscale conversion ─────────────────────────────────────────────────
     const gray = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) {
         gray[i] = Math.round(data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114);
     }
 
+    // ── Unsharp mask (3×3 Laplacian sharpening) ──────────────────────────────
+    // Emphasises character edges before binarisation, improving Tesseract accuracy
+    // on slightly blurry card photos.
+    const sharpened = new Uint8Array(w * h);
+    const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let sum = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const ny = Math.min(h - 1, Math.max(0, y + dy));
+                    const nx = Math.min(w - 1, Math.max(0, x + dx));
+                    sum += gray[ny * w + nx] * kernel[(dy + 1) * 3 + (dx + 1)];
+                }
+            }
+            sharpened[y * w + x] = Math.min(255, Math.max(0, sum));
+        }
+    }
+
+    // ── Adaptive threshold (integral-image method) ───────────────────────────
+    // C raised 8→10: slightly more aggressive binarisation handles low-contrast ink.
     const integral = new Float64Array((w+1) * (h+1));
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            integral[(y+1)*(w+1)+(x+1)] = gray[y*w+x]
+            integral[(y+1)*(w+1)+(x+1)] = sharpened[y*w+x]
                 + integral[y*(w+1)+(x+1)]
                 + integral[(y+1)*(w+1)+x]
                 - integral[y*(w+1)+x];
         }
     }
 
-    const half = 10, C = 8;
+    const half = 10, C = 10;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const x1  = Math.max(0, x - half);
@@ -130,7 +170,7 @@ function cropAndPreprocess(sourceCanvas, region) {
             const n   = (x2-x1) * (y2-y1);
             const sum = integral[y2*(w+1)+x2] - integral[y1*(w+1)+x2]
                       - integral[y2*(w+1)+x1] + integral[y1*(w+1)+x1];
-            const val = gray[y*w+x] < (sum/n - C) ? 0 : 255;
+            const val = sharpened[y*w+x] < (sum/n - C) ? 0 : 255;
             const idx = (y*w+x)*4;
             data[idx] = data[idx+1] = data[idx+2] = val;
             data[idx+3] = 255;
@@ -141,21 +181,49 @@ function cropAndPreprocess(sourceCanvas, region) {
 }
 
 function extractCardNumber(text) {
-    const upper = text.toUpperCase().replace(/[|!¡]/g, 'I').replace(/\s+/g, ' ').trim();
+    // Pre-clean common OCR noise before pattern matching
+    const upper = text.toUpperCase()
+        .replace(/[|!¡]/g, 'I')
+        .replace(/[\\/()\[\].,]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Patterns ordered by specificity (most specific first).
+    // Prefix length raised to {1,6} to cover sets like GLBF, BLBF, EDLCA.
     const patterns = [
-        /\b([A-Z]{2,5})[-–—]\s*(\d{1,4})\b/,
-        /\b([A-Z]{2,5})\s+(\d{2,4})\b/,
-        /\b([A-Z]{2,5})(\d{2,4})\b/,
+        /\b([A-Z]{1,6})[-–—]\s*(\d{1,4})\b/,
+        /\b([A-Z]{1,6})\s+(\d{2,4})\b/,
+        /\b([A-Z]{1,6})(\d{2,4})\b/,
         /([A-Z]{2,})[\s\-–—]*(\d{2,})/,
     ];
+
     for (const pattern of patterns) {
         const match = upper.match(pattern);
         if (match) {
-            const prefix  = match[1].replace(/0/g,'O').replace(/8/g,'B').replace(/5/g,'S').replace(/1/g,'I');
-            const numPart = match[2].replace(/O/g,'0').replace(/I/g,'1').replace(/B/g,'8').replace(/S/g,'5');
+            // Fix common OCR confusables in the letter prefix
+            const prefix = match[1]
+                .replace(/0/g, 'O')
+                .replace(/8/g, 'B')
+                .replace(/5/g, 'S')
+                .replace(/1/g, 'I')
+                .replace(/2/g, 'Z')
+                .replace(/6/g, 'G');
+            // Fix common OCR confusables in the numeric part
+            const numPart = match[2]
+                .replace(/O/g, '0')
+                .replace(/I/g, '1')
+                .replace(/B/g, '8')
+                .replace(/S/g, '5')
+                .replace(/Z/g, '2')
+                .replace(/G/g, '6');
             return `${prefix}-${numPart}`;
         }
     }
+
+    // Numeric-only fallback for Alpha Edition cards (e.g. "76", "115")
+    const numOnly = upper.match(/\b(\d{2,4})\b/);
+    if (numOnly) return numOnly[1];
+
     return null;
 }
 

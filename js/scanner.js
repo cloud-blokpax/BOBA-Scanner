@@ -347,36 +347,43 @@ function searchDatabase(query) {
   });
 }
 
+// ── Scan result cache ─────────────────────────────────────────────────────────
+// Avoids a redundant AI call when the same image is submitted twice in a session
+// (e.g. accidental double-tap or re-scan of a card already identified).
+// Key: lightweight fingerprint derived from stable interior bytes of the base64.
+// TTL: 5 minutes.  Max entries: 20 (oldest evicted first).
+
+const _scanCache     = new Map();
+const _CACHE_TTL_MS  = 5 * 60 * 1000;
+const _CACHE_MAX     = 20;
+
+function _cacheKey(b64) {
+  const len = b64.length;
+  // Skip the shared JPEG header bytes at the start; sample start+mid+end
+  return b64.slice(80, 120) + '|' + b64.slice((len >> 1) - 16, (len >> 1) + 16) + '|' + b64.slice(-40);
+}
+function _cacheGet(b64) {
+  const entry = _scanCache.get(_cacheKey(b64));
+  if (!entry) return null;
+  if (Date.now() - entry.ts > _CACHE_TTL_MS) { _scanCache.delete(_cacheKey(b64)); return null; }
+  return entry.result;
+}
+function _cacheSet(b64, result) {
+  if (_scanCache.size >= _CACHE_MAX) _scanCache.delete(_scanCache.keys().next().value);
+  _scanCache.set(_cacheKey(b64), { result, ts: Date.now() });
+}
+
 // ── API call ──────────────────────────────────────────────────────────────────
 
 async function callAPI(imageBase64) {
   console.log('Calling API backend...');
 
-  const prompt = `You are analyzing a Bo Jackson trading card. Extract the following information:
-
-CRITICAL LOCATIONS ON THE CARD:
-1. CARD NUMBER — BOTTOM LEFT corner. Format: Letters-Numbers e.g. "BLBF-84", "BF-108".
-   This is NOT the power number in the top right!
-2. POWER — TOP RIGHT corner in a circle/badge. Just a number e.g. "125". NOT the card number.
-3. HERO NAME — Printed prominently near the top, often all caps.
-4. SET NAME — Near bottom or on a banner (e.g. "Battle Arena", "Alpha Edition").
-5. YEAR — Usually "2023" or "2024".
-
-Common OCR errors to watch for: 6 vs 8, 0 vs O, 1 vs I.
-
-Also include a confidence score (0-100) for how certain you are about the card number.
-
-Return ONLY valid JSON with no markdown or extra text:
-{
-  "cardNumber": "BLBF-84",
-  "hero": "CHARACTER NAME",
-  "year": "2024",
-  "set": "Set Name",
-  "pose": "Parallel type or Base",
-  "weapon": "Weapon name or None",
-  "power": "125",
-  "confidence": 90
-}`;
+  // Return cached result if the same image was identified recently
+  const cached = _cacheGet(imageBase64);
+  if (cached) {
+    console.log('📦 Scan cache hit — skipping API call');
+    return cached;
+  }
 
   const headers = { 'Content-Type': 'application/json' };
 
@@ -394,7 +401,7 @@ Return ONLY valid JSON with no markdown or extra text:
       const response = await fetch('/api/anthropic', {
         method:  'POST',
         headers,
-        body:    JSON.stringify({ imageData: imageBase64, image: imageBase64, prompt })
+        body:    JSON.stringify({ imageData: imageBase64, image: imageBase64 })
       });
 
       if (!response.ok) {
@@ -413,7 +420,9 @@ Return ONLY valid JSON with no markdown or extra text:
       const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in API response');
 
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      _cacheSet(imageBase64, parsed);
+      return parsed;
     } catch (err) {
       if (err.message.includes('API error: 4')) throw err; // don't retry 4xx
       lastError = err;

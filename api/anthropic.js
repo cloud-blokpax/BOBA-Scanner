@@ -1,5 +1,33 @@
 // api/anthropic.js
 
+// Prompt is defined server-side to prevent prompt-injection abuse of this
+// endpoint and to allow tuning without client-side deploys.
+const CARD_PROMPT = `You are analyzing a Bo Jackson trading card. Extract the following information:
+
+CRITICAL LOCATIONS ON THE CARD:
+1. CARD NUMBER — BOTTOM LEFT corner. Format: Letters-Numbers e.g. "BLBF-84", "BF-108".
+   This is NOT the power number in the top right!
+2. POWER — TOP RIGHT corner in a circle/badge. Just a number e.g. "125". NOT the card number.
+3. HERO NAME — Printed prominently near the top, often all caps.
+4. SET NAME — Near bottom or on a banner (e.g. "Battle Arena", "Alpha Edition").
+5. YEAR — Usually "2023" or "2024".
+
+Common OCR errors to watch for: 6 vs 8, 0 vs O, 1 vs I.
+
+Also include a confidence score (0-100) for how certain you are about the card number.
+
+Return ONLY valid JSON with no markdown or extra text:
+{
+  "cardNumber": "BLBF-84",
+  "hero": "CHARACTER NAME",
+  "year": "2024",
+  "set": "Set Name",
+  "pose": "Parallel type or Base",
+  "weapon": "Weapon name or None",
+  "power": "125",
+  "confidence": 90
+}`;
+
 const RATE_LIMIT_MAX    = 30;
 const RATE_LIMIT_WINDOW = 60; // seconds
 
@@ -61,7 +89,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData, image, prompt } = req.body;
+    const { imageData, image } = req.body;
     const finalImageData = imageData || image;
 
     if (!finalImageData) {
@@ -75,12 +103,6 @@ export default async function handler(req, res) {
         error: 'Server configuration error: ANTHROPIC_API_KEY not set. Add it in Vercel Dashboard → Settings → Environment Variables.'
       });
     }
-
-    // Prompt must be provided by the client. If missing, return an error.
-    if (!prompt) {
-      return res.status(400).json({ error: 'Missing prompt in request body' });
-    }
-    const cardPrompt = prompt;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -99,7 +121,7 @@ export default async function handler(req, res) {
               type:   'image',
               source: { type: 'base64', media_type: 'image/jpeg', data: finalImageData }
             },
-            { type: 'text', text: cardPrompt }
+            { type: 'text', text: CARD_PROMPT }
           ]
         }]
       })
