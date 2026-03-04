@@ -165,6 +165,8 @@ window.fetchEbaySoldData = async function(card) {
 
     if (!res.ok) return null;
     const data = await res.json();
+    // Pass blocked flag through so UI can show a direct eBay link
+    if (data.blocked) return { blocked: true, searchUrl: buildEbaySoldUrl(card) };
     if (!data.lastSold && data.soldCount === 0) return { soldCount: 0 };
     return data;
   } catch {
