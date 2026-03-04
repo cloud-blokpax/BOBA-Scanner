@@ -91,39 +91,32 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
 
   // ── Diagnostic: understand the HTML structure ───────────────────────────
   const hasSItem       = html.includes('s-item');
+  const hasSCard       = html.includes('s-card');
   const hasSItemPrice  = html.includes('s-item__price');
+  const hasSCardPrice  = html.includes('s-card__price');
+  const hasSuCardPrice = html.includes('su-card__price');
   const hasPositive    = html.includes('POSITIVE');
   const sItemCount     = (html.match(/s-item/g) || []).length;
+  const sCardCount     = (html.match(/s-card/g) || []).length;
   const srpResultsCount = (html.match(/srp-results/g) || []).length;
   const liCount        = (html.match(/<li\b/g) || []).length;
-  const srpItemCount   = (html.match(/srp-item/g) || []).length;
-  const bosItems       = html.includes('bos-items__loader');
-  console.log(`Diagnostics: s-item=${hasSItem}(×${sItemCount}), s-item__price=${hasSItemPrice}, POSITIVE=${hasPositive}, srp-results=×${srpResultsCount}, srp-item=×${srpItemCount}, li=×${liCount}, bos-loader=${bosItems}`);
+  console.log(`Diagnostics: s-item=×${sItemCount}, s-card=×${sCardCount}, s-item__price=${hasSItemPrice}, s-card__price=${hasSCardPrice}, su-card__price=${hasSuCardPrice}, POSITIVE=${hasPositive}, srp-results=×${srpResultsCount}, li=×${liCount}`);
 
-  // Log context around the first s-item to understand the exact HTML structure
-  const firstSItem = html.indexOf('s-item');
-  if (firstSItem !== -1) {
-    const ctx = html.slice(Math.max(0, firstSItem - 100), firstSItem + 400).replace(/\s+/g, ' ');
-    console.log('First s-item context:', ctx);
-  }
-  // Log context around srp-results
-  const firstSrpResults = html.indexOf('srp-results');
-  if (firstSrpResults !== -1) {
-    const ctx = html.slice(Math.max(0, firstSrpResults - 50), firstSrpResults + 300).replace(/\s+/g, ' ');
-    console.log('srp-results context:', ctx);
-  }
-  // Log context around the first price to understand price HTML
-  const firstPrice = html.indexOf('s-item__price');
-  if (firstPrice !== -1) {
-    const ctx = html.slice(Math.max(0, firstPrice - 50), firstPrice + 200).replace(/\s+/g, ' ');
-    console.log('First price context:', ctx);
+  // Log the first s-card item HTML to reveal price/title class names
+  const firstSCard = html.indexOf('s-card');
+  if (firstSCard !== -1) {
+    const liStart = html.lastIndexOf('<li', firstSCard);
+    if (liStart !== -1) {
+      const ctx = html.slice(liStart, liStart + 800).replace(/\s+/g, ' ');
+      console.log('First s-card item HTML:', ctx);
+    }
   }
 
   const soldItems = [];
 
-  // ── Strategy 1: Split on <li> s-item elements (flexible pattern) ─────────
-  // Match any <li> that has s-item anywhere in its opening tag attributes
-  const itemChunks = html.split(/<li\b[^>]*\bs-item\b[^>]*>/i);
+  // ── Strategy 1: Split on <li> s-card or s-item elements ─────────────────
+  // eBay renamed s-item → s-card; match both for forward/backward compat.
+  const itemChunks = html.split(/<li\b[^>]*\b(?:s-card|s-item)\b[^>]*>/i);
   console.log(`Item chunks: ${itemChunks.length - 1}`);
 
   for (let i = 1; i < itemChunks.length; i++) {
@@ -167,7 +160,7 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   console.log(`Strategy 1 (s-item split): ${soldItems.length} items`);
 
   // ── Strategy 2: Direct price+date extraction (if strategy 1 found nothing) ──
-  if (soldItems.length === 0 && hasSItemPrice) {
+  if (soldItems.length === 0 && (hasSItemPrice || hasSCardPrice || hasSuCardPrice)) {
     console.log('Trying strategy 2: direct price regex...');
     const priceRegex = /s-item__price[^>]*>([\s\S]{0,150}?\$([\d,]+\.?\d*)[\s\S]{0,400}?(?:Sold|POSITIVE|endedDate)[\s\S]{0,200}?<)/gi;
     let m;
@@ -208,14 +201,15 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
 
 // ── Price extraction helper ───────────────────────────────────────────────────
 function extractPrice(html) {
-  // Pattern 1: explicit s-item__price class
-  const blockMatch = html.match(/class="s-item__price"[^>]*>([\s\S]{0,200}?)<\/span>/i)
-                  || html.match(/class='s-item__price'[^>]*>([\s\S]{0,200}?)<\/span>/i);
+  // Try all known eBay price class names (s-item__price = old, s-card__price / su-card__price = new)
+  const blockMatch = html.match(/class="(?:s-item__|s-card__|su-card__)price"[^>]*>([\s\S]{0,200}?)<\/span>/i)
+                  || html.match(/class='(?:s-item__|s-card__|su-card__)price'[^>]*>([\s\S]{0,200}?)<\/span>/i)
+                  || html.match(/(?:s-item__|s-card__|su-card__)price[^>]*>([\s\S]{0,200}?)<\/(?:span|div)>/i);
   if (blockMatch) {
     const m = blockMatch[1].match(/\$?([\d,]+\.?\d*)/);
     if (m) return parseFloat(m[1].replace(/,/g, ''));
   }
-  // Pattern 2: any dollar amount in the item HTML (last resort)
+  // Last resort: any dollar amount in the item HTML
   const dollarMatch = html.match(/\$([\d,]+\.?\d{2})\b/);
   if (dollarMatch) return parseFloat(dollarMatch[1].replace(/,/g, ''));
   return null;
