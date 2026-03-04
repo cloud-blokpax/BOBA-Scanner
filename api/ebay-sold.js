@@ -115,49 +115,63 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const soldItems = [];
 
   // ── Strategy 1: Split on <li> s-card or s-item elements ─────────────────
-  // eBay renamed s-item → s-card; match both for forward/backward compat.
-  const itemChunks = html.split(/<li\b[^>]*\b(?:s-card|s-item)\b[^>]*>/i);
+  // Use lookahead split so the <li> opening tag stays in each chunk — needed
+  // because aria-label (title) lives on the <li> tag itself in eBay's new markup.
+  const itemChunks = html.split(/(?=<li\b[^>]*\b(?:s-card|s-item)\b)/i);
   console.log(`Item chunks: ${itemChunks.length - 1}`);
 
   for (let i = 1; i < itemChunks.length; i++) {
     const raw = itemChunks[i];
 
+    // The chunk starts with the <li> opening tag — grab it separately
+    const liTagEnd = raw.indexOf('>');
+    const liTag    = liTagEnd !== -1 ? raw.slice(0, liTagEnd + 1) : '';
+    const body     = liTagEnd !== -1 ? raw.slice(liTagEnd + 1)    : raw;
+
     // Find the end of this item by tracking nested <li> depth
-    let depth = 1, pos = 0, itemHtml = raw;
-    while (pos < raw.length && depth > 0) {
-      const nextOpen  = raw.indexOf('<li', pos);
-      const nextClose = raw.indexOf('</li>', pos);
-      if (nextClose === -1) { itemHtml = raw; break; }
+    let depth = 1, pos = 0, itemHtml = body;
+    while (pos < body.length && depth > 0) {
+      const nextOpen  = body.indexOf('<li', pos);
+      const nextClose = body.indexOf('</li>', pos);
+      if (nextClose === -1) { itemHtml = body; break; }
       if (nextOpen !== -1 && nextOpen < nextClose) { depth++; pos = nextOpen + 3; }
-      else { depth--; if (depth === 0) itemHtml = raw.slice(0, nextClose); pos = nextClose + 5; }
+      else { depth--; if (depth === 0) itemHtml = body.slice(0, nextClose); pos = nextClose + 5; }
     }
 
+    const fullItem = liTag + itemHtml;
+
     // Skip nav/placeholder items that have no price
-    if (!itemHtml.includes('$')) continue;
+    if (!fullItem.includes('$')) continue;
 
     // Extract URL
-    const urlMatch = itemHtml.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/)
-                  || itemHtml.match(/href="([^"]*ebay\.com\/itm\/[^"]+)"/);
+    const urlMatch = fullItem.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/)
+                  || fullItem.match(/href="([^"]*ebay\.com\/itm\/[^"]+)"/);
     const url = urlMatch ? urlMatch[1].split('?')[0] : null;
 
-    // Extract title — try multiple patterns
-    const titleMatch = itemHtml.match(/aria-label="([^"]+)"/)
-                    || itemHtml.match(/role="heading"[^>]*>([^<]+)</)
-                    || itemHtml.match(/class="s-item__title"[^>]*>(?:<[^>]+>)?([^<]+)/)
-                    || itemHtml.match(/class="s-item__title--tag[^"]*"[^>]*>([^<]+)/);
+    // Extract title — check <li> aria-label first, then new/old class names
+    const titleMatch = liTag.match(/aria-label="([^"]+)"/)
+                    || fullItem.match(/class="s-card__title[^"]*"[^>]*>(?:<[^>]+>)?([^<]+)/)
+                    || fullItem.match(/class="s-item__title[^"]*"[^>]*>(?:<[^>]+>)?([^<]+)/)
+                    || fullItem.match(/role="heading"[^>]*>([^<]+)</)
+                    || fullItem.match(/aria-label="([^"]+)"/);
     const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : '';
 
-    // Extract price — try multiple patterns, handle nested spans
-    const price = extractPrice(itemHtml);
+    // Extract price
+    const price = extractPrice(fullItem);
     if (!price) continue;
 
-    // Extract sold date — try multiple patterns
-    const date = extractDate(itemHtml);
+    // Extract sold date
+    const date = extractDate(fullItem);
 
     soldItems.push({ title, price, url, date });
   }
 
-  console.log(`Strategy 1 (s-item split): ${soldItems.length} items`);
+  // Log first parsed item for diagnostics
+  if (soldItems.length > 0) {
+    console.log(`Sample item[0]: title="${soldItems[0].title}" price=${soldItems[0].price} url=${soldItems[0].url}`);
+  }
+
+  console.log(`Strategy 1 (s-card split): ${soldItems.length} items`);
 
   // ── Strategy 2: Direct price+date extraction (if strategy 1 found nothing) ──
   if (soldItems.length === 0 && (hasSItemPrice || hasSCardPrice || hasSuCardPrice)) {
