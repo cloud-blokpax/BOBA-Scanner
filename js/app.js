@@ -69,10 +69,9 @@ async function init() {
             await initGoogleAuth();
         }
 
-        // Load DB, OCR, and OpenCV in parallel
+        // Load DB and OpenCV in parallel
         await Promise.all([
             loadDatabase(),
-            initTesseract(),
             loadOpenCV()
         ]);
 
