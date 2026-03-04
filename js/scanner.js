@@ -665,6 +665,11 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   updateStats();
   renderCards();
 
+  // Switch to Collection tab so the user can see the scanned card
+  if (typeof window.bottomNavSwitchTab === 'function') {
+    window.bottomNavSwitchTab('collection');
+  }
+
   if (navigator.vibrate) navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
 
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';

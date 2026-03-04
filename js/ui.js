@@ -79,6 +79,26 @@ function updateStats() {
     if (statRate)       statRate.textContent        = `${rate}%`;
     if (statCardsLabel) statCardsLabel.textContent  = sublabel;
     if (statAILabel)    statAILabel.textContent     = `${aiLimit - aiUsed} remaining`;
+
+    // Mirror values to stats strip duplicate elements
+    const s2Cards = document.getElementById('statCards2');
+    const s2AI    = document.getElementById('statAI2');
+    const s2Cost  = document.getElementById('statCost2');
+    const s2Rate  = document.getElementById('statRate2');
+    const s2CardsLabel = document.getElementById('statCardsLabel2');
+    const s2AILabel    = document.getElementById('statAILabel2');
+    if (s2Cards)      s2Cards.textContent      = `${stats.scanned} / ${cardLimit}`;
+    if (s2AI)         s2AI.textContent          = `${aiUsed} / ${aiLimit}`;
+    if (s2Cost)       s2Cost.textContent        = `$${(stats.cost || 0).toFixed(2)}`;
+    if (s2Rate)       s2Rate.textContent        = `${rate}%`;
+    if (s2CardsLabel) s2CardsLabel.textContent  = sublabel;
+    if (s2AILabel)    s2AILabel.textContent     = `${aiLimit - aiUsed} remaining`;
+
+    // Update stats strip summary line
+    const count = stats.scanned || 0;
+    const cost  = (stats.cost || 0).toFixed(2);
+    const summary = document.getElementById('statsStripSummary');
+    if (summary) summary.textContent = `${count} card${count !== 1 ? 's' : ''} · $${cost}`;
 }
 
 function renderCards() {
@@ -704,6 +724,23 @@ function wireUpEvents() {
         if (typeof forceSync === 'function') forceSync();
     });
 
+    // Stats strip toggle
+    const statsStripToggle = document.getElementById('statsStripToggle');
+    if (statsStripToggle) {
+        statsStripToggle.addEventListener('click', function() {
+            const expanded = document.getElementById('statsStripExpanded');
+            const isOpen = this.getAttribute('aria-expanded') === 'true';
+            this.setAttribute('aria-expanded', String(!isOpen));
+            if (expanded) {
+                if (isOpen) {
+                    expanded.setAttribute('hidden', '');
+                } else {
+                    expanded.removeAttribute('hidden');
+                }
+            }
+        });
+    }
+
     // User avatar menu toggle
     const userAvatar = document.getElementById('userAvatar');
     if (userAvatar) userAvatar.addEventListener('click', function() {
@@ -797,6 +834,12 @@ function updateCollectionNavCounts() {
         if (mainEl) mainEl.textContent = mainCount > 0 ? ` (${mainCount})` : '';
         if (pcEl)   pcEl.textContent   = pcCount   > 0 ? ` (${pcCount})`   : '';
         if (dbEl)   dbEl.textContent   = dbCount   > 0 ? ` (${dbCount})`   : '';
+
+        // Update bottom nav badges
+        const bottomCollBadge = document.getElementById('bottomNavCollectionCount');
+        const bottomDeckBadge = document.getElementById('bottomNavDeckCount');
+        if (bottomCollBadge) bottomCollBadge.textContent = mainCount > 0 ? String(mainCount) : '';
+        if (bottomDeckBadge) bottomDeckBadge.textContent = dbCount   > 0 ? String(dbCount)   : '';
 
         // Also refresh the slider counts
         if (typeof updateCollectionSlider === 'function') updateCollectionSlider();

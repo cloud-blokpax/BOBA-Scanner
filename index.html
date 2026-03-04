@@ -50,14 +50,12 @@
                     </button>
 
                     <div id="userAuthenticated" style="display: none;">
-                        <div class="user-info">
-                            <div class="user-name" id="userName">Loading...</div>
-                            <div class="user-email" id="userEmail"></div>
-                        </div>
+                        <button class="btn-force-sync btn-icon-only" id="btnForceSync" aria-label="Force cloud sync" title="Sync">☁️</button>
                         <img class="user-avatar" id="userAvatar" alt="User" role="button" tabindex="0" aria-haspopup="true" aria-label="User menu">
-                        <button class="btn-header-settings" id="btnHeaderSettings">⚙️ Settings</button>
-                        <button class="btn-force-sync" id="btnForceSync" aria-label="Force cloud sync">☁️ Sync</button>
-                        <button class="btn-sign-out" id="btnSignOut" aria-label="Sign out">Sign Out</button>
+                        <!-- Settings + Sign Out moved to More sheet in bottom nav -->
+                        <!-- Keep hidden elements so existing wireUpEvents() calls don't throw -->
+                        <button id="btnHeaderSettings" style="display:none;" aria-hidden="true"></button>
+                        <button id="btnSignOut" style="display:none;" aria-hidden="true"></button>
                     </div>
                 </div>
             </div>
@@ -141,6 +139,42 @@
                         <span class="btn-icon">📋</span>
                         <span>My Tournaments</span>
                     </button>
+                </div>
+
+                <!-- Stats strip — collapsed by default, tap to expand -->
+                <div class="stats-strip" id="statsStrip">
+                    <button class="stats-strip-toggle" id="statsStripToggle" aria-expanded="false" aria-controls="statsStripExpanded">
+                        <span id="statsStripSummary">0 cards · $0.00</span>
+                        <span class="stats-strip-arrow" aria-hidden="true">▼</span>
+                    </button>
+                    <div class="stats-strip-expanded" id="statsStripExpanded" hidden>
+                        <div class="stats-container-inline">
+                            <div class="stat-card">
+                                <div class="stat-icon cards">🎴</div>
+                                <div class="stat-label">Cards Scanned</div>
+                                <div class="stat-value" id="statCards2">0 / 5</div>
+                                <div class="stat-sublabel" id="statCardsLabel2">Guest limit</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon ai">🤖</div>
+                                <div class="stat-label">AI Lookups</div>
+                                <div class="stat-value" id="statAI2">0 / 1</div>
+                                <div class="stat-sublabel" id="statAILabel2">Remaining</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon cost">💰</div>
+                                <div class="stat-label">Total Cost</div>
+                                <div class="stat-value" id="statCost2">$0.00</div>
+                                <div class="stat-sublabel">This session</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon rate">📊</div>
+                                <div class="stat-label">Free Rate</div>
+                                <div class="stat-value" id="statRate2">0%</div>
+                                <div class="stat-sublabel">OCR success</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Collection quick-access: My Collection / Price Check / Deck Builder -->
@@ -302,8 +336,68 @@
             </button>
         </div>
         
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav" id="bottomNav" role="navigation" aria-label="Main navigation">
+        <button class="bottom-nav-item active" data-tab="scan" aria-label="Scan">
+            <span class="bottom-nav-icon">📷</span>
+            <span class="bottom-nav-label">Scan</span>
+        </button>
+        <button class="bottom-nav-item" data-tab="collection" aria-label="My Collection">
+            <span class="bottom-nav-icon">🎴</span>
+            <span class="bottom-nav-label">Collection</span>
+            <span class="bottom-nav-badge" id="bottomNavCollectionCount"></span>
+        </button>
+        <button class="bottom-nav-item" data-tab="deck" aria-label="Deck Builder">
+            <span class="bottom-nav-icon">🃏</span>
+            <span class="bottom-nav-label">Deck</span>
+            <span class="bottom-nav-badge" id="bottomNavDeckCount"></span>
+        </button>
+        <button class="bottom-nav-item" data-tab="more" aria-label="More options">
+            <span class="bottom-nav-icon">···</span>
+            <span class="bottom-nav-label">More</span>
+        </button>
+    </nav>
+
+    <!-- More Sheet (bottom sheet overlay) -->
+    <div class="more-sheet-backdrop" id="moreSheetBackdrop" aria-hidden="true"></div>
+    <div class="more-sheet" id="moreSheet" role="dialog" aria-modal="true" aria-label="More options">
+        <div class="more-sheet-handle"></div>
+        <div class="more-sheet-body">
+            <button class="more-sheet-item" id="moreSettings">
+                <span class="more-sheet-icon">⚙️</span> Settings
+            </button>
+            <button class="more-sheet-item" id="moreExportCSV">
+                <span class="more-sheet-icon">📄</span> Export CSV
+            </button>
+            <button class="more-sheet-item" id="moreCollectionStats">
+                <span class="more-sheet-icon">📊</span> Collection Stats
+            </button>
+            <button class="more-sheet-item" id="moreScanHistory">
+                <span class="more-sheet-icon">🕐</span> Scan History
+            </button>
+            <button class="more-sheet-item" id="moreReadyToList">
+                <span class="more-sheet-icon">🏷️</span> Ready to List
+            </button>
+            <div id="moreAdminSection" style="display:none;">
+                <div class="more-sheet-divider"></div>
+                <div class="more-sheet-section-label">Admin</div>
+                <button class="more-sheet-item" id="moreCreateTournament">
+                    <span class="more-sheet-icon">🏆</span> Create Tournament
+                </button>
+                <button class="more-sheet-item" id="moreMyTournaments">
+                    <span class="more-sheet-icon">📋</span> My Tournaments
+                </button>
+            </div>
+            <div class="more-sheet-divider"></div>
+            <button class="more-sheet-item more-sheet-item--danger" id="moreSignOut">
+                <span class="more-sheet-icon">🚪</span> Sign Out
+            </button>
+            <p class="more-sheet-disclosure">eBay prices and links via eBay Partner Network. BOBA Scanner may earn commission on purchases.</p>
+        </div>
     </div>
-    
+
+    </div>
+
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
@@ -420,6 +514,7 @@
     <script src="js/themes.js"></script>       <!-- theme engine — load before app.js -->
     <script src="js/tournaments.js"></script>  <!-- Tournament code system -->
     <script src="js/deck-builder.js"></script> <!-- Deck Builder workflow -->
+    <script src="js/bottom-nav.js"></script>   <!-- Bottom navigation bar + More sheet -->
     <script src="js/app.js"></script>              <!-- MUST BE LAST: orchestrates init -->
     <script src="js/ui-enhancements.js"></script>
 </body>
