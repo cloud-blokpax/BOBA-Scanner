@@ -1,11 +1,11 @@
 // api/ebay-sold.js — Vercel serverless proxy for eBay sold/completed listings
 //
-// Strategy: Scrape eBay's sold listings HTML — eBay server-renders <li class="s-item">
-//           elements for SEO, so we can parse them without a headless browser.
-//           Falls back to extracting embedded JSON state from hydration scripts.
+// eBay's "Pardon Our Interruption" bot detection blocks direct scraping from
+// Vercel/AWS data-centre IPs. To fix this, set a SCRAPERAPI_KEY environment
+// variable (free tier at scraperapi.com: 5,000 req/month).
 //
-// Note: The eBay Finding API (findCompletedItems) was decommissioned October 2024
-//       and no longer returns results.
+// Without SCRAPERAPI_KEY the request will almost certainly be blocked.
+// In that case we return { blocked: true } so the client can show a direct link.
 
 const EBAY_SEARCH = 'https://www.ebay.com/sch/i.html';
 
@@ -27,6 +27,12 @@ export default async function handler(req, res) {
 
   try {
     const scrapeResult = await scrapeEbaySoldPage(query, cardNumber, hero, athlete);
+
+    // eBay blocked the request — tell the client so it can show a direct link
+    if (scrapeResult === 'BLOCKED') {
+      return res.status(200).json({ blocked: true });
+    }
+
     if (scrapeResult && scrapeResult.soldCount > 0) {
       console.log(`HTML scrape returned ${scrapeResult.soldCount} sold items`);
       return res.status(200).json(scrapeResult);
@@ -43,13 +49,19 @@ export default async function handler(req, res) {
 }
 
 // ── Scrape eBay sold listings HTML ──────────────────────────────────────────
+// Returns 'BLOCKED' when eBay serves a bot-detection page.
 async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
-  const searchUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
+  const ebayUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
+  const scraperApiKey = process.env.SCRAPERAPI_KEY;
 
-  let html;
-  try {
-    const response = await fetch(searchUrl, {
-      headers: {
+  // Route through ScraperAPI when configured — handles IP rotation + eBay bot bypass
+  const fetchUrl = scraperApiKey
+    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us`
+    : ebayUrl;
+
+  const headers = scraperApiKey
+    ? {} // ScraperAPI sets its own headers
+    : {
         'User-Agent':      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -57,8 +69,11 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
         'Pragma':          'no-cache',
         'Referer':         'https://www.google.com/',
         'Upgrade-Insecure-Requests': '1',
-      }
-    });
+      };
+
+  let html;
+  try {
+    const response = await fetch(fetchUrl, { headers });
     if (!response.ok) {
       console.warn('eBay scrape HTTP error:', response.status);
       return null;
@@ -72,13 +87,21 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   console.log(`eBay HTML length: ${html.length} chars`);
   console.log('eBay HTML preview:', html.slice(0, 300).replace(/\s+/g, ' '));
 
-  if (html.includes('captcha') || html.includes('Robot Check') || html.includes('gs.securecode') || html.includes('h-captcha')) {
-    console.warn('eBay returned a bot-detection/captcha page');
-    return null;
+  // Detect bot-detection / interstitial pages
+  if (
+    html.includes('Pardon Our Interruption') ||
+    html.includes('captcha') ||
+    html.includes('Robot Check') ||
+    html.includes('h-captcha') ||
+    html.includes('gs.securecode')
+  ) {
+    console.warn('eBay returned a bot-detection page — set SCRAPERAPI_KEY to fix this');
+    return 'BLOCKED';
   }
+
   if (html.length < 5000) {
     console.warn('eBay HTML suspiciously short — may be blocked or redirected');
-    return null;
+    return 'BLOCKED';
   }
 
   const soldItems = [];
@@ -128,7 +151,7 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     const price = parseFloat(priceMatch[1].replace(/,/g, ''));
     if (isNaN(price) || price <= 0) continue;
 
-    // Extract sold date — try multiple class patterns used across eBay page versions
+    // Extract sold date — try multiple class patterns
     const dateMatch = itemHtml.match(/class="[^"]*POSITIVE[^"]*"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
                    || itemHtml.match(/class="s-item__endedDate"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
                    || itemHtml.match(/class="[^"]*s-item__caption--signal[^"]*"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
@@ -144,9 +167,7 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   if (soldItems.length === 0) {
     console.log('No items from HTML parsing, trying embedded JSON...');
     const jsonItems = extractFromEmbeddedJson(html);
-    if (jsonItems.length > 0) {
-      soldItems.push(...jsonItems);
-    }
+    if (jsonItems.length > 0) soldItems.push(...jsonItems);
   }
 
   console.log(`Scraped ${soldItems.length} raw items from eBay HTML`);
@@ -162,13 +183,11 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
 // ── Extract sold items from embedded JSON in eBay HTML ──────────────────────
 function extractFromEmbeddedJson(html) {
   const items = [];
-
   const patterns = [
     /"itemSummaries"\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
     /"items"\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
     /"searchResults"\s*:\s*\{[^}]*"items"\s*:\s*(\[[\s\S]*?\])/,
   ];
-
   for (const pattern of patterns) {
     const match = html.match(pattern);
     if (!match) continue;
@@ -178,17 +197,11 @@ function extractFromEmbeddedJson(html) {
         const title = item.title || '';
         const price = parseFloat(item.price?.value || item.sellingStatus?.currentPrice?.value || '0');
         if (isNaN(price) || price <= 0) continue;
-        items.push({
-          title,
-          price,
-          url:  item.itemWebUrl || item.viewItemURL || null,
-          date: formatDate(item.itemEndDate || item.endTime)
-        });
+        items.push({ title, price, url: item.itemWebUrl || item.viewItemURL || null, date: formatDate(item.itemEndDate || item.endTime) });
       }
       if (items.length > 0) break;
     } catch { /* parse failed, try next pattern */ }
   }
-
   return items;
 }
 
@@ -198,14 +211,12 @@ function filterRelevantItems(items, cardNumber, hero, athlete) {
   const cn = (cardNumber || '').toUpperCase();
   const h  = (hero || '').toUpperCase();
   const a  = (athlete || '').toUpperCase();
-
   if (!cn && (!h || h.length <= 2) && (!a || a.length <= 2)) return items;
-
   return items.filter(item => {
-    const titleUpper = (item.title || '').toUpperCase();
-    if (cn && titleUpper.includes(cn)) return true;
-    if (h && h.length > 2 && titleUpper.includes(h)) return true;
-    if (a && a.length > 2 && titleUpper.includes(a)) return true;
+    const t = (item.title || '').toUpperCase();
+    if (cn && t.includes(cn)) return true;
+    if (h && h.length > 2 && t.includes(h)) return true;
+    if (a && a.length > 2 && t.includes(a)) return true;
     return false;
   });
 }
@@ -221,32 +232,18 @@ function formatDate(dateStr) {
 
 function decodeEntities(str) {
   return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/');
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&#x27;/g, "'").replace(/&#x2F;/g, '/');
 }
 
 function formatSoldResponse(soldItems) {
   const validItems = soldItems.filter(i => !isNaN(i.price) && i.price > 0);
-  if (validItems.length === 0) {
-    return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
-  }
-
+  if (validItems.length === 0) return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
   const prices = validItems.map(i => i.price);
   const avgSold = parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2));
   const lastItem = validItems[0];
-
   return {
-    lastSold: {
-      price: lastItem.price,
-      date:  lastItem.date,
-      title: lastItem.title,
-      url:   lastItem.url
-    },
+    lastSold:      { price: lastItem.price, date: lastItem.date, title: lastItem.title, url: lastItem.url },
     soldCount:     validItems.length,
     avgSoldPrice:  avgSold,
     lowSoldPrice:  parseFloat(Math.min(...prices).toFixed(2)),

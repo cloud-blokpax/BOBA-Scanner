@@ -1204,6 +1204,19 @@ window.openCardDetail = function(index) {
             const rb2 = document.getElementById('detailEbaySoldRefresh');
             if (rb2) rb2.disabled = false;
             if (!el2) return;
+            if (result && result.blocked) {
+                // eBay blocked the server request — show a direct link instead
+                const directUrl = result.searchUrl || ebaySoldUrl;
+                if (directUrl) {
+                    el2.innerHTML = `<a href="${escapeHtml(directUrl)}" target="_blank" rel="noopener"
+                        style="color:#92400e;font-weight:600;text-decoration:none;">View sold listings on eBay →</a>`;
+                } else {
+                    el2.textContent = 'Lookup unavailable';
+                    el2.style.color = '#9ca3af';
+                }
+                if (rb2) rb2.disabled = false;
+                return;
+            }
             if (!result || result.soldCount === 0 || !result.lastSold) {
                 el2.textContent = 'No recent sales found';
                 el2.style.color = '#9ca3af';
