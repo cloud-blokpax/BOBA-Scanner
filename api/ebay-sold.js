@@ -116,8 +116,11 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const itemChunks = html.split(/(?=<li\b[^>]*\b(?:s-card|s-item)\b)/i);
   console.log(`Item chunks: ${itemChunks.length - 1}`);
   if (itemChunks.length > 1) {
-    console.log('First chunk preview:', itemChunks[1].slice(0, 700).replace(/\s+/g, ' '));
+    console.log('First chunk preview:', itemChunks[1].slice(0, 1500).replace(/\s+/g, ' '));
   }
+  // Find what class name eBay uses for the listing title
+  const titleClassMatch = html.match(/class="([^"]*(?:title|heading|name)[^"]*)"[^>]*>\s*([^<]{10,})/i);
+  if (titleClassMatch) console.log('Title class candidate:', titleClassMatch[1], '|', titleClassMatch[2].slice(0, 80));
 
   for (let i = 1; i < itemChunks.length; i++) {
     const raw = itemChunks[i];
@@ -293,6 +296,9 @@ function filterRelevantItems(items, cardNumber, hero, athlete) {
   if (!cn && (!h || h.length <= 2) && (!a || a.length <= 2)) return items;
   return items.filter(item => {
     const t = (item.title || '').toUpperCase();
+    // If title extraction failed, include the item — the search query already
+    // scoped results to the card; we can't filter what we can't read.
+    if (!t) return true;
     if (cn && t.includes(cn)) return true;
     if (h && h.length > 2 && t.includes(h)) return true;
     if (a && a.length > 2 && t.includes(a)) return true;
