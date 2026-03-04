@@ -363,4 +363,269 @@ function downloadFile(content, filename, type) {
     }, 100);
 }
 
+// ── eBay Bulk Upload Export ───────────────────────────────────────────────────
+// Generates a Seller Hub-compatible CSV for eBay bulk listing upload.
+// Admin configures listing-specific fields (category, profiles, title template, etc.)
+// in the admin dashboard Settings tab. Card metadata fills everything else.
+
+const EBAY_SETTINGS_KEY = 'ebayExportSettings';
+
+const EBAY_CONDITION_MAP = {
+    // Raw / ungraded
+    'Raw':    '3000',
+    // PSA grades
+    'PSA 10': '2750', 'PSA 9': '3000', 'PSA 8': '3000',
+    'PSA 7':  '3000', 'PSA 6': '3000', 'PSA 5': '5000',
+    'PSA 4':  '5000', 'PSA 3': '6000', 'PSA 2': '6000', 'PSA 1': '6000',
+    // BGS grades
+    'BGS 10': '2750', 'BGS 9.5': '2750', 'BGS 9': '3000', 'BGS 8.5': '3000',
+    'BGS 8':  '3000', 'BGS 7.5': '3000', 'BGS 7': '3000',
+    // SGC grades
+    'SGC 10': '2750', 'SGC 9': '3000', 'SGC 8': '3000', 'SGC 7': '3000',
+};
+
+function getEbayExportSettings() {
+    try {
+        return Object.assign({
+            titleTemplate:    '{hero} {athlete} Bo Jackson Battle Arena',
+            categoryId:       '183454',
+            paymentProfile:   '',
+            returnProfile:    '',
+            shippingProfile:  '',
+            descriptionTemplate: '<p><strong>{hero}</strong> ({cardNumber})</p><p>Set: {set} {year} | Parallel: {pose}</p>{weaponLine}<p>Game: Bo Jackson Battle Arena</p>{notesLine}',
+            priceSource:      'ebayAvgPrice',
+            bestOffer:        'false',
+            duration:         'GTC',
+            postalCode:       '',
+            storeCategory:    '',
+            gameSpecific:     'Bo Jackson Battle Arena',
+            manufacturer:     '',
+            language:         'English',
+            sport:            'Trading Cards',
+        }, JSON.parse(localStorage.getItem(EBAY_SETTINGS_KEY) || '{}'));
+    } catch { return {}; }
+}
+
+window.saveEbayExportSettings = function() {
+    const get = id => document.getElementById(id)?.value ?? '';
+    const settings = {
+        titleTemplate:    get('ebayTitleTemplate'),
+        categoryId:       get('ebayCategoryId'),
+        paymentProfile:   get('ebayPaymentProfile'),
+        returnProfile:    get('ebayReturnProfile'),
+        shippingProfile:  get('ebayShippingProfile'),
+        descriptionTemplate: get('ebayDescriptionTemplate'),
+        priceSource:      get('ebayPriceSource'),
+        bestOffer:        get('ebayBestOffer'),
+        duration:         get('ebayDuration'),
+        postalCode:       get('ebayPostalCode'),
+        storeCategory:    get('ebayStoreCategory'),
+        gameSpecific:     get('ebayGame'),
+        manufacturer:     get('ebayManufacturer'),
+        language:         get('ebayLanguage'),
+        sport:            get('ebaySport'),
+    };
+    localStorage.setItem(EBAY_SETTINGS_KEY, JSON.stringify(settings));
+    const status = document.getElementById('ebaySettingsSaveStatus');
+    if (status) { status.textContent = 'Saved ✓'; setTimeout(() => { status.textContent = ''; }, 2500); }
+    showToast('eBay export settings saved', '✅');
+};
+
+function renderEbayTemplate(template, card, settings) {
+    if (!template) return '';
+    const s = settings || {};
+    return template
+        .replace(/\{hero\}/gi,        card.hero        || '')
+        .replace(/\{athlete\}/gi,     card.athlete      || '')
+        .replace(/\{cardNumber\}/gi,  card.cardNumber   || '')
+        .replace(/\{year\}/gi,        String(card.year  || ''))
+        .replace(/\{set\}/gi,         card.set          || '')
+        .replace(/\{pose\}/gi,        card.pose         || '')
+        .replace(/\{weapon\}/gi,      card.weapon       || '')
+        .replace(/\{power\}/gi,       String(card.power || ''))
+        .replace(/\{condition\}/gi,   card.condition    || '')
+        .replace(/\{notes\}/gi,       card.notes        || '')
+        .replace(/\{game\}/gi,        s.gameSpecific    || 'Bo Jackson Battle Arena')
+        .replace(/\{weaponLine\}/gi,  card.weapon ? `<p>Weapon: ${card.weapon}${card.power ? ' | Power: ' + card.power : ''}</p>` : '')
+        .replace(/\{notesLine\}/gi,   card.notes  ? `<p>Notes: ${card.notes}</p>` : '');
+}
+
+function getEbayConditionId(card) {
+    if (card.condition && EBAY_CONDITION_MAP[card.condition]) {
+        return EBAY_CONDITION_MAP[card.condition];
+    }
+    return '3000'; // Used — default
+}
+
+function getEbayPrice(card, priceSource) {
+    const sources = {
+        ebayAvgPrice:  card.ebayAvgPrice,
+        ebayLowPrice:  card.ebayLowPrice,
+        ebayHighPrice: card.ebayHighPrice,
+        listingPrice:  card.listingPrice,
+    };
+    const val = sources[priceSource] ?? card.listingPrice ?? card.ebayAvgPrice;
+    return val != null ? Number(val).toFixed(2) : '';
+}
+
+function generateEbayCSV(cards, settings) {
+    const s    = settings || getEbayExportSettings();
+    const ec   = val => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const mult = getPriceMultiplier();
+
+    // eBay Seller Hub Live Listing CSV header
+    // The Action column header encodes locale metadata — this exact format is required by eBay
+    const ACTION_HEADER = 'Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)';
+
+    const headers = [
+        ACTION_HEADER,
+        'Category',
+        'Title',
+        'Subtitle',
+        'ConditionID',
+        'ConditionDescription',
+        'BuyItNowPrice',
+        'Quantity',
+        'Duration',
+        'Description',
+        'PaymentProfileName',
+        'ReturnProfileName',
+        'ShippingProfileName',
+        'Custom Label (SKU)',
+        'PicURL',
+        'BestOfferEnabled',
+        'PostalCode',
+        'StoreCategory',
+        'C:Year',
+        'C:Character',
+        'C:Athlete',
+        'C:Card Number',
+        'C:Parallel',
+        'C:Weapon',
+        'C:Power',
+        'C:Set',
+        'C:Game',
+        'C:Manufacturer',
+        'C:Language',
+        'C:Sport',
+    ];
+
+    const rows = cards.map(card => {
+        const title = renderEbayTemplate(s.titleTemplate, card, s).substring(0, 80);
+        const desc  = renderEbayTemplate(s.descriptionTemplate, card, s);
+        const price = getEbayPrice(card, s.priceSource);
+
+        return [
+            ec('Add'),
+            ec(s.categoryId),
+            ec(title),
+            ec(''),                          // Subtitle — leave blank
+            ec(getEbayConditionId(card)),
+            ec(card.notes || ''),            // ConditionDescription
+            ec(price),
+            ec('1'),
+            ec(s.duration || 'GTC'),
+            ec(desc),
+            ec(s.paymentProfile  || ''),
+            ec(s.returnProfile   || ''),
+            ec(s.shippingProfile || ''),
+            ec(card.cardNumber   || ''),     // Custom Label / SKU
+            ec(card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''),
+            ec(s.bestOffer === 'true' ? '1' : '0'),
+            ec(s.postalCode     || ''),
+            ec(s.storeCategory  || ''),
+            ec(String(card.year   || '')),
+            ec(card.hero        || ''),
+            ec(card.athlete     || ''),
+            ec(card.cardNumber  || ''),
+            ec(card.pose        || ''),
+            ec(card.weapon      || ''),
+            ec(String(card.power || '')),
+            ec(card.set         || ''),
+            ec(s.gameSpecific   || 'Bo Jackson Battle Arena'),
+            ec(s.manufacturer   || ''),
+            ec(s.language       || 'English'),
+            ec(s.sport          || 'Trading Cards'),
+        ].join(',');
+    });
+
+    return [headers.map(ec).join(','), ...rows].join('\n');
+}
+
+window.openEbayExportModal = function() {
+    const allCards = getCollections().flatMap(c => c.cards);
+    if (!allCards.length) { showToast('No cards to export', '⚠️'); return; }
+
+    document.getElementById('ebayExportModal')?.remove();
+
+    const rtlCount = allCards.filter(c => c.readyToList).length;
+    const cols = getCollections();
+
+    const html = `
+    <div class="modal active" id="ebayExportModal">
+      <div class="modal-backdrop" onclick="document.getElementById('ebayExportModal').remove()"></div>
+      <div class="modal-content" style="max-width:440px;max-height:90vh;display:flex;flex-direction:column;">
+        <div class="modal-header">
+          <h2>🏪 eBay Bulk Export</h2>
+          <button class="modal-close" onclick="document.getElementById('ebayExportModal').remove()">×</button>
+        </div>
+        <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
+          <p style="color:#6b7280;font-size:13px;margin:0 0 16px;">
+            Exports a CSV compatible with eBay Seller Hub bulk upload (Reports tab).
+            Configure listing details in the Admin Dashboard → Settings → eBay Export Settings.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Scope</label>
+              <select id="ebayExportScope" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+                <option value="all">All collections</option>
+                <option value="current">Current collection</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:140px;">
+              <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">Filter</label>
+              <select id="ebayExportFilter" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+                <option value="all">All cards</option>
+                <option value="rtl">Ready to List only (${rtlCount})</option>
+                <option value="unlisted">Not yet listed</option>
+              </select>
+            </div>
+          </div>
+          <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;">
+            <strong>Tip:</strong> Fields marked with * in the admin settings must be configured before uploading to eBay (category, shipping profiles, etc.).
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="document.getElementById('ebayExportModal').remove()" style="flex:1;">Cancel</button>
+          <button class="btn-tag-add" onclick="runEbayExport()" style="flex:1;">⬇ Download eBay CSV</button>
+        </div>
+      </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.runEbayExport = function() {
+    const scope  = document.getElementById('ebayExportScope')?.value  || 'all';
+    const filter = document.getElementById('ebayExportFilter')?.value || 'all';
+    const cols   = getCollections();
+
+    let cards = scope === 'current'
+        ? (cols.find(c => c.id === getCurrentCollectionId())?.cards || [])
+        : cols.flatMap(c => c.cards);
+
+    if (filter === 'rtl')      cards = cards.filter(c => c.readyToList);
+    if (filter === 'unlisted') cards = cards.filter(c => !c.listingStatus);
+
+    if (!cards.length) { showToast('No cards match the selected filter', '⚠️'); return; }
+
+    const settings = getEbayExportSettings();
+    const csv      = generateEbayCSV(cards, settings);
+    const today    = new Date().toISOString().split('T')[0];
+
+    downloadFile(csv, `BOBA_eBay_Bulk_${today}.csv`, 'text/csv');
+    document.getElementById('ebayExportModal')?.remove();
+    showToast(`eBay export: ${cards.length} card${cards.length !== 1 ? 's' : ''}`, '✅');
+};
+
 console.log('Export module loaded (v1.2 — deck export)');

@@ -731,6 +731,98 @@ console.log('✅ Admin dashboard module loaded');
 
 // ── Settings Tab ──────────────────────────────────────────────────────────────
 
+// Read saved eBay settings with defaults (mirrors export.js getEbayExportSettings)
+function getAdminEbaySettings() {
+  try {
+    return Object.assign({
+      titleTemplate:       '{hero} {athlete} Bo Jackson Battle Arena',
+      categoryId:          '183454',
+      paymentProfile:      '',
+      returnProfile:       '',
+      shippingProfile:     '',
+      descriptionTemplate: '<p><strong>{hero}</strong> ({cardNumber})</p><p>Set: {set} {year} | Parallel: {pose}</p>{weaponLine}<p>Game: Bo Jackson Battle Arena</p>{notesLine}',
+      priceSource:         'ebayAvgPrice',
+      bestOffer:           'false',
+      duration:            'GTC',
+      postalCode:          '',
+      storeCategory:       '',
+      gameSpecific:        'Bo Jackson Battle Arena',
+      manufacturer:        '',
+      language:            'English',
+      sport:               'Trading Cards',
+    }, JSON.parse(localStorage.getItem('ebayExportSettings') || '{}'));
+  } catch { return {}; }
+}
+
+function renderEbaySettingsFields() {
+  const s = getAdminEbaySettings();
+  const inp = (id, val, placeholder, note) => `
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">${note}</label>
+      <input type="text" id="${id}" value="${escapeHtml(String(val || ''))}" placeholder="${escapeHtml(placeholder || '')}"
+             style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;">
+    </div>`;
+  const sel = (id, val, opts, note) => `
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">${note}</label>
+      <select id="${id}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;">
+        ${opts.map(([v,l]) => `<option value="${v}" ${val===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>`;
+
+  // Template variable hint
+  const hint = `<div style="font-size:11px;color:#9ca3af;margin-bottom:12px;">
+    Available variables: <code>{hero}</code> <code>{athlete}</code> <code>{cardNumber}</code>
+    <code>{year}</code> <code>{set}</code> <code>{pose}</code> <code>{weapon}</code>
+    <code>{power}</code> <code>{condition}</code> <code>{notes}</code> <code>{game}</code>
+  </div>`;
+
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <!-- Left column -->
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Listing Content</div>
+        ${hint}
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Title Template (max 80 chars)</label>
+          <input type="text" id="ebayTitleTemplate" value="${escapeHtml(s.titleTemplate)}" maxlength="120"
+                 style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;"
+                 placeholder="{hero} {athlete} Bo Jackson Battle Arena">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">Description Template (HTML ok)</label>
+          <textarea id="ebayDescriptionTemplate" rows="4"
+                    style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;box-sizing:border-box;font-family:monospace;resize:vertical;"
+                    placeholder="<p><strong>{hero}</strong> ({cardNumber})</p>...">${escapeHtml(s.descriptionTemplate)}</textarea>
+        </div>
+        ${sel('ebayPriceSource', s.priceSource, [
+          ['ebayAvgPrice','eBay Avg Price (auto-fetched)'],
+          ['ebayLowPrice','eBay Low Price (auto-fetched)'],
+          ['listingPrice','Manual Listing Price'],
+        ], 'Price Source')}
+        ${sel('ebayBestOffer', s.bestOffer, [['false','No'],['true','Yes']], 'Enable Best Offer')}
+        ${sel('ebayDuration', s.duration, [['GTC','GTC (Good Till Cancelled)'],['Days_30','30 days'],['Days_7','7 days']], 'Listing Duration')}
+      </div>
+
+      <!-- Right column -->
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">eBay Account Settings</div>
+        ${inp('ebayCategoryId',      s.categoryId,      '183454', '* eBay Category ID (required)')}
+        ${inp('ebayPaymentProfile',  s.paymentProfile,  'My Payment Policy', '* Payment Profile Name (required)')}
+        ${inp('ebayReturnProfile',   s.returnProfile,   'My Return Policy',  '* Return Profile Name (required)')}
+        ${inp('ebayShippingProfile', s.shippingProfile, 'My Shipping Policy','* Shipping Profile Name (required)')}
+        ${inp('ebayPostalCode',      s.postalCode,      '90210',             '* Item Location Postal Code')}
+        ${inp('ebayStoreCategory',   s.storeCategory,   '',                  'Store Category ID (optional)')}
+
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 10px;">Item Specifics (C: columns)</div>
+        ${inp('ebayGame',         s.gameSpecific, 'Bo Jackson Battle Arena', 'C:Game')}
+        ${inp('ebayManufacturer', s.manufacturer, 'Bo Jackson\'s Wild Card',  'C:Manufacturer')}
+        ${inp('ebayLanguage',     s.language,     'English',                  'C:Language')}
+        ${inp('ebaySport',        s.sport,        'Trading Cards',            'C:Sport')}
+      </div>
+    </div>`;
+}
+
 function renderSettingsTab() {
   const g = DEFAULT_LIMITS.guest;
   const a = DEFAULT_LIMITS.authenticated;
@@ -781,6 +873,24 @@ function renderSettingsTab() {
       <div style="display:flex;align-items:center;gap:12px;">
         <button id="saveSystemSettings" class="btn btn-primary" style="padding:10px 24px;">Save Settings</button>
         <span id="settingsSaveStatus" style="font-size:13px;color:#6b7280;"></span>
+      </div>
+
+      <!-- ── eBay Export Settings ── -->
+      <div style="margin-top:28px;border-top:1px solid #e5e7eb;padding-top:20px;">
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:700;font-size:15px;color:#111827;">🏪 eBay Export Settings</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            Configure defaults for the eBay Seller Hub bulk upload CSV.
+            Fields marked <strong>*</strong> cannot be derived from card metadata and must be set here.
+          </div>
+        </div>
+
+        ${renderEbaySettingsFields()}
+
+        <div style="display:flex;align-items:center;gap:12px;margin-top:16px;">
+          <button id="saveEbaySettings" class="btn btn-primary" style="padding:10px 24px;">Save eBay Settings</button>
+          <span id="ebaySettingsSaveStatus" style="font-size:13px;color:#6b7280;"></span>
+        </div>
       </div>
     </div>`;
 }
@@ -885,10 +995,13 @@ CREATE POLICY "Admins can write settings"
   });
 }
 
-// Wire save button via event delegation
+// Wire save buttons via event delegation
 document.addEventListener('click', (e) => {
   if (e.target.closest('#saveSystemSettings')) {
     saveSystemSettings();
+  }
+  if (e.target.closest('#saveEbaySettings')) {
+    if (typeof window.saveEbayExportSettings === 'function') window.saveEbayExportSettings();
   }
 });
 

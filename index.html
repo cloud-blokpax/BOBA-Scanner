@@ -81,7 +81,7 @@
                     <div class="stat-sublabel" id="statAILabel">Remaining</div>
                 </div>
                 
-                <div class="stat-card" id="statCardCost">
+                <div class="stat-card" id="statCardCost" style="display:none;">
                     <div class="stat-icon cost">💰</div>
                     <div class="stat-label">Total Cost</div>
                     <div class="stat-value" id="statCost">$0.00</div>
@@ -161,7 +161,7 @@
                                 <div class="stat-value" id="statAI2">0 / 1</div>
                                 <div class="stat-sublabel" id="statAILabel2">Remaining</div>
                             </div>
-                            <div class="stat-card">
+                            <div class="stat-card" style="display:none;">
                                 <div class="stat-icon cost">💰</div>
                                 <div class="stat-label">Total Cost</div>
                                 <div class="stat-value" id="statCost2">$0.00</div>
@@ -204,6 +204,10 @@
                     <button class="btn-group-item" id="btnExportCSV">
                         <span class="btn-icon">📄</span>
                         <span>Export CSV</span>
+                    </button>
+                    <button class="btn-group-item" id="btnEbayExport">
+                        <span class="btn-icon">🏪</span>
+                        <span>eBay Export</span>
                     </button>
                     <button class="btn-group-item" id="btnCollectionStats">
                         <span class="btn-icon">📊</span>
@@ -368,6 +372,9 @@
             </button>
             <button class="more-sheet-item" id="moreExportCSV">
                 <span class="more-sheet-icon">📄</span> Export CSV
+            </button>
+            <button class="more-sheet-item" id="moreEbayExport">
+                <span class="more-sheet-icon">🏪</span> eBay Export
             </button>
             <button class="more-sheet-item" id="moreCollectionStats">
                 <span class="more-sheet-icon">📊</span> Collection Stats
