@@ -1,11 +1,7 @@
 // api/ebay-sold.js — Vercel serverless proxy for eBay sold/completed listings
 //
-// eBay's "Pardon Our Interruption" bot detection blocks direct scraping from
-// Vercel/AWS data-centre IPs. To fix this, set a SCRAPERAPI_KEY environment
-// variable (free tier at scraperapi.com: 5,000 req/month).
-//
-// Without SCRAPERAPI_KEY the request will almost certainly be blocked.
-// In that case we return { blocked: true } so the client can show a direct link.
+// Uses ScraperAPI for IP rotation when SCRAPERAPI_KEY env var is set.
+// Without it, eBay returns "Pardon Our Interruption" bot-detection page.
 
 const EBAY_SEARCH = 'https://www.ebay.com/sch/i.html';
 
@@ -28,19 +24,16 @@ export default async function handler(req, res) {
   try {
     const scrapeResult = await scrapeEbaySoldPage(query, cardNumber, hero, athlete);
 
-    // eBay blocked the request — tell the client so it can show a direct link
     if (scrapeResult === 'BLOCKED') {
       return res.status(200).json({ blocked: true });
     }
 
     if (scrapeResult && scrapeResult.soldCount > 0) {
-      console.log(`HTML scrape returned ${scrapeResult.soldCount} sold items`);
+      console.log(`Returning ${scrapeResult.soldCount} sold items`);
       return res.status(200).json(scrapeResult);
     }
 
-    return res.status(200).json({
-      lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: []
-    });
+    return res.status(200).json({ lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] });
 
   } catch (err) {
     console.error('ebay-sold error:', err);
@@ -48,164 +41,227 @@ export default async function handler(req, res) {
   }
 }
 
-// ── Scrape eBay sold listings HTML ──────────────────────────────────────────
-// Returns 'BLOCKED' when eBay serves a bot-detection page.
 async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const ebayUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
   const scraperApiKey = process.env.SCRAPERAPI_KEY;
 
-  // Route through ScraperAPI when configured — handles IP rotation + eBay bot bypass
   const fetchUrl = scraperApiKey
     ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us`
     : ebayUrl;
 
-  const headers = scraperApiKey
-    ? {} // ScraperAPI sets its own headers
-    : {
-        'User-Agent':      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control':   'no-cache',
-        'Pragma':          'no-cache',
-        'Referer':         'https://www.google.com/',
-        'Upgrade-Insecure-Requests': '1',
-      };
+  const headers = scraperApiKey ? {} : {
+    'User-Agent':      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control':   'no-cache',
+    'Referer':         'https://www.google.com/',
+  };
 
   let html;
   try {
     const response = await fetch(fetchUrl, { headers });
-    if (!response.ok) {
-      console.warn('eBay scrape HTTP error:', response.status);
-      return null;
-    }
+    if (!response.ok) { console.warn('eBay HTTP error:', response.status); return null; }
     html = await response.text();
   } catch (err) {
-    console.warn('eBay scrape network error:', err.message);
+    console.warn('eBay network error:', err.message);
     return null;
   }
 
   console.log(`eBay HTML length: ${html.length} chars`);
   console.log('eBay HTML preview:', html.slice(0, 300).replace(/\s+/g, ' '));
 
-  // Detect bot-detection / interstitial pages
   if (
     html.includes('Pardon Our Interruption') ||
     html.includes('captcha') ||
     html.includes('Robot Check') ||
-    html.includes('h-captcha') ||
-    html.includes('gs.securecode')
+    html.includes('h-captcha')
   ) {
-    console.warn('eBay returned a bot-detection page — set SCRAPERAPI_KEY to fix this');
+    console.warn('eBay bot-detection page — SCRAPERAPI_KEY may not be set correctly');
     return 'BLOCKED';
   }
 
   if (html.length < 5000) {
-    console.warn('eBay HTML suspiciously short — may be blocked or redirected');
+    console.warn('HTML too short — likely blocked or redirected');
     return 'BLOCKED';
+  }
+
+  // ── Diagnostic: understand the HTML structure ───────────────────────────
+  const hasSItem       = html.includes('s-item');
+  const hasSItemPrice  = html.includes('s-item__price');
+  const hasPositive    = html.includes('POSITIVE');
+  const sItemCount     = (html.match(/s-item/g) || []).length;
+  console.log(`Diagnostics: s-item=${hasSItem}(×${sItemCount}), s-item__price=${hasSItemPrice}, POSITIVE=${hasPositive}`);
+
+  // Log context around the first s-item to understand the exact HTML structure
+  const firstSItem = html.indexOf('s-item');
+  if (firstSItem !== -1) {
+    const ctx = html.slice(Math.max(0, firstSItem - 100), firstSItem + 400).replace(/\s+/g, ' ');
+    console.log('First s-item context:', ctx);
+  }
+  // Log context around the first price to understand price HTML
+  const firstPrice = html.indexOf('s-item__price');
+  if (firstPrice !== -1) {
+    const ctx = html.slice(Math.max(0, firstPrice - 50), firstPrice + 200).replace(/\s+/g, ' ');
+    console.log('First price context:', ctx);
   }
 
   const soldItems = [];
 
-  // ── Parse: Extract from <li class="s-item"> elements ────────────────────
-  const itemChunks = html.split(/<li[^>]*class="[^"]*s-item[\s"][^"]*"[^>]*>/i);
+  // ── Strategy 1: Split on <li> s-item elements (flexible pattern) ─────────
+  // Match any <li> that has s-item anywhere in its opening tag attributes
+  const itemChunks = html.split(/<li\b[^>]*\bs-item\b[^>]*>/i);
+  console.log(`Item chunks: ${itemChunks.length - 1}`);
 
   for (let i = 1; i < itemChunks.length; i++) {
     const raw = itemChunks[i];
 
-    // Walk forward counting <li>/<li> depth to find the true closing </li>
-    let depth = 1;
-    let pos = 0;
-    let itemHtml = raw;
-
+    // Find the end of this item by tracking nested <li> depth
+    let depth = 1, pos = 0, itemHtml = raw;
     while (pos < raw.length && depth > 0) {
       const nextOpen  = raw.indexOf('<li', pos);
       const nextClose = raw.indexOf('</li>', pos);
       if (nextClose === -1) { itemHtml = raw; break; }
-      if (nextOpen !== -1 && nextOpen < nextClose) {
-        depth++;
-        pos = nextOpen + 3;
-      } else {
-        depth--;
-        if (depth === 0) itemHtml = raw.slice(0, nextClose);
-        pos = nextClose + 5;
-      }
+      if (nextOpen !== -1 && nextOpen < nextClose) { depth++; pos = nextOpen + 3; }
+      else { depth--; if (depth === 0) itemHtml = raw.slice(0, nextClose); pos = nextClose + 5; }
     }
 
-    // Skip placeholder items
-    if (itemHtml.includes('class="s-item__image-placeholder"') && !itemHtml.includes('s-item__price')) continue;
+    // Skip nav/placeholder items that have no price
+    if (!itemHtml.includes('$')) continue;
 
     // Extract URL
-    const urlMatch = itemHtml.match(/href="([^"]+)"[^>]*class="s-item__link"/)
-                  || itemHtml.match(/class="s-item__link"[^>]*href="([^"]+)"/);
+    const urlMatch = itemHtml.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/)
+                  || itemHtml.match(/href="([^"]*ebay\.com\/itm\/[^"]+)"/);
     const url = urlMatch ? urlMatch[1].split('?')[0] : null;
 
-    // Extract title
-    const titleMatch = itemHtml.match(/role="heading"[^>]*>([^<]+)</)
-                    || itemHtml.match(/class="s-item__title"[^>]*>(?:<span[^>]*>)?([^<]+)/);
+    // Extract title — try multiple patterns
+    const titleMatch = itemHtml.match(/aria-label="([^"]+)"/)
+                    || itemHtml.match(/role="heading"[^>]*>([^<]+)</)
+                    || itemHtml.match(/class="s-item__title"[^>]*>(?:<[^>]+>)?([^<]+)/)
+                    || itemHtml.match(/class="s-item__title--tag[^"]*"[^>]*>([^<]+)/);
     const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : '';
 
-    // Extract price — handle nested spans
-    const priceBlockMatch = itemHtml.match(/class="s-item__price"[^>]*>([\s\S]*?)<\/span>/);
-    const priceMatch = priceBlockMatch ? priceBlockMatch[1].match(/\$?([\d,]+\.?\d*)/) : null;
-    if (!priceMatch) continue;
-    const price = parseFloat(priceMatch[1].replace(/,/g, ''));
-    if (isNaN(price) || price <= 0) continue;
+    // Extract price — try multiple patterns, handle nested spans
+    const price = extractPrice(itemHtml);
+    if (!price) continue;
 
-    // Extract sold date — try multiple class patterns
-    const dateMatch = itemHtml.match(/class="[^"]*POSITIVE[^"]*"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
-                   || itemHtml.match(/class="s-item__endedDate"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
-                   || itemHtml.match(/class="[^"]*s-item__caption--signal[^"]*"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
-                   || itemHtml.match(/Sold\s{1,3}(\w{3}\s{1,3}\d{1,2},?\s*\d{4})/i);
-    const date = dateMatch ? (dateMatch[2] || dateMatch[1]).trim() : null;
+    // Extract sold date — try multiple patterns
+    const date = extractDate(itemHtml);
 
-    if (title || url) {
-      soldItems.push({ title, price, url, date });
+    soldItems.push({ title, price, url, date });
+  }
+
+  console.log(`Strategy 1 (s-item split): ${soldItems.length} items`);
+
+  // ── Strategy 2: Direct price+date extraction (if strategy 1 found nothing) ──
+  if (soldItems.length === 0 && hasSItemPrice) {
+    console.log('Trying strategy 2: direct price regex...');
+    const priceRegex = /s-item__price[^>]*>([\s\S]{0,150}?\$([\d,]+\.?\d*)[\s\S]{0,400}?(?:Sold|POSITIVE|endedDate)[\s\S]{0,200}?<)/gi;
+    let m;
+    while ((m = priceRegex.exec(html)) !== null) {
+      const price = parseFloat(m[2].replace(/,/g, ''));
+      if (isNaN(price) || price <= 0) continue;
+      const context = html.slice(Math.max(0, m.index - 300), m.index + 600);
+      const date = extractDate(context);
+      const urlM = context.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/);
+      const titleM = context.match(/role="heading"[^>]*>([^<]+)</) || context.match(/aria-label="([^"]+)"/);
+      soldItems.push({
+        price,
+        date,
+        url:   urlM ? urlM[1].split('?')[0] : null,
+        title: titleM ? decodeEntities(titleM[1].trim()) : '',
+      });
     }
+    console.log(`Strategy 2 (direct regex): ${soldItems.length} items`);
   }
 
-  // ── Fallback: Look for embedded JSON state ───────────────────────────────
+  // ── Strategy 3: Embedded JSON state ──────────────────────────────────────
   if (soldItems.length === 0) {
-    console.log('No items from HTML parsing, trying embedded JSON...');
+    console.log('Trying strategy 3: embedded JSON...');
     const jsonItems = extractFromEmbeddedJson(html);
-    if (jsonItems.length > 0) soldItems.push(...jsonItems);
+    soldItems.push(...jsonItems);
+    console.log(`Strategy 3 (embedded JSON): ${jsonItems.length} items`);
   }
 
-  console.log(`Scraped ${soldItems.length} raw items from eBay HTML`);
+  console.log(`Total raw items: ${soldItems.length}`);
 
   if (soldItems.length === 0) return null;
 
   const relevant = filterRelevantItems(soldItems, cardNumber, hero, athlete);
-  console.log(`${relevant.length} relevant items after filtering`);
+  console.log(`After filtering: ${relevant.length} items`);
 
   return formatSoldResponse(relevant);
 }
 
-// ── Extract sold items from embedded JSON in eBay HTML ──────────────────────
+// ── Price extraction helper ───────────────────────────────────────────────────
+function extractPrice(html) {
+  // Pattern 1: explicit s-item__price class
+  const blockMatch = html.match(/class="s-item__price"[^>]*>([\s\S]{0,200}?)<\/span>/i)
+                  || html.match(/class='s-item__price'[^>]*>([\s\S]{0,200}?)<\/span>/i);
+  if (blockMatch) {
+    const m = blockMatch[1].match(/\$?([\d,]+\.?\d*)/);
+    if (m) return parseFloat(m[1].replace(/,/g, ''));
+  }
+  // Pattern 2: any dollar amount in the item HTML (last resort)
+  const dollarMatch = html.match(/\$([\d,]+\.?\d{2})\b/);
+  if (dollarMatch) return parseFloat(dollarMatch[1].replace(/,/g, ''));
+  return null;
+}
+
+// ── Date extraction helper ────────────────────────────────────────────────────
+function extractDate(html) {
+  const m = html.match(/class="[^"]*POSITIVE[^"]*"[^>]*>[\s\S]*?(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})/i)
+         || html.match(/class="[^"]*s-item__endedDate[^"]*"[^>]*>[\s\S]*?(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})/i)
+         || html.match(/class="[^"]*s-item__caption[^"]*"[^>]*>[\s\S]*?(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})/i)
+         || html.match(/Sold\s+(\w{3}\s+\d{1,2},?\s*\d{4})/i)
+         || html.match(/(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})/i);
+  return m ? m[1].trim() : null;
+}
+
+// ── Embedded JSON extraction ──────────────────────────────────────────────────
 function extractFromEmbeddedJson(html) {
   const items = [];
+
+  // Patterns for eBay's various embedded state formats
   const patterns = [
-    /"itemSummaries"\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
-    /"items"\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
-    /"searchResults"\s*:\s*\{[^}]*"items"\s*:\s*(\[[\s\S]*?\])/,
+    // eBay Marko / SRP state
+    /"itemSummaries"\s*:\s*(\[[\s\S]{1,500000}?\])\s*[,}]/,
+    /"listItems"\s*:\s*(\[[\s\S]{1,500000}?\])\s*[,}]/,
+    /"items"\s*:\s*(\[[\s\S]{1,200000}?\])\s*[,}]/,
+    /"searchResults"\s*:\s*\{[^}]{0,500}"items"\s*:\s*(\[[\s\S]{1,200000}?\])/,
   ];
+
   for (const pattern of patterns) {
     const match = html.match(pattern);
     if (!match) continue;
     try {
       const arr = JSON.parse(match[1]);
+      if (!Array.isArray(arr) || arr.length === 0) continue;
       for (const item of arr) {
-        const title = item.title || '';
-        const price = parseFloat(item.price?.value || item.sellingStatus?.currentPrice?.value || '0');
+        const title = item.title || item.itemTitle || '';
+        const priceVal = item.price?.value
+                      || item.sellingStatus?.currentPrice?.value
+                      || item.convertedCurrentPrice?.value
+                      || null;
+        const price = priceVal ? parseFloat(priceVal) : 0;
         if (isNaN(price) || price <= 0) continue;
-        items.push({ title, price, url: item.itemWebUrl || item.viewItemURL || null, date: formatDate(item.itemEndDate || item.endTime) });
+        items.push({
+          title,
+          price,
+          url:  item.itemWebUrl || item.viewItemURL || null,
+          date: formatDate(item.itemEndDate || item.endTime || item.soldDate)
+        });
       }
-      if (items.length > 0) break;
-    } catch { /* parse failed, try next pattern */ }
+      if (items.length > 0) {
+        console.log(`Found ${items.length} items in embedded JSON`);
+        break;
+      }
+    } catch (e) { /* parse failed, try next pattern */ }
   }
+
   return items;
 }
 
-// ── Shared helpers ──────────────────────────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
 function filterRelevantItems(items, cardNumber, hero, athlete) {
   const cn = (cardNumber || '').toUpperCase();
