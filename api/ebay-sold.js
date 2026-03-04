@@ -124,7 +124,7 @@ async function findCompletedItems(appId, query, cardNumber, hero, athlete) {
 
 // ── Strategy 2: Scrape eBay sold listings HTML ──────────────────────────────
 // eBay server-renders search results as <li class="s-item"> for SEO/accessibility.
-// We fetch the sold listings page and parse these elements with regex.
+// We fetch the sold listings page and parse these elements without a headless browser.
 async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const searchUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
 
@@ -132,11 +132,16 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   try {
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'identity',
-        'Cache-Control': 'no-cache',
+        'Cache-Control':   'no-cache',
+        'Referer':         'https://www.ebay.com/',
+        'Sec-Fetch-Dest':  'document',
+        'Sec-Fetch-Mode':  'navigate',
+        'Sec-Fetch-Site':  'same-origin',
+        'Upgrade-Insecure-Requests': '1',
       }
     });
     if (!response.ok) {
@@ -151,43 +156,71 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
 
   console.log(`eBay HTML length: ${html.length} chars`);
 
+  // Diagnostic: log a preview to detect captcha/block pages in Vercel logs
+  console.log('eBay HTML preview:', html.slice(0, 500).replace(/\s+/g, ' '));
+  if (html.includes('captcha') || html.includes('Robot Check') || html.includes('gs.securecode')) {
+    console.warn('eBay returned a bot-detection/captcha page');
+  }
+  if (html.length < 5000) {
+    console.warn('eBay HTML suspiciously short — may be an error or redirect page');
+  }
+
   const soldItems = [];
 
   // ── Parse approach 1: Extract from <li class="s-item"> elements ─────────
-  // eBay renders items as: <li ... class="s-item s-item__pl-on-bottom">
-  // Inside each item:
-  //   <a class="s-item__link" href="URL">
-  //   <span role="heading">TITLE</span>
-  //   <span class="s-item__price">$XX.XX</span>
-  //   <span class="POSITIVE">Sold  DATE</span>
-  const itemRegex = /<li[^>]*class="[^"]*s-item\s[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
-  let itemMatch;
-  while ((itemMatch = itemRegex.exec(html)) !== null) {
-    const itemHtml = itemMatch[1];
+  // Split on each s-item opening tag instead of using a non-greedy regex that
+  // stops early when eBay items contain nested <li> elements (depth-counter walk).
+  const itemChunks = html.split(/<li[^>]*class="[^"]*s-item[\s"][^"]*"[^>]*>/i);
 
-    // Skip the first "s-item" which is often a template/placeholder with no real data
+  // itemChunks[0] is everything before the first item — skip it
+  for (let i = 1; i < itemChunks.length; i++) {
+    const raw = itemChunks[i];
+
+    // Walk forward counting <li>/<li> depth to find the true closing </li>
+    let depth = 1;
+    let pos = 0;
+    let itemHtml = raw; // fallback: use entire chunk if walk fails
+
+    while (pos < raw.length && depth > 0) {
+      const nextOpen  = raw.indexOf('<li', pos);
+      const nextClose = raw.indexOf('</li>', pos);
+      if (nextClose === -1) { itemHtml = raw; break; }
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + 3;
+      } else {
+        depth--;
+        if (depth === 0) itemHtml = raw.slice(0, nextClose);
+        pos = nextClose + 5;
+      }
+    }
+
+    // Skip template/placeholder items (no price present)
     if (itemHtml.includes('class="s-item__image-placeholder"') && !itemHtml.includes('s-item__price')) continue;
 
-    // Extract URL from <a class="s-item__link" href="...">
-    const urlMatch = itemHtml.match(/class="s-item__link"[^>]*href="([^"]+)"/);
-    const url = urlMatch ? urlMatch[1].split('?')[0] : null; // strip tracking params
+    // Extract URL — eBay renders href BEFORE class, so try that order first
+    const urlMatch = itemHtml.match(/href="([^"]+)"[^>]*class="s-item__link"/)
+                  || itemHtml.match(/class="s-item__link"[^>]*href="([^"]+)"/);
+    const url = urlMatch ? urlMatch[1].split('?')[0] : null;
 
     // Extract title from <span role="heading"> or <div class="s-item__title">
     const titleMatch = itemHtml.match(/role="heading"[^>]*>([^<]+)</)
                     || itemHtml.match(/class="s-item__title"[^>]*>(?:<span[^>]*>)?([^<]+)/);
     const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : '';
 
-    // Extract price from <span class="s-item__price">$XX.XX</span>
-    const priceMatch = itemHtml.match(/class="s-item__price"[^>]*>\s*\$?([\d,]+\.?\d*)/);
-    if (!priceMatch) continue; // skip items without a parseable price
+    // Extract price — two-stage to handle nested spans:
+    //   <span class="s-item__price"><span class="BOLD">$24.99</span></span>
+    const priceBlockMatch = itemHtml.match(/class="s-item__price"[^>]*>([\s\S]*?)<\/span>/);
+    const priceMatch = priceBlockMatch ? priceBlockMatch[1].match(/\$?([\d,]+\.?\d*)/) : null;
+    if (!priceMatch) continue;
     const price = parseFloat(priceMatch[1].replace(/,/g, ''));
     if (isNaN(price) || price <= 0) continue;
 
-    // Extract sold date from <span class="POSITIVE">Sold  Mon DD, YYYY</span>
-    // or <span class="s-item__endedDate">
-    const dateMatch = itemHtml.match(/(?:class="POSITIVE"|class="s-item__endedDate")[^>]*>[^<]*?(\w{3}\s+\d{1,2},?\s*\d{4})/i)
-                   || itemHtml.match(/Sold\s+(\w{3}\s+\d{1,2},?\s*\d{4})/i);
-    const date = dateMatch ? dateMatch[1].trim() : null;
+    // Extract sold date — broader patterns to handle nested spans and double-spaces
+    const dateMatch = itemHtml.match(/class="POSITIVE"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
+                   || itemHtml.match(/class="s-item__endedDate"[^>]*>([\s\S]*?(\b\w{3}\s{1,3}\d{1,2},?\s*\d{4}))/i)
+                   || itemHtml.match(/Sold\s{1,3}(\w{3}\s{1,3}\d{1,2},?\s*\d{4})/i);
+    const date = dateMatch ? (dateMatch[2] || dateMatch[1]).trim() : null;
 
     if (title || url) {
       soldItems.push({ title, price, url, date });
