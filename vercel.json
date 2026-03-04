@@ -2,7 +2,8 @@
   "functions": {
     "api/anthropic.js":   { "maxDuration": 30 },
     "api/config.js":      { "maxDuration": 5  },
-    "api/ebay-browse.js": { "maxDuration": 15 }
+    "api/ebay-browse.js": { "maxDuration": 15 },
+    "api/ebay-sold.js":   { "maxDuration": 20 }
   },
   "headers": [
     {
