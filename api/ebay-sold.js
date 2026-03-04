@@ -45,11 +45,12 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const ebayUrl = `${EBAY_SEARCH}?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Complete=1&LH_Sold=1&_sop=13&rt=nc&LH_TitleDesc=0`;
   const scraperApiKey = process.env.SCRAPERAPI_KEY;
 
-  // render=true executes JavaScript — required because eBay's sold listings
-  // are loaded client-side after page load (the initial HTML only has a spinner).
-  // Costs 5 ScraperAPI credits/request vs 1, so 1,000 free checks/month.
+  // render=true + premium=true: residential proxies + JS execution.
+  // eBay's sold page loads results via async XHR — render=true is required.
+  // premium=true uses residential IPs that are less detectable by eBay's bot filters.
+  // Costs 25 ScraperAPI credits/request on premium+render.
   const fetchUrl = scraperApiKey
-    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us&render=true&wait=3000`
+    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us&render=true&premium=true&wait=8000`
     : ebayUrl;
 
   const headers = scraperApiKey ? {} : {
@@ -93,13 +94,23 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const hasSItemPrice  = html.includes('s-item__price');
   const hasPositive    = html.includes('POSITIVE');
   const sItemCount     = (html.match(/s-item/g) || []).length;
-  console.log(`Diagnostics: s-item=${hasSItem}(×${sItemCount}), s-item__price=${hasSItemPrice}, POSITIVE=${hasPositive}`);
+  const srpResultsCount = (html.match(/srp-results/g) || []).length;
+  const liCount        = (html.match(/<li\b/g) || []).length;
+  const srpItemCount   = (html.match(/srp-item/g) || []).length;
+  const bosItems       = html.includes('bos-items__loader');
+  console.log(`Diagnostics: s-item=${hasSItem}(×${sItemCount}), s-item__price=${hasSItemPrice}, POSITIVE=${hasPositive}, srp-results=×${srpResultsCount}, srp-item=×${srpItemCount}, li=×${liCount}, bos-loader=${bosItems}`);
 
   // Log context around the first s-item to understand the exact HTML structure
   const firstSItem = html.indexOf('s-item');
   if (firstSItem !== -1) {
     const ctx = html.slice(Math.max(0, firstSItem - 100), firstSItem + 400).replace(/\s+/g, ' ');
     console.log('First s-item context:', ctx);
+  }
+  // Log context around srp-results
+  const firstSrpResults = html.indexOf('srp-results');
+  if (firstSrpResults !== -1) {
+    const ctx = html.slice(Math.max(0, firstSrpResults - 50), firstSrpResults + 300).replace(/\s+/g, ' ');
+    console.log('srp-results context:', ctx);
   }
   // Log context around the first price to understand price HTML
   const firstPrice = html.indexOf('s-item__price');
