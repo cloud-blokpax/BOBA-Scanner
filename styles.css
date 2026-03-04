@@ -1665,7 +1665,7 @@ a.listing-badge:hover { opacity: .85; }
 
 :root {
     --bottom-nav-height: 56px;
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 20px);
 }
 
 /* ── Bottom Navigation Bar ─────────────────────────────────────────────── */
@@ -1701,6 +1701,13 @@ a.listing-badge:hover { opacity: .85; }
     transition: color var(--transition-fast);
     position: relative;
     font-family: var(--font-sans);
+    /* iOS: remove 300ms tap delay and ensure reliable touch response */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 44px;
+    /* Ensure nothing can overlay and steal taps */
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .bottom-nav-item.active {

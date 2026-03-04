@@ -102,14 +102,10 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   const liCount        = (html.match(/<li\b/g) || []).length;
   console.log(`Diagnostics: s-item=×${sItemCount}, s-card=×${sCardCount}, s-item__price=${hasSItemPrice}, s-card__price=${hasSCardPrice}, su-card__price=${hasSuCardPrice}, POSITIVE=${hasPositive}, srp-results=×${srpResultsCount}, li=×${liCount}`);
 
-  // Log the first s-card item HTML to reveal price/title class names
-  const firstSCard = html.indexOf('s-card');
-  if (firstSCard !== -1) {
-    const liStart = html.lastIndexOf('<li', firstSCard);
-    if (liStart !== -1) {
-      const ctx = html.slice(liStart, liStart + 800).replace(/\s+/g, ' ');
-      console.log('First s-card item HTML:', ctx);
-    }
+  // Log the first ACTUAL <li class="s-card..."> element (not CSS occurrences)
+  const liCardMatch = html.match(/<li\b[^>]*class="[^"]*s-card[^"]*"[^>]*>([\s\S]{0,600})/);
+  if (liCardMatch) {
+    console.log('First s-card li HTML:', (liCardMatch[0].slice(0, 700)).replace(/\s+/g, ' '));
   }
 
   const soldItems = [];
@@ -119,6 +115,9 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   // because aria-label (title) lives on the <li> tag itself in eBay's new markup.
   const itemChunks = html.split(/(?=<li\b[^>]*\b(?:s-card|s-item)\b)/i);
   console.log(`Item chunks: ${itemChunks.length - 1}`);
+  if (itemChunks.length > 1) {
+    console.log('First chunk preview:', itemChunks[1].slice(0, 700).replace(/\s+/g, ' '));
+  }
 
   for (let i = 1; i < itemChunks.length; i++) {
     const raw = itemChunks[i];
@@ -143,10 +142,12 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     // Skip nav/placeholder items that have no price
     if (!fullItem.includes('$')) continue;
 
-    // Extract URL
+    // Extract URL — try href first, then build from data-listingid on <li>
     const urlMatch = fullItem.match(/href="(https?:\/\/www\.ebay\.com\/itm\/[^"]+)"/)
                   || fullItem.match(/href="([^"]*ebay\.com\/itm\/[^"]+)"/);
-    const url = urlMatch ? urlMatch[1].split('?')[0] : null;
+    const listingId = liTag.match(/data-listingid[=: ]*["']?(\d+)/i);
+    const url = urlMatch ? urlMatch[1].split('?')[0]
+              : listingId ? `https://www.ebay.com/itm/${listingId[1]}` : null;
 
     // Extract title — check <li> aria-label first, then new/old class names
     const titleMatch = liTag.match(/aria-label="([^"]+)"/)
