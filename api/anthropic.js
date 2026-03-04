@@ -104,33 +104,47 @@ export default async function handler(req, res) {
       });
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type':      'application/json',
-        'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model:      'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type:   'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: finalImageData }
-            },
-            { type: 'text', text: CARD_PROMPT }
-          ]
-        }]
-      })
+    const requestBody = JSON.stringify({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type:   'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: finalImageData }
+          },
+          { type: 'text', text: CARD_PROMPT }
+        ]
+      }]
     });
+
+    const anthropicHeaders = {
+      'Content-Type':      'application/json',
+      'x-api-key':         apiKey,
+      'anthropic-version': '2023-06-01'
+    };
+
+    // Retry up to 3 times on 529 (API overloaded) with short back-off.
+    // Vercel Pro functions have a 60 s limit; total wait here is ≤ 6 s.
+    let response;
+    const OVERLOAD_RETRIES = [1000, 2000, 3000];
+    for (let attempt = 0; attempt <= OVERLOAD_RETRIES.length; attempt++) {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: anthropicHeaders,
+        body: requestBody
+      });
+      if (response.status !== 529 || attempt === OVERLOAD_RETRIES.length) break;
+      await new Promise(r => setTimeout(r, OVERLOAD_RETRIES[attempt]));
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Anthropic API error:', response.status, errorText);
-      return res.status(502).json({ error: `AI service error: ${response.status}` });
+      // 529 = overloaded; surface as 503 so the client knows to retry later
+      const clientStatus = response.status === 529 ? 503 : 502;
+      return res.status(clientStatus).json({ error: `AI service error: ${response.status}` });
     }
 
     const data = await response.json();
