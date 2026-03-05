@@ -233,9 +233,23 @@ function extractPrice(html) {
     const m = blockMatch[1].match(/\$?([\d,]+\.?\d*)/);
     if (m) return parseFloat(m[1].replace(/,/g, ''));
   }
-  // Last resort: any dollar amount in the item HTML
-  const dollarMatch = html.match(/\$([\d,]+\.?\d{2})\b/);
-  if (dollarMatch) return parseFloat(dollarMatch[1].replace(/,/g, ''));
+  // Look for dollar amounts that are NOT in shipping/logistics context.
+  // eBay sold items show the sale price prominently — skip amounts near
+  // "shipping", "delivery", "postage" keywords which cause false positives.
+  const dollarRegex = /\$([\d,]+\.?\d{2})\b/g;
+  let dollarMatch;
+  while ((dollarMatch = dollarRegex.exec(html)) !== null) {
+    // Check surrounding context (100 chars before and after) for shipping keywords
+    const start = Math.max(0, dollarMatch.index - 100);
+    const end = Math.min(html.length, dollarMatch.index + dollarMatch[0].length + 100);
+    const context = html.slice(start, end).toLowerCase();
+    if (context.includes('shipping') || context.includes('delivery') ||
+        context.includes('postage') || context.includes('logistic') ||
+        context.includes('freight')) {
+      continue; // skip shipping prices
+    }
+    return parseFloat(dollarMatch[1].replace(/,/g, ''));
+  }
   return null;
 }
 
@@ -328,8 +342,16 @@ function decodeEntities(str) {
 }
 
 function formatSoldResponse(soldItems) {
-  const validItems = soldItems.filter(i => !isNaN(i.price) && i.price > 0);
+  let validItems = soldItems.filter(i => !isNaN(i.price) && i.price > 0);
   if (validItems.length === 0) return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
+
+  // Sanity check: if ALL items have the exact same price, it's likely a parsing
+  // error (e.g. picking up shipping cost repeatedly). Return empty in that case.
+  const uniquePrices = new Set(validItems.map(i => i.price));
+  if (validItems.length > 1 && uniquePrices.size === 1) {
+    console.warn(`All ${validItems.length} items have identical price $${validItems[0].price} — likely a parsing error, discarding`);
+    return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
+  }
   const prices = validItems.map(i => i.price);
   const avgSold = parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2));
   const lastItem = validItems[0];

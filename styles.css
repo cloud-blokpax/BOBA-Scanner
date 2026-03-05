@@ -843,10 +843,7 @@ body {
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  object-fit: cover;
-  max-width: 400px;
   object-fit: contain;
-  height: auto;
 }
 
 .card {
@@ -855,8 +852,93 @@ body {
 }
 
 .cards-grid {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   justify-content: start;
+}
+
+/* Mobile: 3 cards across with compact thumbnails */
+@media (max-width: 768px) {
+  .cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 0 6px;
+  }
+  .card-item {
+    border-radius: 10px;
+  }
+  .card-image-container {
+    padding-top: 100%; /* square thumbnails on mobile */
+  }
+  .card-content {
+    padding: 6px 8px 8px;
+  }
+  .card-title {
+    font-size: 0.75rem;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-athlete {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+  .card-info-grid {
+    display: none; /* hide detail rows on mobile grid */
+  }
+  .card-footer {
+    padding: 4px 6px 6px;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .card-footer .btn-ebay,
+  .card-footer .btn-wrong-card,
+  .card-footer .btn-detail,
+  .card-footer .btn-card-more {
+    font-size: 10px;
+    padding: 4px 6px;
+  }
+  /* Hide secondary buttons on mobile grid - accessible via card detail instead */
+  .card-footer .btn-wrong-card,
+  .card-footer .btn-card-more {
+    display: none !important;
+  }
+  .card-footer .card-footer-ebay span:last-child {
+    display: none; /* hide "Search eBay" text, keep icon */
+  }
+  .card-badge {
+    top: 4px;
+    right: 4px;
+    padding: 2px 6px;
+    font-size: 9px;
+  }
+  .card-price-row {
+    font-size: 10px;
+  }
+  .conf-badge {
+    font-size: 9px !important;
+    padding: 1px 4px !important;
+  }
+  .listing-badge {
+    font-size: 9px !important;
+  }
+  .rtl-badge {
+    font-size: 9px !important;
+  }
+}
+
+/* Very small phones: still 3 across but tighter */
+@media (max-width: 380px) {
+  .cards-grid {
+    gap: 6px;
+    padding: 0 4px;
+  }
+  .card-content {
+    padding: 4px 6px 6px;
+  }
+  .card-title {
+    font-size: 0.7rem;
+  }
 }
 
 .card-badge {
@@ -1268,6 +1350,27 @@ body {
   gap: 14px;
 }
 
+/* Collection modal: 3 across on mobile */
+@media (max-width: 768px) {
+  .collection-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .collection-grid .collection-card-img {
+    height: 80px;
+    object-fit: contain;
+  }
+  .collection-grid .collection-card-name {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .collection-grid .collection-card-meta {
+    font-size: 9px;
+  }
+}
+
 .collection-card {
   background: white;
   border: 1px solid #e5e7eb;
@@ -1664,7 +1767,7 @@ a.listing-badge:hover { opacity: .85; }
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-    --bottom-nav-height: 56px;
+    --bottom-nav-height: 68px;
     --safe-bottom: env(safe-area-inset-bottom, 20px);
 }
 
@@ -1692,22 +1795,26 @@ a.listing-badge:hover { opacity: .85; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    padding: 8px 4px;
+    gap: 4px;
+    padding: 10px 8px;
     border: none;
     background: transparent;
     cursor: pointer;
     color: var(--text-muted);
-    transition: color var(--transition-fast);
+    transition: color var(--transition-fast), background-color 0.15s ease;
     position: relative;
     font-family: var(--font-sans);
     /* iOS: remove 300ms tap delay and ensure reliable touch response */
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-    min-height: 44px;
+    min-height: 56px;
     /* Ensure nothing can overlay and steal taps */
     -webkit-user-select: none;
     user-select: none;
+}
+
+.bottom-nav-item:active {
+    background: rgba(245, 158, 11, 0.12);
 }
 
 .bottom-nav-item.active {
@@ -1727,12 +1834,12 @@ a.listing-badge:hover { opacity: .85; }
 }
 
 .bottom-nav-icon {
-    font-size: 20px;
+    font-size: 24px;
     line-height: 1;
 }
 
 .bottom-nav-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
