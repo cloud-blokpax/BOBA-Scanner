@@ -85,6 +85,12 @@ async function init() {
             updateLimitsUI();
         }
 
+        // Load feature flags and wire magical feature buttons
+        if (typeof loadFeatureFlags === 'function') {
+            await loadFeatureFlags();
+            wireMagicalFeatureButtons();
+        }
+
         console.log('✅ Card Scanner Ready!');
 
     } catch (err) {
@@ -93,6 +99,59 @@ async function init() {
             showToast('Some features may not be available', '⚠️');
         }
     }
+}
+
+// ── Magical feature button wiring ────────────────────────────────────────────
+function wireMagicalFeatureButtons() {
+    const hasGrader     = typeof isFeatureEnabled === 'function' && isFeatureEnabled('condition_grader');
+    const hasSetComp    = typeof isFeatureEnabled === 'function' && isFeatureEnabled('set_completion');
+    const hasEbayLister = typeof isFeatureEnabled === 'function' && isFeatureEnabled('ebay_lister');
+    const hasAny        = hasGrader || hasSetComp || hasEbayLister;
+
+    // Show/hide the magical features row in Tools & Export
+    const row = document.getElementById('magicalFeaturesRow');
+    if (row) row.style.display = hasAny ? '' : 'none';
+
+    // Show/hide in More sheet
+    const moreSection = document.getElementById('moreMagicalSection');
+    if (moreSection) moreSection.style.display = hasAny ? '' : 'none';
+
+    // Show/hide individual buttons based on their flag
+    const gradeBtn   = document.getElementById('btnGradeCard');
+    const setCompBtn = document.getElementById('btnSetCompletion');
+    const listBtn    = document.getElementById('btnEbayLister');
+    if (gradeBtn)   gradeBtn.style.display   = hasGrader     ? '' : 'none';
+    if (setCompBtn) setCompBtn.style.display  = hasSetComp   ? '' : 'none';
+    if (listBtn)    listBtn.style.display     = hasEbayLister ? '' : 'none';
+
+    // Wire click handlers (main toolbar)
+    gradeBtn?.addEventListener('click', () => {
+        if (typeof triggerGradeCard === 'function') triggerGradeCard();
+    });
+    setCompBtn?.addEventListener('click', () => {
+        if (typeof analyzeSetCompletion === 'function') analyzeSetCompletion();
+    });
+    listBtn?.addEventListener('click', () => {
+        // Use the most recently scanned card from collections
+        const cards = (typeof getCollections === 'function')
+            ? getCollections().flatMap(c => c.cards).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            : [];
+        if (typeof triggerEbayLister === 'function') triggerEbayLister(cards[0] || null);
+    });
+
+    // Wire click handlers (More sheet)
+    document.getElementById('moreGradeCard')?.addEventListener('click', () => {
+        if (typeof triggerGradeCard === 'function') triggerGradeCard();
+    });
+    document.getElementById('moreSetCompletion')?.addEventListener('click', () => {
+        if (typeof analyzeSetCompletion === 'function') analyzeSetCompletion();
+    });
+    document.getElementById('moreEbayLister')?.addEventListener('click', () => {
+        const cards = (typeof getCollections === 'function')
+            ? getCollections().flatMap(c => c.cards).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            : [];
+        if (typeof triggerEbayLister === 'function') triggerEbayLister(cards[0] || null);
+    });
 }
 
 // Start init when DOM is ready

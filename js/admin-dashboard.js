@@ -119,6 +119,7 @@ function renderAdminDashboard(users, logs, stats, tournaments) {
           <button class="admin-tab" data-tab="tournaments">🏆 Tournaments (${tournaments.length})</button>
           <button class="admin-tab" data-tab="themes">🎨 Themes</button>
           <button class="admin-tab" data-tab="settings">⚙️ Settings</button>
+          <button class="admin-tab" data-tab="features">✨ Features</button>
           <button class="admin-tab" data-tab="activity">Activity</button>
         </div>
         <div class="admin-content">
@@ -129,6 +130,7 @@ function renderAdminDashboard(users, logs, stats, tournaments) {
           <div class="admin-tab-content" id="tab-tournaments">${typeof renderTournamentsTab === 'function' ? renderTournamentsTab(tournaments) : ''}</div>
           <div class="admin-tab-content" id="tab-themes">${renderThemesTab()}</div>
           <div class="admin-tab-content" id="tab-settings">${renderSettingsTab()}</div>
+          <div class="admin-tab-content" id="tab-features">${renderFeaturesTab()}</div>
           <div class="admin-tab-content" id="tab-activity">${renderActivityTab(users)}</div>
         </div>
       </div>
@@ -1249,4 +1251,224 @@ window.showAdminTab = function(tab, btn) {
       if (el) el.innerHTML = renderSettingsTab();
     });
   }
+  if (tab === 'features') {
+    setTimeout(loadAdminFeaturesTab, 50);
+  }
 };
+
+// ── Features Tab ──────────────────────────────────────────────────────────────
+// Admin can toggle magical features on/off per role or per individual user.
+
+function renderFeaturesTab() {
+  return `
+    <div id="featuresTabContent" style="padding:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:#111827;">✨ Feature Flags</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            Control which magical features are available to each user tier.
+            Per-user overrides take priority over role defaults.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:11px;color:#9ca3af;">Roles:</span>
+          <span style="font-size:11px;background:#f3f4f6;padding:2px 7px;border-radius:4px;">👤 Guest</span>
+          <span style="font-size:11px;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1d4ed8;">🔐 Auth</span>
+          <span style="font-size:11px;background:#fef3c7;padding:2px 7px;border-radius:4px;color:#92400e;">⭐ Member</span>
+          <span style="font-size:11px;background:#ede9fe;padding:2px 7px;border-radius:4px;color:#5b21b6;">👑 Admin</span>
+        </div>
+      </div>
+      <div id="adminFlagsList">
+        <p style="text-align:center;color:#9ca3af;padding:32px 0;">Loading feature flags...</p>
+      </div>
+
+      <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:16px;">
+        <div style="font-weight:700;font-size:14px;color:#111827;margin-bottom:8px;">Per-User Overrides</div>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:12px;">
+          Grant or revoke specific features for individual users, overriding their role defaults.
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <select id="overrideUserSelect" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;">
+            <option value="">Select a user...</option>
+            ${(window.adminData?.users || []).map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name || u.email || u.id)}</option>`).join('')}
+          </select>
+          <select id="overrideFeatureSelect" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;">
+            <option value="">Select a feature...</option>
+            ${(typeof getAllFeatureFlags === 'function' ? getAllFeatureFlags() : []).map(f => `<option value="${escapeHtml(f.feature_key)}">${escapeHtml(f.display_name || f.feature_key)}</option>`).join('')}
+          </select>
+          <button id="overrideGrantBtn"  class="btn btn-primary"   style="padding:8px 16px;font-size:13px;white-space:nowrap;">✅ Grant</button>
+          <button id="overrideRevokeBtn" class="btn btn-secondary" style="padding:8px 16px;font-size:13px;white-space:nowrap;">🚫 Revoke</button>
+          <button id="overrideClearBtn"  class="btn btn-secondary" style="padding:8px 16px;font-size:13px;white-space:nowrap;">↩ Reset</button>
+        </div>
+        <div id="overridesList" style="font-size:13px;color:#6b7280;">
+          <p style="padding:8px 0;color:#9ca3af;">Select a user above to see their overrides.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div style="font-size:11px;color:#9ca3af;background:#f9fafb;border-radius:8px;padding:12px;">
+          <strong>Database tables required:</strong> <code>feature_flags</code> and <code>user_feature_overrides</code><br>
+          See feature-flags.js for SQL schema. Without these tables, hardcoded defaults are used.
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadAdminFeaturesTab() {
+  const el = document.getElementById('adminFlagsList');
+  if (!el) return;
+
+  // Load current flags (refreshes cache from DB)
+  if (typeof loadFeatureFlags === 'function') {
+    await loadFeatureFlags();
+  }
+
+  const flags = (typeof getAllFeatureFlags === 'function') ? getAllFeatureFlags() : [];
+
+  if (flags.length === 0) {
+    el.innerHTML = '<p style="text-align:center;color:#9ca3af;padding:24px;">No feature flags defined.</p>';
+    return;
+  }
+
+  el.innerHTML = flags.map(flag => renderFlagRow(flag)).join('');
+
+  // Wire override buttons
+  document.getElementById('overrideGrantBtn')?.addEventListener('click',  () => applyUserOverride(true));
+  document.getElementById('overrideRevokeBtn')?.addEventListener('click', () => applyUserOverride(false));
+  document.getElementById('overrideClearBtn')?.addEventListener('click',  () => applyUserOverride(null));
+  document.getElementById('overrideUserSelect')?.addEventListener('change', loadUserOverrides);
+}
+
+function renderFlagRow(flag) {
+  const roleToggle = (id, label, checked, roleKey) => `
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label class="feature-toggle" title="${label}">
+        <input type="checkbox" class="feature-role-toggle"
+               data-key="${escapeHtml(flag.feature_key)}"
+               data-role="${roleKey}"
+               ${checked ? 'checked' : ''}
+               style="width:14px;height:14px;cursor:pointer;">
+        <span style="font-size:12px;">${label}</span>
+      </label>
+    </div>`;
+
+  return `
+    <div class="feature-flag-row" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:24px;line-height:1;">${escapeHtml(flag.icon || '✨')}</div>
+        <div style="flex:1;min-width:200px;">
+          <div style="font-weight:700;font-size:14px;color:#111827;">${escapeHtml(flag.display_name || flag.feature_key)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">${escapeHtml(flag.description || '')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <label class="feature-toggle" title="Enable for everyone (overrides all role settings)">
+              <input type="checkbox" class="feature-global-toggle"
+                     data-key="${escapeHtml(flag.feature_key)}"
+                     ${flag.enabled_globally ? 'checked' : ''}
+                     style="width:14px;height:14px;cursor:pointer;">
+              <span style="font-size:12px;font-weight:600;color:#374151;">🌐 Enable globally</span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;opacity:${flag.enabled_globally ? '0.4' : '1'};" id="role-toggles-${escapeHtml(flag.feature_key)}">
+            ${roleToggle('', '👤 Guest',   flag.enabled_for_guest,         'enabled_for_guest')}
+            ${roleToggle('', '🔐 Auth',    flag.enabled_for_authenticated,  'enabled_for_authenticated')}
+            ${roleToggle('', '⭐ Member',  flag.enabled_for_member,         'enabled_for_member')}
+            ${roleToggle('', '👑 Admin',   flag.enabled_for_admin,          'enabled_for_admin')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Save flag change when a toggle is clicked
+document.addEventListener('change', async (e) => {
+  const globalToggle = e.target.closest('.feature-global-toggle');
+  const roleToggle   = e.target.closest('.feature-role-toggle');
+
+  if (!globalToggle && !roleToggle) return;
+
+  const featureKey = (globalToggle || roleToggle).dataset.key;
+  if (!featureKey || typeof saveFeatureFlag !== 'function') return;
+
+  if (globalToggle) {
+    const enabled = globalToggle.checked;
+    const ok = await saveFeatureFlag(featureKey, { enabled_globally: enabled });
+    if (ok) {
+      showToast(enabled ? 'Feature enabled globally' : 'Global enable off', '✅');
+      // Dim/undim role toggles
+      const roleSection = document.getElementById(`role-toggles-${featureKey}`);
+      if (roleSection) roleSection.style.opacity = enabled ? '0.4' : '1';
+    } else {
+      showToast('Failed to save — check DB table exists', '❌');
+      globalToggle.checked = !enabled; // revert
+    }
+    return;
+  }
+
+  if (roleToggle) {
+    const roleKey = roleToggle.dataset.role;
+    const enabled = roleToggle.checked;
+    const ok = await saveFeatureFlag(featureKey, { [roleKey]: enabled });
+    if (ok) {
+      showToast(`${featureKey}: ${roleKey} ${enabled ? 'enabled' : 'disabled'}`, '✅');
+    } else {
+      showToast('Failed to save — check DB table exists', '❌');
+      roleToggle.checked = !enabled;
+    }
+  }
+});
+
+async function applyUserOverride(enabled) {
+  const userId     = document.getElementById('overrideUserSelect')?.value;
+  const featureKey = document.getElementById('overrideFeatureSelect')?.value;
+  if (!userId || !featureKey) {
+    showToast('Select a user and a feature first', '⚠️');
+    return;
+  }
+  if (typeof setUserFeatureOverride !== 'function') {
+    showToast('Feature flags module not loaded', '❌');
+    return;
+  }
+  const ok = await setUserFeatureOverride(userId, featureKey, enabled);
+  if (ok) {
+    const label = enabled === null ? 'Reset to default' : enabled ? 'Feature granted' : 'Feature revoked';
+    showToast(label, '✅');
+    await logAdminAction('feature_override', userId, '', `${featureKey}:${enabled}`);
+    await loadUserOverrides();
+  } else {
+    showToast('Failed to apply override', '❌');
+  }
+}
+
+async function loadUserOverrides() {
+  const el     = document.getElementById('overridesList');
+  const userId = document.getElementById('overrideUserSelect')?.value;
+  if (!el || !userId || !window.supabaseClient) return;
+
+  try {
+    const { data, error } = await window.supabaseClient
+      .from('user_feature_overrides')
+      .select('feature_key, enabled')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      el.innerHTML = '<p style="color:#9ca3af;padding:6px 0;font-size:12px;">No overrides — using role defaults.</p>';
+      return;
+    }
+
+    el.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${data.map(o => `
+          <span style="font-size:12px;padding:4px 10px;border-radius:20px;
+            background:${o.enabled ? '#d1fae5' : '#fee2e2'};
+            color:${o.enabled ? '#065f46' : '#991b1b'};">
+            ${o.enabled ? '✅' : '🚫'} ${escapeHtml(o.feature_key)}
+          </span>`).join('')}
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<p style="color:#ef4444;font-size:12px;">Failed to load overrides: ${escapeHtml(err.message)}</p>`;
+  }
+}
