@@ -158,6 +158,10 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
       if (listingId) url = `https://www.ebay.com/itm/${listingId[1]}`;
     }
 
+    // Only include items that have an actual eBay listing URL — chunks without
+    // a URL are likely navigation, "similar items", or ad sections
+    if (!url) continue;
+
     // Extract title — check <li> aria-label first, then new/old class names
     const titleMatch = liTag.match(/aria-label="([^"]+)"/)
                     || fullItem.match(/class="s-card__title[^"]*"[^>]*>(?:<[^>]+>)?([^<]+)/)
@@ -166,7 +170,7 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
                     || fullItem.match(/aria-label="([^"]+)"/);
     const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : '';
 
-    // Extract price
+    // Extract price — prefer structured price elements over raw dollar amounts
     const price = extractPrice(fullItem);
     if (!price) continue;
 
@@ -176,9 +180,10 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     soldItems.push({ title, price, url, date });
   }
 
-  // Log first parsed item for diagnostics
-  if (soldItems.length > 0) {
-    console.log(`Sample item[0]: title="${soldItems[0].title}" price=${soldItems[0].price} url=${soldItems[0].url}`);
+  // Log all parsed items for diagnostics
+  for (let j = 0; j < Math.min(soldItems.length, 5); j++) {
+    const si = soldItems[j];
+    console.log(`  item[${j}]: price=$${si.price} url=${si.url} title="${(si.title || '').slice(0, 60)}"`);
   }
 
   console.log(`Strategy 1 (s-card split): ${soldItems.length} items`);
@@ -217,14 +222,18 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
 
   if (soldItems.length === 0) return null;
 
-  const relevant = filterRelevantItems(soldItems, cardNumber, hero, athlete);
-  console.log(`After filtering: ${relevant.length} items (from ${soldItems.length} raw)`);
+  // ── Deduplicate by URL and price ──────────────────────────────────────
+  const deduped = deduplicateItems(soldItems);
+  console.log(`After dedup: ${deduped.length} items (from ${soldItems.length} raw)`);
 
-  // If filter removed everything but raw items exist, fall back to raw items
+  const relevant = filterRelevantItems(deduped, cardNumber, hero, athlete);
+  console.log(`After filtering: ${relevant.length} items (from ${deduped.length} deduped)`);
+
+  // If filter removed everything but deduped items exist, fall back to deduped
   // — the search query already scoped results, so they're likely relevant
-  const finalItems = relevant.length > 0 ? relevant : soldItems;
-  if (relevant.length === 0 && soldItems.length > 0) {
-    console.log('Filter removed all items — falling back to raw results');
+  const finalItems = relevant.length > 0 ? relevant : deduped;
+  if (relevant.length === 0 && deduped.length > 0) {
+    console.log('Filter removed all items — falling back to deduped results');
   }
 
   return formatSoldResponse(finalItems);
@@ -240,20 +249,23 @@ function extractPrice(html) {
     const m = blockMatch[1].match(/\$?([\d,]+\.?\d*)/);
     if (m) return parseFloat(m[1].replace(/,/g, ''));
   }
-  // Look for dollar amounts that are NOT in shipping/logistics context.
-  // eBay sold items show the sale price prominently — skip amounts near
-  // "shipping", "delivery", "postage" keywords which cause false positives.
+  // Fallback: look for dollar amounts but be strict — skip shipping, tax,
+  // "was" (strikethrough) prices, and other non-sale amounts.
   const dollarRegex = /\$([\d,]+\.?\d{2})\b/g;
   let dollarMatch;
   while ((dollarMatch = dollarRegex.exec(html)) !== null) {
-    // Check surrounding context (100 chars before and after) for shipping keywords
-    const start = Math.max(0, dollarMatch.index - 100);
-    const end = Math.min(html.length, dollarMatch.index + dollarMatch[0].length + 100);
+    const start = Math.max(0, dollarMatch.index - 150);
+    const end = Math.min(html.length, dollarMatch.index + dollarMatch[0].length + 150);
     const context = html.slice(start, end).toLowerCase();
+    // Skip amounts associated with non-sale contexts
     if (context.includes('shipping') || context.includes('delivery') ||
         context.includes('postage') || context.includes('logistic') ||
-        context.includes('freight')) {
-      continue; // skip shipping prices
+        context.includes('freight') || context.includes('tax') ||
+        context.includes('was ') || context.includes('original') ||
+        context.includes('strikethrough') || context.includes('line-through') ||
+        context.includes('similar') || context.includes('sponsored') ||
+        context.includes('trending')) {
+      continue;
     }
     return parseFloat(dollarMatch[1].replace(/,/g, ''));
   }
@@ -312,6 +324,27 @@ function extractFromEmbeddedJson(html) {
   }
 
   return items;
+}
+
+// ── Deduplication helper ──────────────────────────────────────────────────────
+function deduplicateItems(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    // Dedupe by URL first (most reliable)
+    if (item.url) {
+      // Normalize URL to just the item ID
+      const idMatch = item.url.match(/\/itm\/(\d+)/);
+      const key = idMatch ? `url:${idMatch[1]}` : `url:${item.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }
+    // No URL — dedupe by price + title combo
+    const key = `pt:${item.price}:${(item.title || '').slice(0, 60)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
