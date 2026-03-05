@@ -982,7 +982,7 @@ window.openCardDetail = function(index) {
                 rows: [
                     ['Last Sold Price',  fmtCurrency(c.ebaySoldPrice)],
                     ['Last Sold Date',   fmtStr(c.ebaySoldDate)],
-                    ['Last Sold Link',   fmtUrl(c.ebaySoldUrl, 'View sale →')],
+                    // Sold link removed — eBay blocks direct access to sold listing URLs
                     ['Avg Sold Price',   fmtCurrency(c.ebaySoldAvgPrice)],
                     ['Sales Found',      c.ebaySoldCount != null ? escapeHtml(String(c.ebaySoldCount)) : null],
                     ['Last Checked',     fmtDate(c.ebaySoldFetched)],
@@ -1030,7 +1030,6 @@ window.openCardDetail = function(index) {
     const cachedPrice = card.ebayAvgPrice
         ? `⌀ $${Number(card.ebayAvgPrice).toFixed(2)}  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)}`
         : null;
-    const ebaySoldUrl = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
     const cachedSold = card.ebaySoldPrice
         ? `$${Number(card.ebaySoldPrice).toFixed(2)}${card.ebaySoldDate ? ' · ' + escapeHtml(card.ebaySoldDate) : ''}`
         : null;
@@ -1055,7 +1054,6 @@ window.openCardDetail = function(index) {
             <div style="display:flex;align-items:center;gap:10px;">
                 <button id="detailEbaySoldRefresh" title="Refresh sold data"
                         style="background:none;border:1px solid #fcd34d;border-radius:6px;padding:3px 8px;font-size:11px;color:#92400e;cursor:pointer;">🔄 Refresh</button>
-                ${ebaySoldUrl ? '<a id="detailEbaySoldLink" href="' + escapeHtml(ebaySoldUrl) + '" target="_blank" rel="noopener" style="font-size:12px;color:#92400e;text-decoration:none;font-weight:600;">View sold →</a>' : ''}
             </div>
         </div>`;
 
@@ -1075,7 +1073,7 @@ window.openCardDetail = function(index) {
                     ? `<div id="detailImgWrap" style="position:relative;text-align:center;margin-bottom:16px;cursor:zoom-in;">
                            <img id="detailCardImg" data-card-index="${index}"
                                 src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}"
-                                style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f9fafb;transition:transform .25s ease;"
+                                style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;background:#f9fafb;"
                                 onerror="this.style.display='none';document.getElementById('detailNoImgMsg')?.style.setProperty('display','block')">
                            <div id="detailZoomHint" style="position:absolute;bottom:6px;right:8px;background:rgba(0,0,0,.45);color:#fff;font-size:10px;border-radius:4px;padding:2px 6px;">Tap to zoom</div>
                        </div>`
@@ -1186,33 +1184,64 @@ window.openCardDetail = function(index) {
     }
 
     // ── Zoom on card image ────────────────────────────────────────────────
+    // Uses actual width changes instead of CSS transform so the container
+    // gets real scrollbars — transform:scale() doesn't affect layout size,
+    // which caused the image to be clipped with no way to scroll to edges.
     const imgWrap = document.getElementById('detailImgWrap');
     const cardImg = document.getElementById('detailCardImg');
     const zoomHint = document.getElementById('detailZoomHint');
     if (imgWrap && cardImg) {
         let zoomLevel = 0; // 0=normal, 1=2x, 2=3x
-        imgWrap.addEventListener('click', () => {
+        imgWrap.addEventListener('click', (e) => {
+            // Don't toggle zoom if user is scrolling the zoomed image
+            if (zoomLevel > 0 && (imgWrap.scrollTop > 0 || imgWrap.scrollLeft > 0)) {
+                // Only reset if tapping near the zoom hint area (bottom-right)
+                const rect = imgWrap.getBoundingClientRect();
+                const isHintArea = (e.clientX > rect.right - 80) && (e.clientY > rect.bottom - 30);
+                if (!isHintArea) return;
+            }
             zoomLevel = (zoomLevel + 1) % 3;
             if (zoomLevel === 0) {
-                cardImg.style.transform = 'scale(1)';
+                cardImg.style.width = '100%';
                 cardImg.style.maxHeight = '240px';
+                cardImg.style.transform = '';
                 imgWrap.style.cursor = 'zoom-in';
                 imgWrap.style.overflow = 'hidden';
+                imgWrap.style.maxHeight = '';
+                imgWrap.scrollTop = 0;
+                imgWrap.scrollLeft = 0;
                 if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap to zoom'; }
             } else if (zoomLevel === 1) {
-                cardImg.style.transform = 'scale(2)';
+                cardImg.style.width = '200%';
                 cardImg.style.maxHeight = 'none';
+                cardImg.style.transform = '';
                 imgWrap.style.cursor = 'zoom-in';
                 imgWrap.style.overflow = 'auto';
-                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap for 3×'; }
+                imgWrap.style.maxHeight = '60vh';
+                // Center the scroll position
+                setTimeout(() => {
+                    imgWrap.scrollLeft = (imgWrap.scrollWidth - imgWrap.clientWidth) / 2;
+                    imgWrap.scrollTop = (imgWrap.scrollHeight - imgWrap.clientHeight) / 2;
+                }, 50);
+                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Scroll to pan · Tap for 3×'; }
             } else {
-                cardImg.style.transform = 'scale(3)';
+                cardImg.style.width = '300%';
                 cardImg.style.maxHeight = 'none';
+                cardImg.style.transform = '';
                 imgWrap.style.cursor = 'zoom-out';
                 imgWrap.style.overflow = 'auto';
-                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Tap to reset'; }
+                imgWrap.style.maxHeight = '60vh';
+                setTimeout(() => {
+                    imgWrap.scrollLeft = (imgWrap.scrollWidth - imgWrap.clientWidth) / 2;
+                    imgWrap.scrollTop = (imgWrap.scrollHeight - imgWrap.clientHeight) / 2;
+                }, 50);
+                if (zoomHint) { zoomHint.style.display = 'block'; zoomHint.textContent = 'Scroll to pan · Tap to reset'; }
             }
         });
+        // Prevent parent modal scroll when scrolling inside zoomed image
+        imgWrap.addEventListener('touchmove', (e) => {
+            if (zoomLevel > 0) e.stopPropagation();
+        }, { passive: true });
     }
 
     // ── Re-attach photo ───────────────────────────────────────────────────
@@ -1305,15 +1334,8 @@ window.openCardDetail = function(index) {
             if (rb2) rb2.disabled = false;
             if (!el2) return;
             if (result && result.blocked) {
-                // eBay blocked the server request — show a direct link instead
-                const directUrl = result.searchUrl || ebaySoldUrl;
-                if (directUrl) {
-                    el2.innerHTML = `<a href="${escapeHtml(directUrl)}" target="_blank" rel="noopener"
-                        style="color:#92400e;font-weight:600;text-decoration:none;">View sold listings on eBay →</a>`;
-                } else {
-                    el2.textContent = 'Lookup unavailable';
-                    el2.style.color = '#9ca3af';
-                }
+                el2.textContent = 'Lookup unavailable';
+                el2.style.color = '#9ca3af';
                 if (rb2) rb2.disabled = false;
                 return;
             }
@@ -1332,9 +1354,6 @@ window.openCardDetail = function(index) {
                 if (ls.date) display += ` · ${ls.date}`;
                 if (count > 1 && avg) display += ` <span style="font-size:11px;color:#92400e;font-weight:400;">(avg $${avg.toFixed(2)} across ${count} sale${count!==1?'s':''})</span>`;
                 el2.innerHTML = display;
-                // Update the "View sold" link to point to the actual listing if available
-                const soldLink = document.getElementById('detailEbaySoldLink');
-                if (soldLink && ls.url) { soldLink.href = ls.url; soldLink.textContent = 'View sale →'; }
                 // Persist on card
                 updateCard(index, 'ebaySoldPrice', ls.price);
                 updateCard(index, 'ebaySoldDate', ls.date || null);
@@ -1381,45 +1400,6 @@ window.openCardDetail = function(index) {
         }
     }
 
-    if (false) {  // original block kept for reference, replaced above
-    if (typeof fetchEbayAvgPrice === 'function') {
-        fetchEbayAvgPrice(card).then(result => {
-            const el = document.getElementById('detailEbayPriceValue');
-            if (!el) return;
-            if (!result || result.count === 0) {
-                el.textContent = 'N/A';
-                el.style.color = '#9ca3af';
-                document.getElementById('detailEbayPriceLink')?.style.setProperty('display', 'none');
-                // Cache as null so we don't refetch every open
-                updateCard(index, 'ebayAvgPrice', null);
-                updateCard(index, 'ebayLowPrice', null);
-                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
-            } else {
-                const avg = result.avgPrice;
-                const low = result.lowPrice;
-                const high = result.highPrice;
-                const count = result.count;
-                el.innerHTML = `$${avg.toFixed(2)} avg`
-                    + (low !== null ? ` &nbsp;·&nbsp; <span style="color:#065f46;font-weight:700;">↓ $${low.toFixed(2)} low</span>` : '')
-                    + (count > 1 ? ` <span style="font-size:11px;color:#6b7280;font-weight:400;">(${count} listings · $${low}–$${high})</span>` : '');
-
-                // Save to card so grid + stats can use without re-fetching
-                updateCard(index, 'ebayAvgPrice',    avg);
-                updateCard(index, 'ebayLowPrice',    low);
-                updateCard(index, 'ebayHighPrice',   high);
-                updateCard(index, 'ebayListingCount', count);
-                updateCard(index, 'ebayPriceFetched', new Date().toISOString());
-                renderCards(); // refresh grid price row
-            }
-        }).catch(() => {
-            const el = document.getElementById('detailEbayPriceValue');
-            if (el) { el.textContent = 'Unavailable'; el.style.color = '#9ca3af'; }
-        });
-    } else {
-        const el = document.getElementById('detailEbayPriceValue');
-        if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
-    }
-    } // end if(false)
 };
 
 // Open card detail from collection modal — takes colId + index directly

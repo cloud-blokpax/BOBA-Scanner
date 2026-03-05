@@ -21,17 +21,19 @@ Grade scale:
 - PSA 5 (Excellent): Obvious wear but no major defects
 - PSA 4 and below: Significant wear, creases, damage, or heavy print defects
 
-Return ONLY valid JSON with no markdown:
+IMPORTANT: Carefully measure the actual centering of THIS specific card by comparing left vs right border widths and top vs bottom border widths. Do NOT default to example values — every card is different. Report the actual ratios you observe.
+
+Return ONLY valid JSON with no markdown. Example format (use YOUR measurements, not these):
 {
-  "grade": 8,
-  "grade_label": "Near Mint-Mint",
-  "confidence": 75,
-  "centering": "58/42 L/R, 55/45 T/B",
-  "corners": "Sharp on 3 corners, slight wear on bottom-left",
-  "edges": "Clean with minor roughness on right edge",
-  "surface": "Light surface gloss with one faint scratch near center",
-  "summary": "Strong candidate for PSA 8. The slight corner wear on bottom-left and faint scratch prevent a 9. Worth submitting if market value justifies grading cost.",
-  "submit_recommendation": "yes"
+  "grade": <1-10>,
+  "grade_label": "<grade name>",
+  "confidence": <0-100>,
+  "centering": "<actual L/R ratio> L/R, <actual T/B ratio> T/B",
+  "corners": "<describe what you actually see on each corner>",
+  "edges": "<describe actual edge condition>",
+  "surface": "<describe actual surface condition>",
+  "summary": "<your assessment of this specific card>",
+  "submit_recommendation": "yes|maybe|no"
 }
 
 submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;

@@ -645,20 +645,13 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   updateStats();
   renderCards();
 
-  // Switch to Collection tab so the user can see the scanned card
-  if (typeof window.bottomNavSwitchTab === 'function') {
-    window.bottomNavSwitchTab('collection');
-  }
+  // Stay on the current tab (scan page) — don't auto-switch to collection.
+  // The toast notification confirms the card was added successfully.
 
   if (navigator.vibrate) navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
 
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
-
-  // Auto-open card detail after every single-card scan
-  if (typeof openCardDetail === 'function') {
-    setTimeout(() => openCardDetail(newCardIndex), 200);
-  }
 
   if (isPriceCheck) {
     // Auto-fetch eBay prices for price check cards
