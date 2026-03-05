@@ -153,4 +153,89 @@ async function triggerGradeCard() {
   }
 }
 
+// ── Grade a specific card by index (from card detail modal or card grid) ──────
+async function gradeCardFromDetail(index) {
+  const collections = (typeof getCollections === 'function') ? getCollections() : [];
+  const currentId   = (typeof getCurrentCollectionId === 'function') ? getCurrentCollectionId() : 'default';
+  const collection  = collections.find(c => c.id === currentId);
+  const card        = collection?.cards[index];
+  if (!card) { showToast('Card not found', '❌'); return; }
+
+  if (!card.imageUrl) {
+    showToast('No image for this card — re-attach a photo first', '⚠️');
+    return;
+  }
+
+  showLoading(true, 'Analyzing card condition...');
+  try {
+    const imageData = await urlToBase64(card.imageUrl);
+    const result = await gradeCard(imageData);
+    showLoading(false);
+    showGradeModal(result, card.hero || card.cardNumber || 'Card');
+  } catch (err) {
+    showLoading(false);
+    console.error('Grade from detail error:', err);
+    showToast('Grading failed — try again', '❌');
+  }
+}
+
+// ── Grade button on card grid (via "⋯ More" menu) ────────────────────────────
+async function gradeCardByIndex(index) {
+  await gradeCardFromDetail(index);
+}
+
+// ── Grade from More menu (show card picker first) ─────────────────────────────
+function triggerGradeCardWithPicker() {
+  if (!isFeatureEnabled('condition_grader')) {
+    showToast('Condition Grader requires membership', '🔒');
+    return;
+  }
+  showCardPickerModal('🔬 Grade Card', 'Select a card to grade', async (index) => {
+    await gradeCardFromDetail(index);
+  });
+}
+
+// ── triggerGradeCard: still works if a scan image is visible, else shows picker
+async function triggerGradeCard() {
+  if (!isFeatureEnabled('condition_grader')) {
+    showToast('Condition Grader requires membership', '🔒');
+    return;
+  }
+  const previewImg = document.getElementById('cardPreview') || document.getElementById('scanPreviewImg');
+  if (previewImg && previewImg.src && !previewImg.src.startsWith('data:image/gif') && previewImg.src !== window.location.href) {
+    // Image available from scan
+    const cardName = document.getElementById('resultHero')?.textContent
+      || document.getElementById('heroName')?.textContent
+      || 'Card';
+    showLoading(true, 'Analyzing card condition...');
+    try {
+      const imageData = await urlToBase64(previewImg.src);
+      const result = await gradeCard(imageData);
+      showLoading(false);
+      showGradeModal(result, cardName);
+    } catch (err) {
+      showLoading(false);
+      showToast('Grading failed — try again', '❌');
+    }
+  } else {
+    triggerGradeCardWithPicker();
+  }
+}
+
+// Shared helper: convert any URL (blob, http, data:) to base64 string
+async function urlToBase64(url) {
+  if (!url) throw new Error('No URL');
+  if (url.startsWith('data:image')) return url.split(',')[1];
+  const blob = await fetch(url).then(r => {
+    if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
+    return r.blob();
+  });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 console.log('✅ Grader module loaded');

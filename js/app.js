@@ -139,19 +139,38 @@ function wireMagicalFeatureButtons() {
         if (typeof triggerEbayLister === 'function') triggerEbayLister(cards[0] || null);
     });
 
-    // Wire click handlers (More sheet)
+    // Wire click handlers (More sheet) — use pickers so user can choose which card
     document.getElementById('moreGradeCard')?.addEventListener('click', () => {
-        if (typeof triggerGradeCard === 'function') triggerGradeCard();
+        if (typeof triggerGradeCardWithPicker === 'function') triggerGradeCardWithPicker();
+        else if (typeof triggerGradeCard === 'function') triggerGradeCard();
     });
     document.getElementById('moreSetCompletion')?.addEventListener('click', () => {
         if (typeof analyzeSetCompletion === 'function') analyzeSetCompletion();
     });
     document.getElementById('moreEbayLister')?.addEventListener('click', () => {
-        const cards = (typeof getCollections === 'function')
-            ? getCollections().flatMap(c => c.cards).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            : [];
-        if (typeof triggerEbayLister === 'function') triggerEbayLister(cards[0] || null);
+        if (typeof triggerEbayListerWithPicker === 'function') triggerEbayListerWithPicker();
+        else if (typeof triggerEbayLister === 'function') triggerEbayLister(null);
     });
+
+    // Expose card "⋯ More" button globally (called from renderCards inline HTML)
+    if (hasGrader || hasEbayLister) {
+        // Show the ⋯ button on all already-rendered cards
+        document.querySelectorAll('.btn-card-more').forEach(btn => {
+            btn.style.display = '';
+        });
+        // Also reveal new ones as cards are rendered via a MutationObserver
+        if (!window._cardMoreObserver) {
+            window._cardMoreObserver = new MutationObserver(() => {
+                if (isFeatureEnabled('condition_grader') || isFeatureEnabled('ebay_lister')) {
+                    document.querySelectorAll('.btn-card-more[style*="display:none"]').forEach(b => {
+                        b.style.display = '';
+                    });
+                }
+            });
+            const grid = document.getElementById('cardsGrid');
+            if (grid) window._cardMoreObserver.observe(grid, { childList: true, subtree: true });
+        }
+    }
 }
 
 // Start init when DOM is ready

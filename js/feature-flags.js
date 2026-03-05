@@ -241,4 +241,138 @@ async function fetchAllUserOverrides() {
   }
 }
 
+// ── Card picker modal ─────────────────────────────────────────────────────────
+// Shared UI used by Grade and eBay Lister when no specific card is pre-selected.
+// Shows cards from all collections so the user can pick one.
+
+function showCardPickerModal(title, subtitle, onPick) {
+  document.getElementById('cardPickerModal')?.remove();
+
+  const collections = (typeof getCollections === 'function') ? getCollections() : [];
+  // Gather all cards across collections, most recently scanned first
+  const allCards = [];
+  for (const col of collections) {
+    for (let i = 0; i < col.cards.length; i++) {
+      allCards.push({ card: col.cards[i], colId: col.id, colName: col.name, localIndex: i });
+    }
+  }
+  allCards.sort((a, b) => new Date(b.card.timestamp || 0) - new Date(a.card.timestamp || 0));
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = `
+    <div class="modal active" id="cardPickerModal">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+          <div>
+            <h2>${escapeHtml(title)}</h2>
+            <div style="font-size:13px;color:#6b7280;margin-top:2px;">${escapeHtml(subtitle)}</div>
+          </div>
+          <button class="modal-close" id="cardPickerClose">×</button>
+        </div>
+        <div class="modal-body" style="padding:12px;max-height:60vh;overflow-y:auto;">
+          ${allCards.length === 0
+            ? `<p style="text-align:center;color:#9ca3af;padding:24px;">No cards in your collection yet — scan some cards first!</p>`
+            : allCards.slice(0, 50).map(({ card, colId, colName, localIndex }) => `
+              <button class="card-picker-item" data-col-id="${escapeHtml(colId)}" data-local-index="${localIndex}"
+                style="display:flex;align-items:center;gap:10px;width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;text-align:left;">
+                ${card.imageUrl && !card.imageUrl.startsWith('blob:')
+                  ? `<img src="${escapeHtml(card.imageUrl)}" alt="" style="width:44px;height:60px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
+                  : `<div style="width:44px;height:60px;background:#e5e7eb;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">🃏</div>`}
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:14px;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(card.hero || 'Unknown Card')}</div>
+                  ${card.athlete ? `<div style="font-size:12px;color:#6b7280;">${escapeHtml(card.athlete)}</div>` : ''}
+                  <div style="font-size:12px;color:#9ca3af;">${escapeHtml(card.cardNumber || '')}${card.set ? ' · ' + escapeHtml(card.set) : ''}</div>
+                  <div style="font-size:11px;color:#d1d5db;margin-top:2px;">${escapeHtml(colName || colId)}</div>
+                </div>
+                ${card.condition ? `<div style="font-size:11px;background:#eff6ff;color:#1d4ed8;padding:2px 7px;border-radius:4px;flex-shrink:0;">${escapeHtml(card.condition)}</div>` : ''}
+              </button>`).join('')
+          }
+          ${allCards.length > 50 ? `<p style="text-align:center;font-size:12px;color:#9ca3af;padding:8px 0;">Showing 50 most recent cards</p>` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" id="cardPickerCloseBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(wrapper.firstElementChild);
+
+  const closeModal = () => document.getElementById('cardPickerModal')?.remove();
+  document.getElementById('cardPickerClose')?.addEventListener('click', closeModal);
+  document.getElementById('cardPickerCloseBtn')?.addEventListener('click', closeModal);
+  document.querySelector('#cardPickerModal .modal-backdrop')?.addEventListener('click', closeModal);
+
+  // When user picks a card, switch to that collection context then call onPick
+  document.querySelectorAll('#cardPickerModal .card-picker-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const colId      = btn.dataset.colId;
+      const localIndex = parseInt(btn.dataset.localIndex, 10);
+
+      // Switch active collection if needed
+      if (typeof setCurrentCollectionId === 'function' && colId !== (typeof getCurrentCollectionId === 'function' ? getCurrentCollectionId() : '')) {
+        setCurrentCollectionId(colId);
+      }
+
+      closeModal();
+      await onPick(localIndex);
+    });
+  });
+}
+
+// ── Card grid "⋯ More" menu ───────────────────────────────────────────────────
+// Shows an action sheet with eBay search + grade/list options (when enabled)
+
+function toggleCardMoreMenu(index, btn) {
+  // Close any already-open menus
+  document.querySelectorAll('.card-more-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'card-more-menu';
+  menu.style.cssText = 'position:absolute;right:0;bottom:100%;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:160px;z-index:100;overflow:hidden;';
+
+  const items = [
+    { icon: '🛒', label: 'Search eBay',  fn: () => { if (typeof openEbaySearch === 'function') openEbaySearch(index); } },
+  ];
+
+  if (typeof isFeatureEnabled === 'function') {
+    if (isFeatureEnabled('condition_grader')) {
+      items.push({ icon: '🔬', label: 'Grade Card',    fn: () => { if (typeof gradeCardByIndex === 'function') gradeCardByIndex(index); } });
+    }
+    if (isFeatureEnabled('ebay_lister')) {
+      items.push({ icon: '🏷️', label: 'List on eBay',  fn: () => { if (typeof ebayListByIndex === 'function') ebayListByIndex(index); } });
+    }
+  }
+
+  menu.innerHTML = items.map((item, i) => `
+    <button data-menu-index="${i}" style="display:flex;align-items:center;gap:8px;width:100%;padding:11px 14px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#111827;text-align:left;border-top:${i > 0 ? '1px solid #f3f4f6' : 'none'};">
+      <span>${item.icon}</span> ${escapeHtml(item.label)}
+    </button>`).join('');
+
+  // Position relative to button's parent card-footer
+  const footer = btn.closest('.card-footer') || btn.parentElement;
+  footer.style.position = 'relative';
+  footer.appendChild(menu);
+
+  // Wire button clicks
+  menu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const fn = items[parseInt(b.dataset.menuIndex)].fn;
+      menu.remove();
+      fn();
+    });
+  });
+
+  // Close on outside click
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu, true), 0);
+}
+
 console.log('✅ Feature flags module loaded');

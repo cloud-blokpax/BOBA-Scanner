@@ -24,40 +24,50 @@ async function analyzeSetCompletion() {
       return;
     }
 
-    // 2. Get the full card database
-    const db = await getCardDatabase(); // from database.js
+    // 2. Get the full card database — uses the globally loaded `database` array
+    const db = await getCardDatabase();
     if (!db || db.size === 0) {
       showLoading(false);
-      showToast('Card database not loaded yet — try again', '⚠️');
+      showToast('Card database is still loading — try again in a moment', '⚠️');
       return;
     }
 
-    // 3. Group owned cards by set
-    const owned = new Map(); // setKey → Set of cardNumbers
+    // 3. Group owned cards by set (collection cards use .cardNumber, .set, .year)
+    const owned = new Map(); // setKey → Set of card numbers (lowercase)
     for (const card of allCards) {
       const setKey = buildSetKey(card);
       if (!owned.has(setKey)) owned.set(setKey, new Set());
-      owned.get(setKey).add(card.cardNumber);
+      if (card.cardNumber) owned.get(setKey).add(card.cardNumber.trim().toUpperCase());
     }
 
-    // 4. Group ALL cards in DB by set
-    const allBySet = new Map(); // setKey → Set of cardNumbers
+    // 4. Group ALL DB cards by set (DB cards use card['Card Number'], card['Set'], card['Year'])
+    const allBySet = new Map(); // setKey → Set of card numbers
     for (const [cardNumber, cardData] of db.entries()) {
-      const setKey = buildSetKey(cardData);
+      const setKey = buildSetKeyFromDb(cardData);
       if (!allBySet.has(setKey)) allBySet.set(setKey, new Set());
-      allBySet.get(setKey).add(cardNumber);
+      allBySet.get(setKey).add(cardNumber.trim().toUpperCase());
     }
 
     // 5. Compute completion % for each set the user has started
     const setStats = [];
     for (const [setKey, ownedNums] of owned.entries()) {
-      const allNums = allBySet.get(setKey);
+      // Try to find the matching DB set (case-insensitive match on set key)
+      let allNums = allBySet.get(setKey);
+      if (!allNums) {
+        // Try case-insensitive match
+        for (const [dbSetKey, nums] of allBySet.entries()) {
+          if (dbSetKey.toLowerCase() === setKey.toLowerCase()) {
+            allNums = nums;
+            break;
+          }
+        }
+      }
       if (!allNums || allNums.size === 0) continue;
 
-      const total    = allNums.size;
-      const have     = ownedNums.size;
-      const missing  = [...allNums].filter(n => !ownedNums.has(n));
-      const percent  = Math.round((have / total) * 100);
+      const total   = allNums.size;
+      const have    = [...ownedNums].filter(n => allNums.has(n)).length;
+      const missing = [...allNums].filter(n => !ownedNums.has(n));
+      const percent = Math.round((have / total) * 100);
 
       setStats.push({ setKey, total, have, missing, percent });
     }
@@ -68,17 +78,11 @@ async function analyzeSetCompletion() {
       return a.missing.length - b.missing.length;
     });
 
-    // Focus on sets that are >= 30% complete or have <= 10 cards missing
-    const interesting = setStats.filter(s => s.percent >= 30 || s.missing.length <= 10);
-
-    if (interesting.length === 0) {
-      showLoading(false);
-      showSetCompletionModal(setStats.slice(0, 5), db, false);
-      return;
-    }
+    // Focus on sets that are >= 20% complete or have <= 15 cards missing
+    const interesting = setStats.filter(s => s.percent >= 20 || s.missing.length <= 15);
 
     showLoading(false);
-    showSetCompletionModal(interesting.slice(0, 8), db, true);
+    showSetCompletionModal(interesting.length > 0 ? interesting.slice(0, 8) : setStats.slice(0, 5), db, interesting.length > 0);
 
   } catch (err) {
     showLoading(false);
@@ -87,36 +91,56 @@ async function analyzeSetCompletion() {
   }
 }
 
+// Build set key from a collection card object (uses .set / .year)
 function buildSetKey(card) {
-  // Normalize set + year into a stable key
-  const set  = (card.set  || card.setName || 'Unknown Set').trim();
+  const set  = (card.set  || card.setName  || 'Unknown Set').trim();
   const year = (card.year || card.cardYear || '').toString().trim();
   return year ? `${year} ${set}` : set;
 }
 
-// Fetch card DB as a Map — wrapper that respects the existing DB module
-async function getCardDatabase() {
-  // database.js exposes window.cardDatabase or a getCardData() function
-  if (window.cardDatabase instanceof Map) return window.cardDatabase;
+// Build set key from a database card object (uses card['Set'] / card['Year'])
+function buildSetKeyFromDb(card) {
+  const set  = (card['Set']  || card.set  || 'Unknown Set').trim();
+  const year = (card['Year'] || card.year || '').toString().trim();
+  return year ? `${year} ${set}` : set;
+}
 
-  // Try to load via the existing DB module's lookup mechanism
-  // The DB is indexed — walk through it to build a full map
-  const db = new Map();
-  try {
-    // database.js stores the data in `window._cardDb` or similar
-    // Fall back: fetch the JSON directly
-    const res = await fetch('card-database.json');
-    if (!res.ok) throw new Error('DB fetch failed');
-    const arr = await res.json();
-    for (const card of arr) {
-      if (card.cardNumber) db.set(card.cardNumber, card);
+// Get the card database as a Map<cardNumber → cardData>
+// Uses the global `database` array from database.js (already loaded at app start)
+async function getCardDatabase() {
+  // `database` is the global array populated by loadDatabase() in database.js
+  if (typeof database !== 'undefined' && Array.isArray(database) && database.length > 0) {
+    const db = new Map();
+    for (const card of database) {
+      const num = card['Card Number'];
+      if (num) db.set(num.trim().toUpperCase(), card);
     }
-    // Cache it
-    window.cardDatabase = db;
-  } catch (err) {
-    console.warn('getCardDatabase fallback error:', err);
+    window._setCompletionDb = db; // cache for subsequent calls
+    return db;
   }
-  return db;
+
+  // Return cached version if DB was already converted
+  if (window._setCompletionDb instanceof Map && window._setCompletionDb.size > 0) {
+    return window._setCompletionDb;
+  }
+
+  // DB not loaded yet — wait up to 5s for ready.db flag
+  if (typeof ready !== 'undefined') {
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      if (ready.db && typeof database !== 'undefined' && database.length > 0) {
+        const db = new Map();
+        for (const card of database) {
+          const num = card['Card Number'];
+          if (num) db.set(num.trim().toUpperCase(), card);
+        }
+        window._setCompletionDb = db;
+        return db;
+      }
+    }
+  }
+
+  return new Map(); // Empty — caller will show "try again" message
 }
 
 // ── Render set completion modal ───────────────────────────────────────────────
@@ -136,13 +160,17 @@ function showSetCompletionModal(setStats, db, hasInteresting) {
           ${!hasInteresting ? `
             <div style="text-align:center;padding:20px;color:#6b7280;">
               <div style="font-size:40px;margin-bottom:8px;">📦</div>
-              <p>Keep scanning! You need at least 30% of a set before we can show completion paths.</p>
+              <p>Keep scanning! You need cards from at least 20% of a set before we can show completion paths.</p>
+              <p style="font-size:12px;margin-top:8px;">Showing your most complete sets below:</p>
             </div>
           ` : ''}
-          ${setStats.map(s => renderSetCard(s, db)).join('')}
+          ${setStats.length === 0
+            ? `<p style="text-align:center;color:#9ca3af;padding:24px;">Scan more cards to see set completion analysis.</p>`
+            : setStats.map(s => renderSetCard(s, db)).join('')
+          }
         </div>
         <div class="modal-footer">
-          <div style="font-size:11px;color:#9ca3af;flex:1;">Prices are estimated from recent eBay sold listings</div>
+          <div style="font-size:11px;color:#9ca3af;flex:1;">Tap any missing card to search eBay sold listings</div>
           <button class="btn-secondary" id="setCompModalCloseBtn">Close</button>
         </div>
       </div>
@@ -157,7 +185,7 @@ function showSetCompletionModal(setStats, db, hasInteresting) {
 
 function renderSetCard(s, db) {
   const progressColor = s.percent >= 80 ? '#16a34a' : s.percent >= 50 ? '#d97706' : '#6b7280';
-  const missingCards  = s.missing.slice(0, 6); // show up to 6 missing cards
+  const missingCards  = s.missing.slice(0, 8);
   const moreCount     = s.missing.length - missingCards.length;
 
   return `
@@ -179,9 +207,11 @@ function renderSetCard(s, db) {
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">Missing cards:</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
           ${missingCards.map(cardNum => {
-            const card = db.get(cardNum);
-            const label = card ? `${cardNum}${card.hero ? ' · ' + card.hero : ''}` : cardNum;
-            return `<a href="https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent('Bo Jackson ' + cardNum)}&LH_Sold=1&LH_Complete=1" target="_blank" rel="noopener" style="font-size:11px;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;text-decoration:none;color:#374151;white-space:nowrap;" title="Search eBay sold listings">${escapeHtml(label)}</a>`;
+            const card = db.get(cardNum.toUpperCase());
+            const name = card ? (card['Name'] || card['Hero'] || '') : '';
+            const label = name ? `${cardNum} · ${name}` : cardNum;
+            const query = encodeURIComponent('Bo Jackson ' + (name || cardNum));
+            return `<a href="https://www.ebay.com/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1" target="_blank" rel="noopener" style="font-size:11px;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;text-decoration:none;color:#374151;white-space:nowrap;" title="Search eBay sold listings for ${escapeHtml(cardNum)}">${escapeHtml(label)}</a>`;
           }).join('')}
           ${moreCount > 0 ? `<span style="font-size:11px;color:#9ca3af;padding:4px 8px;">+${moreCount} more</span>` : ''}
         </div>

@@ -156,10 +156,36 @@ function showListingModal(listing, card) {
   });
 }
 
-// Fix typo that slipped in above — use the correct escapeHtml for attribute values
+// Fix typo in original implementation — escapeHtml is the correct function
 function escayHtml(str) { return escapeHtml(str); }
 
-// ── Main trigger ──────────────────────────────────────────────────────────────
+// ── List a specific card by index (from card detail modal or card grid) ───────
+async function ebayListFromDetail(index) {
+  const collections = (typeof getCollections === 'function') ? getCollections() : [];
+  const currentId   = (typeof getCurrentCollectionId === 'function') ? getCurrentCollectionId() : 'default';
+  const collection  = collections.find(c => c.id === currentId);
+  const card        = collection?.cards[index];
+  if (!card) { showToast('Card not found', '❌'); return; }
+  await triggerEbayLister(card);
+}
+
+// ── List from card grid (via "⋯ More" menu) ───────────────────────────────────
+async function ebayListByIndex(index) {
+  await ebayListFromDetail(index);
+}
+
+// ── List from More menu (show card picker first) ──────────────────────────────
+function triggerEbayListerWithPicker() {
+  if (!isFeatureEnabled('ebay_lister')) {
+    showToast('eBay Lister requires membership', '🔒');
+    return;
+  }
+  showCardPickerModal('🛒 List on eBay', 'Select a card to generate a listing', async (index) => {
+    await ebayListFromDetail(index);
+  });
+}
+
+// ── Main trigger — accepts a card object or shows picker if none provided ─────
 async function triggerEbayLister(card) {
   if (!isFeatureEnabled('ebay_lister')) {
     showToast('eBay Lister requires membership', '🔒');
@@ -167,12 +193,11 @@ async function triggerEbayLister(card) {
   }
 
   if (!card || !card.cardNumber) {
-    showToast('No card selected — scan a card first', '⚠️');
+    triggerEbayListerWithPicker();
     return;
   }
 
   showLoading(true, 'Generating eBay listing...');
-
   try {
     const listing = await generateEbayListing(card);
     showLoading(false);
