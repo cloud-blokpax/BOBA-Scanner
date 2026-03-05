@@ -274,15 +274,7 @@ function renderCards() {
                     ${card.ebayAvgPrice ? `<span class="price-avg" title="eBay avg price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : ''}
                     ${card.ebayLowPrice ? `<span class="price-low" title="eBay lowest price">↓ $${Number(card.ebayLowPrice).toFixed(2)}</span>` : ''}
                 </div>` : ''}
-                <div class="card-info-grid">
-                    ${card.cardNumber ? `<div class="card-info-row"><span class="card-info-label">Card #</span><span class="card-info-value">${escapeHtml(card.cardNumber)}</span></div>` : ''}
-                    ${card.year       ? `<div class="card-info-row"><span class="card-info-label">Year</span><span class="card-info-value">${escapeHtml(card.year)}</span></div>` : ''}
-                    ${card.set        ? `<div class="card-info-row"><span class="card-info-label">Set</span><span class="card-info-value">${escapeHtml(card.set)}</span></div>` : ''}
-                    ${card.pose       ? `<div class="card-info-row"><span class="card-info-label">Parallel</span><span class="card-info-value">${escapeHtml(card.pose)}</span></div>` : ''}
-                    ${card.weapon     ? `<div class="card-info-row"><span class="card-info-label">Weapon</span><span class="card-info-value">${escapeHtml(card.weapon)}</span></div>` : ''}
-                    ${card.power      ? `<div class="card-info-row"><span class="card-info-label">Power</span><span class="card-info-value">${escapeHtml(card.power)}</span></div>` : ''}
-                    ${card.condition  ? `<div class="card-info-row"><span class="card-info-label">Condition</span><span class="card-info-value">${escapeHtml(card.condition)}</span></div>` : ''}
-                </div>
+                ${card.condition ? `<div class="card-condition-badge">${escapeHtml(card.condition)}</div>` : ''}
             </div>
             <div class="card-footer" onclick="event.stopPropagation()">
                 <button class="btn-ebay card-footer-ebay" onclick="event.stopPropagation();openEbaySearch(${idx})" title="Search eBay">
@@ -872,6 +864,7 @@ window.openCardDetail = function(index) {
     document.getElementById('cardDetailModal')?.remove();
 
     const ebayUrl  = (typeof buildEbaySearchUrl === 'function') ? buildEbaySearchUrl(card) : null;
+    const ebaySoldUrl = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
     const ebayBtn  = ebayUrl
         ? `<a href="${ebayUrl}" target="_blank" rel="noopener" class="btn-ebay" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">🛒 Search eBay</a>`
         : '';
@@ -1054,6 +1047,8 @@ window.openCardDetail = function(index) {
             <div style="display:flex;align-items:center;gap:10px;">
                 <button id="detailEbaySoldRefresh" title="Refresh sold data"
                         style="background:none;border:1px solid #fcd34d;border-radius:6px;padding:3px 8px;font-size:11px;color:#92400e;cursor:pointer;">🔄 Refresh</button>
+                ${ebaySoldUrl ? `<a href="${escapeHtml(ebaySoldUrl)}" target="_blank" rel="noopener"
+                   style="font-size:12px;color:#92400e;text-decoration:none;font-weight:600;">View sold →</a>` : ''}
             </div>
         </div>`;
 
@@ -1334,8 +1329,13 @@ window.openCardDetail = function(index) {
             if (rb2) rb2.disabled = false;
             if (!el2) return;
             if (result && result.blocked) {
-                el2.textContent = 'Lookup unavailable';
-                el2.style.color = '#9ca3af';
+                const soldLink = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
+                if (soldLink) {
+                    el2.innerHTML = `<a href="${escapeHtml(soldLink)}" target="_blank" rel="noopener" style="color:#2563eb;font-size:13px;font-weight:600;text-decoration:none;">View sold listings on eBay →</a>`;
+                } else {
+                    el2.textContent = 'Lookup unavailable';
+                    el2.style.color = '#9ca3af';
+                }
                 if (rb2) rb2.disabled = false;
                 return;
             }
