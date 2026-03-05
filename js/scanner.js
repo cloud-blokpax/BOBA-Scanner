@@ -62,12 +62,18 @@ async function processImage(file) {
   // the scan is terrible UX (blocks camera, interrupts every single upload).
   // Users can add tags from the card detail view after the card is identified.
 
-  const imageBase64 = await compressImage(file);
+  // Detect the card in the photo and crop to it (with padding for the grader).
+  // Falls back to the original file when background-subtraction finds nothing.
+  const cropped  = await cropToCard(file);
+  const src      = cropped ? cropped.blob : file;
+
+  const imageBase64 = await compressImage(src);
 
   // Use blob URL for immediate display — stored temporarily on the card for this session.
   // Supabase upload happens async AFTER the card is saved, then updates the card record.
   // This means images always show immediately, even if upload is slow or user isn't logged in yet.
-  const displayUrl = URL.createObjectURL(file);
+  // Using the cropped blob keeps background clutter out of the stored image.
+  const displayUrl = URL.createObjectURL(src);
 
   try {
     // Pass displayUrl as imageUrl — card shows immediately, blob URL lasts for session

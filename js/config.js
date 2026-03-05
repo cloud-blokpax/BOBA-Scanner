@@ -11,7 +11,7 @@ const config = {
   regionOcr: localStorage.getItem('regionOcr') !== 'false',
   quality: parseFloat(localStorage.getItem('quality')) || 0.7,
   threshold: parseInt(localStorage.getItem('threshold')) || 60,
-  maxSize: 1000,
+  maxSize: 1400,  // raised from 1000 — preserves resolution after smart card crop
   aiCost: 0.002,
   region: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 }
 };
