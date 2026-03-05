@@ -290,6 +290,7 @@ function renderCards() {
                 </button>
                 <button class="btn-wrong-card" onclick="event.stopPropagation();correctCard(${idx})" title="Wrong card? Search for the correct one">⚠️ Wrong Card</button>
                 <button class="btn-detail card-footer-detail" data-open-card="${idx}" title="Edit / View full details">✏️ Edit</button>
+                <button class="btn-card-more" data-card-more="${idx}" onclick="event.stopPropagation();toggleCardMoreMenu(${idx},this)" title="More options" style="display:none;">⋯</button>
             </div>
         </div>`;
     }).join('');
@@ -1154,8 +1155,14 @@ window.openCardDetail = function(index) {
                     </div>
                 </div>
             </div>
-            <div class="modal-footer" style="gap:8px;">
+            <div class="modal-footer" style="gap:8px;flex-wrap:wrap;">
                 ${ebayBtn}
+                ${(typeof isFeatureEnabled === 'function' && isFeatureEnabled('condition_grader'))
+                    ? `<button class="btn-secondary" onclick="gradeCardFromDetail(${index})" title="AI estimates PSA grade" style="white-space:nowrap;">🔬 Grade</button>`
+                    : ''}
+                ${(typeof isFeatureEnabled === 'function' && isFeatureEnabled('ebay_lister'))
+                    ? `<button class="btn-secondary" onclick="ebayListFromDetail(${index})" title="Generate eBay listing" style="white-space:nowrap;">🛒 List</button>`
+                    : ''}
                 <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('cardDetailModal').remove()">Close</button>
                 <button class="btn-secondary" style="color:#ef4444;border-color:#ef4444;" onclick="removeCardFromDetail(${index})">🗑️ Remove</button>
             </div>
