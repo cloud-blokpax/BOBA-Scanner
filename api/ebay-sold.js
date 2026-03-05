@@ -218,9 +218,16 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   if (soldItems.length === 0) return null;
 
   const relevant = filterRelevantItems(soldItems, cardNumber, hero, athlete);
-  console.log(`After filtering: ${relevant.length} items`);
+  console.log(`After filtering: ${relevant.length} items (from ${soldItems.length} raw)`);
 
-  return formatSoldResponse(relevant);
+  // If filter removed everything but raw items exist, fall back to raw items
+  // — the search query already scoped results, so they're likely relevant
+  const finalItems = relevant.length > 0 ? relevant : soldItems;
+  if (relevant.length === 0 && soldItems.length > 0) {
+    console.log('Filter removed all items — falling back to raw results');
+  }
+
+  return formatSoldResponse(finalItems);
 }
 
 // ── Price extraction helper ───────────────────────────────────────────────────
@@ -345,10 +352,11 @@ function formatSoldResponse(soldItems) {
   let validItems = soldItems.filter(i => !isNaN(i.price) && i.price > 0);
   if (validItems.length === 0) return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
 
-  // Sanity check: if ALL items have the exact same price, it's likely a parsing
-  // error (e.g. picking up shipping cost repeatedly). Return empty in that case.
+  // Sanity check: if many items (5+) all have the exact same price, it's likely
+  // a parsing error (e.g. picking up shipping cost repeatedly).
+  // For small counts (1-4), identical prices are normal for cheap cards.
   const uniquePrices = new Set(validItems.map(i => i.price));
-  if (validItems.length > 1 && uniquePrices.size === 1) {
+  if (validItems.length >= 5 && uniquePrices.size === 1) {
     console.warn(`All ${validItems.length} items have identical price $${validItems[0].price} — likely a parsing error, discarding`);
     return { lastSold: null, soldCount: 0, avgSoldPrice: null, soldItems: [] };
   }

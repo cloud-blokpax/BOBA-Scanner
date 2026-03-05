@@ -861,7 +861,7 @@ body {
   .cards-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
-    padding: 0 6px;
+    padding: 0 12px;
   }
   .card-item {
     border-radius: 10px;
@@ -931,7 +931,7 @@ body {
 @media (max-width: 380px) {
   .cards-grid {
     gap: 6px;
-    padding: 0 4px;
+    padding: 0 8px;
   }
   .card-content {
     padding: 4px 6px 6px;
@@ -1004,6 +1004,20 @@ body {
   flex-shrink: 0;
 }
 .card-info-value { font-size: 13px; font-weight: 600; color: var(--text-primary); word-break: break-word; }
+
+/* Condition badge on thumbnail cards */
+.card-condition-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(148,163,184,0.10);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  letter-spacing: 0.02em;
+}
 
 /* Card footer */
 .card-footer {
@@ -2085,8 +2099,44 @@ body.tab-scan .btn-scan-primary,
 body.tab-scan .btn-scan-secondary {
     max-width: 100%;
     flex-direction: row;
-    padding: 16px 20px;
-    gap: 12px;
-    font-size: 16px;
+    padding: 20px 24px;
+    gap: 14px;
+    font-size: 18px;
     justify-content: center;
+    min-height: 64px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+body.tab-scan .btn-scan-primary .btn-icon,
+body.tab-scan .btn-scan-secondary .btn-icon {
+    font-size: 28px;
+}
+
+body.tab-scan .btn-scan-primary:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+    transition: transform 0.08s, opacity 0.08s;
+}
+body.tab-scan .btn-scan-secondary:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+    transition: transform 0.08s, opacity 0.08s;
+}
+
+/* Tool row buttons: bigger on mobile */
+body.tab-scan .scan-tools-row .btn-tool-item {
+    padding: 14px 16px;
+    font-size: 15px;
+    min-height: 52px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+body.tab-scan .scan-tools-row .btn-tool-item .btn-icon {
+    font-size: 20px;
+}
+body.tab-scan .scan-tools-row .btn-tool-item:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+    transition: transform 0.08s, opacity 0.08s;
 }
