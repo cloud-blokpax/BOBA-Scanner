@@ -123,7 +123,12 @@ async function processBatchEntry(entry) {
     while (!ready.db && waited < 10000) { await new Promise(r => setTimeout(r, 300)); waited += 300; }
     if (!ready.db) throw new Error('Database not ready');
 
-    const imageBase64 = await compressImage(entry.file);
+    // Detect and crop to the card (with padding for the grader).
+    // Falls back to original file when background-subtraction finds nothing.
+    const cropped = await cropToCard(entry.file);
+    const src     = cropped ? cropped.blob : entry.file;
+
+    const imageBase64 = await compressImage(src);
     entry.imageBase64 = imageBase64;
 
     // Image upload — non-fatal if it fails (falls back to base64)
