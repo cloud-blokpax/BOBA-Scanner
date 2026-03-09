@@ -6,7 +6,8 @@
 //   - REMOVED duplicate setStatus() — ui.js is the single source of truth
 //   - Kept: ready flags, global state vars (database, tesseractWorker)
 //   - Added: appConfig loaded from /api/config
-//   - REMOVED: apiToken — the API secret is never exposed to the browser
+//   - Added: getApiToken() — returns BOBA_API_SECRET from appConfig for
+//     authenticating to /api/anthropic, /api/ebay-*, /api/grade, /api/upload-image
 // ============================================================
 
 // ── Readiness flags ──────────────────────────────────────────────────────────
@@ -33,8 +34,14 @@ async function loadAppConfig() {
   } catch (err) {
     console.error('❌ Failed to load app config:', err);
     // Fall back to empty config — app will degrade gracefully
-    appConfig = { supabaseUrl: '', supabaseKey: '', googleClientId: '' };
+    appConfig = { supabaseUrl: '', supabaseKey: '', googleClientId: '', apiToken: '' };
   }
+}
+
+// Returns the API token for authenticating to serverless endpoints.
+// Called by scanner.js, ebay.js, and image-storage.js.
+function getApiToken() {
+  return appConfig.apiToken || null;
 }
 
 console.log('✅ State module loaded');

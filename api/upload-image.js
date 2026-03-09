@@ -15,10 +15,20 @@ export default async function handler(req, res) {
   const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba-scanner.vercel.app';
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Token');
+  res.setHeader('Vary', 'Origin');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Token auth — prevents unauthenticated uploads
+  const expectedToken = process.env.BOBA_API_SECRET;
+  if (expectedToken) {
+    const providedToken = req.headers['x-api-token'];
+    if (providedToken !== expectedToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
 
   const { base64, filename, userId } = req.body || {};
 
@@ -70,7 +80,7 @@ export default async function handler(req, res) {
     if (!uploadRes.ok) {
       const text = await uploadRes.text();
       console.error('Supabase upload error:', text);
-      return res.status(500).json({ error: 'Upload failed', detail: text });
+      return res.status(500).json({ error: 'Upload failed' });
     }
 
     // Build the public URL
@@ -80,6 +90,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Upload handler error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Upload failed' });
   }
 }

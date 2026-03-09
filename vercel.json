@@ -3,7 +3,9 @@
     "api/anthropic.js":   { "maxDuration": 30 },
     "api/config.js":      { "maxDuration": 5  },
     "api/ebay-browse.js": { "maxDuration": 15 },
-    "api/ebay-sold.js":   { "maxDuration": 45 }
+    "api/ebay-sold.js":   { "maxDuration": 45 },
+    "api/upload-image.js": { "maxDuration": 15 },
+    "api/grade.js":       { "maxDuration": 30 }
   },
   "headers": [
     {
@@ -31,9 +33,8 @@
       ]
     },
     {
-      "source": "/",
+      "source": "/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-XSS-Protection", "value": "1; mode=block" },
@@ -45,12 +46,8 @@
     {
       "source": "/index.html",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" }
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
   ]
 }
-  
-

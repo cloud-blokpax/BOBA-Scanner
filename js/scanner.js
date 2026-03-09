@@ -357,6 +357,8 @@ async function callAPI(imageBase64) {
   }
 
   const headers = { 'Content-Type': 'application/json' };
+  const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+  if (apiToken) headers['X-Api-Token'] = apiToken;
 
   // Retry with exponential backoff on transient failures (network blips, 5xx)
   const MAX_RETRIES  = 2;
@@ -372,7 +374,7 @@ async function callAPI(imageBase64) {
       const response = await fetch('/api/anthropic', {
         method:  'POST',
         headers,
-        body:    JSON.stringify({ imageData: imageBase64, image: imageBase64 })
+        body:    JSON.stringify({ imageData: imageBase64 })
       });
 
       if (!response.ok) {

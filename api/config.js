@@ -7,7 +7,7 @@
 // Vercel env vars to set:
 //   SUPABASE_URL        — your Supabase project URL
 //   SUPABASE_ANON_KEY   — your Supabase anon/publishable key
-//   BOBA_API_SECRET     — shared token for /api/anthropic auth
+//   BOBA_API_SECRET     — shared token for /api/* endpoint auth
 //   ALLOWED_ORIGIN      — your production domain
 //   GOOGLE_CLIENT_ID    — Google OAuth client ID
 // ============================================================
@@ -16,6 +16,8 @@ export default function handler(req, res) {
   const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba-scanner.vercel.app';
 
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Cache-Control', 'public, max-age=300'); // Cache 5 min
 
   if (req.method !== 'GET') {
@@ -23,11 +25,13 @@ export default function handler(req, res) {
   }
 
   // Only expose what the client actually needs.
-  // NEVER expose ANTHROPIC_API_KEY or BOBA_API_SECRET here —
-  // the API secret must stay server-side only.
+  // NEVER expose ANTHROPIC_API_KEY here.
+  // BOBA_API_SECRET is exposed as apiToken so the client can authenticate
+  // to /api/anthropic, /api/ebay-*, /api/grade, and /api/upload-image.
   return res.status(200).json({
-    supabaseUrl:    process.env.SUPABASE_URL     || '',
-    supabaseKey:    process.env.SUPABASE_ANON_KEY || '',
-    googleClientId: process.env.GOOGLE_CLIENT_ID  || ''
+    supabaseUrl:    process.env.SUPABASE_URL      || '',
+    supabaseKey:    process.env.SUPABASE_ANON_KEY  || '',
+    googleClientId: process.env.GOOGLE_CLIENT_ID   || '',
+    apiToken:       process.env.BOBA_API_SECRET    || ''
   });
 }

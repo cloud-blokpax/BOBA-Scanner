@@ -19,11 +19,13 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
     }
 
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+        if (apiToken) headers['X-Api-Token'] = apiToken;
+
         const response = await fetch('/api/upload-image', {
             method:  'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({
                 base64:   base64Jpeg,
                 filename: originalFilename || 'card',
