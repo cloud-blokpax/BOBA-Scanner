@@ -1,0 +1,30 @@
+# Block all crawlers and scrapers
+User-agent: *
+Disallow: /
+
+# Explicitly block AI training crawlers
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: AmazonBot
+Disallow: /
+
+# No sitemap — this site is not intended for indexing
