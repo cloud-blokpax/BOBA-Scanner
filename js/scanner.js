@@ -555,12 +555,25 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   const targetId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
   let collection = collections.find(c => c.id === targetId);
 
-  // Safety net: if default collection somehow missing, create it in-memory
+  // Fallback: if the target collection isn't found (e.g. stale currentCollectionId
+  // pointing at a deleted or unsynced collection), try 'default' before creating
+  // a brand-new empty one. This prevents the destructive scenario where a new
+  // empty default overwrites the user's real collection data.
   if (!collection && !isPriceCheck) {
-    const defaultCol = { id: 'default', name: 'My Collection', cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
-    collections.unshift(defaultCol);
-    saveCollections(collections);
-    collection = defaultCol;
+    if (targetId !== 'default') {
+      console.warn(`⚠️ Collection "${targetId}" not found — falling back to default`);
+      collection = collections.find(c => c.id === 'default');
+      if (collection) {
+        setCurrentCollectionId('default');
+      }
+    }
+    // Last resort: create a default collection only if none exists at all
+    if (!collection) {
+      const defaultCol = { id: 'default', name: 'My Collection', cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
+      collections.unshift(defaultCol);
+      saveCollections(collections);
+      collection = defaultCol;
+    }
   }
 
   if (!collection) {
