@@ -320,7 +320,12 @@ async function pullCollections() {
         const localTotal  = local.reduce((s, c) => s + c.cards.length, 0);
         const mergedTotal = mergedCollections.reduce((s, c) => s + c.cards.length, 0);
 
-        localStorage.setItem('collections', JSON.stringify(mergedCollections));
+        // Use saveCollections so the in-memory cache stays in sync with localStorage.
+        // Previously this wrote directly to localStorage, leaving _collectionsCache stale.
+        // When the cache was later invalidated (e.g. storage event from another tab),
+        // getCollections() would re-read from localStorage — but any cards added between
+        // the pull and the invalidation lived only in the stale cache and were lost.
+        saveCollections(mergedCollections);
 
         if (typeof renderCards === 'function') renderCards();
         if (typeof updateStats === 'function') updateStats();
@@ -390,7 +395,7 @@ async function forceSync() {
 
         const mergedTotal = merged.reduce((s, c) => s + c.cards.length, 0);
 
-        localStorage.setItem('collections', JSON.stringify(merged));
+        saveCollections(merged);
 
         const safe = stripBlobUrls(merged);
         await window.supabaseClient

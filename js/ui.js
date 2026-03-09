@@ -110,9 +110,19 @@ function renderCards() {
     
     // FIXED: Get collections properly instead of using reference
     const collections = getCollections();
-    const currentId = getCurrentCollectionId();
-    const collection = collections.find(c => c.id === currentId);
-    
+    let currentId = getCurrentCollectionId();
+    let collection = collections.find(c => c.id === currentId);
+
+    // Fallback: if the active collection ID doesn't exist (e.g. it was removed
+    // or sync wrote a different dataset), reset to 'default' so the user never
+    // sees a blank "No cards scanned yet" screen while their cards still exist.
+    if (!collection && currentId !== 'default') {
+        console.warn(`⚠️ Collection "${currentId}" not found — falling back to default`);
+        setCurrentCollectionId('default');
+        currentId = 'default';
+        collection = collections.find(c => c.id === 'default');
+    }
+
     if (!collection) {
         console.error('❌ No collection found');
         return;

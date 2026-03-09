@@ -41,11 +41,15 @@ function getCollections() {
 
 function saveCollections(collections) {
   try {
-    _collectionsCache = collections; // update cache immediately
     localStorage.setItem('collections', JSON.stringify(collections));
+    _collectionsCache = collections; // update cache only after successful write
     // Push to cloud after every save (debounced 2s)
     if (typeof schedulePush === 'function') schedulePush();
   } catch (err) {
+    // localStorage write failed (e.g. quota exceeded) — keep cache in sync
+    // with what we WANTED to save so the current session doesn't lose data,
+    // but warn the user that persistence is at risk.
+    _collectionsCache = collections;
     console.error('Error saving collections:', err);
     showToast('Storage full — export your collection to free space', '⚠️');
   }
