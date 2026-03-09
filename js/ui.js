@@ -114,13 +114,22 @@ function renderCards() {
     let collection = collections.find(c => c.id === currentId);
 
     // Fallback: if the active collection ID doesn't exist (e.g. it was removed
-    // or sync wrote a different dataset), reset to 'default' so the user never
-    // sees a blank "No cards scanned yet" screen while their cards still exist.
+    // or sync wrote a different dataset), reset to 'default' only when the
+    // default collection has cards — otherwise we silently show an empty grid
+    // when this is really just a sync timing glitch (collection is in-flight).
     if (!collection && currentId !== 'default') {
-        console.warn(`⚠️ Collection "${currentId}" not found — falling back to default`);
-        setCurrentCollectionId('default');
-        currentId = 'default';
-        collection = collections.find(c => c.id === 'default');
+        const defaultCol = collections.find(c => c.id === 'default');
+        if (defaultCol && defaultCol.cards.length > 0) {
+            console.warn(`⚠️ Collection "${currentId}" not found — falling back to default`);
+            setCurrentCollectionId('default');
+            currentId = 'default';
+            collection = defaultCol;
+        } else {
+            // Default is also empty — don't switch; collection may be mid-sync.
+            // Render the current collection as empty rather than clobbering the ID.
+            console.warn(`⚠️ Collection "${currentId}" not found — waiting for sync`);
+            collection = { id: currentId, cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
+        }
     }
 
     if (!collection) {
@@ -132,9 +141,10 @@ function renderCards() {
 
     // ── View/sort/tag-filter preferences ──────────────────────────────────
     if (!window._cardViewPrefs) {
+        const _storedView = localStorage.getItem('cardViewMode');
         window._cardViewPrefs = {
             sort: localStorage.getItem('cardSortMode') || 'newest',
-            view: localStorage.getItem('cardViewMode') || 'large',
+            view: (['large', 'small', 'list'].includes(_storedView) ? _storedView : 'large'),
             tags: new Set()
         };
     }
@@ -299,6 +309,7 @@ function renderCards() {
               ${_bs.active ? `
               <div id="bulkActionBar" style="margin-top:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <span id="bulkSelectedCount" style="flex:1;color:#94a3b8;font-size:13px;">${_bs.selected.size > 0 ? `${_bs.selected.size} card${_bs.selected.size!==1?'s':''} selected` : 'Tap cards to select'}</span>
+                <button onclick="window.bulkSelectAll()" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;font-size:12px;">☑ Select All</button>
                 ${_bs.selected.size > 0 ? `
                 <button onclick="window.bulkRefreshEbayPrices()" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;font-size:12px;">🔄 Refresh eBay</button>
                 <button onclick="window.bulkDeleteCards()" style="padding:5px 10px;border-radius:6px;border:1px solid #ef4444;background:#1e293b;color:#ef4444;cursor:pointer;font-size:12px;">🗑️ Delete</button>
@@ -314,7 +325,7 @@ function renderCards() {
             localStorage.setItem('cardSortMode', prefs.sort);
             renderCards();
         });
-        controlsBar.querySelectorAll('.card-view-btn').forEach(btn => {
+        controlsBar.querySelectorAll('.card-view-btn[data-view]').forEach(btn => {
             btn.addEventListener('click', () => {
                 prefs.view = btn.dataset.view;
                 localStorage.setItem('cardViewMode', prefs.view);
@@ -549,6 +560,20 @@ window.clearBulkSelect = function() {
     window._bulkSelect.active = false;
     window._bulkSelect.selected.clear();
     renderCards();
+};
+
+window.bulkSelectAll = function() {
+    if (!window._bulkSelect?.active) return;
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection) return;
+    const sel = window._bulkSelect.selected;
+    collection.cards.forEach((_, idx) => sel.add(idx));
+    renderCards();
+    const n = sel.size;
+    const countEl = document.getElementById('bulkSelectedCount');
+    if (countEl) countEl.textContent = `${n} card${n !== 1 ? 's' : ''} selected`;
 };
 
 window.bulkDeleteCards = function() {
