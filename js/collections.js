@@ -310,15 +310,15 @@ window.sliderSwitch = function(targetId) {
     updateCollectionSlider();
     if (typeof renderCards === 'function') renderCards();
   } else if (targetId === 'deck_building') {
-    // Open deck building modal — don't switch the main grid
-    // Temporarily highlight the tab, then de-highlight when modal closes
-    const btnDB = document.getElementById('sliderBtnDeckBuilder');
-    if (btnDB) { btnDB.style.color = '#e2e8f0'; btnDB.style.fontWeight = '800'; }
-    if (typeof window.openDeckBuildingModal === 'function') {
-      window.openDeckBuildingModal();
+    // Show deck cards in the main grid (same experience as My Collection and Price Check)
+    if (typeof window.ensureDeckBuildingCollection === 'function') {
+      window.ensureDeckBuildingCollection();
     }
-    // Re-sync after modal interaction (collectionModal close button doesn't fire this)
-    setTimeout(updateCollectionSlider, 100);
+    const deckCols = getCollections();
+    if (!deckCols.find(c => c.id === 'deck_building')) return;
+    switchCollection('deck_building');
+    updateCollectionSlider();
+    if (typeof renderCards === 'function') renderCards();
   } else {
     switchCollection('default');
     updateCollectionSlider();

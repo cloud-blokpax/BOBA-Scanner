@@ -691,8 +691,12 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   updateStats();
   renderCards();
 
-  // Stay on the current tab (scan page) — don't auto-switch to collection.
-  // The toast notification confirms the card was added successfully.
+  // Auto-open the card detail popup so the user can immediately see what was added.
+  // Small delay allows renderCards() to finish painting the grid first.
+  if (typeof window.openCollectionCardDetail === 'function') {
+    const popupColId = isPriceCheck ? 'price_check' : (getCurrentCollectionId ? getCurrentCollectionId() : 'default');
+    setTimeout(() => window.openCollectionCardDetail(popupColId, newCardIndex), 150);
+  }
 
   if (navigator.vibrate) navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
 
