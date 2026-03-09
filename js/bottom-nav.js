@@ -86,7 +86,23 @@
         document.body.classList.add('tab-scan');
 
         // Wire bottom nav tab buttons
+        // Use pointerdown for instant visual feedback on iOS Chrome where
+        // CSS :active is unreliable and click fires after a perceptible delay.
         document.querySelectorAll('.bottom-nav-item[data-tab]').forEach(function (btn) {
+            // Immediate visual feedback on touch/pointer down
+            btn.addEventListener('pointerdown', function () {
+                btn.classList.add('tapped');
+            });
+            // Clear feedback after lift or cancel
+            btn.addEventListener('pointerup', function () {
+                setTimeout(function () { btn.classList.remove('tapped'); }, 120);
+            });
+            btn.addEventListener('pointercancel', function () {
+                btn.classList.remove('tapped');
+            });
+            btn.addEventListener('pointerleave', function () {
+                btn.classList.remove('tapped');
+            });
             btn.addEventListener('click', function () {
                 switchTab(btn.dataset.tab);
             });

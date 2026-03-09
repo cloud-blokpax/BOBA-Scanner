@@ -628,4 +628,6 @@ window.runEbayExport = function() {
     showToast(`eBay export: ${cards.length} card${cards.length !== 1 ? 's' : ''}`, '✅');
 };
 
+window.openExportModal = openExportModal;
+
 console.log('Export module loaded (v1.2 — deck export)');

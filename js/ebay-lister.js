@@ -209,4 +209,7 @@ async function triggerEbayLister(card) {
   }
 }
 
+window.triggerEbayLister = triggerEbayLister;
+window.triggerEbayListerWithPicker = triggerEbayListerWithPicker;
+
 console.log('✅ eBay lister module loaded');

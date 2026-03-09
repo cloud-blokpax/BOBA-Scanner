@@ -770,7 +770,7 @@ body {
 /* ── FAB ──────────────────────────────────────────────── */
 .fab-container {
   position: fixed;
-  bottom: 24px;
+  bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px);
   right: 20px;
   z-index: var(--z-fixed);
   display: flex;
@@ -1827,8 +1827,11 @@ a.listing-badge:hover { opacity: .85; }
     user-select: none;
 }
 
-.bottom-nav-item:active {
-    background: rgba(245, 158, 11, 0.12);
+.bottom-nav-item:active,
+.bottom-nav-item.tapped {
+    background: rgba(245, 158, 11, 0.15);
+    transform: scale(0.94);
+    transition: transform 0.06s ease-out, background 0.06s ease-out;
 }
 
 .bottom-nav-item.active {
@@ -1952,6 +1955,10 @@ a.listing-badge:hover { opacity: .85; }
     cursor: pointer;
     text-align: left;
     transition: background var(--transition-fast);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .more-sheet-item:hover,

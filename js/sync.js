@@ -489,4 +489,6 @@ function _syncRenderCollectionModal_LEGACY() {
     }).join('')}</div>`;
 }
 
+window.forceSync = forceSync;
+
 console.log('✅ Sync module loaded');
