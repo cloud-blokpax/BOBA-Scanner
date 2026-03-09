@@ -1102,6 +1102,12 @@ body {
     gap: 8px;
     padding: 0 12px;
   }
+  /* Small view gets more columns than large — must override the .cards-grid rule above */
+  .cards-grid--small {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+    padding: 0 8px;
+  }
   .card-item {
     border-radius: 10px;
   }
@@ -1171,6 +1177,11 @@ body {
   .cards-grid {
     gap: 6px;
     padding: 0 8px;
+  }
+  .cards-grid--small {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 0 6px;
   }
   .card-content {
     padding: 4px 6px 6px;
