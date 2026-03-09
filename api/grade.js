@@ -38,6 +38,44 @@ Return ONLY valid JSON with no markdown. Example format (use YOUR measurements, 
 
 submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
 
+const GRADE_PROMPT_DUAL = `You are an expert trading card grader with 20 years of experience grading cards for PSA and BGS.
+
+Two images are provided:
+1. The full card image — use for overall assessment, centering, and surface condition.
+2. A 2×2 grid showing all 4 corners zoomed in (top-left, top-right in top row; bottom-left, bottom-right in bottom row). Use these zoomed views for precise corner and edge assessment.
+
+Evaluate these specific attributes (be honest and precise):
+1. CORNERS — Using the zoomed corner grid, assess each corner: sharp, slightly rounded, or clearly rounded/dinged?
+2. EDGES — Using the zoomed corners AND full card, check for chips, nicks, roughness, or fraying along all edges.
+3. SURFACE — Any scratches, print defects, stains, creases, or loss of gloss?
+4. CENTERING — Estimate the left/right and top/bottom border ratios (e.g. 55/45)
+
+Grade scale:
+- PSA 10 (Gem Mint): Perfect in every way, centering 55/45 or better
+- PSA 9 (Mint): Minimal imperfections, centering 60/40 or better
+- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering 65/35 or better
+- PSA 7 (Near Mint): Slight corner/edge wear visible under magnification
+- PSA 6 (Excellent-Mint): Minor visible corner/edge wear, light surface issues
+- PSA 5 (Excellent): Obvious wear but no major defects
+- PSA 4 and below: Significant wear, creases, damage, or heavy print defects
+
+IMPORTANT: Carefully measure the actual centering of THIS specific card. Do NOT default to example values.
+
+Return ONLY valid JSON with no markdown:
+{
+  "grade": <1-10>,
+  "grade_label": "<grade name>",
+  "confidence": <0-100>,
+  "centering": "<actual L/R ratio> L/R, <actual T/B ratio> T/B",
+  "corners": "<describe what you see on each corner using the zoomed grid>",
+  "edges": "<describe actual edge condition>",
+  "surface": "<describe actual surface condition>",
+  "summary": "<your assessment of this specific card>",
+  "submit_recommendation": "yes|maybe|no"
+}
+
+submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
+
 const RATE_LIMIT_MAX    = 20;  // grading is more expensive — lower limit
 const RATE_LIMIT_WINDOW = 60;
 
@@ -131,25 +169,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData } = req.body;
+    const { imageData, cornerRegionData } = req.body;
     if (!imageData) return res.status(400).json({ error: 'Missing image data' });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Server configuration error' });
 
-    // Use Haiku for grading — fast and cost-effective for visual analysis
+    // Build content array — dual-image when corner grid is available
+    const contentParts = [
+      {
+        type:   'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
+      }
+    ];
+
+    if (cornerRegionData) {
+      contentParts.push({
+        type:   'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: cornerRegionData }
+      });
+    }
+
+    contentParts.push({
+      type: 'text',
+      text: cornerRegionData ? GRADE_PROMPT_DUAL : GRADE_PROMPT
+    });
+
     const requestBody = JSON.stringify({
       model:      'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      max_tokens: 500,
       messages: [{
         role: 'user',
-        content: [
-          {
-            type:   'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
-          },
-          { type: 'text', text: GRADE_PROMPT }
-        ]
+        content: contentParts
       }]
     });
 

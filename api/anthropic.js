@@ -5,16 +5,37 @@
 const CARD_PROMPT = `You are analyzing a Bo Jackson trading card. Extract the following information:
 
 CRITICAL LOCATIONS ON THE CARD:
-1. CARD NUMBER — BOTTOM LEFT corner. Format: Letters-Numbers e.g. "BLBF-84", "BF-108".
+1. CARD NUMBER — BOTTOM LEFT corner. Format: Letters-Numbers e.g. "BLBF-84", "BF-108", "EDLCA-22", "GLBF-12".
    This is NOT the power number in the top right!
 2. POWER — TOP RIGHT corner in a circle/badge. Just a number e.g. "125". NOT the card number.
 3. HERO NAME — Printed prominently near the top, often all caps.
 4. SET NAME — Near bottom or on a banner (e.g. "Battle Arena", "Alpha Edition").
 5. YEAR — Usually "2023" or "2024".
 
-Common OCR errors to watch for: 6 vs 8, 0 vs O, 1 vs I.
+Common OCR errors to watch for: 6 vs 8, 0 vs O, 1 vs I, B vs 8, S vs 5.
 
 Also include a confidence score (0-100) for how certain you are about the card number.
+
+Return ONLY valid JSON with no markdown or extra text:
+{
+  "cardNumber": "BLBF-84",
+  "hero": "CHARACTER NAME",
+  "year": "2024",
+  "set": "Set Name",
+  "pose": "Parallel type or Base",
+  "weapon": "Weapon name or None",
+  "power": "125",
+  "confidence": 90
+}`;
+
+const CARD_PROMPT_DUAL = `You are analyzing a Bo Jackson trading card. Two images are provided:
+1. The full card image — use this for hero name, set, power, pose, weapon, and year.
+2. A zoomed, contrast-enhanced crop of the BOTTOM-LEFT card number region — use this for the card number.
+
+CARD NUMBER FORMAT: Letters-Numbers, e.g. "BLBF-84", "BF-108", "EDLCA-22", "GLBF-12".
+The card number is NOT the power number in the top right!
+
+Common OCR errors to watch for: 6 vs 8, 0 vs O, 1 vs I, B vs 8, S vs 5.
 
 Return ONLY valid JSON with no markdown or extra text:
 {
@@ -130,7 +151,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData, image } = req.body;
+    const { imageData, image, numberRegionData } = req.body;
     const finalImageData = imageData || image;
 
     if (!finalImageData) {
@@ -148,18 +169,32 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
+    // Build content array — dual-image when number region is available
+    const contentParts = [
+      {
+        type:   'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: finalImageData }
+      }
+    ];
+
+    if (numberRegionData) {
+      contentParts.push({
+        type:   'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: numberRegionData }
+      });
+    }
+
+    contentParts.push({
+      type: 'text',
+      text: numberRegionData ? CARD_PROMPT_DUAL : CARD_PROMPT
+    });
+
     const requestBody = JSON.stringify({
       model:      'claude-haiku-4-5-20251001',
-      max_tokens: 500,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: [
-          {
-            type:   'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: finalImageData }
-          },
-          { type: 'text', text: CARD_PROMPT }
-        ]
+        content: contentParts
       }]
     });
 

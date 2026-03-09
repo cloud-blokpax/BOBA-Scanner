@@ -69,6 +69,11 @@ async function processImage(file) {
 
   const imageBase64 = await compressImage(src);
 
+  // Generate cropped card-number region for dual-image AI fallback
+  const numberRegionBase64 = (typeof cropCardNumberRegion === 'function')
+    ? await cropCardNumberRegion(src).catch(() => null)
+    : null;
+
   // Use blob URL for immediate display — stored temporarily on the card for this session.
   // Supabase upload happens async AFTER the card is saved, then updates the card record.
   // This means images always show immediately, even if upload is slow or user isn't logged in yet.
@@ -77,17 +82,52 @@ async function processImage(file) {
 
   try {
     // Pass displayUrl as imageUrl — card shows immediately, blob URL lasts for session
-    return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64);
+    return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64);
   } finally {}
 }
 
-async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null) {
+async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null, numberRegionBase64 = null) {
   let match      = null;
   let cardNum    = null;
   let heroName   = null;
   let confidence = null;
 
-  // ── AI identification path ────────────────────────────────────────────────
+  // ── OCR-first path (free, fast) ───────────────────────────────────────────
+  if (ready.ocr && typeof tesseractWorker !== 'undefined' && tesseractWorker) {
+    showLoading(true, 'Reading card number (OCR)...');
+    const ocrStart = performance.now();
+    try {
+      const ocrResult = await Promise.race([
+        runOCR(displayUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 3000))
+      ]);
+      const ocrMs = Math.round(performance.now() - ocrStart);
+      console.log(`⏱️ OCR took ${ocrMs}ms — result:`, ocrResult);
+
+      if (ocrResult.cardNumber) {
+        match = findCard(ocrResult.cardNumber);
+        if (match) {
+          showLoading(false);
+          const ocrConf = ocrResult.confidence || 70;
+          addCard(match, imageUrl, fileName, 'ocr', ocrConf, ocrConf < 70, storedBase64);
+          setProgress(100);
+          if (typeof addToScanHistory === 'function') {
+            addToScanHistory({
+              hero: match.Name, cardNumber: match['Card Number'],
+              set: match.Set, scanType: 'ocr', confidence: ocrConf
+            });
+          }
+          console.log(`✅ OCR match in ${ocrMs}ms — skipped AI ($0.00)`);
+          return;
+        }
+        console.log(`⚠️ OCR found "${ocrResult.cardNumber}" but no DB match — falling back to AI`);
+      }
+    } catch (ocrErr) {
+      console.log('⚠️ OCR failed/timed out, falling back to AI:', ocrErr.message);
+    }
+  }
+
+  // ── AI identification path (fallback) ─────────────────────────────────────
   showLoading(true, 'Identifying card with AI...');
 
   if (typeof canMakeApiCall === 'function') {
@@ -100,7 +140,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
   }
 
   try {
-    const extracted = await callAPI(imageBase64);
+    const extracted = await callAPI(imageBase64, numberRegionBase64);
 
     if (!extracted?.cardNumber) throw new Error('AI returned no card number');
 
@@ -346,7 +386,7 @@ function _cacheSet(b64, result) {
 
 // ── API call ──────────────────────────────────────────────────────────────────
 
-async function callAPI(imageBase64) {
+async function callAPI(imageBase64, numberRegionBase64 = null) {
   console.log('Calling API backend...');
 
   // Return cached result if the same image was identified recently
@@ -359,6 +399,10 @@ async function callAPI(imageBase64) {
   const headers = { 'Content-Type': 'application/json' };
   const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
   if (apiToken) headers['X-Api-Token'] = apiToken;
+
+  // Build request body — include number region crop if available
+  const bodyObj = { imageData: imageBase64 };
+  if (numberRegionBase64) bodyObj.numberRegionData = numberRegionBase64;
 
   // Retry with exponential backoff on transient failures (network blips, 5xx)
   const MAX_RETRIES  = 2;
@@ -374,7 +418,7 @@ async function callAPI(imageBase64) {
       const response = await fetch('/api/anthropic', {
         method:  'POST',
         headers,
-        body:    JSON.stringify({ imageData: imageBase64 })
+        body:    JSON.stringify(bodyObj)
       });
 
       if (!response.ok) {

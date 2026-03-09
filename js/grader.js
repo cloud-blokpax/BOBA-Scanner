@@ -2,7 +2,7 @@
 // Estimates PSA/BGS card grade using Claude Vision via /api/grade
 
 // ── Grade a card from a base64 image ─────────────────────────────────────────
-async function gradeCard(imageData) {
+async function gradeCard(imageData, cornerRegionData = null) {
   const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
     ? appConfig.apiBase
     : 'https://boba-scanner.vercel.app/api';
@@ -11,10 +11,13 @@ async function gradeCard(imageData) {
   const apiToken = (typeof appConfig !== 'undefined') ? appConfig.apiToken : null;
   if (apiToken) headers['X-Api-Token'] = apiToken;
 
+  const bodyObj = { imageData };
+  if (cornerRegionData) bodyObj.cornerRegionData = cornerRegionData;
+
   const res = await fetch(`${apiBase}/grade`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ imageData })
+    body: JSON.stringify(bodyObj)
   });
 
   if (!res.ok) {
@@ -153,6 +156,23 @@ async function triggerGradeCard() {
   }
 }
 
+// ── Prepare high-res image + corner grid for grading ──────────────────────────
+async function prepareGradingImages(url) {
+  const blob = await fetch(url).then(r => {
+    if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
+    return r.blob();
+  });
+  // Use higher-quality compression for grading (2000px, quality 0.92)
+  const imageData = (typeof compressImageForGrading === 'function')
+    ? await compressImageForGrading(blob)
+    : await urlToBase64(url);
+  // Generate 2×2 corner grid for precise corner assessment
+  const cornerRegionData = (typeof cropGradingRegions === 'function')
+    ? await cropGradingRegions(blob).catch(() => null)
+    : null;
+  return { imageData, cornerRegionData };
+}
+
 // ── Grade a specific card by index (from card detail modal or card grid) ──────
 async function gradeCardFromDetail(index) {
   const collections = (typeof getCollections === 'function') ? getCollections() : [];
@@ -168,9 +188,14 @@ async function gradeCardFromDetail(index) {
 
   showLoading(true, 'Analyzing card condition...');
   try {
-    const imageData = await urlToBase64(card.imageUrl);
-    const result = await gradeCard(imageData);
+    const { imageData, cornerRegionData } = await prepareGradingImages(card.imageUrl);
+    const result = await gradeCard(imageData, cornerRegionData);
     showLoading(false);
+
+    // Persist grade to card object
+    card.aiGrade = result;
+    if (typeof saveCollections === 'function') saveCollections();
+
     showGradeModal(result, card.hero || card.cardNumber || 'Card');
   } catch (err) {
     showLoading(false);
@@ -209,8 +234,8 @@ async function triggerGradeCard() {
       || 'Card';
     showLoading(true, 'Analyzing card condition...');
     try {
-      const imageData = await urlToBase64(previewImg.src);
-      const result = await gradeCard(imageData);
+      const { imageData, cornerRegionData } = await prepareGradingImages(previewImg.src);
+      const result = await gradeCard(imageData, cornerRegionData);
       showLoading(false);
       showGradeModal(result, cardName);
     } catch (err) {

@@ -20,9 +20,15 @@ async function initTesseract() {
     }
     try {
         tesseractWorker = await Tesseract.createWorker('eng');
+        // PSM 7 = treat image as a single text line (card numbers are one line)
+        // Character whitelist restricts to valid card-number chars only
+        await tesseractWorker.setParameters({
+            tessedit_pageseg_mode: '7',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
+        });
         ready.ocr = true;
         setStatus('ocr', 'ready');
-        console.log('✅ OCR ready (cross-origin isolated)');
+        console.log('✅ OCR ready (cross-origin isolated, PSM=SINGLE_LINE)');
     } catch (err) {
         ready.ocr = false;
         setStatus('ocr', 'disabled');
@@ -38,22 +44,21 @@ async function runOCR(imageUrl) {
 
     const sourceCanvas = await loadImageToCanvas(imageUrl);
 
-    // Try bottom-left first (most common card number location)
-    const result1 = await runOCROnRegion(sourceCanvas, { x: 0.03, y: 0.83, w: 0.40, h: 0.14 });
+    // Try bottom-left first — most common card number location for BoBA cards
+    const result1 = await runOCROnRegion(sourceCanvas, { x: 0.01, y: 0.84, w: 0.35, h: 0.13 });
     if (result1.cardNumber) return result1;
 
-    // Bail out early if the worker crashed during the first region — no point
-    // calling recognize() on a null worker two more times.
+    // Bail out early if the worker crashed during the first region
     if (!ready.ocr || !tesseractWorker) return result1;
 
-    // Try bottom-right
-    const result2 = await runOCROnRegion(sourceCanvas, { x: 0.57, y: 0.83, w: 0.40, h: 0.14 });
+    // Try bottom-right for alternate layouts
+    const result2 = await runOCROnRegion(sourceCanvas, { x: 0.60, y: 0.84, w: 0.35, h: 0.13 });
     if (result2.cardNumber) return result2;
 
     if (!ready.ocr || !tesseractWorker) return result2;
 
-    // Final fallback: bottom-centre strip (catches centred card numbers)
-    const result3 = await runOCROnRegion(sourceCanvas, { x: 0.20, y: 0.83, w: 0.60, h: 0.14 });
+    // Final fallback: full bottom strip — catches any bottom text
+    const result3 = await runOCROnRegion(sourceCanvas, { x: 0.0, y: 0.80, w: 1.0, h: 0.18 });
     if (result3.cardNumber) return result3;
 
     // Return the result with the highest confidence
@@ -82,6 +87,10 @@ async function runOCROnRegion(sourceCanvas, region) {
         ready.ocr = false;
         try {
             tesseractWorker = await Tesseract.createWorker('eng');
+            await tesseractWorker.setParameters({
+                tessedit_pageseg_mode: '7',
+                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
+            });
             ready.ocr = true;
             const result     = await tesseractWorker.recognize(dataUrl);
             const text       = result.data.text || '';
@@ -135,6 +144,31 @@ function cropAndPreprocess(sourceCanvas, region) {
     const data = imageData.data;
     const w    = out.width;
     const h    = out.height;
+
+    // ── Histogram stretch (contrast enhancement) ─────────────────────────────
+    // Find 2nd/98th percentile luminance and stretch to full 0-255 range.
+    // Normalizes low-contrast photos (dim lighting, glare, foil cards).
+    const totalPx = w * h;
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < totalPx; i++) {
+        const lum = Math.round(data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114);
+        hist[lum]++;
+    }
+    const p2Count  = Math.floor(totalPx * 0.02);
+    const p98Count = Math.floor(totalPx * 0.98);
+    let cumul = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) {
+        cumul += hist[v];
+        if (cumul >= p2Count  && lo === 0)   lo = v;
+        if (cumul >= p98Count && hi === 255) hi = v;
+    }
+    const range = Math.max(1, hi - lo);
+    for (let i = 0; i < totalPx; i++) {
+        const idx = i * 4;
+        data[idx]     = Math.min(255, Math.max(0, Math.round((data[idx]     - lo) * 255 / range)));
+        data[idx + 1] = Math.min(255, Math.max(0, Math.round((data[idx + 1] - lo) * 255 / range)));
+        data[idx + 2] = Math.min(255, Math.max(0, Math.round((data[idx + 2] - lo) * 255 / range)));
+    }
 
     // ── Grayscale conversion ─────────────────────────────────────────────────
     const gray = new Uint8Array(w * h);
