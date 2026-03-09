@@ -258,6 +258,8 @@ function renderCards() {
     if (controlsBar) {
         controlsBar.style.display = 'block';
         const allTagsUsed = [...new Set(allCards.flatMap(c => c.tags || []))].sort();
+        if (!window._bulkSelect) window._bulkSelect = { active: false, selected: new Set() };
+        const _bs = window._bulkSelect;
         controlsBar.innerHTML = `
             <div class="card-controls-bar">
               <div class="card-controls-row">
@@ -269,10 +271,13 @@ function renderCards() {
                   <option value="ebay_high" ${prefs.sort==='ebay_high'?'selected':''}>eBay Price ↓</option>
                   <option value="ebay_low"  ${prefs.sort==='ebay_low' ?'selected':''}>eBay Price ↑</option>
                 </select>
-                <div class="card-view-modes" role="group" aria-label="View mode">
-                  <button class="card-view-btn${prefs.view==='large'?'  active':''}" data-view="large"  title="Large thumbnails">⊞</button>
-                  <button class="card-view-btn${prefs.view==='small'?'  active':''}" data-view="small"  title="Small thumbnails">⊟</button>
-                  <button class="card-view-btn${prefs.view==='list' ?'  active':''}" data-view="list"   title="List view">≡</button>
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <div class="card-view-modes" role="group" aria-label="View mode">
+                    <button class="card-view-btn${prefs.view==='large'?'  active':''}" data-view="large"  title="Large thumbnails">⊞</button>
+                    <button class="card-view-btn${prefs.view==='small'?'  active':''}" data-view="small"  title="Small thumbnails">⊟</button>
+                    <button class="card-view-btn${prefs.view==='list' ?'  active':''}" data-view="list"   title="List view">≡</button>
+                  </div>
+                  <button class="card-view-btn${_bs.active?' active':''}" id="bulkSelectToggleBtn" title="Select multiple cards">☑</button>
                 </div>
               </div>
               ${allTagsUsed.length > 0 ? `
@@ -280,6 +285,15 @@ function renderCards() {
                 <span class="card-filter-label">Filter:</span>
                 ${allTagsUsed.map(t => `<button class="tag-filter-chip${prefs.tags.has(t)?' active':''}" data-filter-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}
                 ${prefs.tags.size > 0 ? `<button class="tag-filter-clear" id="cardTagFilterClear">✕ Clear</button>` : ''}
+              </div>` : ''}
+              ${_bs.active ? `
+              <div id="bulkActionBar" style="margin-top:8px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span id="bulkSelectedCount" style="flex:1;color:#94a3b8;font-size:13px;">${_bs.selected.size > 0 ? `${_bs.selected.size} card${_bs.selected.size!==1?'s':''} selected` : 'Tap cards to select'}</span>
+                ${_bs.selected.size > 0 ? `
+                <button onclick="window.bulkRefreshEbayPrices()" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;font-size:12px;">🔄 Refresh eBay</button>
+                <button onclick="window.bulkDeleteCards()" style="padding:5px 10px;border-radius:6px;border:1px solid #ef4444;background:#1e293b;color:#ef4444;cursor:pointer;font-size:12px;">🗑️ Delete</button>
+                ` : ''}
+                <button onclick="window.clearBulkSelect()" style="padding:5px 10px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#94a3b8;cursor:pointer;font-size:12px;">✕ Cancel</button>
               </div>` : ''}
             </div>`;
 
@@ -306,6 +320,12 @@ function renderCards() {
         });
         const clearTagBtn = document.getElementById('cardTagFilterClear');
         if (clearTagBtn) clearTagBtn.addEventListener('click', () => { prefs.tags.clear(); renderCards(); });
+
+        document.getElementById('bulkSelectToggleBtn')?.addEventListener('click', () => {
+            window._bulkSelect.active = !window._bulkSelect.active;
+            if (!window._bulkSelect.active) window._bulkSelect.selected.clear();
+            renderCards();
+        });
     }
 
     // Set view-mode class on grid
@@ -438,6 +458,17 @@ function renderCards() {
 
     console.log('Cards rendered successfully');
 
+    // ── Apply bulk-select-mode class and restore checked state ────────────
+    if (window._bulkSelect) {
+        grid.classList.toggle('bulk-select-mode', window._bulkSelect.active);
+        if (window._bulkSelect.active) {
+            window._bulkSelect.selected.forEach(idx => {
+                const el = document.getElementById(`card_item_${idx}`);
+                if (el) el.classList.add('is-selected');
+            });
+        }
+    }
+
     // ── Delegated card-open handler ───────────────────────────────────────
     // The listeners are on the grid element itself and survive innerHTML replacements.
     // Guard against duplicate registration but reset when view mode changes.
@@ -453,7 +484,9 @@ function renderCards() {
             const target = e.target.closest('[data-open-card]');
             if (!target) return;
             e.preventDefault(); // kill the 300ms ghost click
-            openCardDetail(parseInt(target.dataset.openCard, 10));
+            const cardIdx = parseInt(target.dataset.openCard, 10);
+            if (window._bulkSelect?.active) { window.toggleBulkCardSelect(cardIdx); return; }
+            openCardDetail(cardIdx);
         }, { passive: false });
 
         grid.addEventListener('click', function(e) {
@@ -462,7 +495,9 @@ function renderCards() {
             if (!target) return;
             const now = Date.now();
             if (grid._lastTouchEnd && now - grid._lastTouchEnd < 600) return;
-            openCardDetail(parseInt(target.dataset.openCard, 10));
+            const cardIdx = parseInt(target.dataset.openCard, 10);
+            if (window._bulkSelect?.active) { window.toggleBulkCardSelect(cardIdx); return; }
+            openCardDetail(cardIdx);
         });
 
         grid.addEventListener('touchend', function() {
@@ -478,6 +513,95 @@ renderCards._goToPage = function(pageKey, newPage) {
     renderCards._lastKey = pageKey;
     renderCards();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// ── Bulk select helpers ───────────────────────────────────────────────────────
+window.toggleBulkCardSelect = function(idx) {
+    if (!window._bulkSelect?.active) return;
+    const sel = window._bulkSelect.selected;
+    const cardEl = document.getElementById(`card_item_${idx}`);
+    if (sel.has(idx)) { sel.delete(idx); cardEl?.classList.remove('is-selected'); }
+    else              { sel.add(idx);    cardEl?.classList.add('is-selected'); }
+    const n = sel.size;
+    const countEl = document.getElementById('bulkSelectedCount');
+    if (countEl) countEl.textContent = n > 0 ? `${n} card${n!==1?'s':''} selected` : 'Tap cards to select';
+    // Show/hide action buttons without full re-render
+    const bar = document.getElementById('bulkActionBar');
+    if (bar) {
+        const hasBtns = bar.querySelectorAll('button[onclick*="bulkRefreshEbayPrices"], button[onclick*="bulkDeleteCards"]');
+        if (n > 0 && hasBtns.length === 0) renderCards(); // add action buttons
+        if (n === 0 && hasBtns.length > 0) renderCards(); // remove action buttons
+    }
+};
+
+window.clearBulkSelect = function() {
+    if (!window._bulkSelect) return;
+    window._bulkSelect.active = false;
+    window._bulkSelect.selected.clear();
+    renderCards();
+};
+
+window.bulkDeleteCards = function() {
+    const sel = window._bulkSelect?.selected;
+    if (!sel?.size) return;
+    const count = sel.size;
+    const indices = [...sel].sort((a, b) => b - a); // descending so splices don't shift
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection) return;
+    for (const idx of indices) {
+        const card = collection.cards[idx];
+        if (!card) continue;
+        if (typeof recordDeletedCard === 'function') recordDeletedCard(card);
+        if (typeof deleteCardImage   === 'function') deleteCardImage(card.imageUrl);
+        if (card.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(card.imageUrl);
+        collection.cards.splice(idx, 1);
+        collection.stats.scanned = Math.max(0, (collection.stats.scanned || 0) - 1);
+        if (card.scanType === 'free') collection.stats.free = Math.max(0, (collection.stats.free || 0) - 1);
+    }
+    saveCollections(collections);
+    if (typeof updateStats === 'function') updateStats();
+    window._bulkSelect.active = false;
+    window._bulkSelect.selected.clear();
+    renderCards();
+    showToast(`${count} card${count!==1?'s':''} removed`, '🗑️');
+};
+
+window.bulkRefreshEbayPrices = function() {
+    const sel = window._bulkSelect?.selected;
+    if (!sel?.size) return;
+    if (typeof fetchEbayAvgPrice !== 'function') { showToast('eBay refresh not available', '⚠️'); return; }
+    const indices = [...sel];
+    const collections = getCollections();
+    const currentId   = getCurrentCollectionId();
+    const collection  = collections.find(c => c.id === currentId);
+    if (!collection) return;
+    showToast(`Refreshing eBay prices for ${indices.length} card${indices.length!==1?'s':''}...`, '🔄');
+    let done = 0;
+    indices.forEach(idx => {
+        const card = collection.cards[idx];
+        if (!card) { done++; return; }
+        fetchEbayAvgPrice(card).then(result => {
+            if (result && result.count > 0) {
+                card.ebayAvgPrice     = result.avgPrice;
+                card.ebayLowPrice     = result.lowPrice;
+                card.ebayHighPrice    = result.highPrice;
+                card.ebayListingCount = result.count;
+            } else {
+                card.ebayAvgPrice = null;
+                card.ebayLowPrice = null;
+            }
+            card.ebayPriceFetched = new Date().toISOString();
+        }).catch(() => {}).finally(() => {
+            done++;
+            if (done === indices.length) {
+                saveCollections(collections);
+                renderCards();
+                showToast('eBay prices updated!', '✅');
+            }
+        });
+    });
 };
 
 function renderField(label, field, index, value, autoFilled) {
@@ -1109,38 +1233,69 @@ window.openCardDetail = function(index) {
                 ]
             },
             {
-                title: 'eBay Sold History', icon: '🏷️',
-                rows: [
-                    ['Last Sold Price',  fmtCurrency(c.ebaySoldPrice)],
-                    ['Last Sold Date',   fmtStr(c.ebaySoldDate)],
-                    // Sold link removed — eBay blocks direct access to sold listing URLs
-                    ['Avg Sold Price',   fmtCurrency(c.ebaySoldAvgPrice)],
-                    ['Sales Found',      c.ebaySoldCount != null ? escapeHtml(String(c.ebaySoldCount)) : null],
-                    ['Last Checked',     fmtDate(c.ebaySoldFetched)],
-                ]
-            },
-            {
                 title: 'Collection', icon: '📦',
                 rows: [
                     ['Tags',            fmtArr(c.tags)],
                     ['Notes',           fmtStr(c.notes)],
                     ['Ready to List',   c.readyToList ? 'Yes' : null],
                     ['Listing Status',  fmtStr(c.listingStatus)],
+                    ['Listing Title',   fmtStr(c.listingTitle)],
                     ['Listing Price',   fmtStr(c.listingPrice)],
                     ['Listing URL',     fmtUrl(c.listingUrl, 'View listing →')],
+                    ['Listing Item ID', fmtStr(c.listingItemId)],
                     ['Sold At',         fmtDate(c.soldAt)],
                 ]
             },
             {
                 title: 'Scan Info', icon: '📷',
                 rows: [
-                    ['Scan Method',  fmtStr(c.scanMethod)],
-                    ['Confidence',   fmtPct(c.confidence)],
-                    ['File Name',    fmtStr(c.fileName)],
-                    ['Scanned',      fmtDate(c.timestamp)],
+                    ['Scan Method',   fmtStr(c.scanMethod)],
+                    ['Scan Type',     fmtStr(c.scanType)],
+                    ['Confidence',    fmtPct(c.confidence)],
+                    ['Low Confidence',c.lowConfidence ? 'Yes (verify card)' : null],
+                    ['File Name',     fmtStr(c.fileName)],
+                    ['Scanned',       fmtDate(c.timestamp)],
                 ]
             }
         ];
+
+        // AI Grade section — only shown if a grade has been computed
+        if (c.aiGrade) {
+            const g = c.aiGrade;
+            sections.push({
+                title: 'AI Grade', icon: '🔬',
+                rows: [
+                    ['Grade',       g.grade != null ? `PSA ${g.grade}` : null],
+                    ['Label',       fmtStr(g.grade_label)],
+                    ['Confidence',  fmtPct(g.confidence)],
+                    ['Centering',   fmtStr(g.centering)],
+                    ['Corners',     fmtStr(g.corners)],
+                    ['Edges',       fmtStr(g.edges)],
+                    ['Surface',     fmtStr(g.surface)],
+                    ['Submit?',     fmtStr(g.submit_recommendation)],
+                    ['Summary',     fmtStr(g.summary)],
+                ]
+            });
+        }
+
+        // Catch-all: any fields on the card object not already covered above
+        const knownFields = new Set([
+            'hero','athlete','cardNumber','year','set','pose','weapon','power','condition',
+            'ebayAvgPrice','ebayLowPrice','ebayHighPrice','ebayListingCount','ebayPriceFetched',
+            'ebaySoldPrice','ebaySoldDate','ebaySoldAvgPrice','ebaySoldCount','ebaySoldFetched','ebaySoldUrl',
+            'tags','notes','readyToList','listingStatus','listingTitle','listingPrice','listingUrl','listingItemId','soldAt',
+            'scanMethod','scanType','confidence','lowConfidence','fileName','timestamp',
+            'imageUrl','id','aiGrade'
+        ]);
+        const extraRows = Object.entries(c)
+            .filter(([k, v]) => !knownFields.has(k) && v != null && v !== '' && typeof v !== 'object')
+            .map(([k, v]) => {
+                const label = k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                return [label, fmtStr(String(v))];
+            });
+        if (extraRows.length) {
+            sections.push({ title: 'Additional Fields', icon: '📋', rows: extraRows });
+        }
 
         return sections.map(section => {
             const visible = section.rows.filter(([, v]) => v != null);
@@ -1177,18 +1332,7 @@ window.openCardDetail = function(index) {
                    style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">View listings →</a>
             </div>
         </div>
-        <div id="detailEbaySold" style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
-            <div>
-                <div style="font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Last Sold on eBay</div>
-                <div id="detailEbaySoldValue" style="font-size:15px;font-weight:700;color:#78350f;">${cachedSold || 'Loading...'}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                <button id="detailEbaySoldRefresh" title="Refresh sold data"
-                        style="background:none;border:1px solid #fcd34d;border-radius:6px;padding:3px 8px;font-size:11px;color:#92400e;cursor:pointer;">🔄 Refresh</button>
-                ${ebaySoldUrl ? `<a href="${escapeHtml(ebaySoldUrl)}" target="_blank" rel="noopener"
-                   style="font-size:12px;color:#92400e;text-decoration:none;font-weight:600;">View sold →</a>` : ''}
-            </div>
-        </div>`;
+        `;
 
     const html = `
     <div class="modal active" id="cardDetailModal">
@@ -1451,67 +1595,6 @@ window.openCardDetail = function(index) {
 
     document.getElementById('detailEbayRefresh')?.addEventListener('click', runEbayPriceFetch);
 
-    // ── eBay sold data fetch ──────────────────────────────────────────────
-    function runEbaySoldFetch() {
-        const el = document.getElementById('detailEbaySoldValue');
-        const rb = document.getElementById('detailEbaySoldRefresh');
-        if (el) { el.textContent = 'Loading...'; el.style.color = '#78350f'; }
-        if (rb) rb.disabled = true;
-        if (typeof fetchEbaySoldData !== 'function') {
-            if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
-            return;
-        }
-        fetchEbaySoldData(card).then(result => {
-            const el2 = document.getElementById('detailEbaySoldValue');
-            const rb2 = document.getElementById('detailEbaySoldRefresh');
-            if (rb2) rb2.disabled = false;
-            if (!el2) return;
-            if (result && result.blocked) {
-                const soldLink = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
-                if (soldLink) {
-                    el2.innerHTML = `<a href="${escapeHtml(soldLink)}" target="_blank" rel="noopener" style="color:#2563eb;font-size:13px;font-weight:600;text-decoration:none;">View sold listings on eBay →</a>`;
-                } else {
-                    el2.textContent = 'Lookup unavailable';
-                    el2.style.color = '#9ca3af';
-                }
-                if (rb2) rb2.disabled = false;
-                return;
-            }
-            if (!result || result.soldCount === 0 || !result.lastSold) {
-                el2.textContent = 'No recent sales found';
-                el2.style.color = '#9ca3af';
-                updateCard(index, 'ebaySoldPrice', null);
-                updateCard(index, 'ebaySoldDate', null);
-                updateCard(index, 'ebaySoldUrl', null);
-                updateCard(index, 'ebaySoldFetched', new Date().toISOString());
-            } else {
-                const ls = result.lastSold;
-                const avg = result.avgSoldPrice;
-                const count = result.soldCount;
-                let display = `$${ls.price.toFixed(2)}`;
-                if (ls.date) display += ` · ${ls.date}`;
-                if (count > 1 && avg) display += ` <span style="font-size:11px;color:#92400e;font-weight:400;">(avg $${avg.toFixed(2)} across ${count} sale${count!==1?'s':''})</span>`;
-                el2.innerHTML = display;
-                // Persist on card
-                updateCard(index, 'ebaySoldPrice', ls.price);
-                updateCard(index, 'ebaySoldDate', ls.date || null);
-                updateCard(index, 'ebaySoldUrl', ls.url || null);
-                updateCard(index, 'ebaySoldAvgPrice', avg);
-                updateCard(index, 'ebaySoldCount', count);
-                updateCard(index, 'ebaySoldFetched', new Date().toISOString());
-                renderCards();
-                refreshMetadataSection();
-            }
-        }).catch(() => {
-            const el2 = document.getElementById('detailEbaySoldValue');
-            const rb2 = document.getElementById('detailEbaySoldRefresh');
-            if (el2) { el2.textContent = 'Unavailable'; el2.style.color = '#9ca3af'; }
-            if (rb2) rb2.disabled = false;
-        });
-    }
-
-    document.getElementById('detailEbaySoldRefresh')?.addEventListener('click', runEbaySoldFetch);
-
     // Async: fetch eBay avg price after modal renders (skip if we have a recent price)
     const lastFetch = card.ebayPriceFetched ? new Date(card.ebayPriceFetched) : null;
     const ageMs = lastFetch ? (Date.now() - lastFetch.getTime()) : Infinity;
@@ -1521,21 +1604,6 @@ window.openCardDetail = function(index) {
     } else {
         const el = document.getElementById('detailEbayPriceValue');
         if (el) el.textContent = `$${Number(card.ebayAvgPrice).toFixed(2)} avg  ↓ $${Number(card.ebayLowPrice||0).toFixed(2)} low`;
-    }
-
-    // Auto-fetch sold data (separate 24h cache)
-    const lastSoldFetch = card.ebaySoldFetched ? new Date(card.ebaySoldFetched) : null;
-    const soldAgeMs = lastSoldFetch ? (Date.now() - lastSoldFetch.getTime()) : Infinity;
-    if (!card.ebaySoldPrice || soldAgeMs > 86400000) {
-        runEbaySoldFetch();
-    } else {
-        const el = document.getElementById('detailEbaySoldValue');
-        if (el) {
-            let display = `$${Number(card.ebaySoldPrice).toFixed(2)}`;
-            if (card.ebaySoldDate) display += ` · ${card.ebaySoldDate}`;
-            if (card.ebaySoldCount > 1 && card.ebaySoldAvgPrice) display += ` (avg $${Number(card.ebaySoldAvgPrice).toFixed(2)} across ${card.ebaySoldCount} sales)`;
-            el.textContent = display;
-        }
     }
 
 };

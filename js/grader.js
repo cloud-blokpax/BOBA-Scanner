@@ -33,7 +33,7 @@ async function gradeCard(imageData, cornerRegionData = null) {
 }
 
 // ── Show grade result modal ───────────────────────────────────────────────────
-function showGradeModal(result, cardName) {
+function showGradeModal(result, cardName, cardIndex) {
   document.getElementById('gradeModal')?.remove();
 
   const grade = result.grade || 0;
@@ -85,6 +85,7 @@ function showGradeModal(result, cardName) {
         </div>
         <div class="modal-footer">
           <div style="font-size:11px;color:#9ca3af;flex:1;">AI estimate only — not a certified grade</div>
+          ${cardIndex !== undefined ? `<button class="btn-secondary" id="gradeRegradeBtn" style="white-space:nowrap;">🔄 Re-grade</button>` : ''}
           <button class="btn-secondary" id="gradeModalCloseBtn">Close</button>
         </div>
       </div>
@@ -95,6 +96,12 @@ function showGradeModal(result, cardName) {
   document.getElementById('gradeModalClose')?.addEventListener('click', () => document.getElementById('gradeModal')?.remove());
   document.getElementById('gradeModalCloseBtn')?.addEventListener('click', () => document.getElementById('gradeModal')?.remove());
   document.querySelector('#gradeModal .modal-backdrop')?.addEventListener('click', () => document.getElementById('gradeModal')?.remove());
+  if (cardIndex !== undefined) {
+    document.getElementById('gradeRegradeBtn')?.addEventListener('click', () => {
+      document.getElementById('gradeModal')?.remove();
+      gradeCardFromDetail(cardIndex, true);
+    });
+  }
 }
 
 function renderGradeRow(icon, label, value) {
@@ -174,31 +181,44 @@ async function prepareGradingImages(url) {
 }
 
 // ── Grade a specific card by index (from card detail modal or card grid) ──────
-async function gradeCardFromDetail(index) {
+async function gradeCardFromDetail(index, forceRegrade = false) {
   const collections = (typeof getCollections === 'function') ? getCollections() : [];
   const currentId   = (typeof getCurrentCollectionId === 'function') ? getCurrentCollectionId() : 'default';
   const collection  = collections.find(c => c.id === currentId);
   const card        = collection?.cards[index];
   if (!card) { showToast('Card not found', '❌'); return; }
 
+  // If already graded and not forcing a re-grade, show the cached result immediately
+  if (card.aiGrade && !forceRegrade) {
+    showGradeModal(card.aiGrade, card.hero || card.cardNumber || 'Card', index);
+    return;
+  }
+
   if (!card.imageUrl) {
     showToast('No image for this card — re-attach a photo first', '⚠️');
     return;
   }
+
+  // Disable the Grade button and show a spinner so the user knows work is happening
+  const gradeBtn = document.querySelector('#cardDetailModal .modal-footer button[onclick*="gradeCardFromDetail"]');
+  const origText = gradeBtn?.innerHTML || '🔬 Grade';
+  if (gradeBtn) { gradeBtn.disabled = true; gradeBtn.innerHTML = '⏳ Analyzing…'; }
 
   showLoading(true, 'Analyzing card condition...');
   try {
     const { imageData, cornerRegionData } = await prepareGradingImages(card.imageUrl);
     const result = await gradeCard(imageData, cornerRegionData);
     showLoading(false);
+    if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.innerHTML = origText; }
 
     // Persist grade to card object
     card.aiGrade = result;
     if (typeof saveCollections === 'function') saveCollections();
 
-    showGradeModal(result, card.hero || card.cardNumber || 'Card');
+    showGradeModal(result, card.hero || card.cardNumber || 'Card', index);
   } catch (err) {
     showLoading(false);
+    if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.innerHTML = origText; }
     console.error('Grade from detail error:', err);
     showToast('Grading failed — try again', '❌');
   }
