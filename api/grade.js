@@ -13,28 +13,36 @@ Evaluate these specific attributes (be honest and precise):
 4. CENTERING — Estimate the left/right and top/bottom border ratios (e.g. 55/45)
 
 Grade scale:
-- PSA 10 (Gem Mint): Perfect in every way, centering 55/45 or better
-- PSA 9 (Mint): Minimal imperfections, centering 60/40 or better
-- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering 65/35 or better
+- PSA 10 (Gem Mint): Perfect in every way, centering within 55/45 or better on both axes
+- PSA 9 (Mint): Minimal imperfections, centering within 60/40 or better
+- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering within 65/35 or better
 - PSA 7 (Near Mint): Slight corner/edge wear visible under magnification
 - PSA 6 (Excellent-Mint): Minor visible corner/edge wear, light surface issues
 - PSA 5 (Excellent): Obvious wear but no major defects
 - PSA 4 and below: Significant wear, creases, damage, or heavy print defects
 
-IMPORTANT: Carefully measure the actual centering of THIS specific card by comparing left vs right border widths and top vs bottom border widths. Do NOT default to example values — every card is different. Report the actual ratios you observe.
+CENTERING MEASUREMENT INSTRUCTIONS (CRITICAL — read carefully):
+Look at the ACTUAL borders of THIS card image. Measure (visually) the width of each border:
+- Compare the LEFT border width to the RIGHT border width to get the L/R ratio.
+- Compare the TOP border width to the BOTTOM border width to get the T/B ratio.
+Every card has DIFFERENT centering. A perfectly centered card is 50/50. An off-center card might be 55/45, 60/40, 70/30, etc.
+You MUST report the actual ratios you observe on THIS card — do NOT copy values from examples or use placeholder numbers.
+If the card has no visible borders (full-bleed art), state that and estimate from any visible frame edges.
 
-Return ONLY valid JSON with no markdown. Example format (use YOUR measurements, not these):
+Return ONLY valid JSON with no markdown:
 {
   "grade": <1-10>,
   "grade_label": "<grade name>",
   "confidence": <0-100>,
-  "centering": "<actual L/R ratio> L/R, <actual T/B ratio> T/B",
+  "centering": "<measured L/R> L/R, <measured T/B> T/B",
   "corners": "<describe what you actually see on each corner>",
   "edges": "<describe actual edge condition>",
   "surface": "<describe actual surface condition>",
   "summary": "<your assessment of this specific card>",
   "submit_recommendation": "yes|maybe|no"
 }
+
+Do NOT reuse example numbers. Every card you grade should have different centering unless they truly are identical.
 
 submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
 
@@ -51,28 +59,36 @@ Evaluate these specific attributes (be honest and precise):
 4. CENTERING — Estimate the left/right and top/bottom border ratios (e.g. 55/45)
 
 Grade scale:
-- PSA 10 (Gem Mint): Perfect in every way, centering 55/45 or better
-- PSA 9 (Mint): Minimal imperfections, centering 60/40 or better
-- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering 65/35 or better
+- PSA 10 (Gem Mint): Perfect in every way, centering within 55/45 or better on both axes
+- PSA 9 (Mint): Minimal imperfections, centering within 60/40 or better
+- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering within 65/35 or better
 - PSA 7 (Near Mint): Slight corner/edge wear visible under magnification
 - PSA 6 (Excellent-Mint): Minor visible corner/edge wear, light surface issues
 - PSA 5 (Excellent): Obvious wear but no major defects
 - PSA 4 and below: Significant wear, creases, damage, or heavy print defects
 
-IMPORTANT: Carefully measure the actual centering of THIS specific card. Do NOT default to example values.
+CENTERING MEASUREMENT INSTRUCTIONS (CRITICAL — read carefully):
+Using the FULL CARD image (first image), measure the actual border widths:
+- Compare the LEFT border width to the RIGHT border width to get the L/R ratio.
+- Compare the TOP border width to the BOTTOM border width to get the T/B ratio.
+Every card has DIFFERENT centering. A perfectly centered card is 50/50. An off-center card might be 55/45, 60/40, 70/30, etc.
+You MUST report the actual ratios you observe on THIS card — do NOT copy values from examples or use placeholder numbers.
+If the card has no visible borders (full-bleed art), state that and estimate from any visible frame edges.
 
 Return ONLY valid JSON with no markdown:
 {
   "grade": <1-10>,
   "grade_label": "<grade name>",
   "confidence": <0-100>,
-  "centering": "<actual L/R ratio> L/R, <actual T/B ratio> T/B",
+  "centering": "<measured L/R> L/R, <measured T/B> T/B",
   "corners": "<describe what you see on each corner using the zoomed grid>",
   "edges": "<describe actual edge condition>",
   "surface": "<describe actual surface condition>",
   "summary": "<your assessment of this specific card>",
   "submit_recommendation": "yes|maybe|no"
 }
+
+Do NOT reuse example numbers. Every card you grade should have different centering unless they truly are identical.
 
 submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
 

@@ -1243,6 +1243,17 @@ window.openCardDetail = function(index) {
                 ]
             },
             {
+                title: 'eBay Sold History', icon: '💰',
+                rows: [
+                    ['Last Sold Price', fmtCurrency(c.ebaySoldPrice)],
+                    ['Sold Date',       fmtStr(c.ebaySoldDate)],
+                    ['Avg Sold Price',  fmtCurrency(c.ebaySoldAvgPrice)],
+                    ['# Sold',          c.ebaySoldCount != null ? escapeHtml(String(c.ebaySoldCount)) : null],
+                    ['Last Checked',    fmtDate(c.ebaySoldFetched)],
+                    ['Sold Listing',    fmtUrl(c.ebaySoldUrl, 'View sold listing →')],
+                ]
+            },
+            {
                 title: 'Collection', icon: '📦',
                 rows: [
                     ['Tags',            fmtArr(c.tags)],
@@ -1295,7 +1306,7 @@ window.openCardDetail = function(index) {
             'ebaySoldPrice','ebaySoldDate','ebaySoldAvgPrice','ebaySoldCount','ebaySoldFetched','ebaySoldUrl',
             'tags','notes','readyToList','listingStatus','listingTitle','listingPrice','listingUrl','listingItemId','soldAt',
             'scanMethod','scanType','confidence','lowConfidence','fileName','timestamp',
-            'imageUrl','id','aiGrade'
+            'imageUrl','id','cardId','aiGrade'
         ]);
         const extraRows = Object.entries(c)
             .filter(([k, v]) => !knownFields.has(k) && v != null && v !== '' && typeof v !== 'object')
@@ -1374,6 +1385,25 @@ window.openCardDetail = function(index) {
                 ${listingHtml}
                 ${priceHtml}
 
+                ${card.aiGrade ? (() => {
+                    const g = card.aiGrade;
+                    const gc = g.grade >= 9 ? '#16a34a' : g.grade >= 7 ? '#d97706' : g.grade >= 5 ? '#ea580c' : '#dc2626';
+                    return `<div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                            <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">AI Grade</div>
+                            <div style="font-size:28px;font-weight:900;color:${gc};line-height:1;">PSA ${g.grade} <span style="font-size:14px;font-weight:600;">${escapeHtml(g.grade_label || '')}</span></div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
+                            <div><span style="color:#6b7280;">Centering:</span> <strong style="color:#111827;">${escapeHtml(g.centering || 'N/A')}</strong></div>
+                            <div><span style="color:#6b7280;">Confidence:</span> <strong style="color:#111827;">${g.confidence || 0}%</strong></div>
+                            <div style="grid-column:1/-1;"><span style="color:#6b7280;">Corners:</span> <span style="color:#374151;">${escapeHtml(g.corners || 'N/A')}</span></div>
+                            <div style="grid-column:1/-1;"><span style="color:#6b7280;">Edges:</span> <span style="color:#374151;">${escapeHtml(g.edges || 'N/A')}</span></div>
+                            <div style="grid-column:1/-1;"><span style="color:#6b7280;">Surface:</span> <span style="color:#374151;">${escapeHtml(g.surface || 'N/A')}</span></div>
+                        </div>
+                        ${g.summary ? `<div style="margin-top:8px;font-size:12px;color:#374151;border-top:1px solid #d1fae5;padding-top:8px;">${escapeHtml(g.summary)}</div>` : ''}
+                    </div>`;
+                })() : ''}
+
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
                     ${card.athlete ? `
                     <div style="background:#eff6ff;border-radius:8px;padding:10px;grid-column:1/-1;">
@@ -1421,9 +1451,9 @@ window.openCardDetail = function(index) {
                 </div>
 
                 <!-- All Metadata collapsible -->
-                <details style="margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                <details open style="margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
                     <summary style="padding:10px 14px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;background:#f9fafb;list-style:none;display:flex;align-items:center;gap:6px;">
-                        📋 Card Details <span style="font-size:11px;color:#9ca3af;font-weight:400;">(tap to expand)</span>
+                        📋 Card Details <span style="font-size:11px;color:#9ca3af;font-weight:400;">(tap to collapse)</span>
                     </summary>
                     <div id="metadataContent" style="padding:12px 14px;background:#fff;max-height:340px;overflow-y:auto;">
                         ${buildMetadataHtml(card)}
