@@ -10,6 +10,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Token');
+  res.setHeader('Vary', 'Origin');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('ebay-sold error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'eBay sold listing lookup failed' });
   }
 }
 
@@ -50,7 +51,7 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   // premium=true uses residential IPs that are less detectable by eBay's bot filters.
   // Costs 25 ScraperAPI credits/request on premium+render.
   const fetchUrl = scraperApiKey
-    ? `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us&render=true&premium=true&wait=8000`
+    ? `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(ebayUrl)}&country_code=us&render=true&premium=true&wait=8000`
     : ebayUrl;
 
   const headers = scraperApiKey ? {} : {
@@ -71,8 +72,9 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     return null;
   }
 
-  console.log(`eBay HTML length: ${html.length} chars`);
-  console.log('eBay HTML preview:', html.slice(0, 300).replace(/\s+/g, ' '));
+  const DEBUG = process.env.DEBUG === 'true';
+  if (DEBUG) console.log(`eBay HTML length: ${html.length} chars`);
+  if (DEBUG) console.log('eBay HTML preview:', html.slice(0, 300).replace(/\s+/g, ' '));
 
   if (
     html.includes('Pardon Our Interruption') ||
@@ -90,22 +92,16 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   }
 
   // ── Diagnostic: understand the HTML structure ───────────────────────────
-  const hasSItem       = html.includes('s-item');
-  const hasSCard       = html.includes('s-card');
   const hasSItemPrice  = html.includes('s-item__price');
   const hasSCardPrice  = html.includes('s-card__price');
   const hasSuCardPrice = html.includes('su-card__price');
-  const hasPositive    = html.includes('POSITIVE');
-  const sItemCount     = (html.match(/s-item/g) || []).length;
-  const sCardCount     = (html.match(/s-card/g) || []).length;
-  const srpResultsCount = (html.match(/srp-results/g) || []).length;
-  const liCount        = (html.match(/<li\b/g) || []).length;
-  console.log(`Diagnostics: s-item=×${sItemCount}, s-card=×${sCardCount}, s-item__price=${hasSItemPrice}, s-card__price=${hasSCardPrice}, su-card__price=${hasSuCardPrice}, POSITIVE=${hasPositive}, srp-results=×${srpResultsCount}, li=×${liCount}`);
 
-  // Log the first ACTUAL <li class="s-card..."> element (not CSS occurrences)
-  const liCardMatch = html.match(/<li\b[^>]*class="[^"]*s-card[^"]*"[^>]*>([\s\S]{0,600})/);
-  if (liCardMatch) {
-    console.log('First s-card li HTML:', (liCardMatch[0].slice(0, 700)).replace(/\s+/g, ' '));
+  if (DEBUG) {
+    const sItemCount     = (html.match(/s-item/g) || []).length;
+    const sCardCount     = (html.match(/s-card/g) || []).length;
+    console.log(`Diagnostics: s-item=×${sItemCount}, s-card=×${sCardCount}, s-item__price=${hasSItemPrice}, s-card__price=${hasSCardPrice}, su-card__price=${hasSuCardPrice}`);
+    const liCardMatch = html.match(/<li\b[^>]*class="[^"]*s-card[^"]*"[^>]*>([\s\S]{0,600})/);
+    if (liCardMatch) console.log('First s-card li HTML:', (liCardMatch[0].slice(0, 700)).replace(/\s+/g, ' '));
   }
 
   const soldItems = [];
@@ -114,13 +110,12 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
   // Use lookahead split so the <li> opening tag stays in each chunk — needed
   // because aria-label (title) lives on the <li> tag itself in eBay's new markup.
   const itemChunks = html.split(/(?=<li\b[^>]*\b(?:s-card|s-item)\b)/i);
-  console.log(`Item chunks: ${itemChunks.length - 1}`);
-  if (itemChunks.length > 1) {
-    console.log('First chunk preview:', itemChunks[1].slice(0, 1500).replace(/\s+/g, ' '));
+  if (DEBUG) {
+    console.log(`Item chunks: ${itemChunks.length - 1}`);
+    if (itemChunks.length > 1) console.log('First chunk preview:', itemChunks[1].slice(0, 1500).replace(/\s+/g, ' '));
+    const titleClassMatch = html.match(/class="([^"]*(?:title|heading|name)[^"]*)"[^>]*>\s*([^<]{10,})/i);
+    if (titleClassMatch) console.log('Title class candidate:', titleClassMatch[1], '|', titleClassMatch[2].slice(0, 80));
   }
-  // Find what class name eBay uses for the listing title
-  const titleClassMatch = html.match(/class="([^"]*(?:title|heading|name)[^"]*)"[^>]*>\s*([^<]{10,})/i);
-  if (titleClassMatch) console.log('Title class candidate:', titleClassMatch[1], '|', titleClassMatch[2].slice(0, 80));
 
   for (let i = 1; i < itemChunks.length; i++) {
     const raw = itemChunks[i];
@@ -180,17 +175,17 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
     soldItems.push({ title, price, url, date });
   }
 
-  // Log all parsed items for diagnostics
-  for (let j = 0; j < Math.min(soldItems.length, 5); j++) {
-    const si = soldItems[j];
-    console.log(`  item[${j}]: price=$${si.price} url=${si.url} title="${(si.title || '').slice(0, 60)}"`);
+  if (DEBUG) {
+    for (let j = 0; j < Math.min(soldItems.length, 5); j++) {
+      const si = soldItems[j];
+      console.log(`  item[${j}]: price=$${si.price} url=${si.url} title="${(si.title || '').slice(0, 60)}"`);
+    }
+    console.log(`Strategy 1 (s-card split): ${soldItems.length} items`);
   }
-
-  console.log(`Strategy 1 (s-card split): ${soldItems.length} items`);
 
   // ── Strategy 2: Direct price+date extraction (if strategy 1 found nothing) ──
   if (soldItems.length === 0 && (hasSItemPrice || hasSCardPrice || hasSuCardPrice)) {
-    console.log('Trying strategy 2: direct price regex...');
+    if (DEBUG) console.log('Trying strategy 2: direct price regex...');
     const priceRegex = /s-item__price[^>]*>([\s\S]{0,150}?\$([\d,]+\.?\d*)[\s\S]{0,400}?(?:Sold|POSITIVE|endedDate)[\s\S]{0,200}?<)/gi;
     let m;
     while ((m = priceRegex.exec(html)) !== null) {
@@ -207,33 +202,30 @@ async function scrapeEbaySoldPage(query, cardNumber, hero, athlete) {
         title: titleM ? decodeEntities(titleM[1].trim()) : '',
       });
     }
-    console.log(`Strategy 2 (direct regex): ${soldItems.length} items`);
+    if (DEBUG) console.log(`Strategy 2 (direct regex): ${soldItems.length} items`);
   }
 
   // ── Strategy 3: Embedded JSON state ──────────────────────────────────────
   if (soldItems.length === 0) {
-    console.log('Trying strategy 3: embedded JSON...');
+    if (DEBUG) console.log('Trying strategy 3: embedded JSON...');
     const jsonItems = extractFromEmbeddedJson(html);
     soldItems.push(...jsonItems);
-    console.log(`Strategy 3 (embedded JSON): ${jsonItems.length} items`);
+    if (DEBUG) console.log(`Strategy 3 (embedded JSON): ${jsonItems.length} items`);
   }
 
-  console.log(`Total raw items: ${soldItems.length}`);
+  if (DEBUG) console.log(`Total raw items: ${soldItems.length}`);
 
   if (soldItems.length === 0) return null;
 
   // ── Deduplicate by URL and price ──────────────────────────────────────
   const deduped = deduplicateItems(soldItems);
-  console.log(`After dedup: ${deduped.length} items (from ${soldItems.length} raw)`);
-
   const relevant = filterRelevantItems(deduped, cardNumber, hero, athlete);
-  console.log(`After filtering: ${relevant.length} items (from ${deduped.length} deduped)`);
 
   // If filter removed everything but deduped items exist, fall back to deduped
   // — the search query already scoped results, so they're likely relevant
   const finalItems = relevant.length > 0 ? relevant : deduped;
-  if (relevant.length === 0 && deduped.length > 0) {
-    console.log('Filter removed all items — falling back to deduped results');
+  if (DEBUG) {
+    console.log(`After dedup: ${deduped.length}, after filter: ${relevant.length}, final: ${finalItems.length}`);
   }
 
   return formatSoldResponse(finalItems);

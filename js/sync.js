@@ -34,34 +34,51 @@ function recordDeletedCard(card) {
 }
 
 function cardTombstoneKey(card) {
-    // Use cardNumber + timestamp as a stable unique key for each scanned card
-    // Delimiter is ||| because colons can appear in card numbers (e.g. "1999:P1000")
-    return (card.cardNumber || '') + TOMBSTONE_DELIM + (card.timestamp || '');
+    // Use cardNumber + card timestamp as a stable unique key for each scanned card.
+    // The deletion timestamp is appended separately for pruning (see pruneTombstones).
+    // Delimiter is ||| because colons can appear in card numbers (e.g. "1999:P1000").
+    // Format: "cardNumber|||cardTimestamp|||deletionTimestamp"
+    // The deletionTimestamp is used for pruning (NOT the card's scan timestamp),
+    // so deleting old cards still keeps the tombstone alive for the full TTL.
+    return (card.cardNumber || '') + TOMBSTONE_DELIM + (card.timestamp || '') + TOMBSTONE_DELIM + new Date().toISOString();
 }
 
 function isDeleted(card, tombstones) {
-    const newKey = cardTombstoneKey(card);
-    if (tombstones.includes(newKey)) return true;
+    // Match by the card's identity (cardNumber + cardTimestamp), ignoring the
+    // deletion timestamp suffix that may or may not be present.
+    const cardId = (card.cardNumber || '') + TOMBSTONE_DELIM + (card.timestamp || '');
+    for (const key of tombstones) {
+        // New 3-part format: "cardNum|||cardTs|||deletionTs" — match first two parts
+        // Old 2-part format: "cardNum|||cardTs" — exact match
+        if (key === cardId || key.startsWith(cardId + TOMBSTONE_DELIM)) return true;
+    }
     // Backward compat: also check old colon-delimited key format
     const oldKey = (card.cardNumber || '') + ':' + (card.timestamp || '');
-    return oldKey !== newKey && tombstones.includes(oldKey);
+    return tombstones.includes(oldKey);
 }
 
 // Prune tombstones older than 30 days to prevent unbounded localStorage growth.
-// Tombstone keys embed the card's ISO timestamp: "cardNumber:isoTimestamp"
+// New format: "cardNumber|||cardTimestamp|||deletionTimestamp"
+// Old format: "cardNumber|||cardTimestamp" or "cardNumber:cardTimestamp"
+// IMPORTANT: We prune by DELETION timestamp (when the card was deleted), not
+// the card's scan timestamp. This prevents the bug where deleting an old card
+// caused the tombstone to be immediately pruned and the card to re-sync.
 const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function pruneTombstones(list) {
     const cutoff = Date.now() - TOMBSTONE_TTL_MS;
     return list.filter(key => {
-        // Try new delimiter first, then fall back to old colon delimiter
         let tsStr;
-        const delimIdx = key.indexOf(TOMBSTONE_DELIM);
-        if (delimIdx !== -1) {
-            tsStr = key.slice(delimIdx + TOMBSTONE_DELIM.length);
+
+        // New 3-part format: use the DELETION timestamp (third part)
+        const parts = key.split(TOMBSTONE_DELIM);
+        if (parts.length >= 3) {
+            tsStr = parts[2]; // deletion timestamp
+        } else if (parts.length === 2) {
+            // Old 2-part format: only has card timestamp — use it as fallback
+            tsStr = parts[1];
         } else {
-            // Old format: find LAST colon (timestamp is an ISO string which contains colons,
-            // but starts with a date like "2025-..." so look for the date pattern after last colon group)
+            // Legacy colon format
             const match = key.match(/^(.+?)(\d{4}-\d{2}-\d{2}T.+)$/);
             if (match) {
                 tsStr = match[2];

@@ -37,13 +37,16 @@ async function loadSystemSettings() {
     const map = {};
     for (const row of data) map[row.key] = row.value;
 
-    // Overwrite defaults — parse as int, keep existing if missing/NaN
-    if (map.guest_max_cards)    DEFAULT_LIMITS.guest.maxCards         = parseInt(map.guest_max_cards)    || DEFAULT_LIMITS.guest.maxCards;
-    if (map.guest_max_api)      DEFAULT_LIMITS.guest.maxApiCalls      = parseInt(map.guest_max_api)      || DEFAULT_LIMITS.guest.maxApiCalls;
-    if (map.auth_max_cards)     DEFAULT_LIMITS.authenticated.maxCards  = parseInt(map.auth_max_cards)     || DEFAULT_LIMITS.authenticated.maxCards;
-    if (map.auth_max_api)       DEFAULT_LIMITS.authenticated.maxApiCalls = parseInt(map.auth_max_api)    || DEFAULT_LIMITS.authenticated.maxApiCalls;
-    if (map.member_max_cards)   DEFAULT_LIMITS.member.maxCards         = parseInt(map.member_max_cards)   || DEFAULT_LIMITS.member.maxCards;
-    if (map.member_max_api)     DEFAULT_LIMITS.member.maxApiCalls      = parseInt(map.member_max_api)    || DEFAULT_LIMITS.member.maxApiCalls;
+    // Overwrite defaults — parse as int, keep existing if missing/NaN.
+    // Use isNaN check instead of || to support intentional zero values
+    // (e.g., admin sets guest_max_api=0 to disable a tier).
+    const safeInt = (str, fallback) => { const v = parseInt(str); return isNaN(v) ? fallback : v; };
+    if (map.guest_max_cards)    DEFAULT_LIMITS.guest.maxCards          = safeInt(map.guest_max_cards,  DEFAULT_LIMITS.guest.maxCards);
+    if (map.guest_max_api)      DEFAULT_LIMITS.guest.maxApiCalls       = safeInt(map.guest_max_api,    DEFAULT_LIMITS.guest.maxApiCalls);
+    if (map.auth_max_cards)     DEFAULT_LIMITS.authenticated.maxCards   = safeInt(map.auth_max_cards,   DEFAULT_LIMITS.authenticated.maxCards);
+    if (map.auth_max_api)       DEFAULT_LIMITS.authenticated.maxApiCalls = safeInt(map.auth_max_api,   DEFAULT_LIMITS.authenticated.maxApiCalls);
+    if (map.member_max_cards)   DEFAULT_LIMITS.member.maxCards          = safeInt(map.member_max_cards, DEFAULT_LIMITS.member.maxCards);
+    if (map.member_max_api)     DEFAULT_LIMITS.member.maxApiCalls       = safeInt(map.member_max_api,  DEFAULT_LIMITS.member.maxApiCalls);
 
     console.log('✅ System settings loaded from DB:', DEFAULT_LIMITS);
   } catch (err) {

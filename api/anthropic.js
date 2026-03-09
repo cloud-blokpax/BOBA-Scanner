@@ -30,13 +30,37 @@ Return ONLY valid JSON with no markdown or extra text:
 
 const RATE_LIMIT_MAX    = 30;
 const RATE_LIMIT_WINDOW = 60; // seconds
+const MAX_BODY_BYTES    = 10 * 1024 * 1024; // 10 MB — rejects oversized payloads early
+
+// In-memory rate limit fallback — used when Supabase is unreachable.
+// Each Vercel instance tracks its own counts; this is a best-effort guard,
+// not a replacement for Supabase-backed limits.
+const _memoryRateLimits = new Map();
+
+function checkMemoryRateLimit(identifier) {
+  const now = Date.now();
+  const windowMs = RATE_LIMIT_WINDOW * 1000;
+  let entry = _memoryRateLimits.get(identifier);
+  if (!entry || now - entry.windowStart > windowMs) {
+    entry = { windowStart: now, count: 0 };
+    _memoryRateLimits.set(identifier, entry);
+  }
+  entry.count++;
+  // Evict stale entries periodically (keep map bounded)
+  if (_memoryRateLimits.size > 10000) {
+    for (const [key, val] of _memoryRateLimits) {
+      if (now - val.windowStart > windowMs) _memoryRateLimits.delete(key);
+    }
+  }
+  return entry.count <= RATE_LIMIT_MAX;
+}
 
 // Supabase-backed rate limiting — works across all serverless instances.
-// Falls back to allowing the request if Supabase is unavailable.
+// Falls back to in-memory limiter if Supabase is unavailable.
 async function checkRateLimit(identifier) {
   const supabaseUrl     = process.env.SUPABASE_URL;
   const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) return true; // no Supabase — skip limit
+  if (!supabaseUrl || !serviceRoleKey) return checkMemoryRateLimit(identifier);
 
   try {
     const now        = Math.floor(Date.now() / 1000);
@@ -47,7 +71,7 @@ async function checkRateLimit(identifier) {
       `${supabaseUrl}/rest/v1/rate_limits?select=id&identifier=eq.${encodeURIComponent(identifier)}&created_at=gte.${new Date(windowStart * 1000).toISOString()}`,
       { headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` } }
     );
-    if (!countRes.ok) return true; // on error, allow the request
+    if (!countRes.ok) return checkMemoryRateLimit(identifier);
 
     const rows = await countRes.json();
     if (rows.length >= RATE_LIMIT_MAX) return false;
@@ -63,15 +87,23 @@ async function checkRateLimit(identifier) {
       },
       body: JSON.stringify({ identifier, created_at: new Date().toISOString() })
     });
+
+    // Opportunistic cleanup — ~1% of requests prune old rows
+    if (Math.random() < 0.01) {
+      fetch(`${supabaseUrl}/rest/v1/rate_limits?created_at=lt.${new Date(windowStart * 1000).toISOString()}`, {
+        method: 'DELETE',
+        headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` }
+      }).catch(() => {});
+    }
+
     return true;
   } catch {
-    return true; // on error, allow the request
+    return checkMemoryRateLimit(identifier);
   }
 }
 
 export default async function handler(req, res) {
   const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba-scanner.vercel.app';
-  const requestOrigin = req.headers.origin || '';
 
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -80,6 +112,15 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
+
+  // Token auth — same pattern as ebay/grade endpoints
+  const expectedToken = process.env.BOBA_API_SECRET;
+  if (expectedToken) {
+    const providedToken = req.headers['x-api-token'];
+    if (providedToken !== expectedToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
 
   // Rate limiting
   const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
@@ -96,12 +137,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing image data' });
     }
 
+    // Reject oversized payloads early — prevents memory exhaustion
+    if (finalImageData.length > MAX_BODY_BYTES) {
+      return res.status(413).json({ error: 'Image too large. Maximum 10MB.' });
+    }
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       console.error('ANTHROPIC_API_KEY environment variable is not set in Vercel');
-      return res.status(500).json({
-        error: 'Server configuration error: ANTHROPIC_API_KEY not set. Add it in Vercel Dashboard → Settings → Environment Variables.'
-      });
+      return res.status(500).json({ error: 'Server configuration error' });
     }
 
     const requestBody = JSON.stringify({

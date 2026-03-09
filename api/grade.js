@@ -41,10 +41,30 @@ submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" 
 const RATE_LIMIT_MAX    = 20;  // grading is more expensive — lower limit
 const RATE_LIMIT_WINDOW = 60;
 
+// In-memory rate limit fallback — used when Supabase is unreachable.
+const _memoryRateLimits = new Map();
+
+function checkMemoryRateLimit(identifier) {
+  const now = Date.now();
+  const windowMs = RATE_LIMIT_WINDOW * 1000;
+  let entry = _memoryRateLimits.get(identifier);
+  if (!entry || now - entry.windowStart > windowMs) {
+    entry = { windowStart: now, count: 0 };
+    _memoryRateLimits.set(identifier, entry);
+  }
+  entry.count++;
+  if (_memoryRateLimits.size > 10000) {
+    for (const [key, val] of _memoryRateLimits) {
+      if (now - val.windowStart > windowMs) _memoryRateLimits.delete(key);
+    }
+  }
+  return entry.count <= RATE_LIMIT_MAX;
+}
+
 async function checkRateLimit(identifier) {
   const supabaseUrl    = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) return true;
+  if (!supabaseUrl || !serviceRoleKey) return checkMemoryRateLimit(identifier);
 
   try {
     const now         = Math.floor(Date.now() / 1000);
@@ -54,7 +74,7 @@ async function checkRateLimit(identifier) {
       `${supabaseUrl}/rest/v1/rate_limits?select=id&identifier=eq.${encodeURIComponent('grade:' + identifier)}&created_at=gte.${new Date(windowStart * 1000).toISOString()}`,
       { headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` } }
     );
-    if (!countRes.ok) return true;
+    if (!countRes.ok) return checkMemoryRateLimit(identifier);
 
     const rows = await countRes.json();
     if (rows.length >= RATE_LIMIT_MAX) return false;
@@ -69,9 +89,18 @@ async function checkRateLimit(identifier) {
       },
       body: JSON.stringify({ identifier: 'grade:' + identifier, created_at: new Date().toISOString() })
     });
+
+    // Opportunistic cleanup — ~1% of requests prune old rows
+    if (Math.random() < 0.01) {
+      fetch(`${supabaseUrl}/rest/v1/rate_limits?created_at=lt.${new Date(windowStart * 1000).toISOString()}`, {
+        method: 'DELETE',
+        headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` }
+      }).catch(() => {});
+    }
+
     return true;
   } catch {
-    return true;
+    return checkMemoryRateLimit(identifier);
   }
 }
 
@@ -108,7 +137,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Server configuration error' });
 
-    // Use Sonnet for grading — better visual analysis than Haiku
+    // Use Haiku for grading — fast and cost-effective for visual analysis
     const requestBody = JSON.stringify({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 800,
