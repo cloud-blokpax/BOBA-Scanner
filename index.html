@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="description" content="Professional Bo Jackson trading card scanner with AI-powered identification">
     <meta name="theme-color" content="#2563eb">
+
+    <!-- Prevent search engine indexing and caching -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="bingbot" content="noindex, nofollow">
     
     <!-- iOS Web App -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -522,6 +527,7 @@
     </script>
     
     <!-- Scripts — load order still matters for globals; see state.js for why -->
+    <script src="js/source-protection.js"></script> <!-- Anti-scraping measures — load before anything else -->
     <script src="js/state.js"></script>      <!-- MUST BE FIRST: defines ready, database, appConfig -->
     <script src="js/config.js"></script>
     <script src="js/database.js"></script>
