@@ -120,6 +120,16 @@ function renderCards() {
     
     const allCards = collection.cards || [];
 
+    // ── View/sort/tag-filter preferences ──────────────────────────────────
+    if (!window._cardViewPrefs) {
+        window._cardViewPrefs = {
+            sort: localStorage.getItem('cardSortMode') || 'newest',
+            view: localStorage.getItem('cardViewMode') || 'large',
+            tags: new Set()
+        };
+    }
+    const prefs = window._cardViewPrefs;
+
     // ── Search/filter ─────────────────────────────────────────────────────
     const searchInput = document.getElementById('cardSearchInput');
     const searchBar   = document.getElementById('cardSearchBar');
@@ -166,10 +176,30 @@ function renderCards() {
         return acc;
     }, []);
 
+    // ── Tag filter ────────────────────────────────────────────────────────
+    let filteredWithIdx2 = filteredWithIdx;
+    if (prefs.tags.size > 0) {
+        filteredWithIdx2 = filteredWithIdx.filter(({ card }) =>
+            [...prefs.tags].every(tag => (card.tags || []).includes(tag))
+        );
+    }
+
+    // ── Sort ──────────────────────────────────────────────────────────────
+    switch (prefs.sort) {
+        case 'oldest':    filteredWithIdx2.sort((a,b) => new Date(a.card.timestamp) - new Date(b.card.timestamp)); break;
+        case 'hero':      filteredWithIdx2.sort((a,b) => String(a.card.hero||'').localeCompare(String(b.card.hero||''))); break;
+        case 'cardnum':   filteredWithIdx2.sort((a,b) => String(a.card.cardNumber||'').localeCompare(String(b.card.cardNumber||''))); break;
+        case 'ebay_high': filteredWithIdx2.sort((a,b) => (b.card.ebayAvgPrice||0) - (a.card.ebayAvgPrice||0)); break;
+        case 'ebay_low':  filteredWithIdx2.sort((a,b) => (a.card.ebayAvgPrice||0) - (b.card.ebayAvgPrice||0)); break;
+        default: /* newest — already newest-first from original push order */ break;
+    }
+    filteredWithIdx = filteredWithIdx2;
+
     // ── Pagination ────────────────────────────────────────────────────────
     const PAGE_SIZE = 50;
     if (!renderCards._page) renderCards._page = {};
-    const pageKey = currentId + '|' + searchQuery;
+    const tagKey  = [...prefs.tags].sort().join(',');
+    const pageKey = `${currentId}|${searchQuery}|${prefs.sort}|${tagKey}`;
     if (renderCards._lastKey !== pageKey) {
         renderCards._page[pageKey] = 0;
         renderCards._lastKey = pageKey;
@@ -202,6 +232,8 @@ function renderCards() {
     if (allCards.length === 0) {
         if (empty) empty.style.display = '';
         if (actionBar) actionBar.style.display = 'none';
+        const cb = document.getElementById('cardControlsBar');
+        if (cb) cb.style.display = 'none';
         grid.innerHTML = '';
         grid.style.display = 'none';
         return;
@@ -220,10 +252,111 @@ function renderCards() {
 
     if (empty) empty.style.display = 'none';
     if (actionBar) actionBar.style.display = '';
-    grid.style.display = 'grid';
 
-    // Render paginated cards — use original index (idx) for all card operations
-    grid.innerHTML = pagedItems.map(({ card, idx }) => {
+    // ── Controls bar (sort / tag-filter / view-mode) ──────────────────────
+    const controlsBar = document.getElementById('cardControlsBar');
+    if (controlsBar) {
+        controlsBar.style.display = 'block';
+        const allTagsUsed = [...new Set(allCards.flatMap(c => c.tags || []))].sort();
+        controlsBar.innerHTML = `
+            <div class="card-controls-bar">
+              <div class="card-controls-row">
+                <select id="cardSortSelect" class="card-sort-select" aria-label="Sort cards">
+                  <option value="newest"    ${prefs.sort==='newest'   ?'selected':''}>Newest Added</option>
+                  <option value="oldest"    ${prefs.sort==='oldest'   ?'selected':''}>Oldest Added</option>
+                  <option value="hero"      ${prefs.sort==='hero'     ?'selected':''}>Hero Name A–Z</option>
+                  <option value="cardnum"   ${prefs.sort==='cardnum'  ?'selected':''}>Card Number</option>
+                  <option value="ebay_high" ${prefs.sort==='ebay_high'?'selected':''}>eBay Price ↓</option>
+                  <option value="ebay_low"  ${prefs.sort==='ebay_low' ?'selected':''}>eBay Price ↑</option>
+                </select>
+                <div class="card-view-modes" role="group" aria-label="View mode">
+                  <button class="card-view-btn${prefs.view==='large'?'  active':''}" data-view="large"  title="Large thumbnails">⊞</button>
+                  <button class="card-view-btn${prefs.view==='small'?'  active':''}" data-view="small"  title="Small thumbnails">⊟</button>
+                  <button class="card-view-btn${prefs.view==='list' ?'  active':''}" data-view="list"   title="List view">≡</button>
+                </div>
+              </div>
+              ${allTagsUsed.length > 0 ? `
+              <div class="card-tag-filter-row">
+                <span class="card-filter-label">Filter:</span>
+                ${allTagsUsed.map(t => `<button class="tag-filter-chip${prefs.tags.has(t)?' active':''}" data-filter-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}
+                ${prefs.tags.size > 0 ? `<button class="tag-filter-clear" id="cardTagFilterClear">✕ Clear</button>` : ''}
+              </div>` : ''}
+            </div>`;
+
+        // Wire controls (re-wired each render since innerHTML replaces DOM)
+        const sortSel = document.getElementById('cardSortSelect');
+        if (sortSel) sortSel.addEventListener('change', () => {
+            prefs.sort = sortSel.value;
+            localStorage.setItem('cardSortMode', prefs.sort);
+            renderCards();
+        });
+        controlsBar.querySelectorAll('.card-view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                prefs.view = btn.dataset.view;
+                localStorage.setItem('cardViewMode', prefs.view);
+                renderCards();
+            });
+        });
+        controlsBar.querySelectorAll('[data-filter-tag]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tag = btn.dataset.filterTag;
+                if (prefs.tags.has(tag)) prefs.tags.delete(tag); else prefs.tags.add(tag);
+                renderCards();
+            });
+        });
+        const clearTagBtn = document.getElementById('cardTagFilterClear');
+        if (clearTagBtn) clearTagBtn.addEventListener('click', () => { prefs.tags.clear(); renderCards(); });
+    }
+
+    // Set view-mode class on grid
+    grid.className = `cards-grid cards-grid--${prefs.view}`;
+    grid.style.display = prefs.view === 'list' ? 'flex' : 'grid';
+
+    // ── Render paginated cards ─────────────────────────────────────────────
+    if (prefs.view === 'list') {
+        // List view: one row per card
+        grid.innerHTML = pagedItems.map(({ card, idx }) => {
+            const hasImg = card.imageUrl && !card.imageUrl.startsWith('blob:');
+            const priceHtml = card.ebayAvgPrice
+                ? `<span class="cl-price">⌀ $${Number(card.ebayAvgPrice).toFixed(2)}</span>` : '';
+            return `
+            <div class="card-list-row" id="card_item_${idx}" data-open-card="${idx}" style="cursor:pointer;">
+              <div class="cl-img">
+                ${hasImg ? `<img src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none'">` : '<span>🎴</span>'}
+              </div>
+              <div class="cl-info">
+                <div class="cl-name">${escapeHtml(card.hero||'Unknown')}</div>
+                <div class="cl-meta">${escapeHtml(card.cardNumber||'')}${card.set?' · '+escapeHtml(card.set):''}</div>
+              </div>
+              ${priceHtml}
+              ${card.condition ? `<span class="cl-cond">${escapeHtml(card.condition)}</span>` : ''}
+              <span class="cl-badge ${card.scanType==='free'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
+            </div>`;
+        }).join('');
+
+    } else if (prefs.view === 'small') {
+        // Small thumbnail view
+        grid.innerHTML = pagedItems.map(({ card, idx }) => {
+            const hasImg = card.imageUrl && !card.imageUrl.startsWith('blob:');
+            const priceHtml = (card.ebayAvgPrice||card.ebayLowPrice)
+                ? `<div class="cs-price">${card.ebayAvgPrice?`⌀$${Number(card.ebayAvgPrice).toFixed(0)}`:''} ${card.ebayLowPrice?`↓$${Number(card.ebayLowPrice).toFixed(0)}`:''}</div>` : '';
+            return `
+            <div class="card-small" id="card_item_${idx}" data-open-card="${idx}" style="cursor:pointer;" title="${escapeHtml(card.hero||'')}">
+              <div class="cs-img">
+                ${hasImg ? `<img src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none'">` : '<span>🎴</span>'}
+                <span class="cs-badge ${card.scanType==='free'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
+              </div>
+              <div class="cs-body">
+                <div class="cs-name">${escapeHtml(card.hero||'Unknown')}</div>
+                <div class="cs-num">${escapeHtml(card.cardNumber||'')}</div>
+                ${priceHtml}
+              </div>
+            </div>`;
+        }).join('');
+
+    } else {
+        // Large view (default) — original rendering
+        grid.innerHTML = pagedItems.map(({ card, idx }) => {
         const lowConfBadge = card.lowConfidence
             ? `<span class="conf-badge conf-low" title="Low confidence scan — please verify">⚠️ Verify</span>`
             : (card.confidence && card.scanType === 'free'
@@ -285,7 +418,8 @@ function renderCards() {
                 <button class="btn-card-more" data-card-more="${idx}" onclick="event.stopPropagation();toggleCardMoreMenu(${idx},this)" title="More options" style="display:none;">⋯</button>
             </div>
         </div>`;
-    }).join('');
+        }).join('');
+    } // end large-view else
 
     // ── Pagination controls ───────────────────────────────────────────────
     if (totalPages > 1) {
@@ -305,9 +439,13 @@ function renderCards() {
     console.log('Cards rendered successfully');
 
     // ── Delegated card-open handler ───────────────────────────────────────
-    // Guard against duplicate listener registration — renderCards() is called
-    // frequently (after every save, sync, price fetch) so without this check
-    // the same 3 listeners would accumulate indefinitely, causing ghost opens.
+    // The listeners are on the grid element itself and survive innerHTML replacements.
+    // Guard against duplicate registration but reset when view mode changes.
+    const viewModeKey = `view_${prefs.view}`;
+    if (!grid._listenersAttached || grid._viewModeKey !== viewModeKey) {
+        grid._listenersAttached = false; // force re-attach if view changed
+        grid._viewModeKey = viewModeKey;
+    }
     if (!grid._listenersAttached) {
         grid._listenersAttached = true;
 

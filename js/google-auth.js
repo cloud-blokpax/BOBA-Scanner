@@ -103,6 +103,10 @@ async function handleCredentialResponse(response) {
     localStorage.setItem('googleUser', JSON.stringify(googleUser));
 
     updateAuthUI(googleUser);
+
+    // Close the sign-in modal now that the user is authenticated
+    if (typeof window.closeSignInModal === 'function') window.closeSignInModal();
+
     showToast(`Welcome, ${googleUser.name}!`, '👋');
 
     // FIXED: Single sequential auth flow — no setTimeout race conditions.

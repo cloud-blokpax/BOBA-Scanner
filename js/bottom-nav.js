@@ -22,15 +22,16 @@
         }
 
         if (tab === 'deck') {
-            // Deck opens a modal; keep underlying tab as-is
-            if (typeof window.openDeckBuilder === 'function') {
-                window.openDeckBuilder();
-            } else {
-                if (typeof window.showToast === 'function') {
-                    window.showToast('Deck Builder not ready', '⚠️');
-                }
-            }
+            // Switch to the collection view and show deck cards in the main grid
             setActiveTab('deck');
+            currentTab = 'collection';
+            document.body.classList.remove('tab-scan');
+            document.body.classList.add('tab-collection');
+            if (typeof window.sliderSwitch === 'function') {
+                window.sliderSwitch('deck_building');
+            } else if (typeof window.showToast === 'function') {
+                window.showToast('Deck Builder not ready', '⚠️');
+            }
             return;
         }
 
