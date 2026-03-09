@@ -5,7 +5,7 @@
 async function gradeCard(imageData, cornerRegionData = null) {
   const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
     ? appConfig.apiBase
-    : 'https://boba-scanner.vercel.app/api';
+    : 'https://boba.cards/api';
 
   const headers = { 'Content-Type': 'application/json' };
   const apiToken = (typeof appConfig !== 'undefined') ? appConfig.apiToken : null;

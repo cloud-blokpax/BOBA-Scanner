@@ -5,7 +5,7 @@
 async function generateEbayListing(card) {
   const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
     ? appConfig.apiBase
-    : 'https://boba-scanner.vercel.app/api';
+    : 'https://boba.cards/api';
 
   const prompt = buildListingPrompt(card);
 

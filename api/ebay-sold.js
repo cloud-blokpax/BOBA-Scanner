@@ -6,7 +6,7 @@
 const EBAY_SEARCH = 'https://www.ebay.com/sch/i.html';
 
 export default async function handler(req, res) {
-  const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba-scanner.vercel.app';
+  const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://boba.cards';
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Token');
