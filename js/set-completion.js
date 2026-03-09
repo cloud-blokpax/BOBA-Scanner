@@ -222,4 +222,6 @@ function renderSetCard(s, db) {
   `;
 }
 
+window.analyzeSetCompletion = analyzeSetCompletion;
+
 console.log('✅ Set completion module loaded');

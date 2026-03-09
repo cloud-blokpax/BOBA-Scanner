@@ -238,4 +238,7 @@ async function urlToBase64(url) {
   });
 }
 
+window.triggerGradeCard = triggerGradeCard;
+window.triggerGradeCardWithPicker = triggerGradeCardWithPicker;
+
 console.log('✅ Grader module loaded');
