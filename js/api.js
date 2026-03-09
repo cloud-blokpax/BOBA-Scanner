@@ -221,4 +221,177 @@ async function compressImage(file) {
   });
 }
 
+/**
+ * cropCardNumberRegion(file)
+ *
+ * Extracts the bottom-left card-number strip from a card image,
+ * upscales 2× and applies contrast enhancement for the AI to read.
+ * Returns base64 string or null.
+ */
+async function cropCardNumberRegion(file) {
+    return new Promise(resolve => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const sw = img.naturalWidth  || img.width;
+            const sh = img.naturalHeight || img.height;
+
+            // Extract bottom-left 40% width × 15% height
+            const rx = 0.0, ry = 0.82, rw = 0.40, rh = 0.15;
+            const sx = Math.floor(sw * rx);
+            const sy = Math.floor(sh * ry);
+            const cw = Math.floor(sw * rw);
+            const ch = Math.floor(sh * rh);
+
+            // 2× upscale for sharper text
+            const SCALE = 2;
+            const out = document.createElement('canvas');
+            out.width  = cw * SCALE;
+            out.height = ch * SCALE;
+            const ctx = out.getContext('2d');
+            ctx.drawImage(img, sx, sy, cw, ch, 0, 0, out.width, out.height);
+
+            // Contrast stretch: map 2nd/98th percentile to 0-255
+            const imgData = ctx.getImageData(0, 0, out.width, out.height);
+            const d = imgData.data;
+            const totalPx = out.width * out.height;
+            const hist = new Uint32Array(256);
+            for (let i = 0; i < totalPx; i++) {
+                const lum = Math.round(d[i*4]*0.299 + d[i*4+1]*0.587 + d[i*4+2]*0.114);
+                hist[lum]++;
+            }
+            let cumul = 0, lo = 0, hi = 255;
+            const p2 = Math.floor(totalPx * 0.02), p98 = Math.floor(totalPx * 0.98);
+            for (let v = 0; v < 256; v++) {
+                cumul += hist[v];
+                if (cumul >= p2  && lo === 0)   lo = v;
+                if (cumul >= p98 && hi === 255) hi = v;
+            }
+            const range = Math.max(1, hi - lo);
+            for (let i = 0; i < totalPx; i++) {
+                const idx = i * 4;
+                d[idx]     = Math.min(255, Math.max(0, Math.round((d[idx]     - lo) * 255 / range)));
+                d[idx + 1] = Math.min(255, Math.max(0, Math.round((d[idx + 1] - lo) * 255 / range)));
+                d[idx + 2] = Math.min(255, Math.max(0, Math.round((d[idx + 2] - lo) * 255 / range)));
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            // Export as high-quality JPEG base64
+            const dataUrl = out.toDataURL('image/jpeg', 0.92);
+            resolve(dataUrl.split(',')[1]);
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+    });
+}
+
+/**
+ * cropGradingRegions(file)
+ *
+ * Extracts all 4 corners of a card image into a 2×2 grid for the AI
+ * grader to assess corner sharpness precisely. Returns base64 string or null.
+ */
+async function cropGradingRegions(file) {
+    return new Promise(resolve => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const sw = img.naturalWidth  || img.width;
+            const sh = img.naturalHeight || img.height;
+
+            // Each corner region: 22% × 22% of the card
+            const cornerW = Math.floor(sw * 0.22);
+            const cornerH = Math.floor(sh * 0.22);
+
+            // Output: 2×2 grid, each cell upscaled 1.5×
+            const SCALE = 1.5;
+            const cellW = Math.round(cornerW * SCALE);
+            const cellH = Math.round(cornerH * SCALE);
+            const gap = 4; // pixel gap between cells
+
+            const out = document.createElement('canvas');
+            out.width  = cellW * 2 + gap;
+            out.height = cellH * 2 + gap;
+            const ctx = out.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, out.width, out.height);
+
+            // Top-left corner
+            ctx.drawImage(img, 0, 0, cornerW, cornerH, 0, 0, cellW, cellH);
+            // Top-right corner
+            ctx.drawImage(img, sw - cornerW, 0, cornerW, cornerH, cellW + gap, 0, cellW, cellH);
+            // Bottom-left corner
+            ctx.drawImage(img, 0, sh - cornerH, cornerW, cornerH, 0, cellH + gap, cellW, cellH);
+            // Bottom-right corner
+            ctx.drawImage(img, sw - cornerW, sh - cornerH, cornerW, cornerH, cellW + gap, cellH + gap, cellW, cellH);
+
+            const dataUrl = out.toDataURL('image/jpeg', 0.92);
+            resolve(dataUrl.split(',')[1]);
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+    });
+}
+
+/**
+ * compressImageForGrading(file)
+ *
+ * Higher-quality compression for grading — preserves fine detail like
+ * corner sharpness, surface scratches, and edge chips.
+ */
+async function compressImageForGrading(file) {
+  const maxDim  = 2000;   // higher than scanning (1400)
+  const quality = 0.92;   // higher than scanning (0.7)
+
+  if (typeof createImageBitmap !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      let { width, height } = bitmap;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) { height = Math.round((height / width) * maxDim); width = maxDim; }
+        else                { width  = Math.round((width / height) * maxDim); height = maxDim; }
+      }
+
+      const oc = new OffscreenCanvas(width, height);
+      oc.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+      bitmap.close();
+
+      const blob   = await oc.convertToBlob({ type: 'image/jpeg', quality });
+      const buffer = await blob.arrayBuffer();
+      const bytes  = new Uint8Array(buffer);
+      let binary   = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    } catch { /* fall through */ }
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round((height / width) * maxDim); width = maxDim; }
+          else                { width  = Math.round((width / height) * maxDim); height = maxDim; }
+        }
+
+        canvas.width  = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 console.log('✅ API module loaded');
