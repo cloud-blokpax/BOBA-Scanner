@@ -160,7 +160,7 @@ function renderCards() {
     if (searchClear) searchClear.style.display = searchQuery ? 'block' : 'none';
 
     // Build filtered array while preserving original indices (needed for card operations)
-    const filteredWithIdx = allCards.reduce((acc, card, idx) => {
+    let filteredWithIdx = allCards.reduce((acc, card, idx) => {
         const q = searchQuery;
         if (!q ||
             String(card.hero       || '').toUpperCase().includes(q) ||
