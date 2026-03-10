@@ -44,4 +44,10 @@ function getApiToken() {
   return appConfig.apiToken || null;
 }
 
+// ── Scan mode ────────────────────────────────────────────────────────────────
+// Centralised scan mode accessor — 'collection' | 'pricecheck' | 'deckbuilder'
+// Still stored on window for backwards compatibility with ui.js, deck-builder.js, etc.
+function getScanMode() { return window.scanMode || 'collection'; }
+function setScanMode(mode) { window.scanMode = mode; }
+
 console.log('✅ State module loaded');

@@ -1,7 +1,8 @@
-// Service Worker — BOBA Scanner v1.0
+// Service Worker — BOBA Scanner v2.0
 // Provides offline support and caches critical assets for instant repeat visits.
+// Version-aware: checks version.json on activate and busts stale caches.
 
-const CACHE_NAME = 'boba-v2';
+const CACHE_NAME = 'boba-v3';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -10,31 +11,16 @@ const PRECACHE_URLS = [
   '/version.json'
 ];
 
-// JS files to precache (core modules only — heavy modules loaded on demand)
-const JS_PRECACHE = [
-  '/js/state.js',
-  '/js/config.js',
-  '/js/database.js',
-  '/js/collections.js',
-  '/js/api.js',
-  '/js/heroes.js',
-  '/js/scanner.js',
-  '/js/ui.js',
-  '/js/ocr.js',
-  '/js/google-auth.js',
-  '/js/app.js'
-];
-
-// Install — precache critical assets
+// Install — precache critical assets, skip waiting to activate immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll([...PRECACHE_URLS, ...JS_PRECACHE]);
+      return cache.addAll(PRECACHE_URLS);
     }).then(() => self.skipWaiting())
   );
 });
 
-// Activate — clean up old caches
+// Activate — clean up ALL old caches (any name that isn't current)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>

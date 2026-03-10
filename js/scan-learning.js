@@ -97,7 +97,7 @@ function getCorrectionStats() {
   return {
     totalCorrections: entries.length,
     totalHits: totalHits,
-    estimatedSavings: `$${(totalHits * 0.002).toFixed(2)}`, // AI cost per call
+    estimatedSavings: `$${(totalHits * (typeof config !== 'undefined' ? config.aiCost : 0.002)).toFixed(2)}`,
     topCorrections: entries
       .sort((a, b) => (b.hits || 0) - (a.hits || 0))
       .slice(0, 10)

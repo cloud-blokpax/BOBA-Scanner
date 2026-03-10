@@ -80,13 +80,17 @@ async function processImage(file) {
   // Using the cropped blob keeps background clutter out of the stored image.
   const displayUrl = URL.createObjectURL(src);
 
+  // Revoke blob URL after 5 minutes to prevent memory leaks over long scanning sessions.
+  // Card imageUrl will be swapped to a Supabase permanent URL on upload success,
+  // at which point the blob URL is no longer referenced.
+  const revokeTimer = setTimeout(() => URL.revokeObjectURL(displayUrl), 5 * 60 * 1000);
   try {
-    // Pass displayUrl as imageUrl — card shows immediately, blob URL lasts for session
     return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64);
-  } finally {
-    // Revoke blob URL after 60s to prevent memory leak over long scanning sessions.
-    // Card imageUrl will be swapped to a Supabase permanent URL on upload success.
-    setTimeout(() => URL.revokeObjectURL(displayUrl), 60000);
+  } catch (err) {
+    // On failure, revoke immediately — no card was added to reference it
+    clearTimeout(revokeTimer);
+    URL.revokeObjectURL(displayUrl);
+    throw err;
   }
 }
 
@@ -195,9 +199,9 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
         });
       }
 
-      if (typeof trackApiCall === 'function') await trackApiCall('scan', true, 0.01, 1);
+      if (typeof trackApiCall === 'function') await trackApiCall('scan', true, config.aiCost, 1);
     } else {
-      if (typeof trackApiCall === 'function') await trackApiCall('scan', false, 0.01, 1);
+      if (typeof trackApiCall === 'function') await trackApiCall('scan', false, config.aiCost, 1);
       if (typeof addToScanHistory === 'function') {
         addToScanHistory({ hero: heroName || 'Unknown', cardNumber: cardNum || '?', scanType: 'ai', success: false });
       }
@@ -445,6 +449,7 @@ async function callAPI(imageBase64, numberRegionBase64 = null) {
   // Retry with exponential backoff on transient failures (network blips, 5xx)
   const MAX_RETRIES  = 2;
   const RETRY_DELAYS = [1000, 2000]; // ms
+  const CLIENT_TIMEOUT_MS = 25000; // 25s — below Vercel's 30s function limit
   let lastError;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -453,11 +458,22 @@ async function callAPI(imageBase64, numberRegionBase64 = null) {
       await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt - 1]));
     }
     try {
-      const response = await fetch('/api/anthropic', {
-        method:  'POST',
-        headers,
-        body:    JSON.stringify(bodyObj)
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch('/api/anthropic', {
+          method:  'POST',
+          headers,
+          body:    JSON.stringify(bodyObj),
+          signal:  controller.signal
+        });
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === 'AbortError') throw new Error('Request timed out — please try again');
+        throw fetchErr;
+      }
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));

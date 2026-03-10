@@ -501,7 +501,7 @@ window.openCollectionModal = function() {
     _selectedCards.clear();
     _activeFilters.clear();
     _viewCollectionId = 'default';
-    const titleEl = document.getElementById('collectionModalTitle');
+    const titleEl = document.getElementById('collectionModalTitleText');
     if (titleEl) titleEl.textContent = '🎴 My Collection';
     modal.classList.add('active');
     renderCollectionModal();
@@ -516,7 +516,7 @@ window.openPriceCheckCollectionModal = function() {
     _selectedCards.clear();
     _activeFilters.clear();
     _viewCollectionId = 'price_check';
-    const titleEl = document.getElementById('collectionModalTitle');
+    const titleEl = document.getElementById('collectionModalTitleText');
     if (titleEl) titleEl.textContent = '💰 Price Check';
     modal.classList.add('active');
     renderCollectionModal();
@@ -531,7 +531,7 @@ window.openDeckBuildingModal = function() {
     _selectedCards.clear();
     _activeFilters.clear();
     _viewCollectionId = 'deck_building';
-    const titleEl = document.getElementById('collectionModalTitle');
+    const titleEl = document.getElementById('collectionModalTitleText');
     if (titleEl) titleEl.textContent = '🃏 Deck Builder';
     modal.classList.add('active');
     renderCollectionModal();

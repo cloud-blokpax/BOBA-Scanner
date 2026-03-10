@@ -44,18 +44,18 @@ async function loadDatabase() {
   setStatus('db', 'loading');
   try {
     let idb = null;
-    try { idb = await openIDB(); } catch { /* IDB not available, fall through to fetch */ }
+    let remoteVersion = null;
+    try { idb = await openIDB(); } catch (e) { console.warn('IndexedDB unavailable, fetching from network:', e.message); }
 
     if (idb) {
       // Check current remote version
-      let remoteVersion = null;
       try {
         const vRes = await fetch('./version.json', { cache: 'no-store' });
         if (vRes.ok) {
           const vData = await vRes.json();
           remoteVersion = vData.version || vData.timestamp || null;
         }
-      } catch { /* version check failed — skip cache invalidation */ }
+      } catch (e) { console.warn('version.json check failed, skipping cache:', e.message); }
 
       const cachedVersion = await idbGet(idb, 'version');
       const cachedData    = await idbGet(idb, 'data');
@@ -77,13 +77,9 @@ async function loadDatabase() {
     database = await res.json();
 
     if (idb) {
-      // Store in IDB for next visit
+      // Store in IDB for next visit — reuse remoteVersion from the cache check
+      // above instead of fetching version.json a second time.
       try {
-        let remoteVersion = null;
-        try {
-          const vRes = await fetch('./version.json', { cache: 'no-store' });
-          if (vRes.ok) { const v = await vRes.json(); remoteVersion = v.version || v.timestamp || null; }
-        } catch {}
         await idbPut(idb, 'data', database);
         if (remoteVersion) await idbPut(idb, 'version', remoteVersion);
       } catch (e) { console.warn('IDB write failed:', e); }
