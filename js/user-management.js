@@ -301,7 +301,7 @@ function showAdminButton() {
     padding: 8px 16px; font-weight: 600;
     cursor: pointer; font-size: 14px; margin-left: 8px;
   `;
-  btn.addEventListener('click', openAdminDashboard);
+  btn.addEventListener('click', () => window.openAdminDashboard?.());
   container.appendChild(btn);
 }
 

@@ -44,6 +44,7 @@ function lazyWire(globalName, moduleName, fnName) {
 }
 
 // Admin Dashboard
+lazyWire('openAdminDashboard', 'adminDashboard', 'openAdminDashboard');
 lazyWire('loadActivityLog', 'adminDashboard', 'loadActivityLog');
 lazyWire('showAdminTab', 'adminDashboard', 'showAdminTab');
 

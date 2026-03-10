@@ -16,8 +16,12 @@
     // ── Tab switching ────────────────────────────────────────────────────────
 
     function setActiveTab(tab) {
+        // If the tab has no corresponding nav button (e.g. collection/deck moved to More),
+        // keep the More button visually active so the user has a clear "home" tap target.
+        var hasNavButton = !!document.querySelector('.bottom-nav-item[data-tab="' + tab + '"]');
+        var effectiveTab = hasNavButton ? tab : 'more';
         document.querySelectorAll('.bottom-nav-item').forEach(function (btn) {
-            var isActive = btn.dataset.tab === tab;
+            var isActive = btn.dataset.tab === effectiveTab;
             btn.classList.toggle('active', isActive);
             btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
@@ -163,6 +167,13 @@
         }
 
         // ── More sheet item wiring ──────────────────────────────────────────
+        wireMoreItem('moreCollection', function () {
+            switchTab('collection');
+            if (typeof window.sliderSwitch === 'function') window.sliderSwitch('my_collection');
+        });
+        wireMoreItem('moreDeck', function () {
+            switchTab('deck');
+        });
         wireMoreItem('moreSettings', function () {
             if (typeof window.openSettings === 'function') window.openSettings();
         });

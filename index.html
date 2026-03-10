@@ -11,7 +11,8 @@
     <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet">
     <meta name="bingbot" content="noindex, nofollow">
     
-    <!-- iOS Web App -->
+    <!-- iOS / Android Web App -->
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Card Scanner">
@@ -174,59 +175,11 @@
                     </button>
                 </div>
 
-                <!-- Stats strip — collapsed by default, tap to expand -->
+                <!-- Stats strip — compact summary only -->
                 <div class="stats-strip" id="statsStrip">
-                    <button class="stats-strip-toggle" id="statsStripToggle" aria-expanded="false" aria-controls="statsStripExpanded">
-                        <span id="statsStripSummary">0 cards · $0.00</span>
-                        <span class="stats-strip-arrow" aria-hidden="true">▼</span>
-                    </button>
-                    <div class="stats-strip-expanded" id="statsStripExpanded" hidden>
-                        <div class="stats-container-inline">
-                            <div class="stat-card">
-                                <div class="stat-icon cards">🎴</div>
-                                <div class="stat-label">Cards Scanned</div>
-                                <div class="stat-value" id="statCards2">0 / 5</div>
-                                <div class="stat-sublabel" id="statCardsLabel2">Guest limit</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon ai">🤖</div>
-                                <div class="stat-label">AI Lookups</div>
-                                <div class="stat-value" id="statAI2">0 / 1</div>
-                                <div class="stat-sublabel" id="statAILabel2">Remaining</div>
-                            </div>
-                            <div class="stat-card" style="display:none;">
-                                <div class="stat-icon cost">💰</div>
-                                <div class="stat-label">Total Cost</div>
-                                <div class="stat-value" id="statCost2">$0.00</div>
-                                <div class="stat-sublabel">This session</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-icon rate">📊</div>
-                                <div class="stat-label">Free Rate</div>
-                                <div class="stat-value" id="statRate2">0%</div>
-                                <div class="stat-sublabel">OCR success</div>
-                            </div>
-                        </div>
+                    <div class="stats-strip-summary">
+                        <span id="statsStripSummary">0 cards</span>
                     </div>
-                </div>
-
-                <!-- Collection quick-access: My Collection / Price Check / Deck Builder -->
-                <div class="collection-nav-row">
-                    <button class="btn-collection-nav" id="btnOpenCollection" aria-label="View My Collection">
-                        <span class="btn-icon">🎴</span>
-                        <span>Collection</span>
-                        <span class="collection-nav-count" id="collectionNavCount"></span>
-                    </button>
-                    <button class="btn-pricecheck-nav" id="btnOpenPriceCheck" aria-label="View Price Check">
-                        <span class="btn-icon">💰</span>
-                        <span>Price Check</span>
-                        <span class="collection-nav-count" id="priceCheckNavCount"></span>
-                    </button>
-                    <button class="btn-deckbuilder-nav" id="btnOpenDeckBuilderNav" aria-label="View Deck Builder">
-                        <span class="btn-icon">🃏</span>
-                        <span>Deck</span>
-                        <span class="collection-nav-count" id="deckBuilderNavCount"></span>
-                    </button>
                 </div>
             </section>
 
@@ -370,16 +323,6 @@
             <span class="bottom-nav-icon">📷</span>
             <span class="bottom-nav-label">Scan</span>
         </button>
-        <button class="bottom-nav-item" data-tab="collection" aria-label="My Collection">
-            <span class="bottom-nav-icon">🎴</span>
-            <span class="bottom-nav-label">Collection</span>
-            <span class="bottom-nav-badge" id="bottomNavCollectionCount"></span>
-        </button>
-        <button class="bottom-nav-item" data-tab="deck" aria-label="Deck Builder">
-            <span class="bottom-nav-icon">🃏</span>
-            <span class="bottom-nav-label">Deck</span>
-            <span class="bottom-nav-badge" id="bottomNavDeckCount"></span>
-        </button>
         <button class="bottom-nav-item" data-tab="more" aria-label="More options">
             <span class="bottom-nav-icon">···</span>
             <span class="bottom-nav-label">More</span>
@@ -392,6 +335,15 @@
         <div class="more-sheet-handle"></div>
         <div class="more-sheet-title">More</div>
         <div class="more-sheet-body">
+            <div class="more-sheet-section-label">Navigate</div>
+            <button class="more-sheet-item" id="moreCollection">
+                <span class="more-sheet-icon">🎴</span> My Collection
+                <span class="more-sheet-badge" id="moreCollectionCount"></span>
+            </button>
+            <button class="more-sheet-item" id="moreDeck">
+                <span class="more-sheet-icon">🃏</span> Deck Builder
+            </button>
+            <div class="more-sheet-divider"></div>
             <button class="more-sheet-item" id="moreSettings">
                 <span class="more-sheet-icon">⚙️</span> Settings
             </button>
