@@ -208,14 +208,33 @@ export default async function handler(req, res) {
 
     // Retry up to 3 times on 529 (API overloaded) with short back-off.
     // Vercel Pro functions have a 60 s limit; total wait here is ≤ 6 s.
+    // AbortController enforces a 20 s per-request timeout to prevent hanging.
     let response;
     const OVERLOAD_RETRIES = [1000, 2000, 3000];
+    const REQUEST_TIMEOUT_MS = 20000;
     for (let attempt = 0; attempt <= OVERLOAD_RETRIES.length; attempt++) {
-      response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: anthropicHeaders,
-        body: requestBody
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: anthropicHeaders,
+          body: requestBody,
+          signal: controller.signal
+        });
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === 'AbortError') {
+          console.error(`Anthropic API timed out after ${REQUEST_TIMEOUT_MS}ms (attempt ${attempt + 1})`);
+          if (attempt === OVERLOAD_RETRIES.length) {
+            return res.status(504).json({ error: 'AI service timed out. Please try again.' });
+          }
+          await new Promise(r => setTimeout(r, OVERLOAD_RETRIES[attempt]));
+          continue;
+        }
+        throw fetchErr;
+      }
+      clearTimeout(timeoutId);
       if (response.status !== 529 || attempt === OVERLOAD_RETRIES.length) break;
       await new Promise(r => setTimeout(r, OVERLOAD_RETRIES[attempt]));
     }

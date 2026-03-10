@@ -137,7 +137,7 @@ async function processBatchEntry(entry) {
       try {
         const uploaded = await uploadCardImage(imageBase64, entry.file.name);
         if (uploaded) imageUrl = uploaded;
-      } catch {}
+      } catch (e) { console.warn('Batch image upload failed:', e.message); }
     }
     entry.imageUrl = imageUrl;
 
@@ -153,7 +153,7 @@ async function processBatchEntry(entry) {
     match = findCard(extracted.cardNumber, extracted.hero);
     if (!match) throw new Error(`No match found for "${extracted.cardNumber}"`);
 
-    if (typeof trackApiCall === 'function') await trackApiCall('scan', true, 0.01, 1);
+    if (typeof trackApiCall === 'function') await trackApiCall('scan', true, config.aiCost, 1);
 
     entry.match      = match;
     entry.scanType   = 'ai';
