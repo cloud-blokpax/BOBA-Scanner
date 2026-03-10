@@ -2,6 +2,9 @@
 // Analyzes the user's collection, finds sets they're close to completing,
 // and generates prioritized shopping lists with eBay price estimates.
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // ── Build set completion analysis ────────────────────────────────────────────
 async function analyzeSetCompletion() {
   if (!isFeatureEnabled('set_completion')) {

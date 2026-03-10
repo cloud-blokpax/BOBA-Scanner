@@ -52,6 +52,7 @@ lazyWire('showAdminTab', 'adminDashboard', 'showAdminTab');
 // Grader
 lazyWire('triggerGradeCard', 'grader', 'triggerGradeCard');
 lazyWire('triggerGradeCardWithPicker', 'grader', 'triggerGradeCardWithPicker');
+lazyWire('gradeCardFromDetail', 'grader', 'gradeCardFromDetail');
 
 // Set Completion
 lazyWire('analyzeSetCompletion', 'setCompletion', 'analyzeSetCompletion');
@@ -59,6 +60,7 @@ lazyWire('analyzeSetCompletion', 'setCompletion', 'analyzeSetCompletion');
 // eBay Lister
 lazyWire('triggerEbayLister', 'ebayLister', 'triggerEbayLister');
 lazyWire('triggerEbayListerWithPicker', 'ebayLister', 'triggerEbayListerWithPicker');
+lazyWire('ebayListFromDetail', 'ebayLister', 'ebayListFromDetail');
 
 // Tournaments
 lazyWire('showCreateTournamentModal', 'tournaments', 'showCreateTournamentModal');

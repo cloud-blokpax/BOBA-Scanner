@@ -1,6 +1,9 @@
 // ============================================================
 // js/seller-monitor.js — eBay Seller Monitoring Phase 1
 //
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // Polls your eBay seller listings via /api/ebay-browse and
 // matches them against your collection cards.
 //

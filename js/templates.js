@@ -5,6 +5,9 @@
 // Admin templates: read from Supabase admin_templates table.
 // ============================================================
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 const TEMPLATES_LS_KEY = 'exportTemplates';
 
 // ── User Templates ────────────────────────────────────────────────────────────

@@ -5,6 +5,9 @@
 // Nothing written to collection until "Add to Collection" pressed.
 // ============================================================
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 const BATCH_CAP = 10;
 let _pendingResults  = [];
 let _processingCount = 0;

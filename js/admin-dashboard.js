@@ -10,6 +10,9 @@
 //   - calculateTodayStats() queries run in parallel (Promise.all)
 // ============================================================
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 async function openAdminDashboard() {
   if (!isAdmin()) {
     showToast('Access denied', '❌');

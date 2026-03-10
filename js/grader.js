@@ -1,6 +1,9 @@
 // js/grader.js — AI Condition Grader
 // Estimates PSA/BGS card grade using Claude Vision via /api/grade
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // ── Grade a card from a base64 image ─────────────────────────────────────────
 async function gradeCard(imageData, cornerRegionData = null) {
   const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)

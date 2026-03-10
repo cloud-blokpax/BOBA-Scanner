@@ -10,6 +10,8 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+// Expose globally so lazy-loaded modules (admin-dashboard, etc.) can use it
+window.escapeHtml = escapeHtml;
 
 
 function setStatus(type, state) {

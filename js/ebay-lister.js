@@ -1,6 +1,9 @@
 // js/ebay-lister.js — One-Tap eBay Lister
 // AI generates an optimized eBay listing then opens a pre-filled draft.
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // ── Generate listing via Claude ───────────────────────────────────────────────
 async function generateEbayListing(card) {
   const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
