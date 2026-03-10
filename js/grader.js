@@ -116,53 +116,6 @@ function renderGradeRow(icon, label, value) {
     </div>`;
 }
 
-// ── Grade button trigger ──────────────────────────────────────────────────────
-// Called from the scan result area after a successful scan
-async function triggerGradeCard() {
-  if (!isFeatureEnabled('condition_grader')) {
-    showToast('Condition Grader requires membership', '🔒');
-    return;
-  }
-
-  // Get the most recent scan's image from the scan result area
-  const previewImg = document.getElementById('cardPreview') || document.getElementById('scanPreviewImg');
-  if (!previewImg || !previewImg.src || previewImg.src.startsWith('data:image/gif')) {
-    showToast('No card image to grade — scan a card first', '⚠️');
-    return;
-  }
-
-  const cardName = document.getElementById('resultHero')?.textContent
-    || document.getElementById('heroName')?.textContent
-    || 'Card';
-
-  showLoading(true, 'Analyzing card condition...');
-
-  try {
-    // Convert img src to base64 if needed (already base64 from scan, or fetch for blob/http)
-    let imageData = previewImg.src;
-    if (imageData.startsWith('data:image')) {
-      imageData = imageData.split(',')[1]; // strip data:image/jpeg;base64,
-    } else {
-      // Fetch and convert external/blob URL
-      const blob = await fetch(previewImg.src).then(r => r.blob());
-      imageData = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    const result = await gradeCard(imageData);
-    showLoading(false);
-    showGradeModal(result, cardName);
-
-  } catch (err) {
-    showLoading(false);
-    console.error('Grade error:', err);
-    showToast('Grading failed — try again', '❌');
-  }
-}
-
 // ── Prepare high-res image + corner grid for grading ──────────────────────────
 async function prepareGradingImages(url) {
   const blob = await fetch(url).then(r => {
