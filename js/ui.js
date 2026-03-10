@@ -966,6 +966,12 @@ function wireUpEvents() {
         else if (typeof window.openBatchScanner === 'function') window.openBatchScanner();
     });
 
+    const btnBinderScan = document.getElementById('btnBinderScan');
+    if (btnBinderScan) btnBinderScan.addEventListener('click', function() {
+        if (typeof openBinderScanner === 'function') openBinderScanner();
+        else if (typeof window.openBinderScanner === 'function') window.openBinderScanner();
+    });
+
     const btnDeckBuilder = document.getElementById('btnDeckBuilder');
     if (btnDeckBuilder) {
         btnDeckBuilder.addEventListener('click', function() {

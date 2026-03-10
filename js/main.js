@@ -16,6 +16,7 @@ const lazyModules = {
   tournaments:    () => import('./tournaments.js'),
   deckBuilder:    () => import('./deck-builder.js'),
   batchScanner:   () => import('./batch-scanner.js'),
+  binderScanner:  () => import('./binder-scanner.js'),
   sellerMonitor:  () => import('./seller-monitor.js'),
   templates:      () => import('./templates.js'),
 };
@@ -75,6 +76,9 @@ lazyWire('getDeckCards', 'deckBuilder', 'getDeckCards');
 
 // Batch Scanner
 lazyWire('openBatchScanner', 'batchScanner', 'openBatchScanner');
+
+// Binder Scanner
+lazyWire('openBinderScanner', 'binderScanner', 'openBinderScanner');
 
 // Seller Monitor
 lazyWire('setupSellerMonitor', 'sellerMonitor', 'setupSellerMonitor');
