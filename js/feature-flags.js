@@ -375,4 +375,8 @@ function toggleCardMoreMenu(index, btn) {
   setTimeout(() => document.addEventListener('click', closeMenu, true), 0);
 }
 
+// ── Expose to lazy-loaded modules (they run in separate module scope) ─────────
+window.isFeatureEnabled    = isFeatureEnabled;
+window.showCardPickerModal = showCardPickerModal;
+
 console.log('✅ Feature flags module loaded');
