@@ -1,0 +1,8 @@
+/* ============================================================
+   THEMES — Theme override classes, theme-specific custom properties
+   ============================================================ */
+
+/* No dedicated theme override classes found in the original styles.css.
+   Theme engine injects rules at runtime via <style id="bobaThemeStyle">.
+   This file serves as the designated location for any future
+   static theme overrides or theme-specific custom property sets. */

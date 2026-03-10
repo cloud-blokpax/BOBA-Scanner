@@ -1,4 +1,4 @@
-// js/main.js — Vite entry point
+// src/main.js — Vite entry point
 // Loads core scripts (concatenated via virtual module) and lazy-loads heavy features.
 
 // ── Core scripts (bundled together, share global scope) ─────────────────────
@@ -9,16 +9,16 @@ import 'virtual:classic-scripts';
 // Each module is self-contained with its own window.* assignments.
 
 const lazyModules = {
-  adminDashboard: () => import('./admin-dashboard.js'),
-  grader:         () => import('./grader.js'),
-  setCompletion:  () => import('./set-completion.js'),
-  ebayLister:     () => import('./ebay-lister.js'),
-  tournaments:    () => import('./tournaments.js'),
-  deckBuilder:    () => import('./deck-builder.js'),
-  batchScanner:   () => import('./batch-scanner.js'),
-  binderScanner:  () => import('./binder-scanner.js'),
-  sellerMonitor:  () => import('./seller-monitor.js'),
-  templates:      () => import('./templates.js'),
+  adminDashboard: () => import('./features/admin/admin-dashboard.js'),
+  grader:         () => import('./features/grader/grader.js'),
+  setCompletion:  () => import('./features/set-completion/set-completion.js'),
+  ebayLister:     () => import('./features/ebay/ebay-lister.js'),
+  tournaments:    () => import('./features/tournaments/tournaments.js'),
+  deckBuilder:    () => import('./features/deck-builder/deck-builder.js'),
+  batchScanner:   () => import('./core/scanner/batch-scanner.js'),
+  binderScanner:  () => import('./core/scanner/binder-scanner.js'),
+  sellerMonitor:  () => import('./features/ebay/seller-monitor.js'),
+  templates:      () => import('./features/export/templates.js'),
 };
 
 // ── Lazy-load wiring ────────────────────────────────────────────────────────
