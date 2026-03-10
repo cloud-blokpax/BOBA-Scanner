@@ -29,6 +29,7 @@ async function loadAppConfig() {
     const res = await fetch('/api/config');
     if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
     appConfig = await res.json();
+    window.appConfig = appConfig; // expose to lazy-loaded modules
     ready.config = true;
     console.log('✅ App config loaded');
   } catch (err) {
@@ -43,6 +44,7 @@ async function loadAppConfig() {
 function getApiToken() {
   return appConfig.apiToken || null;
 }
+window.getApiToken = getApiToken;
 
 // ── Scan mode ────────────────────────────────────────────────────────────────
 // Centralised scan mode accessor — 'collection' | 'pricecheck' | 'deckbuilder'

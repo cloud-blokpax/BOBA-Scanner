@@ -20,6 +20,7 @@ const DEFAULT_LIMITS = {
   authenticated: { maxCards: 25, maxApiCalls: 50  },
   member:        { maxCards: 250, maxApiCalls: 250 }
 };
+window.DEFAULT_LIMITS = DEFAULT_LIMITS;
 
 // ── System-settings loader ─────────────────────────────────────────────────
 // Fetches key/value pairs from the `system_settings` Supabase table and

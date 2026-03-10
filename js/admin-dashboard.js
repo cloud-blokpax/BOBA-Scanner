@@ -10,8 +10,9 @@
 //   - calculateTodayStats() queries run in parallel (Promise.all)
 // ============================================================
 
-// Resolve escapeHtml from window (defined in ui.js core bundle)
+// Resolve globals from window (defined in core bundle, not accessible in lazy modules)
 const escapeHtml = (...args) => window.escapeHtml(...args);
+const DEFAULT_LIMITS = window.DEFAULT_LIMITS;
 
 async function openAdminDashboard() {
   if (!isAdmin()) {
