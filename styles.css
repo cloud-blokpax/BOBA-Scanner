@@ -2348,6 +2348,19 @@ a.listing-badge:hover { opacity: .85; }
     line-height: 1.5;
 }
 
+.more-sheet-badge {
+    margin-left: auto;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+}
+.more-sheet-badge:empty { display: none; }
+
 /* ── Stats Strip ───────────────────────────────────────────────────────── */
 .stats-strip {
     margin: 14px 0 4px;
@@ -2357,46 +2370,16 @@ a.listing-badge:hover { opacity: .85; }
     overflow: hidden;
 }
 
-.stats-strip-toggle {
-    width: 100%;
+.stats-strip-summary {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     padding: 11px 16px;
-    border: none;
-    background: transparent;
     font-family: var(--font-sans);
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
-    cursor: pointer;
     letter-spacing: 0.02em;
-    transition: color var(--transition-fast);
-}
-
-.stats-strip-toggle:hover {
-    color: var(--text-primary);
-}
-
-.stats-strip-arrow {
-    font-size: 10px;
-    display: inline-block;
-    transition: transform var(--transition-fast);
-}
-
-.stats-strip-toggle[aria-expanded="true"] .stats-strip-arrow {
-    transform: rotate(180deg);
-}
-
-.stats-strip-expanded {
-    padding: 0 12px 12px;
-}
-
-.stats-container-inline {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
 }
 
 /* ── Tab Visibility System ─────────────────────────────────────────────── */
@@ -2410,15 +2393,13 @@ a.listing-badge:hover { opacity: .85; }
 body.tab-scan #collectionSliderWrap { display: none !important; }
 body.tab-scan #emptyState           { display: none !important; }
 body.tab-scan #cardSearchBar        { display: none !important; }
+body.tab-scan #cardControlsBar      { display: none !important; }
 body.tab-scan #cardsGrid            { display: none !important; }
 body.tab-scan #fabContainer         { display: none !important; }
 
 /* Collection tab: hide scan area */
 body.tab-collection #uploadArea  { display: none !important; }
 body.tab-collection #statsStrip  { display: none !important; }
-
-/* Scan tab: also hide the quick-nav row context — it shows as the bottom strip */
-/* No hiding needed — collection-nav-row is visible on scan tab by design */
 
 /* Header: hide old settings + sign-out buttons (kept in DOM for JS compatibility) */
 .btn-header-settings { display: none !important; }

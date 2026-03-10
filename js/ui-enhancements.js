@@ -60,15 +60,15 @@ function setupFloatingActionButton() {
 // ========================================
 
 function setupSmoothScrolling() {
-    // Smooth scroll to top when clicking logo
+    // Navigate to scan mode when clicking logo
     const logo = document.querySelector('.app-logo');
     if (logo) {
         logo.addEventListener('click', (e) => {
             e.preventDefault();
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
+            if (typeof window.bottomNavSwitchTab === 'function') {
+                window.bottomNavSwitchTab('scan');
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
     

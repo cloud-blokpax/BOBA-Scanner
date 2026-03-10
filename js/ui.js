@@ -80,20 +80,6 @@ function updateStats() {
     if (statCardsLabel) statCardsLabel.textContent  = sublabel;
     if (statAILabel)    statAILabel.textContent     = `${aiLimit - aiUsed} remaining`;
 
-    // Mirror values to stats strip duplicate elements
-    const s2Cards = document.getElementById('statCards2');
-    const s2AI    = document.getElementById('statAI2');
-    const s2Cost  = document.getElementById('statCost2');
-    const s2Rate  = document.getElementById('statRate2');
-    const s2CardsLabel = document.getElementById('statCardsLabel2');
-    const s2AILabel    = document.getElementById('statAILabel2');
-    if (s2Cards)      s2Cards.textContent      = `${stats.scanned} / ${cardLimit}`;
-    if (s2AI)         s2AI.textContent          = `${aiUsed} / ${aiLimit}`;
-    if (s2Cost)       s2Cost.textContent        = `$${(stats.cost || 0).toFixed(2)}`;
-    if (s2Rate)       s2Rate.textContent        = `${rate}%`;
-    if (s2CardsLabel) s2CardsLabel.textContent  = sublabel;
-    if (s2AILabel)    s2AILabel.textContent     = `${aiLimit - aiUsed} remaining`;
-
     // Update stats strip summary line
     const count = stats.scanned || 0;
     const summary = document.getElementById('statsStripSummary');
@@ -819,11 +805,9 @@ window.updateAuthUI = function(user) {
 };
 
 window.toggleUserMenu = function() {
-    const dropdown = document.getElementById('userDropdown');
-    if (dropdown) {
-        dropdown.classList.toggle('active');
-    } else {
-        showToast('User menu', '👤');
+    // Open the More sheet which contains Settings, Sign Out, and all tools
+    if (typeof window.openMoreSheet === 'function') {
+        window.openMoreSheet();
     }
 };
 
@@ -1039,22 +1023,7 @@ function wireUpEvents() {
         if (typeof forceSync === 'function') forceSync();
     });
 
-    // Stats strip toggle
-    const statsStripToggle = document.getElementById('statsStripToggle');
-    if (statsStripToggle) {
-        statsStripToggle.addEventListener('click', function() {
-            const expanded = document.getElementById('statsStripExpanded');
-            const isOpen = this.getAttribute('aria-expanded') === 'true';
-            this.setAttribute('aria-expanded', String(!isOpen));
-            if (expanded) {
-                if (isOpen) {
-                    expanded.setAttribute('hidden', '');
-                } else {
-                    expanded.removeAttribute('hidden');
-                }
-            }
-        });
-    }
+    // Stats strip toggle removed — strip is now a simple static summary
 
     // User avatar menu toggle
     const userAvatar = document.getElementById('userAvatar');
@@ -1150,11 +1119,9 @@ function updateCollectionNavCounts() {
         if (pcEl)   pcEl.textContent   = pcCount   > 0 ? ` (${pcCount})`   : '';
         if (dbEl)   dbEl.textContent   = dbCount   > 0 ? ` (${dbCount})`   : '';
 
-        // Update bottom nav badges
-        const bottomCollBadge = document.getElementById('bottomNavCollectionCount');
-        const bottomDeckBadge = document.getElementById('bottomNavDeckCount');
-        if (bottomCollBadge) bottomCollBadge.textContent = mainCount > 0 ? String(mainCount) : '';
-        if (bottomDeckBadge) bottomDeckBadge.textContent = dbCount   > 0 ? String(dbCount)   : '';
+        // Update More sheet collection badge
+        const moreCollBadge = document.getElementById('moreCollectionCount');
+        if (moreCollBadge) moreCollBadge.textContent = mainCount > 0 ? String(mainCount) : '';
 
         // Also refresh the slider counts
         if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
