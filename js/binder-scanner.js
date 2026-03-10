@@ -5,6 +5,9 @@
 // positions before processing. OCR-first for cost savings.
 // ============================================================
 
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 const BINDER_LAYOUTS = [
   { label: '3 × 3', rows: 3, cols: 3, icon: '▦' },
   { label: '2 × 2', rows: 2, cols: 2, icon: '▤' },

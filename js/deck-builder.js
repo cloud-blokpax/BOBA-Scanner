@@ -1,6 +1,9 @@
 // ============================================================
 // js/deck-builder.js — Deck Builder v2.0
 //
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // Workflow:
 //  1. User opens Deck Builder → prompted for deck name + composition
 //  2. Name becomes the tag applied to all cards in this deck

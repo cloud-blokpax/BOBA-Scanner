@@ -5,6 +5,9 @@
 // Non-members can use a tournament code to access the deck builder
 // with predefined parameters (name, heroes, plays, bonus counts).
 //
+// Resolve escapeHtml from window (defined in ui.js core bundle)
+const escapeHtml = (...args) => window.escapeHtml(...args);
+
 // ── Required Supabase Setup ──────────────────────────────────
 //
 // 1. Add column to users table:
