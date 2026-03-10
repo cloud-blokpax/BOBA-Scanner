@@ -279,8 +279,8 @@ function renderCards() {
                 </select>
                 <div style="display:flex;gap:4px;align-items:center;">
                   <div class="card-view-modes" role="group" aria-label="View mode">
-                    <button class="card-view-btn${prefs.view==='large'?'  active':''}" data-view="large"  title="Large thumbnails">⊞</button>
-                    <button class="card-view-btn${prefs.view==='small'?'  active':''}" data-view="small"  title="Small thumbnails">⊟</button>
+                    <button class="card-view-btn${prefs.view==='large'?'  active':''}" data-view="large"  title="Small thumbnails">⊞</button>
+                    <button class="card-view-btn${prefs.view==='small'?'  active':''}" data-view="small"  title="Large thumbnails">⊟</button>
                     <button class="card-view-btn${prefs.view==='list' ?'  active':''}" data-view="list"   title="List view">≡</button>
                   </div>
                   <button class="card-view-btn${_bs.active?' active':''}" id="bulkSelectToggleBtn" title="Select multiple cards">☑</button>
@@ -410,7 +410,7 @@ function renderCards() {
         ].map(opt => `<option value="${opt}" ${card.condition === opt ? 'selected' : ''}>${opt || 'Condition...'}</option>`).join('');
 
         return `
-        <div class="card-item" id="card_item_${idx}">
+        <div class="card-item" id="card_item_${idx}" data-open-card="${idx}">
             <div class="card-image-container" data-open-card="${idx}" style="cursor:pointer;" title="Tap to view details">
                 <img class="card-image"
                      src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
@@ -868,11 +868,32 @@ window.announceToScreenReader = function(message) {
 function wireUpEvents() {
     const fi = () => document.getElementById('fileInput');
 
+    // "Upload or Capture" — toggles the scan options panel
+    const btnUploadCapture = document.getElementById('btnUploadCapture');
+    const scanOptionsPanel = document.getElementById('scanOptionsPanel');
+    if (btnUploadCapture && scanOptionsPanel) {
+        btnUploadCapture.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isOpen = scanOptionsPanel.style.display !== 'none';
+            scanOptionsPanel.style.display = isOpen ? 'none' : '';
+        });
+        // Close panel when clicking outside
+        document.addEventListener('click', function(e) {
+            if (scanOptionsPanel.style.display !== 'none'
+                && !scanOptionsPanel.contains(e.target)
+                && e.target !== btnUploadCapture
+                && !btnUploadCapture.contains(e.target)) {
+                scanOptionsPanel.style.display = 'none';
+            }
+        });
+    }
+
     // "Upload to Collection" — sets mode to collection then triggers file picker
     const btnChooseImage = document.getElementById('btnChooseImage');
     if (btnChooseImage) btnChooseImage.addEventListener('click', function(e) {
         e.stopPropagation();
         window.scanMode = 'collection';
+        if (scanOptionsPanel) scanOptionsPanel.style.display = 'none';
         const input = fi();
         if (input) { input.removeAttribute('capture'); input.click(); }
     });
@@ -883,8 +904,18 @@ function wireUpEvents() {
         e.stopPropagation();
         window.scanMode = 'pricecheck';
         if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
+        if (scanOptionsPanel) scanOptionsPanel.style.display = 'none';
         const input = fi();
         if (input) { input.removeAttribute('capture'); input.click(); }
+    });
+
+    // "View Collection" — switches to Collection tab
+    const btnViewCollection = document.getElementById('btnViewCollection');
+    if (btnViewCollection) btnViewCollection.addEventListener('click', function() {
+        if (typeof window.bottomNavSwitchTab === 'function') {
+            window.bottomNavSwitchTab('collection');
+            if (typeof window.sliderSwitch === 'function') window.sliderSwitch('my_collection');
+        }
     });
 
     // Settings — now wired from both header button and legacy btnSettings if present
@@ -956,12 +987,14 @@ function wireUpEvents() {
     // Tool buttons — wired here (not inline onclick) to survive SES lockdown from browser extensions
     const btnBatchScan = document.getElementById('btnBatchScan');
     if (btnBatchScan) btnBatchScan.addEventListener('click', function() {
+        if (scanOptionsPanel) scanOptionsPanel.style.display = 'none';
         if (typeof openBatchScanner === 'function') openBatchScanner();
         else if (typeof window.openBatchScanner === 'function') window.openBatchScanner();
     });
 
     const btnBinderScan = document.getElementById('btnBinderScan');
     if (btnBinderScan) btnBinderScan.addEventListener('click', function() {
+        if (scanOptionsPanel) scanOptionsPanel.style.display = 'none';
         if (typeof openBinderScanner === 'function') openBinderScanner();
         else if (typeof window.openBinderScanner === 'function') window.openBinderScanner();
     });
