@@ -581,4 +581,6 @@ function closeProfileModal() {
   document.getElementById('profileModal')?.remove();
 }
 
+window.isAdmin = isAdmin;
+
 console.log('✅ User management module loaded');

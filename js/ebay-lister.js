@@ -211,5 +211,6 @@ async function triggerEbayLister(card) {
 
 window.triggerEbayLister = triggerEbayLister;
 window.triggerEbayListerWithPicker = triggerEbayListerWithPicker;
+window.ebayListFromDetail = ebayListFromDetail;
 
 console.log('✅ eBay lister module loaded');
