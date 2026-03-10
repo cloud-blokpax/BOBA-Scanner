@@ -226,59 +226,59 @@ END $$;
 
 -- ── users ──
 -- Users can read/update their own row; admins can read/update all.
-CREATE POLICY users_select_own   ON users FOR SELECT USING (auth.uid() = id OR (SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY users_select_own   ON users FOR SELECT USING (auth.uid()::uuid = id OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 CREATE POLICY users_insert_self  ON users FOR INSERT WITH CHECK (true);  -- signup
-CREATE POLICY users_update_own   ON users FOR UPDATE USING (auth.uid() = id OR (SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY users_update_own   ON users FOR UPDATE USING (auth.uid()::uuid = id OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── system_settings ──
 -- Anyone can read; only admins can write.
 CREATE POLICY settings_select    ON system_settings FOR SELECT USING (true);
-CREATE POLICY settings_upsert    ON system_settings FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY settings_upsert    ON system_settings FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── api_call_logs ──
 -- Users can insert their own logs; admins can read all.
-CREATE POLICY logs_insert_own    ON api_call_logs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY logs_select_admin  ON api_call_logs FOR SELECT USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY logs_insert_own    ON api_call_logs FOR INSERT WITH CHECK (auth.uid()::uuid = user_id);
+CREATE POLICY logs_select_admin  ON api_call_logs FOR SELECT USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── feature_flags ──
 -- Anyone can read; only admins can modify.
 CREATE POLICY flags_select       ON feature_flags FOR SELECT USING (true);
-CREATE POLICY flags_modify_admin ON feature_flags FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY flags_modify_admin ON feature_flags FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── user_feature_overrides ──
 -- Users can read their own overrides; admins can manage all.
-CREATE POLICY overrides_select_own   ON user_feature_overrides FOR SELECT USING (auth.uid() = user_id OR (SELECT is_admin FROM users WHERE id = auth.uid()));
-CREATE POLICY overrides_modify_admin ON user_feature_overrides FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY overrides_select_own   ON user_feature_overrides FOR SELECT USING (auth.uid()::uuid = user_id OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
+CREATE POLICY overrides_modify_admin ON user_feature_overrides FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── themes ──
 -- Anyone can read public themes; admins can manage all.
-CREATE POLICY themes_select_public ON themes FOR SELECT USING (is_public = true OR (SELECT is_admin FROM users WHERE id = auth.uid()));
-CREATE POLICY themes_modify_admin  ON themes FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY themes_select_public ON themes FOR SELECT USING (is_public = true OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
+CREATE POLICY themes_modify_admin  ON themes FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── collections ──
 -- Users can only access their own collection row.
-CREATE POLICY collections_own ON collections FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY collections_own ON collections FOR ALL USING (auth.uid()::uuid = user_id);
 
 -- ── tournaments ──
 -- Anyone can read active tournaments (for code validation); admins can manage all.
-CREATE POLICY tournaments_select   ON tournaments FOR SELECT USING (is_active = true OR (SELECT is_admin FROM users WHERE id = auth.uid()));
-CREATE POLICY tournaments_insert   ON tournaments FOR INSERT WITH CHECK (auth.uid() = creator_id);
-CREATE POLICY tournaments_update   ON tournaments FOR UPDATE USING (auth.uid() = creator_id OR (SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY tournaments_select   ON tournaments FOR SELECT USING (is_active = true OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
+CREATE POLICY tournaments_insert   ON tournaments FOR INSERT WITH CHECK (auth.uid()::uuid = creator_id);
+CREATE POLICY tournaments_update   ON tournaments FOR UPDATE USING (auth.uid()::uuid = creator_id OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── admin_templates ──
 -- Anyone can read; admins can create/modify.
 CREATE POLICY templates_select       ON admin_templates FOR SELECT USING (true);
-CREATE POLICY templates_modify_admin ON admin_templates FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY templates_modify_admin ON admin_templates FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── user_admin_template_assignments ──
 -- Users can see their own assignments; admins can manage all.
-CREATE POLICY assignments_select ON user_admin_template_assignments FOR SELECT USING (auth.uid() = user_id OR (SELECT is_admin FROM users WHERE id = auth.uid()));
-CREATE POLICY assignments_modify ON user_admin_template_assignments FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY assignments_select ON user_admin_template_assignments FOR SELECT USING (auth.uid()::uuid = user_id OR (SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
+CREATE POLICY assignments_modify ON user_admin_template_assignments FOR ALL    USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── system_stats ──
 -- Only admins can read/write.
-CREATE POLICY stats_admin ON system_stats FOR ALL USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY stats_admin ON system_stats FOR ALL USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
 
 -- ── admin_actions ──
 -- Only admins can read/write.
-CREATE POLICY actions_admin ON admin_actions FOR ALL USING ((SELECT is_admin FROM users WHERE id = auth.uid()));
+CREATE POLICY actions_admin ON admin_actions FOR ALL USING ((SELECT is_admin FROM users WHERE id = auth.uid()::uuid));
