@@ -77,9 +77,34 @@ async function cropToCard(file) {
             out.height = outH;
             out.getContext('2d').drawImage(src, cx, cy, cw, ch, 0, 0, outW, outH);
 
+            // ── Compute centering from bounding-box geometry ──────────
+            // The card's position within the original photo encodes its
+            // print centering.  Margins are measured in source-image pixels.
+            const leftMargin   = x;
+            const rightMargin  = srcW - (x + w);
+            const topMargin    = y;
+            const bottomMargin = srcH - (y + h);
+
+            let centering = null;
+            const hTotal = leftMargin + rightMargin;
+            const vTotal = topMargin  + bottomMargin;
+            // Only compute if there is meaningful border on both axes
+            // (at least 2 % of the dimension — otherwise the card fills the frame)
+            if (hTotal > srcW * 0.02 && vTotal > srcH * 0.02) {
+                const lPct = Math.round((leftMargin / hTotal) * 100);
+                const tPct = Math.round((topMargin  / vTotal) * 100);
+                centering = {
+                    lr: `${lPct}/${100 - lPct}`,
+                    tb: `${tPct}/${100 - tPct}`
+                };
+            }
+
+            // Card bounds metadata for downstream consumers (corner extraction)
+            const cardBounds = { padX, padY };
+
             out.toBlob(blob => {
                 if (!blob) { resolve(null); return; }
-                resolve({ blob, canvas: out });
+                resolve({ blob, canvas: out, centering, cardBounds });
             }, 'image/jpeg', 0.92);
         };
         img.onerror = () => resolve(null);
@@ -287,12 +312,15 @@ async function cropCardNumberRegion(file) {
 }
 
 /**
- * cropGradingRegions(file)
+ * cropGradingRegions(file, cardBounds)
  *
  * Extracts all 4 corners of a card image into a 2×2 grid for the AI
  * grader to assess corner sharpness precisely. Returns base64 string or null.
+ *
+ * When cardBounds is provided, the extraction offsets inward by the padding
+ * amount so the grid shows actual card corners instead of background.
  */
-async function cropGradingRegions(file) {
+async function cropGradingRegions(file, cardBounds) {
     return new Promise(resolve => {
         const img = new Image();
         const url = URL.createObjectURL(file);
@@ -301,9 +329,22 @@ async function cropGradingRegions(file) {
             const sw = img.naturalWidth  || img.width;
             const sh = img.naturalHeight || img.height;
 
-            // Each corner region: 22% × 22% of the card
-            const cornerW = Math.floor(sw * 0.22);
-            const cornerH = Math.floor(sh * 0.22);
+            // Compute padding offset — the stored image is card + padding.
+            // Padding fraction per side = CROP_PAD_RATIO / (1 + 2*CROP_PAD_RATIO)
+            let padPxX = 0, padPxY = 0;
+            if (cardBounds) {
+                const padFrac = CROP_PAD_RATIO / (1 + 2 * CROP_PAD_RATIO);
+                padPxX = Math.round(sw * padFrac);
+                padPxY = Math.round(sh * padFrac);
+            }
+
+            // Card area within the image (excluding padding)
+            const cardW = sw - 2 * padPxX;
+            const cardH = sh - 2 * padPxY;
+
+            // Each corner region: 22% × 22% of the card area
+            const cornerW = Math.floor(cardW * 0.22);
+            const cornerH = Math.floor(cardH * 0.22);
 
             // Output: 2×2 grid, each cell upscaled 1.5×
             const SCALE = 1.5;
@@ -318,14 +359,14 @@ async function cropGradingRegions(file) {
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, out.width, out.height);
 
-            // Top-left corner
-            ctx.drawImage(img, 0, 0, cornerW, cornerH, 0, 0, cellW, cellH);
+            // Top-left corner (offset by padding)
+            ctx.drawImage(img, padPxX, padPxY, cornerW, cornerH, 0, 0, cellW, cellH);
             // Top-right corner
-            ctx.drawImage(img, sw - cornerW, 0, cornerW, cornerH, cellW + gap, 0, cellW, cellH);
+            ctx.drawImage(img, sw - padPxX - cornerW, padPxY, cornerW, cornerH, cellW + gap, 0, cellW, cellH);
             // Bottom-left corner
-            ctx.drawImage(img, 0, sh - cornerH, cornerW, cornerH, 0, cellH + gap, cellW, cellH);
+            ctx.drawImage(img, padPxX, sh - padPxY - cornerH, cornerW, cornerH, 0, cellH + gap, cellW, cellH);
             // Bottom-right corner
-            ctx.drawImage(img, sw - cornerW, sh - cornerH, cornerW, cornerH, cellW + gap, cellH + gap, cellW, cellH);
+            ctx.drawImage(img, sw - padPxX - cornerW, sh - padPxY - cornerH, cornerW, cornerH, cellW + gap, cellH + gap, cellW, cellH);
 
             const dataUrl = out.toDataURL('image/jpeg', 0.92);
             resolve(dataUrl.split(',')[1]);
