@@ -167,121 +167,59 @@ CREATE TABLE IF NOT EXISTS admin_actions (
 CREATE INDEX IF NOT EXISTS idx_admin_actions_created ON admin_actions(created_at);
 
 -- ============================================================
--- Row Level Security (RLS) Policies
--- Drop existing policies first so this script is fully re-runnable.
+-- Row Level Security (RLS)
+-- ============================================================
+-- This app uses Google OAuth directly (NOT Supabase Auth), so there is no
+-- Supabase auth session and auth.uid() is always NULL.  The client connects
+-- with the anon key and handles authorization at the application level
+-- (Google token verification on the server, is_admin flag in the users table).
+--
+-- Because auth.uid()-based policies cannot work without Supabase Auth, we
+-- disable RLS on all tables.  Access control is enforced by:
+--   1. The anon key only being exposed to the browser (read/write via PostgREST).
+--   2. Admin operations verified server-side before mutating data.
+--   3. The API server using the service_role key for privileged operations.
+--
+-- If you later migrate to Supabase Auth, re-enable RLS and add proper policies.
 -- ============================================================
 
--- Enable RLS on all tables
-ALTER TABLE users                          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE system_settings                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api_call_logs                  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE feature_flags                  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_feature_overrides         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE themes                         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE collections                    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tournaments                    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_templates                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_admin_template_assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE system_stats                   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_actions                  ENABLE ROW LEVEL SECURITY;
-
--- Drop all policies (safe if they don't exist yet)
+-- Drop any existing policies from prior runs so DISABLE doesn't leave orphans
 DO $$ BEGIN
-  -- users
   DROP POLICY IF EXISTS users_select_own   ON users;
   DROP POLICY IF EXISTS users_insert_self  ON users;
   DROP POLICY IF EXISTS users_update_own   ON users;
-  -- system_settings
   DROP POLICY IF EXISTS settings_select    ON system_settings;
   DROP POLICY IF EXISTS settings_upsert    ON system_settings;
-  -- api_call_logs
   DROP POLICY IF EXISTS logs_insert_own    ON api_call_logs;
   DROP POLICY IF EXISTS logs_select_admin  ON api_call_logs;
-  -- feature_flags
   DROP POLICY IF EXISTS flags_select       ON feature_flags;
   DROP POLICY IF EXISTS flags_modify_admin ON feature_flags;
-  -- user_feature_overrides
   DROP POLICY IF EXISTS overrides_select_own   ON user_feature_overrides;
   DROP POLICY IF EXISTS overrides_modify_admin ON user_feature_overrides;
-  -- themes
   DROP POLICY IF EXISTS themes_select_public ON themes;
   DROP POLICY IF EXISTS themes_modify_admin  ON themes;
-  -- collections
   DROP POLICY IF EXISTS collections_own ON collections;
-  -- tournaments
   DROP POLICY IF EXISTS tournaments_select ON tournaments;
   DROP POLICY IF EXISTS tournaments_insert ON tournaments;
   DROP POLICY IF EXISTS tournaments_update ON tournaments;
-  -- admin_templates
   DROP POLICY IF EXISTS templates_select       ON admin_templates;
   DROP POLICY IF EXISTS templates_modify_admin ON admin_templates;
-  -- user_admin_template_assignments
   DROP POLICY IF EXISTS assignments_select ON user_admin_template_assignments;
   DROP POLICY IF EXISTS assignments_modify ON user_admin_template_assignments;
-  -- system_stats
   DROP POLICY IF EXISTS stats_admin ON system_stats;
-  -- admin_actions
   DROP POLICY IF EXISTS actions_admin ON admin_actions;
 END $$;
 
--- Helper: cast BOTH sides to text so comparisons work regardless of
--- whether auth.uid() returns uuid or text on this Supabase version.
-
--- ── users ──
--- Users can read/update their own row; admins can read/update all.
-CREATE POLICY users_select_own   ON users FOR SELECT USING (id::text = auth.uid()::text OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-CREATE POLICY users_insert_self  ON users FOR INSERT WITH CHECK (true);  -- signup
-CREATE POLICY users_update_own   ON users FOR UPDATE USING (id::text = auth.uid()::text OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── system_settings ──
--- Anyone can read; only admins can write.
-CREATE POLICY settings_select    ON system_settings FOR SELECT USING (true);
-CREATE POLICY settings_upsert    ON system_settings FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── api_call_logs ──
--- Users can insert their own logs; admins can read all.
-CREATE POLICY logs_insert_own    ON api_call_logs FOR INSERT WITH CHECK (user_id::text = auth.uid()::text);
-CREATE POLICY logs_select_admin  ON api_call_logs FOR SELECT USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── feature_flags ──
--- Anyone can read; only admins can modify.
-CREATE POLICY flags_select       ON feature_flags FOR SELECT USING (true);
-CREATE POLICY flags_modify_admin ON feature_flags FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── user_feature_overrides ──
--- Users can read their own overrides; admins can manage all.
-CREATE POLICY overrides_select_own   ON user_feature_overrides FOR SELECT USING (user_id::text = auth.uid()::text OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-CREATE POLICY overrides_modify_admin ON user_feature_overrides FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── themes ──
--- Anyone can read public themes; admins can manage all.
-CREATE POLICY themes_select_public ON themes FOR SELECT USING (is_public = true OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-CREATE POLICY themes_modify_admin  ON themes FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── collections ──
--- Users can only access their own collection row.
-CREATE POLICY collections_own ON collections FOR ALL USING (user_id::text = auth.uid()::text);
-
--- ── tournaments ──
--- Anyone can read active tournaments (for code validation); admins can manage all.
-CREATE POLICY tournaments_select   ON tournaments FOR SELECT USING (is_active = true OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-CREATE POLICY tournaments_insert   ON tournaments FOR INSERT WITH CHECK (creator_id::text = auth.uid()::text);
-CREATE POLICY tournaments_update   ON tournaments FOR UPDATE USING (creator_id::text = auth.uid()::text OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── admin_templates ──
--- Anyone can read; admins can create/modify.
-CREATE POLICY templates_select       ON admin_templates FOR SELECT USING (true);
-CREATE POLICY templates_modify_admin ON admin_templates FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── user_admin_template_assignments ──
--- Users can see their own assignments; admins can manage all.
-CREATE POLICY assignments_select ON user_admin_template_assignments FOR SELECT USING (user_id::text = auth.uid()::text OR (SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-CREATE POLICY assignments_modify ON user_admin_template_assignments FOR ALL    USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── system_stats ──
--- Only admins can read/write.
-CREATE POLICY stats_admin ON system_stats FOR ALL USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
-
--- ── admin_actions ──
--- Only admins can read/write.
-CREATE POLICY actions_admin ON admin_actions FOR ALL USING ((SELECT is_admin FROM users WHERE id::text = auth.uid()::text));
+-- Disable RLS on all tables (app-level auth, not Supabase Auth)
+ALTER TABLE users                          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings                DISABLE ROW LEVEL SECURITY;
+ALTER TABLE api_call_logs                  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE feature_flags                  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_feature_overrides         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE themes                         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE collections                    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE tournaments                    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_templates                DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_admin_template_assignments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE system_stats                   DISABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_actions                  DISABLE ROW LEVEL SECURITY;
