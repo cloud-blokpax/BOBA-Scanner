@@ -2417,3 +2417,87 @@ body.tab-scan .scan-tools-row .btn-tool-item:active {
     opacity: 0.85;
     transition: transform 0.08s, opacity 0.08s;
 }
+
+/* ── WCAG: touch-action fix (replaces user-scalable=no) ─────── */
+button, a, input, select, textarea, [role="button"] {
+    touch-action: manipulation;
+}
+
+/* ── Skeleton Loading States ────────────────────────────────── */
+.skeleton-container {
+    padding: 16px;
+}
+
+.skeleton-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.skeleton-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: var(--bg-surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.skeleton-upload {
+    padding: 32px 16px;
+    background: var(--bg-surface);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+}
+
+.skeleton-shimmer {
+    background: linear-gradient(90deg,
+        var(--bg-surface) 0%,
+        var(--bg-elevated) 40%,
+        var(--bg-surface) 80%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite ease-in-out;
+    display: block;
+}
+
+@keyframes skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Hide skeleton once app is loaded */
+.app-loaded .skeleton-container {
+    display: none;
+}
+
+/* ── Scan Result Animation ──────────────────────────────────── */
+.scan-result-enter {
+    animation: cardReveal 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes cardReveal {
+    0%   { opacity: 0; transform: scale(0.85) translateY(16px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Continuous Scanner styles ──────────────────────────────── */
+#continuousScanModal .modal-content {
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+#continuousScanVideo {
+    background: #000;
+}
+
+@media (max-width: 480px) {
+    .skeleton-stats {
+        grid-template-columns: 1fr 1fr;
+    }
+    .skeleton-stats .skeleton-card:last-child {
+        display: none;
+    }
+}

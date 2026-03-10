@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Professional Bo Jackson trading card scanner with AI-powered identification">
     <meta name="theme-color" content="#2563eb">
 
@@ -69,6 +69,23 @@
         <main class="app-main">
           <div class="main-sections">
             
+            <!-- Skeleton Loading Placeholder — replaced on app init -->
+            <div class="skeleton-container" id="skeletonLoader">
+                <div class="skeleton-stats">
+                    <div class="skeleton-card"><div class="skeleton-shimmer" style="width:60px;height:60px;border-radius:12px;"></div><div><div class="skeleton-shimmer" style="width:80px;height:12px;border-radius:4px;margin-bottom:6px;"></div><div class="skeleton-shimmer" style="width:50px;height:16px;border-radius:4px;"></div></div></div>
+                    <div class="skeleton-card"><div class="skeleton-shimmer" style="width:60px;height:60px;border-radius:12px;"></div><div><div class="skeleton-shimmer" style="width:80px;height:12px;border-radius:4px;margin-bottom:6px;"></div><div class="skeleton-shimmer" style="width:50px;height:16px;border-radius:4px;"></div></div></div>
+                    <div class="skeleton-card"><div class="skeleton-shimmer" style="width:60px;height:60px;border-radius:12px;"></div><div><div class="skeleton-shimmer" style="width:80px;height:12px;border-radius:4px;margin-bottom:6px;"></div><div class="skeleton-shimmer" style="width:50px;height:16px;border-radius:4px;"></div></div></div>
+                </div>
+                <div class="skeleton-upload">
+                    <div class="skeleton-shimmer" style="width:64px;height:64px;border-radius:50%;margin:0 auto 16px;"></div>
+                    <div class="skeleton-shimmer" style="width:200px;height:20px;border-radius:6px;margin:0 auto 12px;"></div>
+                    <div style="display:flex;gap:12px;justify-content:center;">
+                        <div class="skeleton-shimmer" style="width:160px;height:44px;border-radius:10px;"></div>
+                        <div class="skeleton-shimmer" style="width:160px;height:44px;border-radius:10px;"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Stats Dashboard -->
             <div class="stats-container" id="statsContainer" data-section="statsContainer">
                 <div class="stat-card" id="statCardScanned">
@@ -118,6 +135,14 @@
                     <button class="btn-scan-secondary" id="btnPriceCheck">
                         <span class="btn-icon">💰</span>
                         <span>Check eBay Prices</span>
+                    </button>
+                </div>
+
+                <!-- Live camera scan (continuous detection) -->
+                <div class="scan-tools-row" id="liveScanRow" style="display:none;">
+                    <button class="btn-tool-item" id="btnLiveScan" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border-color:#059669;">
+                        <span class="btn-icon">📹</span>
+                        <span>Live Scan</span>
                     </button>
                 </div>
 
@@ -530,6 +555,7 @@
     </script>
     
     <!-- Scripts — load order still matters for globals; see state.js for why -->
+    <script src="js/error-tracking.js"></script> <!-- Error tracking — load first to catch all errors -->
     <script src="js/source-protection.js"></script> <!-- Anti-scraping measures — load before anything else -->
     <script src="js/state.js"></script>      <!-- MUST BE FIRST: defines ready, database, appConfig -->
     <script src="js/config.js"></script>
@@ -538,6 +564,7 @@
     <script src="js/collections.js"></script>
     <script src="js/api.js"></script>
     <script src="js/heroes.js"></script>
+    <script src="js/scan-learning.js"></script>     <!-- OCR correction map — before scanner.js -->
     <script src="js/scanner.js"></script>
     <script src="js/ui.js"></script>          <!-- defines showToast, showLoading, escapeHtml -->
     <script src="js/google-auth.js"></script>
@@ -562,7 +589,28 @@
     <script src="js/grader.js"></script>         <!-- AI Condition Grader -->
     <script src="js/set-completion.js"></script> <!-- Set Completion Engine -->
     <script src="js/ebay-lister.js"></script>    <!-- One-Tap eBay Lister -->
+    <script src="js/continuous-scanner.js"></script> <!-- Real-time camera scanning -->
+    <script src="js/price-trends.js"></script>       <!-- Price history & alerts -->
     <script src="js/app.js"></script>              <!-- MUST BE LAST: orchestrates init -->
     <script src="js/ui-enhancements.js"></script>
+
+    <!-- Service Worker registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('✅ Service Worker registered (scope:', reg.scope, ')');
+          }).catch(err => {
+            console.warn('Service Worker registration failed:', err);
+          });
+        });
+        // Listen for background sync messages
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data?.type === 'SYNC_COLLECTIONS' && typeof forceSync === 'function') {
+            forceSync();
+          }
+        });
+      }
+    </script>
 </body>
 </html>

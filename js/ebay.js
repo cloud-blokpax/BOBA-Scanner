@@ -125,6 +125,17 @@ window.fetchEbayAvgPrice = async function(card) {
     if (!res.ok) return null;
     const data = await res.json();
     if (data.count === 0 || data.avgPrice === null) return { count: 0 };
+
+    // Record price for trend tracking
+    if (typeof recordPrice === 'function' && card.cardNumber && data.count > 0) {
+      recordPrice(card.cardNumber, {
+        avgPrice: data.avgPrice,
+        lowPrice: data.lowPrice,
+        highPrice: data.highPrice,
+        count: data.count
+      });
+    }
+
     return data;
   } catch {
     return null;
@@ -168,6 +179,15 @@ window.fetchEbaySoldData = async function(card) {
     // Pass blocked flag through so UI can show a direct eBay link
     if (data.blocked) return { blocked: true, searchUrl: buildEbaySoldUrl(card) };
     if (!data.lastSold && data.soldCount === 0) return { soldCount: 0 };
+
+    // Record sold price for trend tracking
+    if (typeof recordPrice === 'function' && card.cardNumber && data.avgSoldPrice) {
+      recordPrice(card.cardNumber, {
+        soldAvg: data.avgSoldPrice,
+        count: data.soldCount || 0
+      });
+    }
+
     return data;
   } catch {
     return null;

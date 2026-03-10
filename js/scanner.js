@@ -83,7 +83,11 @@ async function processImage(file) {
   try {
     // Pass displayUrl as imageUrl — card shows immediately, blob URL lasts for session
     return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64);
-  } finally {}
+  } finally {
+    // Revoke blob URL after 60s to prevent memory leak over long scanning sessions.
+    // Card imageUrl will be swapped to a Supabase permanent URL on upload success.
+    setTimeout(() => URL.revokeObjectURL(displayUrl), 60000);
+  }
 }
 
 async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null, numberRegionBase64 = null) {
@@ -120,6 +124,28 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
           console.log(`✅ OCR match in ${ocrMs}ms — skipped AI ($0.00)`);
           return;
         }
+
+        // ── Scan Learning: check local correction map before AI fallback ──
+        if (typeof checkCorrection === 'function') {
+          const corrected = checkCorrection(ocrResult.cardNumber);
+          if (corrected) {
+            match = findCard(corrected);
+            if (match) {
+              showLoading(false);
+              addCard(match, imageUrl, fileName, 'ocr', 80, false, storedBase64);
+              setProgress(100);
+              if (typeof addToScanHistory === 'function') {
+                addToScanHistory({
+                  hero: match.Name, cardNumber: match['Card Number'],
+                  set: match.Set, scanType: 'learned', confidence: 80
+                });
+              }
+              console.log(`🧠 Scan learning match: "${ocrResult.cardNumber}" → "${corrected}" (free!)`);
+              return;
+            }
+          }
+        }
+
         console.log(`⚠️ OCR found "${ocrResult.cardNumber}" but no DB match — falling back to AI`);
       }
     } catch (ocrErr) {
@@ -156,6 +182,11 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
       const lowConf = confidence < 70;
       addCard(match, imageUrl, fileName, 'ai', confidence, lowConf, storedBase64);
       setProgress(100);
+
+      // Record AI correction for scan learning — next time OCR reads this, skip AI
+      if (typeof recordCorrection === 'function' && cardNum) {
+        recordCorrection(cardNum, match['Card Number'], 'ai');
+      }
 
       if (typeof addToScanHistory === 'function') {
         addToScanHistory({
@@ -330,6 +361,13 @@ window.selectManualCard = function(cardId) {
   const card = database.find(c => String(c['Card ID']) === String(cardId));
   if (!card) { showToast('Card not found', '❌'); return; }
   const ctx = window._manualSearchContext || {};
+
+  // Record manual correction for scan learning
+  const searchInput = document.getElementById('manualSearchInput');
+  if (typeof recordCorrection === 'function' && searchInput?.value) {
+    recordCorrection(searchInput.value.trim(), card['Card Number'], 'manual');
+  }
+
   // Route to deck builder if active
   if (window.scanMode === 'deckbuilder' && typeof window.deckBuilderOnCardScanned === 'function') {
     window.deckBuilderOnCardScanned(card, ctx.imageUrl || '', ctx.fileName || 'manual', ctx.imageBase64 || null);

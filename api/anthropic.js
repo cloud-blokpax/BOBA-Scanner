@@ -134,13 +134,15 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
-  // Token auth — same pattern as ebay/grade endpoints
+  // Token auth — required on all environments
   const expectedToken = process.env.BOBA_API_SECRET;
-  if (expectedToken) {
-    const providedToken = req.headers['x-api-token'];
-    if (providedToken !== expectedToken) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  if (!expectedToken) {
+    console.error('BOBA_API_SECRET not configured — rejecting request');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+  const providedToken = req.headers['x-api-token'];
+  if (providedToken !== expectedToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   // Rate limiting
