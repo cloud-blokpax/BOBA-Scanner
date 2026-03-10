@@ -702,6 +702,9 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   saveCollections(collections);
 
+  // Notify listeners that a scan completed
+  if (typeof emit === 'function') emit('scan:complete', { card, index: newCardIndex });
+
   // Async Supabase upload — blob URL shown immediately, swapped to permanent URL on success.
   if (imageBase64) {
     const savedColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();

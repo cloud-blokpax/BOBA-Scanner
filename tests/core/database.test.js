@@ -91,7 +91,7 @@ function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
 }
 
 beforeAll(() => {
-  const dbPath = join(__dirname, '..', 'card-database.json');
+  const dbPath = join(__dirname, '..', '..', 'card-database.json');
   database = JSON.parse(readFileSync(dbPath, 'utf-8'));
   buildCardIndex();
 });

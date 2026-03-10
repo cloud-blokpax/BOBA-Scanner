@@ -431,6 +431,9 @@ function updateLimitsUI() {
   if (statCardsLabel) statCardsLabel.textContent  = guest ? 'Guest limit' : 'Your limit';
   if (statAI)         statAI.textContent          = `${aiUsed} / ${aiLimit}`;
   if (statAILabel)    statAILabel.textContent      = guest ? 'Guest limit' : `${aiLimit - aiUsed} remaining`;
+
+  // Notify listeners of auth/limit state change
+  if (typeof emit === 'function') emit('auth:changed');
 }
 
 // ── Modals ─────────────────────────────────────────────────────────────────────

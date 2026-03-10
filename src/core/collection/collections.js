@@ -45,6 +45,8 @@ function saveCollections(collections) {
     _collectionsCache = collections; // update cache only after successful write
     // Push to cloud after every save (debounced 2s)
     if (typeof schedulePush === 'function') schedulePush();
+    // Notify listeners that card data changed
+    if (typeof emit === 'function') emit('cards:changed');
   } catch (err) {
     // localStorage write failed (e.g. quota exceeded) — keep cache in sync
     // with what we WANTED to save so the current session doesn't lose data,
