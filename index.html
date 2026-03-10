@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Professional Bo Jackson trading card scanner with AI-powered identification">
     <meta name="theme-color" content="#2563eb">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎴</text></svg>">
 
     <!-- Prevent search engine indexing and caching -->
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
@@ -128,8 +129,8 @@
                 <input type="file" id="fileInputPriceCheck" accept="image/*" style="display: none;">
                 
                 <!-- Primary action: Upload or Capture (opens scan options) -->
-                <div class="scan-actions-row">
-                    <button class="btn-scan-primary" id="btnUploadCapture" style="max-width:320px;">
+                <div class="scan-actions-row" style="justify-content:center;">
+                    <button class="btn-scan-primary" id="btnUploadCapture" style="max-width:280px;min-width:200px;">
                         <span class="btn-icon">📷</span>
                         <span>Upload or Capture</span>
                     </button>
@@ -139,23 +140,23 @@
                 <div class="scan-options-panel" id="scanOptionsPanel" style="display:none;">
                     <button class="scan-option-item" id="btnChooseImage">
                         <span class="scan-option-icon">📚</span>
-                        <span class="scan-option-label">Upload to Collection</span>
+                        <span class="scan-option-label">Upload to Collection<span class="scan-option-hint">Pick a photo from your device</span></span>
                     </button>
                     <button class="scan-option-item" id="btnPriceCheck">
                         <span class="scan-option-icon">💰</span>
-                        <span class="scan-option-label">Check eBay Prices</span>
+                        <span class="scan-option-label">Check eBay Prices<span class="scan-option-hint">Scan a card and see recent eBay sales</span></span>
                     </button>
                     <button class="scan-option-item" id="btnLiveScan" style="display:none;">
                         <span class="scan-option-icon">📹</span>
-                        <span class="scan-option-label">Live Scan</span>
+                        <span class="scan-option-label">Live Scan<span class="scan-option-hint">Point your camera and auto-detect cards in real time</span></span>
                     </button>
                     <button class="scan-option-item" id="btnBatchScan">
                         <span class="scan-option-icon">📦</span>
-                        <span class="scan-option-label">Batch Scan</span>
+                        <span class="scan-option-label">Batch Scan<span class="scan-option-hint">Upload up to 10 card images at once</span></span>
                     </button>
                     <button class="scan-option-item" id="btnBinderScan">
                         <span class="scan-option-icon">📖</span>
-                        <span class="scan-option-label">Binder Scan</span>
+                        <span class="scan-option-label">Binder Scan<span class="scan-option-hint">Photograph a binder page and scan all cards in the grid</span></span>
                     </button>
                 </div>
 

@@ -148,9 +148,10 @@ function lookupBobaCard(card) {
 
 // ── Open the Deck Builder — membership/tournament gate ──────────────────────
 window.openDeckBuilder = function() {
-  // Check if user has deck builder access (member or admin)
-  if (typeof hasDeckBuilderAccess === 'function' && !hasDeckBuilderAccess()) {
-    // Non-member — show gate with tournament code option
+  const hasAccess = typeof hasDeckBuilderAccess === 'function' && hasDeckBuilderAccess();
+
+  if (!hasAccess) {
+    // Non-member — show gate with tournament code option only
     if (typeof showDeckBuilderGate === 'function') {
       showDeckBuilderGate();
     } else {
@@ -159,12 +160,69 @@ window.openDeckBuilder = function() {
     return;
   }
 
-  window._deckBuilderActive = true;
-  window._deckBuilderQueue  = [];
-  window._deckBuilderConfig = null;
-  window._activeTournament  = null;
-  showDeckSetupModal();
+  // Paid/admin user — show choice: New Deck or Tournament Code
+  showDeckBuilderChoice();
 };
+
+// ── Deck Builder Choice — New Deck vs Tournament Code ─────────────────────
+function showDeckBuilderChoice() {
+  document.getElementById('deckBuilderChoiceModal')?.remove();
+
+  const html = `
+  <div class="modal active" id="deckBuilderChoiceModal">
+    <div class="modal-backdrop" id="deckBuilderChoiceBackdrop"></div>
+    <div class="modal-content" style="max-width:380px;">
+      <div class="modal-header">
+        <h2>🃏 Deck Builder</h2>
+        <button class="modal-close" id="deckBuilderChoiceClose">×</button>
+      </div>
+      <div class="modal-body" style="padding:24px;text-align:center;">
+        <p style="font-size:13px;color:#9ca3af;margin:0 0 20px;">
+          Create a new deck from scratch or enter a tournament code.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button id="deckChoiceNewDeck" style="
+            padding:14px;border-radius:12px;border:none;cursor:pointer;
+            font-size:15px;font-weight:700;font-family:inherit;
+            background:linear-gradient(135deg,#f59e0b,#d97706);color:#0d1524;
+            box-shadow:0 4px 14px rgba(245,158,11,0.3);">
+            ✨ New Deck
+          </button>
+          <button id="deckChoiceTournament" style="
+            padding:14px;border-radius:12px;border:1.5px solid #6366f1;cursor:pointer;
+            font-size:15px;font-weight:700;font-family:inherit;
+            background:transparent;color:#a5b4fc;">
+            🏆 Enter Tournament Code
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  const closeModal = () => document.getElementById('deckBuilderChoiceModal')?.remove();
+  document.getElementById('deckBuilderChoiceClose')?.addEventListener('click', closeModal);
+  document.getElementById('deckBuilderChoiceBackdrop')?.addEventListener('click', closeModal);
+
+  document.getElementById('deckChoiceNewDeck')?.addEventListener('click', () => {
+    closeModal();
+    window._deckBuilderActive = true;
+    window._deckBuilderQueue  = [];
+    window._deckBuilderConfig = null;
+    window._activeTournament  = null;
+    showDeckSetupModal();
+  });
+
+  document.getElementById('deckChoiceTournament')?.addEventListener('click', () => {
+    closeModal();
+    if (typeof showDeckBuilderGate === 'function') {
+      showDeckBuilderGate();
+    } else {
+      showToast('Tournament module not loaded', '⚠️');
+    }
+  });
+}
 
 // ── Deck Setup Modal — collect name + composition before scanning ────────────
 function showDeckSetupModal() {

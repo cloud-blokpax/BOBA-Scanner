@@ -12,10 +12,15 @@ const PRECACHE_URLS = [
 ];
 
 // Install — precache critical assets, skip waiting to activate immediately
+// Use individual add() calls so one missing asset doesn't break the whole install
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(PRECACHE_URLS);
+      return Promise.allSettled(
+        PRECACHE_URLS.map(url => cache.add(url).catch(err => {
+          console.warn('SW: failed to cache', url, err.message);
+        }))
+      );
     }).then(() => self.skipWaiting())
   );
 });

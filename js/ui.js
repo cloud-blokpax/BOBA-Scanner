@@ -80,10 +80,11 @@ function updateStats() {
     if (statCardsLabel) statCardsLabel.textContent  = sublabel;
     if (statAILabel)    statAILabel.textContent     = `${aiLimit - aiUsed} remaining`;
 
-    // Update stats strip summary line
-    const count = stats.scanned || 0;
+    // Update stats strip summary line — total across ALL collections
+    const allCollections = typeof getCollections === 'function' ? getCollections() : [];
+    const totalCards = allCollections.reduce((sum, c) => sum + (c.cards?.length || 0), 0);
     const summary = document.getElementById('statsStripSummary');
-    if (summary) summary.textContent = `${count} card${count !== 1 ? 's' : ''}`;
+    if (summary) summary.textContent = `${totalCards} card${totalCards !== 1 ? 's' : ''}`;
 }
 
 function renderCards() {

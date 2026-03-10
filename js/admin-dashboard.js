@@ -1472,3 +1472,8 @@ async function loadUserOverrides() {
     el.innerHTML = `<p style="color:#ef4444;font-size:12px;">Failed to load overrides: ${escapeHtml(err.message)}</p>`;
   }
 }
+
+// ── Expose to window for lazy-loading ────────────────────────────────────────
+window.openAdminDashboard = openAdminDashboard;
+window.showAdminTab = showAdminTab;
+window.closeAdminDashboard = closeAdminDashboard;
