@@ -10,11 +10,14 @@
 //   - initGoogleAuth() returns a Promise so app.js can await it properly
 // ============================================================
 
+import { appConfig } from '../state.js';
+import { showToast } from '../../ui/toast.js';
+
 let googleUser     = null;
 let authInitialized = false;
 
 // ── Initialize Google Identity Services ──────────────────────────────────────
-function initGoogleAuth() {
+export function initGoogleAuth() {
   return new Promise((resolve) => {
     if (authInitialized) {
       resolve();
@@ -81,7 +84,7 @@ function initGoogleAuth() {
 }
 
 // ── Handle sign-in credential ─────────────────────────────────────────────────
-async function handleCredentialResponse(response) {
+export async function handleCredentialResponse(response) {
   try {
     const payload = parseJwt(response.credential);
     if (!payload) throw new Error('Invalid JWT payload');
@@ -122,7 +125,7 @@ async function handleCredentialResponse(response) {
 }
 
 // ── Restore existing session ──────────────────────────────────────────────────
-async function restoreSession() {
+export async function restoreSession() {
   // Step 1: Parse saved session — if corrupt, clear it.
   let saved;
   try {
@@ -163,7 +166,7 @@ async function restoreSession() {
 }
 
 // ── Sign out ──────────────────────────────────────────────────────────────────
-function signOutGoogle() {
+export function signOutGoogle() {
   if (typeof google !== 'undefined' && google.accounts) {
     google.accounts.id.disableAutoSelect();
   }
@@ -183,7 +186,7 @@ function signOutGoogle() {
 // NOTE: This decodes without signature verification (Google's library already
 // validated the signature before giving us the token). The parsed data is
 // treated as trusted only within the same session.
-function parseJwt(token) {
+export function parseJwt(token) {
   try {
     const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     return JSON.parse(decodeURIComponent(
@@ -195,7 +198,7 @@ function parseJwt(token) {
 }
 
 // ── Update auth UI ────────────────────────────────────────────────────────────
-function updateAuthUI(user) {
+export function updateAuthUI(user) {
   const btnSignIn       = document.getElementById('btnSignIn');
   const userAuthenticated = document.getElementById('userAuthenticated');
   const userName        = document.getElementById('userName');

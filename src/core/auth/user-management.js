@@ -9,13 +9,18 @@
 //   - updateLimitsUI() uses getCollections() (not bare var)
 // ============================================================
 
-let currentUser = null;
-let userLimits  = null;
+import { appConfig } from '../state.js';
+import { showToast } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { emit } from '../event-bus.js';
+
+export let currentUser = null;
+export let userLimits  = null;
 
 // Default limits — overwritten at runtime by loadSystemSettings() if a
 // system_settings table exists in Supabase.  Hardcoded values serve as
 // fallbacks when the DB is unreachable or the table hasn't been created yet.
-const DEFAULT_LIMITS = {
+export const DEFAULT_LIMITS = {
   guest:         { maxCards: 5,  maxApiCalls: 1   },
   authenticated: { maxCards: 25, maxApiCalls: 50  },
   member:        { maxCards: 250, maxApiCalls: 250 }
@@ -26,7 +31,7 @@ window.DEFAULT_LIMITS = DEFAULT_LIMITS;
 // Fetches key/value pairs from the `system_settings` Supabase table and
 // overwrites DEFAULT_LIMITS in place so every downstream reference picks up
 // the admin-configured values automatically.
-async function loadSystemSettings() {
+export async function loadSystemSettings() {
   if (!window.supabaseClient) return;
   try {
     const { data, error } = await window.supabaseClient
@@ -59,7 +64,7 @@ async function loadSystemSettings() {
 // ── Initialization ────────────────────────────────────────────────────────────
 // FIXED: Supabase credentials come from appConfig, not hardcoded strings.
 // appConfig is populated by loadAppConfig() in state.js before init() runs.
-async function initUserManagement() {
+export async function initUserManagement() {
   if (typeof window.supabase === 'undefined') {
     console.warn('⚠️ Supabase library not loaded');
     return;
@@ -85,7 +90,7 @@ async function initUserManagement() {
 }
 
 // ── User sign-in ──────────────────────────────────────────────────────────────
-async function handleUserSignIn(googleUser) {
+export async function handleUserSignIn(googleUser) {
   if (!window.supabaseClient) {
     // No DB — apply default authenticated limits locally
     userLimits = {
@@ -196,7 +201,7 @@ async function handleUserSignIn(googleUser) {
 
 // ── Membership expiry — runs at every sign-in ─────────────────────────────────
 // If the user was a member but their date has passed, auto-revoke and revert limits.
-async function checkMembershipExpiry() {
+export async function checkMembershipExpiry() {
   if (!currentUser?.is_member || !currentUser?.member_until) return;
 
   const now    = new Date();
@@ -226,7 +231,7 @@ async function checkMembershipExpiry() {
   }
 }
 
-async function checkAndResetMonthlyLimits() {
+export async function checkAndResetMonthlyLimits() {
   if (!currentUser?.last_reset_date) return;
 
   const today     = new Date();
@@ -247,7 +252,7 @@ async function checkAndResetMonthlyLimits() {
   }
 }
 
-async function loadUserLimits() {
+export async function loadUserLimits() {
   if (isGuestMode()) {
     userLimits = {
       maxCards:          DEFAULT_LIMITS.guest.maxCards,
@@ -266,7 +271,7 @@ async function loadUserLimits() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function isGuestMode() { return !currentUser; }
+export function isGuestMode() { return !currentUser; }
 
 // IMPORTANT: isAdmin() is a UI convenience check only.
 // All privileged Supabase operations (updating is_admin, card_limit, etc.)
@@ -283,7 +288,7 @@ function isGuestMode() { return !currentUser; }
 //   FOR SELECT USING (id = auth.uid() OR EXISTS (
 //     SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = true
 //   ));
-function isAdmin() {
+export function isAdmin() {
   return currentUser?.is_admin === true;
 }
 
@@ -307,12 +312,12 @@ function showAdminButton() {
 }
 
 // ── Limit checks ──────────────────────────────────────────────────────────────
-async function canAddCard() {
+export async function canAddCard() {
   // Tournament mode bypasses card limits entirely
   if (window._activeTournament) return true;
 
   // FIXED: Use getCollections() — bare `collections` was undefined
-  const total = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
+  const total = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
   const limit = isGuestMode()
     ? DEFAULT_LIMITS.guest.maxCards
     : (userLimits?.maxCards || DEFAULT_LIMITS.authenticated.maxCards);
@@ -324,7 +329,7 @@ async function canAddCard() {
   return true;
 }
 
-async function canMakeApiCall() {
+export async function canMakeApiCall() {
   // Tournament mode bypasses API call limits entirely
   if (window._activeTournament) return true;
 
@@ -347,7 +352,7 @@ async function canMakeApiCall() {
   return true;
 }
 
-async function trackCardAdded() {
+export async function trackCardAdded() {
   // Tournament mode — don't count against user's card quota
   if (window._activeTournament) return;
 
@@ -357,7 +362,7 @@ async function trackCardAdded() {
   }
 
   // FIXED: Use getCollections() not bare `collections`
-  const total = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
+  const total = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
 
   const { error } = await window.supabaseClient
     .from('users')
@@ -372,7 +377,7 @@ async function trackCardAdded() {
   updateLimitsUI();
 }
 
-async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
+export async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
   // Tournament mode — don't count against user's API quota
   if (window._activeTournament) return;
 
@@ -404,7 +409,7 @@ async function trackApiCall(callType, success, cost = 0, cardsProcessed = 1) {
 }
 
 // ── UI ─────────────────────────────────────────────────────────────────────────
-function updateLimitsUI() {
+export function updateLimitsUI() {
   // FIXED: Use getCollections() not bare `collections`
   const allCollections = (typeof getCollections === 'function') ? getCollections() : [];
   const totalCards     = allCollections.reduce((sum, c) => sum + c.cards.length, 0);
@@ -437,7 +442,7 @@ function updateLimitsUI() {
 }
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
-function showLimitReachedModal(type, current, max) {
+export function showLimitReachedModal(type, current, max) {
   // FIXED: Guard against duplicate insertion
   if (document.getElementById('limitModal')) return;
 
@@ -498,11 +503,11 @@ function showLimitReachedModal(type, current, max) {
   }
 }
 
-function closeLimitModal() {
+export function closeLimitModal() {
   document.getElementById('limitModal')?.remove();
 }
 
-async function openUserProfile() {
+export async function openUserProfile() {
   if (isGuestMode()) {
     showToast('Please sign in to view profile', '⚠️');
     return;
@@ -511,7 +516,7 @@ async function openUserProfile() {
   // FIXED: Guard against duplicate insertion
   if (document.getElementById('profileModal')) return;
 
-  const totalCards = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
+  const totalCards = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
 
   const modal = document.createElement('div');
   modal.innerHTML = `
@@ -581,7 +586,7 @@ async function saveDiscordId() {
   }
 }
 
-function closeProfileModal() {
+export function closeProfileModal() {
   document.getElementById('profileModal')?.remove();
 }
 

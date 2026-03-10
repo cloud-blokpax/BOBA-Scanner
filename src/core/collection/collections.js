@@ -6,6 +6,11 @@
 //   - createCollection() prompt replaced with a cleaner pattern (inline modal)
 // ============================================================
 
+import { escapeHtml } from '../../ui/utils.js';
+import { showToast } from '../../ui/toast.js';
+import { emit } from '../../core/event-bus.js';
+import { getAthleteForHero } from '../../collections/boba/heroes.js';
+
 const DEFAULT_COLLECTION = {
   id: 'default',
   name: 'My Collection',
@@ -17,7 +22,7 @@ const DEFAULT_COLLECTION = {
 // Invalidated on saveCollections() and on cross-tab storage events.
 let _collectionsCache = null;
 
-function getCollections() {
+export function getCollections() {
   if (_collectionsCache) return _collectionsCache;
   try {
     const stored = localStorage.getItem('collections');
@@ -39,7 +44,7 @@ function getCollections() {
   return fresh;
 }
 
-function saveCollections(collections) {
+export function saveCollections(collections) {
   try {
     localStorage.setItem('collections', JSON.stringify(collections));
     _collectionsCache = collections; // update cache only after successful write
@@ -115,21 +120,21 @@ function migrateStripBase64Images() {
   }
 }
 
-function getCurrentCollectionId() {
+export function getCurrentCollectionId() {
   return localStorage.getItem('currentCollectionId') || 'default';
 }
 
-function setCurrentCollectionId(id) {
+export function setCurrentCollectionId(id) {
   localStorage.setItem('currentCollectionId', id);
 }
 
-function getCurrentCollection() {
+export function getCurrentCollection() {
   const collections = getCollections();
   const currentId   = getCurrentCollectionId();
   return collections.find(c => c.id === currentId) || collections[0] || { ...DEFAULT_COLLECTION };
 }
 
-function createCollection(name) {
+export function createCollection(name) {
   if (!name || !name.trim()) return null;
 
   const collections = getCollections();
@@ -146,7 +151,7 @@ function createCollection(name) {
   return newCollection;
 }
 
-function deleteCollection(id) {
+export function deleteCollection(id) {
   if (id === 'default') {
     showToast('Cannot delete the default collection', '⚠️');
     return;
@@ -188,12 +193,12 @@ function showDeleteCollectionModal(id) {
     if (getCurrentCollectionId() === id) setCurrentCollectionId('default');
     saveCollections(collections);
     renderCollections();
-    renderCards();
+    if (typeof renderCards === 'function') renderCards();
     showToast('Collection deleted', '🗑️');
   });
 }
 
-function renameCollection(id, newName) {
+export function renameCollection(id, newName) {
   if (!newName || !newName.trim()) return;
   const collections = getCollections();
   const col = collections.find(c => c.id === id);
@@ -204,20 +209,20 @@ function renameCollection(id, newName) {
   }
 }
 
-function switchCollection(id) {
+export function switchCollection(id) {
   const collections = getCollections();
   const collection  = collections.find(c => c.id === id);
   if (!collection) return;
 
   setCurrentCollectionId(id);
   renderCollections();
-  renderCards();
-  updateStats();
+  if (typeof renderCards === 'function') renderCards();
+  if (typeof updateStats === 'function') updateStats();
   showToast(`Switched to ${collection.name}`, '📂');
 }
 
 // addCardToCollection and removeCardFromCollection kept for external callers
-function addCardToCollection(card) {
+export function addCardToCollection(card) {
   const collections = getCollections();
   const col = collections.find(c => c.id === getCurrentCollectionId());
   if (!col) return;
@@ -231,12 +236,12 @@ function addCardToCollection(card) {
   saveCollections(collections);
 }
 
-function renderCollections() {
+export function renderCollections() {
   // Update the new slider UI instead of old pills
   updateCollectionSlider();
 }
 
-function updateCollectionSlider() {
+export function updateCollectionSlider() {
   const wrap = document.getElementById('collectionSliderWrap');
   if (!wrap) return;
 
@@ -334,7 +339,7 @@ window.sliderSwitch = function(targetId) {
   }
 };
 
-function loadCollections(collectionsData) {
+export function loadCollections(collectionsData) {
   if (collectionsData) {
     try {
       const parsed = typeof collectionsData === 'string'
@@ -351,7 +356,7 @@ function loadCollections(collectionsData) {
   renderCollections();
 }
 
-function initCollections() {
+export function initCollections() {
   const collections = getCollections();
   if (!collections.find(c => c.id === 'default')) {
     collections.unshift({ ...DEFAULT_COLLECTION });
@@ -364,7 +369,7 @@ function initCollections() {
   renderCollections();
 }
 
-function exportCollections() {
+export function exportCollections() {
   const collections = getCollections();
   const blob = new Blob([JSON.stringify(collections, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -378,7 +383,7 @@ function exportCollections() {
   showToast('Collections exported', '📥');
 }
 
-function importCollections(file) {
+export function importCollections(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {

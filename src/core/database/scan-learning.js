@@ -5,6 +5,9 @@
 // the correction is stored locally. Next time OCR reads "8F-127",
 // we check the correction map before falling back to AI (free!).
 
+import { findCard } from './database.js';
+import { config } from '../config.js';
+
 const CORRECTIONS_KEY = 'ocrCorrections';
 const MAX_CORRECTIONS = 500;
 
@@ -39,7 +42,7 @@ function normalizeOCRText(text) {
  * Check if we have a learned correction for this OCR output.
  * Returns the corrected card number or null.
  */
-function checkCorrection(ocrText) {
+export function checkCorrection(ocrText) {
   if (!ocrText) return null;
   const key = normalizeOCRText(ocrText);
   const corrections = getCorrections();
@@ -68,7 +71,7 @@ function checkCorrection(ocrText) {
  *   1. OCR reads X but AI corrects to Y
  *   2. User manually selects a card after OCR/AI failure
  */
-function recordCorrection(ocrText, confirmedCardNumber, source) {
+export function recordCorrection(ocrText, confirmedCardNumber, source) {
   if (!ocrText || !confirmedCardNumber) return;
 
   const key = normalizeOCRText(ocrText);
@@ -90,14 +93,14 @@ function recordCorrection(ocrText, confirmedCardNumber, source) {
 /**
  * Get stats about the correction map for display.
  */
-function getCorrectionStats() {
+export function getCorrectionStats() {
   const corrections = getCorrections();
   const entries = Object.values(corrections);
   const totalHits = entries.reduce((sum, e) => sum + (e.hits || 0), 0);
   return {
     totalCorrections: entries.length,
     totalHits: totalHits,
-    estimatedSavings: `$${(totalHits * (typeof config !== 'undefined' ? config.aiCost : 0.002)).toFixed(2)}`,
+    estimatedSavings: `$${(totalHits * config.aiCost).toFixed(2)}`,
     topCorrections: entries
       .sort((a, b) => (b.hits || 0) - (a.hits || 0))
       .slice(0, 10)

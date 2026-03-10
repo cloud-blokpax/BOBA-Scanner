@@ -26,6 +26,8 @@
 //     PRIMARY KEY (user_id, feature_key)
 //   );
 
+import { escapeHtml } from '../../ui/utils.js';
+
 // ── Feature definitions ──────────────────────────────────────────────────────
 // These serve as fallback defaults if the DB table doesn't exist yet.
 const FEATURE_DEFINITIONS = [
@@ -93,7 +95,7 @@ let _cacheLoadedAt = 0;
 const FLAG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // ── Load flags from Supabase ──────────────────────────────────────────────────
-async function loadFeatureFlags() {
+export async function loadFeatureFlags() {
   if (!window.supabaseClient) return;
 
   try {
@@ -143,7 +145,7 @@ async function loadFeatureFlags() {
 }
 
 // Refresh if cache is stale
-async function ensureFlagsCurrent() {
+export async function ensureFlagsCurrent() {
   if (!_flagCache || Date.now() - _cacheLoadedAt > FLAG_CACHE_TTL) {
     await loadFeatureFlags();
   }
@@ -153,7 +155,7 @@ async function ensureFlagsCurrent() {
 
 // isFeatureEnabled(key) — synchronous check using cached data.
 // Call loadFeatureFlags() early in app init so cache is warm.
-function isFeatureEnabled(featureKey) {
+export function isFeatureEnabled(featureKey) {
   if (!_flagCache) {
     // Cache not loaded yet — fall back to FEATURE_DEFINITIONS defaults
     const def = FEATURE_DEFINITIONS.find(f => f.feature_key === featureKey);
@@ -174,21 +176,21 @@ function isFeatureEnabled(featureKey) {
 
 function _roleCheck(flag) {
   if (flag.enabled_globally) return true;
-  if (isAdmin())    return flag.enabled_for_admin    !== false;
+  if (typeof isAdmin === 'function' && isAdmin())    return flag.enabled_for_admin    !== false;
   if (currentUser?.is_member) return flag.enabled_for_member !== false;
-  if (!isGuestMode()) return flag.enabled_for_authenticated !== false;
+  if (typeof isGuestMode === 'function' && !isGuestMode()) return flag.enabled_for_authenticated !== false;
   return flag.enabled_for_guest === true;
 }
 
 // Returns all feature definitions (for admin UI)
-function getAllFeatureFlags() {
+export function getAllFeatureFlags() {
   if (!_flagCache) return [...FEATURE_DEFINITIONS];
   return [..._flagCache.values()];
 }
 
 // ── Admin: save flag changes ───────────────────────────────────────────────────
-async function saveFeatureFlag(featureKey, updates) {
-  if (!isAdmin() || !window.supabaseClient) return false;
+export async function saveFeatureFlag(featureKey, updates) {
+  if (!(typeof isAdmin === 'function' && isAdmin()) || !window.supabaseClient) return false;
   try {
     const { error } = await window.supabaseClient
       .from('feature_flags')
@@ -205,8 +207,8 @@ async function saveFeatureFlag(featureKey, updates) {
 }
 
 // Admin: set per-user override
-async function setUserFeatureOverride(userId, featureKey, enabled) {
-  if (!isAdmin() || !window.supabaseClient) return false;
+export async function setUserFeatureOverride(userId, featureKey, enabled) {
+  if (!(typeof isAdmin === 'function' && isAdmin()) || !window.supabaseClient) return false;
   try {
     if (enabled === null) {
       // null = remove override (revert to role-based default)
@@ -228,7 +230,7 @@ async function setUserFeatureOverride(userId, featureKey, enabled) {
 }
 
 // Admin: fetch overrides for all users (for the admin Features tab)
-async function fetchAllUserOverrides() {
+export async function fetchAllUserOverrides() {
   if (!window.supabaseClient) return [];
   try {
     const { data, error } = await window.supabaseClient
@@ -245,7 +247,7 @@ async function fetchAllUserOverrides() {
 // Shared UI used by Grade and eBay Lister when no specific card is pre-selected.
 // Shows cards from all collections so the user can pick one.
 
-function showCardPickerModal(title, subtitle, onPick) {
+export function showCardPickerModal(title, subtitle, onPick) {
   document.getElementById('cardPickerModal')?.remove();
 
   const collections = (typeof getCollections === 'function') ? getCollections() : [];
@@ -324,7 +326,7 @@ function showCardPickerModal(title, subtitle, onPick) {
 // ── Card grid "⋯ More" menu ───────────────────────────────────────────────────
 // Shows an action sheet with eBay search + grade/list options (when enabled)
 
-function toggleCardMoreMenu(index, btn) {
+export function toggleCardMoreMenu(index, btn) {
   // Close any already-open menus
   document.querySelectorAll('.card-more-menu').forEach(m => m.remove());
 

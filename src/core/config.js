@@ -5,7 +5,9 @@
 //   - Added comment clarifying localStorage key persistence
 // ============================================================
 
-const config = {
+import { showToast } from '../ui/toast.js';
+
+export const config = {
   autoDetect: localStorage.getItem('autoDetect') !== 'false',
   perspective: localStorage.getItem('perspective') !== 'false',
   regionOcr: localStorage.getItem('regionOcr') !== 'false',
@@ -16,13 +18,13 @@ const config = {
   region: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 }
 };
 
-function updateSetting(key, value) {
+export function updateSetting(key, value) {
   config[key] = key === 'quality'    ? parseFloat(value) :
                 key === 'threshold'  ? parseInt(value)   : value;
   localStorage.setItem(key, value);
 }
 
-function resetSettings() {
+export function resetSettings() {
   ['autoDetect','perspective','regionOcr','quality','threshold'].forEach(k => {
     localStorage.removeItem(k);
   });
@@ -31,7 +33,7 @@ function resetSettings() {
   config.regionOcr   = true;
   config.quality     = 0.7;
   config.threshold   = 60;
-  openSettings();
+  if (typeof openSettings === 'function') openSettings();
   showToast('Settings reset');
 }
 

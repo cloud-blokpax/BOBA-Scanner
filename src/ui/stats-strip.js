@@ -2,7 +2,11 @@
 // Stats strip: updateStats(), updateCollectionNavCounts(), window assignments,
 // and openPriceCheckModal delegation
 
-function updateStats() {
+import { showToast, showLoading } from '../ui/toast.js';
+import { on } from '../core/event-bus.js';
+import { getCollections, getCurrentCollectionId } from '../core/collection/collections.js';
+
+export function updateStats() {
     const collections = getCollections();
     const currentId   = getCurrentCollectionId();
     const collection  = collections.find(c => c.id === currentId);
@@ -33,14 +37,14 @@ function updateStats() {
     if (statAILabel)    statAILabel.textContent     = `${aiLimit - aiUsed} remaining`;
 
     // Update stats strip summary line — total across ALL collections
-    const allCollections = typeof getCollections === 'function' ? getCollections() : [];
+    const allCollections = getCollections();
     const totalCards = allCollections.reduce((sum, c) => sum + (c.cards?.length || 0), 0);
     const summary = document.getElementById('statsStripSummary');
     if (summary) summary.textContent = `${totalCards} card${totalCards !== 1 ? 's' : ''}`;
 }
 
 // Update the card counts on the Collection / Price Check nav buttons
-function updateCollectionNavCounts() {
+export function updateCollectionNavCounts() {
     try {
         const collections = getCollections();
         const mainCol = collections.find(c => c.id === 'default') || collections.find(c => c.id !== 'price_check' && c.id !== 'deck_building');
@@ -80,12 +84,10 @@ window.openPriceCheckModal = function() {
 
 // ── Event bus subscriptions ─────────────────────────────────────────────────
 // Respond to collection/card changes from any module without typeof guards.
-if (typeof on === 'function') {
-    on('cards:changed', () => {
-        updateStats();
-        updateCollectionNavCounts();
-    });
-    on('auth:changed', () => {
-        updateStats();
-    });
-}
+on('cards:changed', () => {
+    updateStats();
+    updateCollectionNavCounts();
+});
+on('auth:changed', () => {
+    updateStats();
+});

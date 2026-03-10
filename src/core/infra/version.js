@@ -3,9 +3,9 @@
 // Shows a non-intrusive banner when a newer version is deployed.
 // ============================================================
 
-const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.0';
 
-async function checkForUpdates() {
+export async function checkForUpdates() {
   try {
     const res = await fetch(`/version.json?_=${Date.now()}`);
     if (!res.ok) return;
@@ -21,7 +21,7 @@ async function checkForUpdates() {
   }
 }
 
-function showUpdateBanner(version, notes) {
+export function showUpdateBanner(version, notes) {
   if (document.getElementById('updateBanner')) return;
 
   const banner = document.createElement('div');
@@ -55,7 +55,7 @@ function showUpdateBanner(version, notes) {
 }
 
 // Display version in settings modal when opened
-function injectVersionIntoSettings() {
+export function injectVersionIntoSettings() {
   const existingVersion = document.getElementById('settingsVersionInfo');
   if (existingVersion) return;
 
