@@ -12,17 +12,17 @@
 
 const _busListeners = {};
 
-function on(event, fn) {
+export function on(event, fn) {
     (_busListeners[event] ||= []).push(fn);
 }
 
-function off(event, fn) {
+export function off(event, fn) {
     if (_busListeners[event]) {
         _busListeners[event] = _busListeners[event].filter(f => f !== fn);
     }
 }
 
-function emit(event, ...args) {
+export function emit(event, ...args) {
     for (const fn of _busListeners[event] || []) {
         try {
             fn(...args);

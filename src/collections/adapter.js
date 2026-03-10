@@ -6,7 +6,7 @@
 // hardcoding collection-specific logic.
 // ============================================================
 
-class CollectionAdapter {
+export class CollectionAdapter {
     /** Unique ID for this collection type (e.g., 'boba', 'pokemon') */
     get id() { throw new Error('CollectionAdapter: implement id'); }
 

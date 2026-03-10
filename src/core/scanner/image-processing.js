@@ -9,15 +9,17 @@
 //     with padding so the AI grader can evaluate edges and corners.
 // ============================================================
 
+import { config } from '../../core/config.js';
+
 // ── Card crop constants ───────────────────────────────────────────────────────
 // Target height (px) for the card region after crop.  At 1 200 px the bottom
 // 14 % strip used by Tesseract is ~168 px → scaled ×4 = 672 px of text area —
 // well above the 50 px minimum Tesseract needs for reliable recognition.
-const CARD_TARGET_HEIGHT = 1200;
+export const CARD_TARGET_HEIGHT = 1200;
 
 // Fraction of the detected card dimension added as padding on every edge so
 // that the AI grader can evaluate corners, edges, and centering borders.
-const CROP_PAD_RATIO = 0.08;
+export const CROP_PAD_RATIO = 0.08;
 
 /**
  * cropToCard(file)
@@ -38,7 +40,7 @@ const CROP_PAD_RATIO = 0.08;
  * while keeping enough edge margin for the Claude Vision grader to assess
  * corners, edge wear, and border centering.
  */
-async function cropToCard(file) {
+export async function cropToCard(file) {
     return new Promise(resolve => {
         const img = new Image();
         const url = URL.createObjectURL(file);
@@ -189,7 +191,7 @@ function _detectCardBounds(srcCanvas) {
 // Compress and resize an image File before sending to the API.
 // Uses createImageBitmap() + OffscreenCanvas when available (off-main-thread)
 // to avoid freezing the UI on large images. Falls back to synchronous canvas.
-async function compressImage(file) {
+export async function compressImage(file) {
   const maxDim  = config.maxSize || 1000;
   const quality = config.quality || 0.85;
 
@@ -253,7 +255,7 @@ async function compressImage(file) {
  * upscales 2× and applies contrast enhancement for the AI to read.
  * Returns base64 string or null.
  */
-async function cropCardNumberRegion(file) {
+export async function cropCardNumberRegion(file) {
     return new Promise(resolve => {
         const img = new Image();
         const url = URL.createObjectURL(file);
@@ -320,7 +322,7 @@ async function cropCardNumberRegion(file) {
  * When cardBounds is provided, the extraction offsets inward by the padding
  * amount so the grid shows actual card corners instead of background.
  */
-async function cropGradingRegions(file, cardBounds) {
+export async function cropGradingRegions(file, cardBounds) {
     return new Promise(resolve => {
         const img = new Image();
         const url = URL.createObjectURL(file);
@@ -382,7 +384,7 @@ async function cropGradingRegions(file, cardBounds) {
  * Higher-quality compression for grading — preserves fine detail like
  * corner sharpness, surface scratches, and edge chips.
  */
-async function compressImageForGrading(file) {
+export async function compressImageForGrading(file) {
   const maxDim  = 2000;   // higher than scanning (1400)
   const quality = 0.92;   // higher than scanning (0.7)
 

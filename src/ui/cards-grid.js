@@ -1,7 +1,12 @@
 // ── src/ui/cards-grid.js ─────────────────────────────────────────────────────
-// Card grid rendering: renderCards(), pagination, bulk select helpers,
+// ES Module — Card grid rendering: renderCards(), pagination, bulk select helpers,
 // renderField(), and openPriceCheckModal window assignment.
-// No imports/exports — all files share global scope via Vite concat.
+
+import { getCollections, getCurrentCollectionId, setCurrentCollectionId, saveCollections } from '../core/collection/collections.js';
+import { escapeHtml } from './utils.js';
+import { showToast } from './toast.js';
+import { on } from '../core/event-bus.js';
+import { fetchEbayAvgPrice } from '../features/ebay/ebay.js';
 
 function renderCards() {
     console.log('🎨 Rendering cards...');
@@ -509,7 +514,7 @@ window.bulkDeleteCards = function() {
 window.bulkRefreshEbayPrices = function() {
     const sel = window._bulkSelect?.selected;
     if (!sel?.size) return;
-    if (typeof fetchEbayAvgPrice !== 'function') { showToast('eBay refresh not available', '⚠️'); return; }
+    if (!fetchEbayAvgPrice) { showToast('eBay refresh not available', '⚠️'); return; }
     const indices = [...sel];
     const collections = getCollections();
     const currentId   = getCurrentCollectionId();
@@ -555,6 +560,6 @@ function renderField(label, field, index, value, autoFilled) {
 }
 
 // ── Event bus subscriptions ─────────────────────────────────────────────────
-if (typeof on === 'function') {
-    on('cards:changed', () => renderCards());
-}
+on('cards:changed', () => renderCards());
+
+export { renderCards, renderField };

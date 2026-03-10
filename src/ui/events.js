@@ -1,6 +1,8 @@
 // ── src/ui/events.js ─────────────────────────────────────────────────────────
-// wireUpEvents() — safety-net event listeners for buttons, called on load.
-// No imports/exports — all files share global scope via Vite concat.
+// ES Module — wireUpEvents() — safety-net event listeners for buttons, called on load.
+
+import { showToast } from './toast.js';
+import { updateSetting } from '../core/config.js';
 
 // ========================================
 // WIRE UP EVENTS — safety net for buttons
@@ -145,7 +147,7 @@ function wireUpEvents() {
     if (btnDeckBuilder) {
         btnDeckBuilder.addEventListener('click', function() {
             if (typeof window.openDeckBuilder === 'function') window.openDeckBuilder();
-            else showToast('Deck Builder not loaded — please refresh', '⚠️');
+            else showToast('Deck Builder not loaded \u2014 please refresh', '\u26A0\uFE0F');
         });
     }
 
@@ -246,19 +248,19 @@ function wireUpEvents() {
     // Settings inputs
     const toggleAutoDetect = document.getElementById('toggleAutoDetect');
     if (toggleAutoDetect) toggleAutoDetect.addEventListener('change', function() {
-        if (typeof updateSetting === 'function') updateSetting('autoDetect', this.checked);
+        updateSetting('autoDetect', this.checked);
     });
     const togglePerspective = document.getElementById('togglePerspective');
     if (togglePerspective) togglePerspective.addEventListener('change', function() {
-        if (typeof updateSetting === 'function') updateSetting('perspective', this.checked);
+        updateSetting('perspective', this.checked);
     });
     const toggleRegionOcr = document.getElementById('toggleRegionOcr');
     if (toggleRegionOcr) toggleRegionOcr.addEventListener('change', function() {
-        if (typeof updateSetting === 'function') updateSetting('regionOcr', this.checked);
+        updateSetting('regionOcr', this.checked);
     });
     const selectQuality = document.getElementById('selectQuality');
     if (selectQuality) selectQuality.addEventListener('change', function() {
-        if (typeof updateSetting === 'function') updateSetting('quality', this.value);
+        updateSetting('quality', this.value);
     });
     const rangeThreshold = document.getElementById('rangeThreshold');
     if (rangeThreshold) {
@@ -267,9 +269,11 @@ function wireUpEvents() {
             if (el) el.textContent = this.value;
         });
         rangeThreshold.addEventListener('change', function() {
-            if (typeof updateSetting === 'function') updateSetting('threshold', this.value);
+            updateSetting('threshold', this.value);
         });
     }
 
     console.log('✅ Button events wired');
 }
+
+export { wireUpEvents };

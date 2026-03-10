@@ -9,10 +9,12 @@
 //   const adapter = getActiveAdapter();
 // ============================================================
 
+import { CollectionAdapter } from './adapter.js';
+
 const _adapters = {};
 let _activeAdapter = null;
 
-function registerAdapter(adapter) {
+export function registerAdapter(adapter) {
     if (!(adapter instanceof CollectionAdapter)) {
         console.warn('[Registry] adapter must extend CollectionAdapter');
         return;
@@ -21,7 +23,7 @@ function registerAdapter(adapter) {
     console.log(`[Registry] Registered adapter: ${adapter.id} (${adapter.displayName})`);
 }
 
-function setActiveAdapter(id) {
+export function setActiveAdapter(id) {
     if (!_adapters[id]) {
         console.warn(`[Registry] No adapter registered for "${id}"`);
         return false;
@@ -31,14 +33,14 @@ function setActiveAdapter(id) {
     return true;
 }
 
-function getActiveAdapter() {
+export function getActiveAdapter() {
     return _activeAdapter;
 }
 
-function getAdapter(id) {
+export function getAdapter(id) {
     return _adapters[id] || null;
 }
 
-function listAdapters() {
+export function listAdapters() {
     return Object.values(_adapters).map(a => ({ id: a.id, displayName: a.displayName }));
 }

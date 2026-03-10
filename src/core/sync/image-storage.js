@@ -1,4 +1,4 @@
-// js/image-storage.js
+// image-storage.js (ES Module)
 // ─────────────────────────────────────────────────────────────────────────────
 // WHY THIS APPROACH:
 //   The app uses Google OAuth directly — NOT Supabase Auth.
@@ -11,6 +11,8 @@
 //   which uses the SERVICE ROLE key server-side, bypassing RLS entirely.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getApiToken } from '../state.js';
+
 async function uploadCardImage(base64Jpeg, originalFilename) {
     const user = window.currentUser;
     if (!user) {
@@ -20,7 +22,7 @@ async function uploadCardImage(base64Jpeg, originalFilename) {
 
     try {
         const headers = { 'Content-Type': 'application/json' };
-        const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+        const apiToken = getApiToken();
         if (apiToken) headers['X-Api-Token'] = apiToken;
 
         const response = await fetch('/api/upload-image', {
@@ -54,5 +56,7 @@ async function deleteCardImage(imageUrl) {
     if (!imageUrl || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return;
     // Deletion handled server-side if needed; skip silently on client
 }
+
+export { uploadCardImage, deleteCardImage };
 
 console.log('✅ Image storage module loaded (API-based)');

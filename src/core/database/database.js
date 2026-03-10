@@ -6,6 +6,9 @@
 //   - Levenshtein performance is now acceptable even on large databases
 // ============================================================
 
+import { ready, database, setDatabase } from '../state.js';
+import { setStatus, showToast } from '../../ui/toast.js';
+
 // ── IndexedDB cache for card database ─────────────────────────────────────────
 // On first load: fetch card-database.json, store in IDB.
 // On subsequent loads: read from IDB, only re-fetch if version.json is newer.
@@ -40,7 +43,7 @@ async function idbPut(db, key, value) {
   });
 }
 
-async function loadDatabase() {
+export async function loadDatabase() {
   setStatus('db', 'loading');
   try {
     let idb = null;
@@ -62,7 +65,7 @@ async function loadDatabase() {
 
       if (cachedData && cachedVersion && cachedVersion === remoteVersion) {
         // Cache hit — use stored data
-        database = cachedData;
+        setDatabase(cachedData);
         buildCardIndex();
         ready.db = true;
         setStatus('db', 'ready');
@@ -74,7 +77,7 @@ async function loadDatabase() {
     // Cache miss or IDB unavailable — fetch from network
     const res = await fetch('./card-database.json');
     if (!res.ok) throw new Error('DB not found');
-    database = await res.json();
+    setDatabase(await res.json());
 
     if (idb) {
       // Store in IDB for next visit — reuse remoteVersion from the cache check
@@ -103,7 +106,7 @@ async function loadDatabase() {
 let cardIndex  = new Map();
 let prefixIndex = new Map();
 
-function buildCardIndex() {
+export function buildCardIndex() {
   cardIndex.clear();
   prefixIndex.clear();
 
@@ -122,7 +125,7 @@ function buildCardIndex() {
   }
 }
 
-function normalizeCardNum(val) {
+export function normalizeCardNum(val) {
   return String(val).toUpperCase().trim();
 }
 
@@ -147,7 +150,7 @@ function levenshteinDistance(a, b) {
 
 // FIXED: Pre-filter by prefix before running expensive Levenshtein.
 // Instead of O(17000 × len²), we now do O(~50 × len²) in the typical case.
-function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
+export function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
   const normalized = normalizeCardNum(searchNumber);
   const prefix = normalized.slice(0, 2);
 
@@ -178,7 +181,7 @@ function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
 }
 
 // ── Main findCard ─────────────────────────────────────────────────────────────
-function findCard(cardNumber, heroName = null, visualTheme = '') {
+export function findCard(cardNumber, heroName = null, visualTheme = '') {
   if (!ready.db || !cardNumber) {
     console.error('findCard called but:', { dbReady: ready.db, cardNumber });
     return null;

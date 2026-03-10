@@ -1,8 +1,74 @@
 // src/main.js — Vite entry point
-// Loads core scripts (concatenated via virtual module) and lazy-loads heavy features.
+// Imports all core modules directly (ES modules) and lazy-loads heavy features.
 
-// ── Core scripts (bundled together, share global scope) ─────────────────────
-import 'virtual:classic-scripts';
+// ── Core modules (imported in dependency order) ─────────────────────────────
+// Side-effect modules (run on import)
+import './core/infra/source-protection.js';
+import './core/infra/error-tracking.js';
+
+// State and infrastructure
+import './core/state.js';
+import './core/event-bus.js';
+import './core/config.js';
+
+// Database
+import './core/database/database.js';
+
+// Scanner pipeline
+import './core/scanner/opencv.js';
+import './core/collection/collections.js';
+import './core/scanner/image-processing.js';
+
+// Collection adapters
+import './collections/adapter.js';
+import './collections/registry.js';
+import './collections/boba/heroes.js';
+import './collections/boba/boba-adapter.js';
+
+// Scan learning & OCR
+import './core/database/scan-learning.js';
+import './core/ocr/ocr.js';
+import './core/scanner/scanner.js';
+
+// UI modules
+import './ui/utils.js';
+import './ui/toast.js';
+import './ui/stats-strip.js';
+import './ui/cards-grid.js';
+import './ui/upload-area.js';
+import './ui/events.js';
+import './ui/card-detail.js';
+import './ui/card-corrections.js';
+import './ui/card-actions.js';
+
+// Auth
+import './core/auth/google-auth.js';
+import './core/auth/user-management.js';
+
+// Collection features
+import './core/collection/statistics.js';
+import './features/export/export.js';
+import './core/sync/image-storage.js';
+import './features/tags/tags.js';
+import './core/sync/sync.js';
+
+// eBay
+import './features/ebay/ebay.js';
+
+// Infrastructure
+import './core/infra/version.js';
+import './core/collection/scan-history.js';
+
+// UI polish
+import './ui/themes.js';
+import './ui/bottom-nav.js';
+import './core/infra/feature-flags.js';
+import './core/scanner/continuous-scanner.js';
+import './features/ebay/price-trends.js';
+import './ui/ui-enhancements.js';
+
+// App init — MUST BE LAST: orchestrates init
+import './app.js';
 
 // ── Lazy-loaded feature modules ─────────────────────────────────────────────
 // These are code-split into separate chunks and only loaded when needed.
@@ -93,12 +159,6 @@ lazyWire('loadTemplate', 'templates', 'loadTemplate');
 lazyWire('deleteTemplateConfirm', 'templates', 'deleteTemplateConfirm');
 lazyWire('_loadUserTemplates', 'templates', '_loadUserTemplates');
 
-// ── App initialization ──────────────────────────────────────────────────────
-// app.js is part of core scripts and runs init() on DOMContentLoaded.
-// The lazy-load wrappers above are available before init() runs, so when
-// init() calls functions like triggerGradeCard, they'll load the chunk on
-// first invocation.
-
 // ── Service Worker registration ─────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -110,8 +170,8 @@ if ('serviceWorker' in navigator) {
   });
 
   navigator.serviceWorker.addEventListener('message', event => {
-    if (event.data?.type === 'SYNC_COLLECTIONS' && typeof forceSync === 'function') {
-      forceSync();
+    if (event.data?.type === 'SYNC_COLLECTIONS' && typeof window.forceSync === 'function') {
+      window.forceSync();
     }
   });
 }

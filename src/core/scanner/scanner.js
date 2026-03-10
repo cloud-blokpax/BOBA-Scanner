@@ -1,20 +1,25 @@
 // ============================================================
-// js/scanner.js — UPDATED v1.2
-// New features:
-//   - Condition grading field per card
-//   - Notes field per card
-//   - Duplicate detection with warning
-//   - Confidence indicator (yellow flag on low-confidence scans)
-//   - Manual override / card search modal on scan failure
-//   - Scan history logging (success + failure)
-//   - Ready to List flag per card
+// src/core/scanner/scanner.js — ES Module
+// Card scanning pipeline: OCR → DB lookup → AI fallback → collection
 // ============================================================
+
+import { ready, database, tesseractWorker, getApiToken } from '../state.js';
+import { showToast, showLoading, setProgress } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { config } from '../config.js';
+import { emit } from '../event-bus.js';
+import { findCard } from '../database/database.js';
+import { cropToCard, compressImage, cropCardNumberRegion } from './image-processing.js';
+import { runOCR } from '../ocr/ocr.js';
+import { checkCorrection, recordCorrection } from '../database/scan-learning.js';
+import { getAthleteForHero } from '../../collections/boba/heroes.js';
+import { getCollections, saveCollections, getCurrentCollectionId, setCurrentCollectionId } from '../collection/collections.js';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 // scanMode: 'collection' (default) or 'pricecheck'
 window.scanMode = window.scanMode || 'collection';
 
-async function handleFiles(e) {
+export async function handleFiles(e) {
   const files = e.target.files || e.dataTransfer?.files;
   if (!files || files.length === 0) return;
 
@@ -58,40 +63,20 @@ async function handleFiles(e) {
 async function processImage(file) {
   console.log(`Processing: ${file.name}`);
 
-  // Tags are added AFTER scan via the card detail modal — prompting before
-  // the scan is terrible UX (blocks camera, interrupts every single upload).
-  // Users can add tags from the card detail view after the card is identified.
-
-  // Detect the card in the photo and crop to it (with padding for the grader).
-  // Falls back to the original file when background-subtraction finds nothing.
   const cropped  = await cropToCard(file);
   const src      = cropped ? cropped.blob : file;
-
-  // Centering + card bounds computed by cropToCard from the original photo geometry
   const centeringData = cropped?.centering || null;
   const cardBounds    = cropped?.cardBounds || null;
 
   const imageBase64 = await compressImage(src);
 
-  // Generate cropped card-number region for dual-image AI fallback
-  const numberRegionBase64 = (typeof cropCardNumberRegion === 'function')
-    ? await cropCardNumberRegion(src).catch(() => null)
-    : null;
+  const numberRegionBase64 = await cropCardNumberRegion(src).catch(() => null);
 
-  // Use blob URL for immediate display — stored temporarily on the card for this session.
-  // Supabase upload happens async AFTER the card is saved, then updates the card record.
-  // This means images always show immediately, even if upload is slow or user isn't logged in yet.
-  // Using the cropped blob keeps background clutter out of the stored image.
   const displayUrl = URL.createObjectURL(src);
-
-  // Revoke blob URL after 5 minutes to prevent memory leaks over long scanning sessions.
-  // Card imageUrl will be swapped to a Supabase permanent URL on upload success,
-  // at which point the blob URL is no longer referenced.
   const revokeTimer = setTimeout(() => URL.revokeObjectURL(displayUrl), 5 * 60 * 1000);
   try {
     return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64, centeringData, cardBounds);
   } catch (err) {
-    // On failure, revoke immediately — no card was added to reference it
     clearTimeout(revokeTimer);
     URL.revokeObjectURL(displayUrl);
     throw err;
@@ -105,7 +90,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
   let confidence = null;
 
   // ── OCR-first path (free, fast) ───────────────────────────────────────────
-  if (ready.ocr && typeof tesseractWorker !== 'undefined' && tesseractWorker) {
+  if (ready.ocr && tesseractWorker) {
     showLoading(true, 'Reading card number (OCR)...');
     const ocrStart = performance.now();
     try {
@@ -134,23 +119,21 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
         }
 
         // ── Scan Learning: check local correction map before AI fallback ──
-        if (typeof checkCorrection === 'function') {
-          const corrected = checkCorrection(ocrResult.cardNumber);
-          if (corrected) {
-            match = findCard(corrected);
-            if (match) {
-              showLoading(false);
-              addCard(match, imageUrl, fileName, 'ocr', 80, false, storedBase64, false, centeringData, cardBounds);
-              setProgress(100);
-              if (typeof addToScanHistory === 'function') {
-                addToScanHistory({
-                  hero: match.Name, cardNumber: match['Card Number'],
-                  set: match.Set, scanType: 'learned', confidence: 80
-                });
-              }
-              console.log(`🧠 Scan learning match: "${ocrResult.cardNumber}" → "${corrected}" (free!)`);
-              return;
+        const corrected = checkCorrection(ocrResult.cardNumber);
+        if (corrected) {
+          match = findCard(corrected);
+          if (match) {
+            showLoading(false);
+            addCard(match, imageUrl, fileName, 'ocr', 80, false, storedBase64, false, centeringData, cardBounds);
+            setProgress(100);
+            if (typeof addToScanHistory === 'function') {
+              addToScanHistory({
+                hero: match.Name, cardNumber: match['Card Number'],
+                set: match.Set, scanType: 'learned', confidence: 80
+              });
             }
+            console.log(`🧠 Scan learning match: "${ocrResult.cardNumber}" → "${corrected}" (free!)`);
+            return;
           }
         }
 
@@ -191,10 +174,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
       addCard(match, imageUrl, fileName, 'ai', confidence, lowConf, storedBase64, false, centeringData, cardBounds);
       setProgress(100);
 
-      // Record AI correction for scan learning — next time OCR reads this, skip AI
-      if (typeof recordCorrection === 'function' && cardNum) {
-        recordCorrection(cardNum, match['Card Number'], 'ai');
-      }
+      recordCorrection(cardNum, match['Card Number'], 'ai');
 
       if (typeof addToScanHistory === 'function') {
         addToScanHistory({
@@ -274,8 +254,6 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
   const cancelBtn = document.getElementById('manualSearchCancel');
   const backdrop = document.getElementById('manualSearchBackdrop');
 
-  // Live search — fires on every keystroke (debounced 180ms).
-  // This bypasses all iOS button-tap/keyboard-dismiss timing issues entirely.
   let _searchDebounce = null;
   function scheduleSearch() {
     clearTimeout(_searchDebounce);
@@ -287,11 +265,9 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); clearTimeout(_searchDebounce); runManualSearch(); }
     });
-    // Focus after a short delay so iOS keyboard has time to appear
     setTimeout(() => { try { input.focus(); } catch(_) {} }, 120);
   }
 
-  // Button still works as a fallback (pointerdown fires before blur)
   if (searchBtn) {
     searchBtn.addEventListener('pointerdown', e => { e.preventDefault(); clearTimeout(_searchDebounce); runManualSearch(); });
   }
@@ -300,18 +276,15 @@ function showManualSearchModal(suggestedCardNum, suggestedHero, imageUrl, fileNa
   if (cancelBtn) cancelBtn.addEventListener('click', () => closeManualSearch());
   if (backdrop)  backdrop.addEventListener('click', () => closeManualSearch());
 
-  // If scanner already filled in a card number, run immediately
   if (suggestedCardNum) setTimeout(runManualSearch, 100);
 }
 
-window.runManualSearch = function() {
+function runManualSearch() {
   const input = document.getElementById('manualSearchInput');
   const el    = document.getElementById('manualSearchResults');
   if (!el) return;
 
   const query = (input?.value || '').trim();
-
-  // Show feedback immediately so the user knows the tap registered
   el.style.display = 'block';
 
   if (!query) {
@@ -321,7 +294,6 @@ window.runManualSearch = function() {
 
   if (!ready.db || !database.length) {
     el.innerHTML = `<p style="text-align:center;color:#6b7280;padding:16px 0;">⏳ Database still loading — try again in a moment</p>`;
-    // Auto-retry once db is ready
     const retryPoll = setInterval(() => {
       if (ready.db && database.length) {
         clearInterval(retryPoll);
@@ -354,7 +326,6 @@ window.runManualSearch = function() {
     </div>
   `).join('');
 
-  // Event delegation — covers both tap and click, safe on mobile
   el.onclick = function(e) {
     const row = e.target.closest('[data-card-id]');
     if (row) selectManualCard(row.dataset.cardId);
@@ -363,20 +334,19 @@ window.runManualSearch = function() {
     const row = e.target.closest('[data-card-id]');
     if (row) { e.preventDefault(); selectManualCard(row.dataset.cardId); }
   });
-};
+}
+window.runManualSearch = runManualSearch;
 
-window.selectManualCard = function(cardId) {
+function selectManualCard(cardId) {
   const card = database.find(c => String(c['Card ID']) === String(cardId));
   if (!card) { showToast('Card not found', '❌'); return; }
   const ctx = window._manualSearchContext || {};
 
-  // Record manual correction for scan learning
   const searchInput = document.getElementById('manualSearchInput');
-  if (typeof recordCorrection === 'function' && searchInput?.value) {
+  if (searchInput?.value) {
     recordCorrection(searchInput.value.trim(), card['Card Number'], 'manual');
   }
 
-  // Route to deck builder if active
   if (window.scanMode === 'deckbuilder' && typeof window.deckBuilderOnCardScanned === 'function') {
     window.deckBuilderOnCardScanned(card, ctx.imageUrl || '', ctx.fileName || 'manual', ctx.imageBase64 || null);
     closeManualSearch();
@@ -387,14 +357,16 @@ window.selectManualCard = function(cardId) {
     addToScanHistory({ hero: card.Name, cardNumber: card['Card Number'], set: card.Set, scanType: 'manual' });
   }
   closeManualSearch();
-};
+}
+window.selectManualCard = selectManualCard;
 
-window.closeManualSearch = function() {
+function closeManualSearch() {
   document.getElementById('manualSearchModal')?.remove();
   delete window._manualSearchContext;
-};
+}
+window.closeManualSearch = closeManualSearch;
 
-function searchDatabase(query) {
+export function searchDatabase(query) {
   if (!ready.db || !database.length) return [];
   const q = query.toUpperCase().trim();
   return database.filter(card => {
@@ -405,18 +377,12 @@ function searchDatabase(query) {
 }
 
 // ── Scan result cache ─────────────────────────────────────────────────────────
-// Avoids a redundant AI call when the same image is submitted twice in a session
-// (e.g. accidental double-tap or re-scan of a card already identified).
-// Key: lightweight fingerprint derived from stable interior bytes of the base64.
-// TTL: 5 minutes.  Max entries: 20 (oldest evicted first).
-
 const _scanCache     = new Map();
 const _CACHE_TTL_MS  = 5 * 60 * 1000;
 const _CACHE_MAX     = 20;
 
 function _cacheKey(b64) {
   const len = b64.length;
-  // Skip the shared JPEG header bytes at the start; sample start+mid+end
   return b64.slice(80, 120) + '|' + b64.slice((len >> 1) - 16, (len >> 1) + 16) + '|' + b64.slice(-40);
 }
 function _cacheGet(b64) {
@@ -435,7 +401,6 @@ function _cacheSet(b64, result) {
 async function callAPI(imageBase64, numberRegionBase64 = null) {
   console.log('Calling API backend...');
 
-  // Return cached result if the same image was identified recently
   const cached = _cacheGet(imageBase64);
   if (cached) {
     console.log('📦 Scan cache hit — skipping API call');
@@ -443,17 +408,15 @@ async function callAPI(imageBase64, numberRegionBase64 = null) {
   }
 
   const headers = { 'Content-Type': 'application/json' };
-  const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+  const apiToken = getApiToken();
   if (apiToken) headers['X-Api-Token'] = apiToken;
 
-  // Build request body — include number region crop if available
   const bodyObj = { imageData: imageBase64 };
   if (numberRegionBase64) bodyObj.numberRegionData = numberRegionBase64;
 
-  // Retry with exponential backoff on transient failures (network blips, 5xx)
   const MAX_RETRIES  = 2;
-  const RETRY_DELAYS = [1000, 2000]; // ms
-  const CLIENT_TIMEOUT_MS = 25000; // 25s — below Vercel's 30s function limit
+  const RETRY_DELAYS = [1000, 2000];
+  const CLIENT_TIMEOUT_MS = 25000;
   let lastError;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -482,10 +445,9 @@ async function callAPI(imageBase64, numberRegionBase64 = null) {
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         const errMsg = err.error || `API error: ${response.status}`;
-        // Don't retry on 4xx client errors
         if (response.status >= 400 && response.status < 500) throw new Error(errMsg);
         lastError = new Error(errMsg);
-        continue; // retry on 5xx
+        continue;
       }
 
       const data        = await response.json();
@@ -499,25 +461,15 @@ async function callAPI(imageBase64, numberRegionBase64 = null) {
       _cacheSet(imageBase64, parsed);
       return parsed;
     } catch (err) {
-      if (err.message.includes('API error: 4')) throw err; // don't retry 4xx
+      if (err.message.includes('API error: 4')) throw err;
       lastError = err;
     }
   }
   throw lastError;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function _extractHeroFromOCR(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  return lines.find(l => /^[A-Z\s]{3,}$/.test(l)) || null;
-}
-
-// ── Add card ──────────────────────────────────────────────────────────────────
-
 // ── Price Check Collection ────────────────────────────────────────────────────
-// Ensures a dedicated "Price Check" collection exists for eBay price lookups
-function ensurePriceCheckCollection() {
+export function ensurePriceCheckCollection() {
     const collections = getCollections();
     if (!collections.find(c => c.id === 'price_check')) {
         collections.push({
@@ -529,12 +481,10 @@ function ensurePriceCheckCollection() {
         saveCollections(collections);
         console.log('✅ Price Check collection created');
     }
-    return collections; // return the live array (avoids a second localStorage read)
+    return collections;
 }
 window.ensurePriceCheckCollection = ensurePriceCheckCollection;
 
-// Retry Supabase image upload up to 8 times over 20 seconds.
-// On mobile, the auth session may not be restored yet when a scan finishes.
 async function uploadWithRetry(imageBase64, fileName, maxAttempts = 8, delayMs = 2500) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -543,7 +493,6 @@ async function uploadWithRetry(imageBase64, fileName, maxAttempts = 8, delayMs =
     if (typeof uploadCardImage !== 'function') return null;
     const url = await uploadCardImage(imageBase64, fileName);
     if (url) return url;
-    // If currentUser still null, keep waiting
     console.log(`⏳ Image upload attempt ${attempt + 1}/${maxAttempts} — waiting for auth...`);
   }
   return null;
@@ -551,7 +500,7 @@ async function uploadWithRetry(imageBase64, fileName, maxAttempts = 8, delayMs =
 window.uploadWithRetry = uploadWithRetry;
 
 
-// ── Duplicate detection modal (replaces native confirm) ──────────────────────
+// ── Duplicate detection modal ──────────────────────────────────────────────
 function showDuplicateModal(dupeCount, cardName, onConfirm) {
   document.getElementById('dupeModal')?.remove();
   const html = `
@@ -593,7 +542,7 @@ function showDuplicateModal(dupeCount, cardName, onConfirm) {
   });
 }
 
-function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null, _skipDupeCheck = false, centeringData = null, cardBounds = null) {
+export function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null, _skipDupeCheck = false, centeringData = null, cardBounds = null) {
   console.log('Adding card:', match['Card Number']);
 
   // ── Deck Builder intercept ─────────────────────────────────────────────
@@ -604,19 +553,14 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     return;
   }
 
-  // Determine target collection based on scan mode
   const isPriceCheck = (window.scanMode === 'pricecheck');
   let collections = isPriceCheck
-    ? ensurePriceCheckCollection()  // returns live array with price_check guaranteed
+    ? ensurePriceCheckCollection()
     : getCollections();
 
   const targetId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
   let collection = collections.find(c => c.id === targetId);
 
-  // Fallback: if the target collection isn't found (e.g. stale currentCollectionId
-  // pointing at a deleted or unsynced collection), try 'default' before creating
-  // a brand-new empty one. This prevents the destructive scenario where a new
-  // empty default overwrites the user's real collection data.
   if (!collection && !isPriceCheck) {
     if (targetId !== 'default') {
       console.warn(`⚠️ Collection "${targetId}" not found — falling back to default`);
@@ -625,7 +569,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
         setCurrentCollectionId('default');
       }
     }
-    // Last resort: create a default collection only if none exists at all
     if (!collection) {
       const defaultCol = { id: 'default', name: 'My Collection', cards: [], stats: { scanned: 0, free: 0, cost: 0, aiCalls: 0 } };
       collections.unshift(defaultCol);
@@ -639,10 +582,8 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     return;
   }
 
-  // ── Duplicate detection — O(1) Set lookup instead of O(n) reduce+filter ──
   const cardId  = match['Card ID']     || '';
   const cardNum = match['Card Number'] || '';
-  // Build lookup Sets once across all collections
   const cardIdSet  = new Set();
   const cardNumSet = new Set();
   for (const col of collections) {
@@ -651,7 +592,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
       if (c.cardNumber) cardNumSet.add(c.cardNumber);
     }
   }
-  // Count actual duplicates (still need the count for the modal message)
   const dupeCount = collections.reduce((total, col) =>
     total + col.cards.filter(c =>
       (cardId  && c.cardId    === String(cardId))  ||
@@ -659,8 +599,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     ).length, 0);
 
   if (dupeCount > 0 && !_skipDupeCheck) {
-    // Non-blocking custom modal replaces native confirm() which is unreliable
-    // on iOS Chrome and blocks the UI thread on every scan.
     return void showDuplicateModal(dupeCount, match.Name || cardNum, () => {
       addCard(match, displayUrl, fileName, type, confidence, lowConfidence, imageBase64, true, centeringData, cardBounds);
     });
@@ -669,7 +607,7 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   const card = {
     cardId:        String(match['Card ID']     || ''),
     hero:          match.Name                  || '',
-    athlete:       (typeof getAthleteForHero === 'function') ? (getAthleteForHero(match.Name) || '') : '',
+    athlete:       getAthleteForHero(match.Name) || '',
     year:          match.Year                  || '',
     set:           match.Set                   || '',
     cardNumber:    match['Card Number']        || '',
@@ -685,7 +623,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     lowConfidence,
     timestamp:     new Date().toISOString(),
     tags:          (typeof getPendingTags === 'function') ? getPendingTags() : [],
-    // Feature fields
     condition:     '',
     notes:         '',
     readyToList:   false,
@@ -693,7 +630,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     listingUrl:    null,
     listingPrice:  null,
     soldAt:        null,
-    // Centering + bounds computed from original photo geometry at scan time
     centeringData,
     cardBounds
   };
@@ -705,14 +641,12 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   if (type === 'free') collection.stats.free++;
   if (type === 'ai')   collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
 
-  const newCardIndex = collection.cards.length - 1; // index of the card we just pushed
+  const newCardIndex = collection.cards.length - 1;
 
   saveCollections(collections);
 
-  // Notify listeners that a scan completed
-  if (typeof emit === 'function') emit('scan:complete', { card, index: newCardIndex });
+  emit('scan:complete', { card, index: newCardIndex });
 
-  // Async Supabase upload — blob URL shown immediately, swapped to permanent URL on success.
   if (imageBase64) {
     const savedColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
     uploadWithRetry(imageBase64, fileName).then(uploadedUrl => {
@@ -725,17 +659,14 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
       if (col && col.cards[newCardIndex]) {
         col.cards[newCardIndex].imageUrl = uploadedUrl;
         saveCollections(cols);
-        renderCards();
+        if (typeof renderCards === 'function') renderCards();
         if (typeof renderCollectionModal === 'function') renderCollectionModal();
-        // Update detail modal if still open for this card
         const modal = document.getElementById('cardDetailModal');
         if (modal) {
           const detailImg = modal.querySelector('img[data-card-index]');
           if (detailImg && parseInt(detailImg.dataset.cardIndex) === newCardIndex) {
-            // Swap blob → permanent URL in-place
             detailImg.src = uploadedUrl;
           } else {
-            // Modal opened before upload finished — replace the no-image placeholder
             const noImgDiv = modal.querySelector('#detailNoImgMsg');
             if (noImgDiv) {
               const wrap = noImgDiv.parentElement;
@@ -755,23 +686,18 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
 
   if (typeof trackCardAdded === 'function') trackCardAdded();
 
-  // For price check scans: switch the active collection view BEFORE any render
-  // so we never flash the main collection on screen before jumping to price_check.
   if (isPriceCheck) {
-    if (typeof setCurrentCollectionId === 'function') setCurrentCollectionId('price_check');
+    setCurrentCollectionId('price_check');
     if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
   }
 
-  // Update nav counts on the quick-access buttons
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
 
-  updateStats();
-  renderCards();
+  if (typeof updateStats === 'function') updateStats();
+  if (typeof renderCards === 'function') renderCards();
 
-  // Auto-open the card detail popup so the user can immediately see what was added.
-  // Small delay allows renderCards() to finish painting the grid first.
   if (typeof window.openCollectionCardDetail === 'function') {
-    const popupColId = isPriceCheck ? 'price_check' : (getCurrentCollectionId ? getCurrentCollectionId() : 'default');
+    const popupColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
     setTimeout(() => window.openCollectionCardDetail(popupColId, newCardIndex), 150);
   }
 
@@ -781,10 +707,8 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
 
   if (isPriceCheck) {
-    // Auto-fetch eBay prices for price check cards
     showToast(`Price Check: ${card.hero} (${card.cardNumber}) — fetching eBay prices...`, '💰');
     if (typeof fetchEbayAvgPrice === 'function') {
-      // Fetch active + sold prices in parallel
       const soldPromise = (typeof fetchEbaySoldData === 'function')
         ? fetchEbaySoldData(card).catch(() => null) : Promise.resolve(null);
 
@@ -795,7 +719,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
         const savedCard = pc.cards[pc.cards.length - 1];
         if (!savedCard) return;
 
-        // Save active listing prices
         if (priceData && priceData.count > 0) {
           savedCard.ebayAvgPrice    = priceData.avgPrice;
           savedCard.ebayLowPrice    = priceData.lowPrice;
@@ -803,7 +726,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
           savedCard.ebayPriceFetched = new Date().toISOString();
         }
 
-        // Save sold prices
         if (soldData && soldData.lastSold) {
           savedCard.ebaySoldPrice    = soldData.lastSold.price;
           savedCard.ebaySoldDate     = soldData.lastSold.date || null;
@@ -814,9 +736,8 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
         }
 
         saveCollections(cols2);
-        renderCards();
+        if (typeof renderCards === 'function') renderCards();
 
-        // Build toast message
         const parts = [];
         if (priceData?.count > 0) {
           parts.push(`Avg $${priceData.avgPrice?.toFixed(2)} · Low $${priceData.lowPrice?.toFixed(2)} (${priceData.count} active)`);
@@ -831,7 +752,6 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
         }
       }).catch(() => showToast(`${card.hero}: eBay price lookup failed`, '⚠️'));
     }
-    // Reset scan mode after price check
     window.scanMode = 'collection';
   } else {
     showToast(`Added: ${card.hero} (${card.cardNumber})${dupeNote}${confNote}`,
@@ -841,14 +761,14 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
   console.log(`Added to ${isPriceCheck ? 'Price Check' : 'Collection'}. Cards: ${collection.cards.length}`);
 }
 
-function removeCard(index) {
+export function removeCard(index) {
   const collections = getCollections();
   const currentId   = getCurrentCollectionId();
   const collection  = collections.find(c => c.id === currentId);
   if (!collection?.cards[index]) return;
 
   const card = collection.cards[index];
-  recordDeletedCard(card);
+  if (typeof recordDeletedCard === 'function') recordDeletedCard(card);
   if (typeof deleteCardImage === 'function') deleteCardImage(card.imageUrl);
   if (card.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(card.imageUrl);
 
@@ -858,12 +778,12 @@ function removeCard(index) {
 
   saveCollections(collections);
   if (typeof trackCardAdded === 'function') trackCardAdded();
-  updateStats();
-  renderCards();
+  if (typeof updateStats === 'function') updateStats();
+  if (typeof renderCards === 'function') renderCards();
   showToast('Card removed', '🗑️');
 }
 
-function updateCard(index, field, value) {
+export function updateCard(index, field, value) {
   const collections = getCollections();
   const currentId   = getCurrentCollectionId();
   const collection  = collections.find(c => c.id === currentId);

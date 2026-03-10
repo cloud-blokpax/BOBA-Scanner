@@ -1,12 +1,12 @@
 // ── src/ui/toast.js ──────────────────────────────────────────────────────────
 // Status indicators, toast notifications, loading overlay, and progress bar
 
-function setStatus(type, state) {
+export function setStatus(type, state) {
     const el = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
     if (el) el.className = `status-dot ${state}`;
 }
 
-function showToast(message, icon = '✓') {
+export function showToast(message, icon = '✓') {
     const toast = document.getElementById('toast');
     const toastIcon = document.getElementById('toastIcon');
     const toastMessage = document.getElementById('toastMessage');
@@ -22,7 +22,7 @@ function showToast(message, icon = '✓') {
     setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-function showLoading(show, text = 'Processing...') {
+export function showLoading(show, text = 'Processing...') {
     const overlay = document.getElementById('loadingOverlay');
     const loadingText = document.getElementById('loadingText');
 
@@ -32,7 +32,7 @@ function showLoading(show, text = 'Processing...') {
     overlay.classList.toggle('active', show);
 }
 
-function setProgress(percent) {
+export function setProgress(percent) {
     const progressFill = document.getElementById('progressFill');
     if (progressFill) {
         progressFill.style.width = `${percent}%`;

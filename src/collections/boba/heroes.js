@@ -4,7 +4,7 @@
 // Multiple heroes can map to the same athlete (e.g. Freakshow → Giannis).
 // Used by scanner.js to auto-populate card.athlete on every scan.
 
-const HERO_TO_ATHLETE = {
+export const HERO_TO_ATHLETE = {
   'BRAUN':              'A.J. Brown',
   'AJAX':               "A'ja Wilson",
   'GAVELER':            'Aaron Judge',
@@ -259,7 +259,7 @@ const HERO_TO_ATHLETE = {
  * @param {string} heroName
  * @returns {string|null}
  */
-function getAthleteForHero(heroName) {
+export function getAthleteForHero(heroName) {
   if (!heroName) return null;
   const key = String(heroName).toUpperCase().trim();
   return HERO_TO_ATHLETE[key] || null;

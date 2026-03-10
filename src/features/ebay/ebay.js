@@ -1,5 +1,5 @@
 // ============================================================
-// js/ebay.js — eBay search link builder + EPN affiliate tracking
+// ES Module — eBay search link builder + EPN affiliate tracking
 //
 // Affiliate params from BOBA-Scanner EPN account:
 //   campid  : 5339143193  (Campaign: "default")
@@ -13,6 +13,11 @@
 // these params so affiliate commission is tracked on any resulting
 // purchase.
 // ============================================================
+
+import { getCollections, getCurrentCollectionId, saveCollections } from '../../core/collection/collections.js';
+import { showToast } from '../../ui/toast.js';
+import { getApiToken } from '../../core/state.js';
+import { recordPrice } from './price-trends.js';
 
 const EBAY_AFFILIATE = {
   campid:  '5339143193',
@@ -30,7 +35,7 @@ const EBAY_SEARCH_BASE = 'https://www.ebay.com/sch/i.html';
 // We always include "bo jackson" to keep results on target.
 // Parallel and weapon are included when non-trivial (skip "Base", "None", etc.)
 
-function buildEbayQuery(card) {
+export function buildEbayQuery(card) {
   // Helper: safely coerce any value to trimmed string
   const s = v => String(v ?? '').trim();
 
@@ -69,7 +74,7 @@ function appendAffiliateParams(url) {
 }
 
 // ── Build complete eBay search URL ────────────────────────────────────────────
-function buildEbaySearchUrl(card) {
+export function buildEbaySearchUrl(card) {
   const query = buildEbayQuery(card);
   if (!query.trim()) return null;
 
@@ -78,7 +83,7 @@ function buildEbaySearchUrl(card) {
 }
 
 // ── Open eBay search in new tab ───────────────────────────────────────────────
-window.openEbaySearch = function(cardIndex) {
+export function openEbaySearch(cardIndex) {
   const collections = getCollections();
   const currentId   = getCurrentCollectionId();
   const collection  = collections.find(c => c.id === currentId);
@@ -102,12 +107,12 @@ window.openEbaySearch = function(cardIndex) {
 // ── Fetch average eBay market price for a card ────────────────────────────────
 // Calls the ebay-browse serverless endpoint in keyword-search mode.
 // Returns { avgPrice, lowPrice, highPrice, count } or null on failure.
-window.fetchEbayAvgPrice = async function(card) {
+export async function fetchEbayAvgPrice(card) {
   const query = buildEbayQuery(card);
   if (!query) return null;
 
   try {
-    const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+    const apiToken = getApiToken();
     const headers  = { 'Content-Type': 'application/json' };
     if (apiToken) headers['X-Api-Token'] = apiToken;
 
@@ -127,7 +132,7 @@ window.fetchEbayAvgPrice = async function(card) {
     if (data.count === 0 || data.avgPrice === null) return { count: 0 };
 
     // Record price for trend tracking
-    if (typeof recordPrice === 'function' && card.cardNumber && data.count > 0) {
+    if (card.cardNumber && data.count > 0) {
       recordPrice(card.cardNumber, {
         avgPrice: data.avgPrice,
         lowPrice: data.lowPrice,
@@ -140,10 +145,11 @@ window.fetchEbayAvgPrice = async function(card) {
   } catch {
     return null;
   }
-};
+}
+window.fetchEbayAvgPrice = fetchEbayAvgPrice;
 
 // ── Build eBay SOLD listings search URL ──────────────────────────────────────
-function buildEbaySoldUrl(card) {
+export function buildEbaySoldUrl(card) {
   const query = buildEbayQuery(card);
   if (!query.trim()) return null;
 
@@ -154,12 +160,12 @@ function buildEbaySoldUrl(card) {
 // ── Fetch eBay sold/completed listing data for a card ────────────────────────
 // Calls the ebay-sold serverless endpoint.
 // Returns { lastSold: { price, date, title, url }, soldCount, avgSoldPrice, ... } or null.
-window.fetchEbaySoldData = async function(card) {
+export async function fetchEbaySoldData(card) {
   const query = buildEbayQuery(card);
   if (!query) return null;
 
   try {
-    const apiToken = (typeof getApiToken === 'function') ? getApiToken() : null;
+    const apiToken = getApiToken();
     const headers  = { 'Content-Type': 'application/json' };
     if (apiToken) headers['X-Api-Token'] = apiToken;
 
@@ -181,7 +187,7 @@ window.fetchEbaySoldData = async function(card) {
     if (!data.lastSold && data.soldCount === 0) return { soldCount: 0 };
 
     // Record sold price for trend tracking
-    if (typeof recordPrice === 'function' && card.cardNumber && data.avgSoldPrice) {
+    if (card.cardNumber && data.avgSoldPrice) {
       recordPrice(card.cardNumber, {
         soldAvg: data.avgSoldPrice,
         count: data.soldCount || 0
@@ -192,9 +198,11 @@ window.fetchEbaySoldData = async function(card) {
   } catch {
     return null;
   }
-};
+}
+window.fetchEbaySoldData = fetchEbaySoldData;
 
-// ── Expose for use in collection modal (tags.js) ──────────────────────────────
+// ── Expose to window for HTML onclick handlers and lazy-loaded modules ────────
+window.openEbaySearch     = openEbaySearch;
 window.buildEbaySearchUrl = buildEbaySearchUrl;
 window.buildEbaySoldUrl   = buildEbaySoldUrl;
 window.buildEbayQuery     = buildEbayQuery;

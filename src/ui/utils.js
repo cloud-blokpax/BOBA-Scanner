@@ -2,7 +2,7 @@
 // Shared utility functions: HTML escaping
 
 // Sanitize user-controlled strings before inserting into HTML
-function escapeHtml(str) {
+export function escapeHtml(str) {
     if (str == null) return '';
     return String(str)
         .replace(/&/g, '&amp;')

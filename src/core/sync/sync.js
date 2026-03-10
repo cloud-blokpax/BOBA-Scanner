@@ -1,4 +1,12 @@
-// js/sync.js — Cloud sync for card collections
+// js/sync.js — Cloud sync for card collections (ES Module)
+
+import { getCollections, saveCollections } from '../collection/collections.js';
+import { currentUser, isGuestMode } from '../auth/user-management.js';
+import { showToast } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { getAllTags, saveAllTags } from '../../features/tags/tags.js';
+import { renderCards } from '../../ui/cards-grid.js';
+import { updateStats } from '../../ui/stats-strip.js';
 
 const SYNC_DEBOUNCE_MS = 2000;
 const TOMBSTONE_DELIM  = '|||';   // safe delimiter — colons appear in card numbers
@@ -242,10 +250,10 @@ async function pushCollections() {
 
         // ── Tag merge on push (symmetric with pull) ──
         // Merge local tags with cloud tags so neither device loses edits
-        let mergedTags = (typeof getAllTags === 'function') ? getAllTags() : [];
+        let mergedTags = getAllTags();
         if (!error && data?.user_tags?.length) {
             mergedTags = [...new Set([...mergedTags, ...data.user_tags])];
-            if (typeof saveAllTags === 'function') saveAllTags(mergedTags);
+            saveAllTags(mergedTags);
         }
 
         const { error: writeError } = await window.supabaseClient
@@ -267,7 +275,7 @@ async function pushCollections() {
     } catch (err) {
         _pushFailures++;
         console.warn(`⚠️ Push failed (attempt ${_pushFailures}):`, err.message);
-        if (_pushFailures >= 3 && typeof showToast === 'function') {
+        if (_pushFailures >= 3) {
             showToast('Sync issues — check connection', '⚠️');
             _pushFailures = 0; // reset so we don't spam toasts
         }
@@ -308,7 +316,7 @@ async function pullCollections() {
         saveDeletedCards(allTombstones);
 
         // Merge user tags from cloud
-        if (typeof saveAllTags === 'function' && data.user_tags?.length) {
+        if (data.user_tags?.length) {
             const localTags    = getAllTags();
             const mergedTags   = [...new Set([...localTags, ...data.user_tags])];
             saveAllTags(mergedTags);
@@ -327,8 +335,8 @@ async function pullCollections() {
         // the pull and the invalidation lived only in the stale cache and were lost.
         saveCollections(mergedCollections);
 
-        if (typeof renderCards === 'function') renderCards();
-        if (typeof updateStats === 'function') updateStats();
+        renderCards();
+        updateStats();
 
         const diff = mergedTotal - localTotal;
         if (diff > 0) {
@@ -380,7 +388,7 @@ async function forceSync() {
         saveDeletedCards(allTombstones);
 
         // Merge tags
-        if (typeof saveAllTags === 'function' && data?.user_tags?.length) {
+        if (data?.user_tags?.length) {
             saveAllTags([...new Set([...getAllTags(), ...data.user_tags])]);
         }
 
@@ -405,14 +413,14 @@ async function forceSync() {
                     user_id:       currentUser.id,
                     data:          safe,
                     deleted_cards: allTombstones,
-                    user_tags:     (typeof getAllTags === 'function') ? getAllTags() : [],
+                    user_tags:     getAllTags(),
                     updated_at:    new Date().toISOString()
                 },
                 { onConflict: 'user_id' }
             );
 
-        if (typeof renderCards === 'function') renderCards();
-        if (typeof updateStats === 'function') updateStats();
+        renderCards();
+        updateStats();
 
         const fromCloud = mergedTotal - localTotal;
         const toCloud   = mergedTotal - cloudTotal;
@@ -495,5 +503,7 @@ function _syncRenderCollectionModal_LEGACY() {
 }
 
 window.forceSync = forceSync;
+
+export { setupAutoSync, schedulePush, forceSync, recordDeletedCard, closeCollectionModal };
 
 console.log('✅ Sync module loaded');

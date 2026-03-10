@@ -9,7 +9,10 @@
 //   - extractCardNumber(): expanded prefix length limit, added Z↔2 / G↔6
 //     confusion pairs, added numeric-only pattern for Alpha Edition cards.
 
-async function initTesseract() {
+import { ready, tesseractWorker, setTesseractWorker } from '../state.js';
+import { setStatus } from '../../ui/toast.js';
+
+export async function initTesseract() {
     if (!window.crossOriginIsolated) {
         // COOP/COEP headers not active — SharedArrayBuffer unavailable.
         // Fall back silently; every scan will use the AI path instead.
@@ -19,7 +22,7 @@ async function initTesseract() {
         return;
     }
     try {
-        tesseractWorker = await Tesseract.createWorker('eng');
+        setTesseractWorker(await Tesseract.createWorker('eng'));
         // PSM 7 = treat image as a single text line (card numbers are one line)
         // Character whitelist restricts to valid card-number chars only
         await tesseractWorker.setParameters({
@@ -37,7 +40,7 @@ async function initTesseract() {
 }
 
 // Main entry point — called by scanner.js and batch-scanner.js
-async function runOCR(imageUrl) {
+export async function runOCR(imageUrl) {
     if (!ready.ocr || !tesseractWorker) {
         throw new Error('OCR not ready');
     }
@@ -83,10 +86,10 @@ async function runOCROnRegion(sourceCanvas, region) {
         // Worker became invalid — terminate it cleanly and try once to recreate.
         console.warn('OCR worker error, recreating...', err.message);
         try { await tesseractWorker.terminate(); } catch (_) {}
-        tesseractWorker = null;
+        setTesseractWorker(null);
         ready.ocr = false;
         try {
-            tesseractWorker = await Tesseract.createWorker('eng');
+            setTesseractWorker(await Tesseract.createWorker('eng'));
             await tesseractWorker.setParameters({
                 tessedit_pageseg_mode: '7',
                 tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
@@ -100,7 +103,7 @@ async function runOCROnRegion(sourceCanvas, region) {
         } catch (err2) {
             // Recreation also failed — keep worker null so remaining regions skip
             // immediately instead of crashing again.
-            tesseractWorker = null;
+            setTesseractWorker(null);
             ready.ocr = false;
             console.warn('OCR worker recreation failed:', err2.message);
             return { text: '', confidence: 0, cardNumber: null };
@@ -227,7 +230,7 @@ function cropAndPreprocess(sourceCanvas, region) {
     return out;
 }
 
-function extractCardNumber(text) {
+export function extractCardNumber(text) {
     // Pre-clean common OCR noise before pattern matching
     const upper = text.toUpperCase()
         .replace(/[|!¡]/g, 'I')

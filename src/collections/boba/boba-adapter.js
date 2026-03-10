@@ -4,7 +4,11 @@
 // Implements the CollectionAdapter interface for BOBA cards.
 // ============================================================
 
-class BobaAdapter extends CollectionAdapter {
+import { CollectionAdapter } from '../adapter.js';
+import { registerAdapter, setActiveAdapter } from '../registry.js';
+import { getAthleteForHero } from './heroes.js';
+
+export class BobaAdapter extends CollectionAdapter {
     get id() { return 'boba'; }
     get displayName() { return 'Bo Jackson Battle Arena'; }
     get databaseUrl() { return '/card-database.json'; }
@@ -37,8 +41,7 @@ class BobaAdapter extends CollectionAdapter {
     }
 
     buildCardFromMatch(match, scanMeta) {
-        const athleteName = (typeof getAthleteForHero === 'function')
-            ? (getAthleteForHero(match.Name) || '') : '';
+        const athleteName = getAthleteForHero(match.Name) || '';
 
         return {
             cardId:        String(match['Card ID'] || ''),
@@ -120,8 +123,7 @@ Return ONLY valid JSON with no markdown or extra text:
     }
 
     resolveMetadata(match) {
-        const athlete = (typeof getAthleteForHero === 'function')
-            ? (getAthleteForHero(match.Name) || '') : '';
+        const athlete = getAthleteForHero(match.Name) || '';
         return { athlete };
     }
 

@@ -1,8 +1,11 @@
 // ============================================================
-// js/scan-history.js — Scan history log
+// scan-history.js — Scan history log (ES Module)
 // Records every scan attempt (success and failure) in localStorage.
 // Separate from the collection — this is a chronological activity log.
 // ============================================================
+
+import { escapeHtml } from '../../ui/utils.js';
+import { showToast } from '../../ui/toast.js';
 
 const HISTORY_KEY  = 'scanHistory';
 const MAX_HISTORY  = 100;
@@ -34,10 +37,12 @@ function clearScanHistory() {
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
-window.openScanHistoryModal = function() {
+function openScanHistoryModal() {
   if (document.getElementById('scanHistoryModal')) return;
   renderScanHistoryModal();
-};
+}
+
+window.openScanHistoryModal = openScanHistoryModal;
 
 function renderScanHistoryModal() {
   document.getElementById('scanHistoryModal')?.remove();
@@ -120,5 +125,7 @@ function timeAgo(iso) {
   const d = Math.floor(h / 24);
   return `${d}d ago`;
 }
+
+export { addToScanHistory, openScanHistoryModal };
 
 console.log('✅ Scan history module loaded');
