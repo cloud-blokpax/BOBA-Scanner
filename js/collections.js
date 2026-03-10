@@ -305,6 +305,8 @@ function updateCollectionSlider() {
 window.updateCollectionSlider = updateCollectionSlider;
 window.switchCollection = switchCollection;
 window.setCurrentCollectionId = setCurrentCollectionId;
+window.getCollections = getCollections;
+window.getCurrentCollectionId = getCurrentCollectionId;
 
 window.sliderSwitch = function(targetId) {
   if (targetId === 'price_check') {

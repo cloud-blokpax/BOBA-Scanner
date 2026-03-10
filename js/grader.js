@@ -238,5 +238,6 @@ async function urlToBase64(url) {
 
 window.triggerGradeCard = triggerGradeCard;
 window.triggerGradeCardWithPicker = triggerGradeCardWithPicker;
+window.gradeCardFromDetail = gradeCardFromDetail;
 
 console.log('✅ Grader module loaded');

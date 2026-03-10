@@ -1162,6 +1162,8 @@ function updateCollectionNavCounts() {
     } catch(e) {}
 }
 window.updateCollectionNavCounts = updateCollectionNavCounts;
+window.showLoading = showLoading;
+window.showToast = showToast;
 
 // Open Price Check modal — delegates to the dedicated function in tags.js
 window.openPriceCheckModal = function() {
