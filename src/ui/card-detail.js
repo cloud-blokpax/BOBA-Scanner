@@ -13,6 +13,8 @@ import { wireUpEvents } from './events.js';
 import { initUploadArea } from './upload-area.js';
 import { buildEbaySearchUrl, buildEbaySoldUrl, fetchEbayAvgPrice } from '../features/ebay/ebay.js';
 import { isFeatureEnabled } from '../core/infra/feature-flags.js';
+import { updateCard, removeCard } from '../core/scanner/scanner.js';
+import { updateAuthUI } from '../core/auth/google-auth.js';
 
 // ── Card Detail Modal ────────────────────────────────────────────────────────
 
@@ -474,7 +476,7 @@ window.openCardDetail = function(index) {
             reAttachLabel.textContent = 'Uploading...';
             try {
                 const base64 = await compressImage(file);
-                const url = await uploadWithRetry(base64, file.name, 5, 1000);
+                const url = await window.uploadWithRetry(base64, file.name, 5, 1000);
                 if (url) {
                     updateCard(index, 'imageUrl', url);
                     const noImgDiv = document.getElementById('detailNoImgMsg')?.parentElement;
@@ -559,9 +561,7 @@ window.openCollectionCardDetail = function(colId, index) {
     if (colId !== prevId) setCurrentCollectionId(colId);
 
     // Reuse the standard card detail modal — openCardDetail uses getCurrentCollectionId
-    if (typeof openCardDetail === 'function') {
-        openCardDetail(index);
-    }
+    window.openCardDetail(index);
 
     // When the detail modal is closed, restore previous active collection
     if (colId !== prevId) {
@@ -656,7 +656,7 @@ window.clearCardListingStatus = function(index) {
     }
 
     saveCollections(collections);
-    if (typeof syncToCloud === 'function') syncToCloud();
+    if (typeof window.syncToCloud === 'function') window.syncToCloud();
 
     // Re-render the modal with updated card state
     document.getElementById('cardDetailModal')?.remove();
@@ -681,7 +681,7 @@ window.addDetailTag = function(index) {
     if (!card.tags.includes(tag)) {
         card.tags.push(tag);
         saveCollections(collections);
-        if (typeof syncToCloud === 'function') syncToCloud();
+        if (typeof window.syncToCloud === 'function') window.syncToCloud();
     }
 
     input.value = '';
@@ -711,7 +711,7 @@ window.removeDetailTag = function(index, tag, btnEl) {
         card.tags = card.tags.filter(t => t !== tag);
     }
     saveCollections(collections);
-    if (typeof syncToCloud === 'function') syncToCloud();
+    if (typeof window.syncToCloud === 'function') window.syncToCloud();
 
     // Remove the chip from the DOM directly (no full re-render needed)
     btnEl?.closest('.tag-chip')?.remove();
@@ -725,12 +725,15 @@ window.removeDetailTag = function(index, tag, btnEl) {
 // Scripts load at bottom of <body>, so DOM is already ready when this runs.
 // DOMContentLoaded has already fired — addEventListener for it would never trigger.
 // Call directly instead.
+// Expose imported functions on window for inline onclick handlers in card detail HTML
+window.updateCard = updateCard;
+window.removeCard = removeCard;
+
 (function() {
     wireUpEvents();
     initUploadArea();
     setTimeout(() => {
-        const user = (typeof googleUser !== 'undefined' && googleUser) ||
-                     (typeof currentUser !== 'undefined' && currentUser) || null;
+        const user = window.googleUser || window.currentUser || null;
         updateAuthUI(user);
     }, 500);
 })();

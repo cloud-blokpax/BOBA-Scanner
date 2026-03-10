@@ -12,8 +12,8 @@ function renderCards() {
     console.log('🎨 Rendering cards...');
 
     // Update nav counts whenever cards are re-rendered
-    if (typeof updateCollectionNavCounts === 'function') {
-        try { updateCollectionNavCounts(); } catch(e) {}
+    if (typeof window.updateCollectionNavCounts === 'function') {
+        try { window.updateCollectionNavCounts(); } catch(e) {}
     }
     
     // FIXED: Get collections properly instead of using reference
@@ -279,7 +279,7 @@ function renderCards() {
               </div>
               ${priceHtml}
               ${card.condition ? `<span class="cl-cond">${escapeHtml(card.condition)}</span>` : ''}
-              <span class="cl-badge ${card.scanType==='free'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
+              <span class="cl-badge ${card.scanType==='ocr'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
             </div>`;
         }).join('');
 
@@ -293,7 +293,7 @@ function renderCards() {
             <div class="card-small" id="card_item_${idx}" data-open-card="${idx}" style="cursor:pointer;" title="${escapeHtml(card.hero||'')}">
               <div class="cs-img">
                 ${hasImg ? `<img src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none'">` : '<span>🎴</span>'}
-                <span class="cs-badge ${card.scanType==='free'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
+                <span class="cs-badge ${card.scanType==='ocr'?'badge-free':'badge-paid'}">${escapeHtml(card.scanMethod||card.scanType||'')}</span>
               </div>
               <div class="cs-body">
                 <div class="cs-name">${escapeHtml(card.hero||'Unknown')}</div>
@@ -308,7 +308,7 @@ function renderCards() {
         grid.innerHTML = pagedItems.map(({ card, idx }) => {
         const lowConfBadge = card.lowConfidence
             ? `<span class="conf-badge conf-low" title="Low confidence scan — please verify">⚠️ Verify</span>`
-            : (card.confidence && card.scanType === 'free'
+            : (card.confidence && card.scanType === 'ocr'
                 ? `<span class="conf-badge conf-ok" title="OCR confidence: ${Math.round(card.confidence)}%">${Math.round(card.confidence)}%</span>`
                 : '');
 
@@ -339,7 +339,7 @@ function renderCards() {
                      alt="${escapeHtml(card.cardNumber)}"
                      onerror="this.style.display='none'"
                      style="${(!card.imageUrl || card.imageUrl.startsWith('blob:')) ? 'display:none' : ''}">
-                <span class="card-badge ${card.scanType === 'free' ? 'badge-free' : 'badge-paid'}">
+                <span class="card-badge ${card.scanType === 'ocr' ? 'badge-free' : 'badge-paid'}">
                     ${escapeHtml(card.scanMethod || '')}
                 </span>
                 ${lowConfBadge}
@@ -415,7 +415,7 @@ function renderCards() {
             e.preventDefault(); // kill the 300ms ghost click
             const cardIdx = parseInt(target.dataset.openCard, 10);
             if (window._bulkSelect?.active) { window.toggleBulkCardSelect(cardIdx); return; }
-            openCardDetail(cardIdx);
+            window.openCardDetail(cardIdx);
         }, { passive: false });
 
         grid.addEventListener('click', function(e) {
@@ -426,7 +426,7 @@ function renderCards() {
             if (grid._lastTouchEnd && now - grid._lastTouchEnd < 600) return;
             const cardIdx = parseInt(target.dataset.openCard, 10);
             if (window._bulkSelect?.active) { window.toggleBulkCardSelect(cardIdx); return; }
-            openCardDetail(cardIdx);
+            window.openCardDetail(cardIdx);
         });
 
         grid.addEventListener('touchend', function() {
@@ -496,15 +496,15 @@ window.bulkDeleteCards = function() {
     for (const idx of indices) {
         const card = collection.cards[idx];
         if (!card) continue;
-        if (typeof recordDeletedCard === 'function') recordDeletedCard(card);
-        if (typeof deleteCardImage   === 'function') deleteCardImage(card.imageUrl);
+        if (typeof window.recordDeletedCard === 'function') window.recordDeletedCard(card);
+        if (typeof window.deleteCardImage   === 'function') window.deleteCardImage(card.imageUrl);
         if (card.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(card.imageUrl);
         collection.cards.splice(idx, 1);
         collection.stats.scanned = Math.max(0, (collection.stats.scanned || 0) - 1);
-        if (card.scanType === 'free') collection.stats.free = Math.max(0, (collection.stats.free || 0) - 1);
+        if (card.scanType === 'ocr') collection.stats.free = Math.max(0, (collection.stats.free || 0) - 1);
     }
     saveCollections(collections);
-    if (typeof updateStats === 'function') updateStats();
+    if (typeof window.updateStats === 'function') window.updateStats();
     window._bulkSelect.active = false;
     window._bulkSelect.selected.clear();
     renderCards();

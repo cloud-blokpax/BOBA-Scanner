@@ -5,8 +5,15 @@
 // Nothing written to collection until "Add to Collection" pressed.
 // ============================================================
 
-// Resolve escapeHtml from window (defined in ui.js core bundle)
-const escapeHtml = (...args) => window.escapeHtml(...args);
+import { ready } from '../state.js';
+import { showToast } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { config } from '../config.js';
+import { findCard } from '../database/database.js';
+import { cropToCard, compressImage } from './image-processing.js';
+import { getCollections, getCurrentCollectionId, saveCollections } from '../collection/collections.js';
+import { canMakeApiCall, trackApiCall, trackCardAdded } from '../auth/user-management.js';
+import { callAPI } from './scanner.js';
 
 const BATCH_CAP = 10;
 let _pendingResults  = [];
@@ -93,8 +100,10 @@ async function handleBatchFiles(e) {
     addBatchCard(entry);
   }
   updateBatchUI();
-  for (const entry of _pendingResults.filter(r => r.status === 'queued')) {
-    processBatchEntry(entry);
+  // Process entries sequentially to avoid race conditions with saveCollections
+  const queued = _pendingResults.filter(r => r.status === 'queued');
+  for (const entry of queued) {
+    await processBatchEntry(entry);
   }
 }
 
@@ -151,7 +160,7 @@ async function processBatchEntry(entry) {
     // ── AI identification ─────────────────────────────────────────────────────
     let match = null;
 
-    const canCall = typeof canMakeApiCall === 'function' ? await canMakeApiCall() : true;
+    const canCall = await canMakeApiCall();
     if (!canCall) throw new Error('API limit reached');
 
     const extracted = await callAPI(imageBase64);
@@ -160,7 +169,7 @@ async function processBatchEntry(entry) {
     match = findCard(extracted.cardNumber, extracted.hero);
     if (!match) throw new Error(`No match found for "${extracted.cardNumber}"`);
 
-    if (typeof trackApiCall === 'function') await trackApiCall('scan', true, config.aiCost, 1);
+    await trackApiCall('scan', true, config.aiCost, 1);
 
     entry.match      = match;
     entry.scanType   = 'ai';
@@ -238,6 +247,11 @@ async function commitBatch() {
   while (_processingCount > 0 && waited < 5000) { await new Promise(r => setTimeout(r, 200)); waited += 200; }
   const toAdd = _pendingResults.filter(r => r.status === 'done' && r.match);
   if (toAdd.length === 0) { showToast('No identified cards to add', '⚠️'); return; }
+  // Get collections once and add all cards, then save once to avoid data-loss race
+  const collections = getCollections();
+  const col = collections.find(c => c.id === getCurrentCollectionId());
+  if (!col) { showToast('No collection found', '❌'); return; }
+
   let added = 0;
   for (const entry of toAdd) {
     const card = {
@@ -247,29 +261,26 @@ async function commitBatch() {
       weapon: entry.match.Weapon || '', power: entry.match.Power || '',
       imageUrl: entry.imageUrl || '', fileName: entry.file.name,
       scanType: entry.scanType,
-      scanMethod: entry.scanType === 'free' ? `Free OCR (${Math.round(entry.confidence || 0)}%)` : 'AI + Database',
+      scanMethod: entry.scanType === 'ocr' ? `Free OCR (${Math.round(entry.confidence || 0)}%)` : 'AI + Database',
       timestamp: new Date().toISOString(), tags: [],
       condition: '', notes: '', readyToList: false, confidence: entry.confidence,
       centeringData: entry.centeringData || null,
       cardBounds: entry.cardBounds || null
     };
-    const collections = getCollections();
-    const col = collections.find(c => c.id === getCurrentCollectionId());
-    if (!col) continue;
     col.cards.push(card);
     col.stats.scanned++;
-    if (card.scanType === 'free') col.stats.free++;
+    if (card.scanType === 'ocr') col.stats.free++;
     if (card.scanType === 'ai')   col.stats.aiCalls = (col.stats.aiCalls || 0) + 1;
-    saveCollections(collections);
-    if (typeof addToScanHistory === 'function') {
-      addToScanHistory({ hero: card.hero, cardNumber: card.cardNumber, set: card.set,
+    if (typeof window.addToScanHistory === 'function') {
+      window.addToScanHistory({ hero: card.hero, cardNumber: card.cardNumber, set: card.set,
                          scanType: card.scanType, confidence: card.confidence, success: true });
     }
     added++;
   }
-  if (typeof trackCardAdded === 'function') await trackCardAdded();
-  if (typeof updateStats    === 'function') updateStats();
-  if (typeof renderCards    === 'function') renderCards();
+  saveCollections(collections);
+  await trackCardAdded();
+  if (typeof window.updateStats === 'function') window.updateStats();
+  if (typeof window.renderCards === 'function') window.renderCards();
   closeBatchModal();
   showToast(`Added ${added} card${added !== 1 ? 's' : ''} to collection`, '✅');
   if (navigator.vibrate) navigator.vibrate([50, 100, 50]);

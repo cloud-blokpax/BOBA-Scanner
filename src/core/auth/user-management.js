@@ -13,6 +13,8 @@ import { appConfig } from '../state.js';
 import { showToast } from '../../ui/toast.js';
 import { escapeHtml } from '../../ui/utils.js';
 import { emit } from '../event-bus.js';
+import { getCollections } from '../collection/collections.js';
+import { setupAutoSync } from '../sync/sync.js';
 
 export let currentUser = null;
 export let userLimits  = null;
@@ -179,9 +181,7 @@ export async function handleUserSignIn(googleUser) {
 
     // Trigger sync now that currentUser is set
     // (setupAutoSync in app.js runs too early, before sign-in completes)
-    if (typeof setupAutoSync === 'function') {
-      setupAutoSync();
-    }
+    setupAutoSync();
 
     return currentUser;
 
@@ -317,7 +317,7 @@ export async function canAddCard() {
   if (window._activeTournament) return true;
 
   // FIXED: Use getCollections() — bare `collections` was undefined
-  const total = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
+  const total = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
   const limit = isGuestMode()
     ? DEFAULT_LIMITS.guest.maxCards
     : (userLimits?.maxCards || DEFAULT_LIMITS.authenticated.maxCards);
@@ -362,7 +362,7 @@ export async function trackCardAdded() {
   }
 
   // FIXED: Use getCollections() not bare `collections`
-  const total = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
+  const total = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
 
   const { error } = await window.supabaseClient
     .from('users')
@@ -411,7 +411,7 @@ export async function trackApiCall(callType, success, cost = 0, cardsProcessed =
 // ── UI ─────────────────────────────────────────────────────────────────────────
 export function updateLimitsUI() {
   // FIXED: Use getCollections() not bare `collections`
-  const allCollections = (typeof getCollections === 'function') ? getCollections() : [];
+  const allCollections = getCollections();
   const totalCards     = allCollections.reduce((sum, c) => sum + c.cards.length, 0);
   const guest          = isGuestMode();
 
@@ -516,7 +516,7 @@ export async function openUserProfile() {
   // FIXED: Guard against duplicate insertion
   if (document.getElementById('profileModal')) return;
 
-  const totalCards = (typeof getCollections === 'function' ? getCollections() : []).reduce((sum, c) => sum + c.cards.length, 0);
+  const totalCards = getCollections().reduce((sum, c) => sum + c.cards.length, 0);
 
   const modal = document.createElement('div');
   modal.innerHTML = `

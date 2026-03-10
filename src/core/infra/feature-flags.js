@@ -27,6 +27,8 @@
 //   );
 
 import { escapeHtml } from '../../ui/utils.js';
+import { currentUser, isGuestMode, isAdmin } from '../auth/user-management.js';
+import { getCollections, getCurrentCollectionId, setCurrentCollectionId } from '../collection/collections.js';
 
 // ── Feature definitions ──────────────────────────────────────────────────────
 // These serve as fallback defaults if the DB table doesn't exist yet.
@@ -176,9 +178,9 @@ export function isFeatureEnabled(featureKey) {
 
 function _roleCheck(flag) {
   if (flag.enabled_globally) return true;
-  if (typeof isAdmin === 'function' && isAdmin())    return flag.enabled_for_admin    !== false;
+  if (isAdmin())    return flag.enabled_for_admin    !== false;
   if (currentUser?.is_member) return flag.enabled_for_member !== false;
-  if (typeof isGuestMode === 'function' && !isGuestMode()) return flag.enabled_for_authenticated !== false;
+  if (!isGuestMode()) return flag.enabled_for_authenticated !== false;
   return flag.enabled_for_guest === true;
 }
 
@@ -190,7 +192,7 @@ export function getAllFeatureFlags() {
 
 // ── Admin: save flag changes ───────────────────────────────────────────────────
 export async function saveFeatureFlag(featureKey, updates) {
-  if (!(typeof isAdmin === 'function' && isAdmin()) || !window.supabaseClient) return false;
+  if (!isAdmin() || !window.supabaseClient) return false;
   try {
     const { error } = await window.supabaseClient
       .from('feature_flags')
@@ -208,7 +210,7 @@ export async function saveFeatureFlag(featureKey, updates) {
 
 // Admin: set per-user override
 export async function setUserFeatureOverride(userId, featureKey, enabled) {
-  if (!(typeof isAdmin === 'function' && isAdmin()) || !window.supabaseClient) return false;
+  if (!isAdmin() || !window.supabaseClient) return false;
   try {
     if (enabled === null) {
       // null = remove override (revert to role-based default)
@@ -250,7 +252,7 @@ export async function fetchAllUserOverrides() {
 export function showCardPickerModal(title, subtitle, onPick) {
   document.getElementById('cardPickerModal')?.remove();
 
-  const collections = (typeof getCollections === 'function') ? getCollections() : [];
+  const collections = getCollections();
   // Gather all cards across collections, most recently scanned first
   const allCards = [];
   for (const col of collections) {
@@ -313,7 +315,7 @@ export function showCardPickerModal(title, subtitle, onPick) {
       const localIndex = parseInt(btn.dataset.localIndex, 10);
 
       // Switch active collection if needed
-      if (typeof setCurrentCollectionId === 'function' && colId !== (typeof getCurrentCollectionId === 'function' ? getCurrentCollectionId() : '')) {
+      if (colId !== getCurrentCollectionId()) {
         setCurrentCollectionId(colId);
       }
 

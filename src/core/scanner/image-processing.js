@@ -109,7 +109,7 @@ export async function cropToCard(file) {
                 resolve({ blob, canvas: out, centering, cardBounds });
             }, 'image/jpeg', 0.92);
         };
-        img.onerror = () => resolve(null);
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
         img.src = url;
     });
 }
@@ -288,13 +288,14 @@ export async function cropCardNumberRegion(file) {
                 const lum = Math.round(d[i*4]*0.299 + d[i*4+1]*0.587 + d[i*4+2]*0.114);
                 hist[lum]++;
             }
-            let cumul = 0, lo = 0, hi = 255;
+            let cumul = 0, lo = -1, hi = 255;
             const p2 = Math.floor(totalPx * 0.02), p98 = Math.floor(totalPx * 0.98);
             for (let v = 0; v < 256; v++) {
                 cumul += hist[v];
-                if (cumul >= p2  && lo === 0)   lo = v;
+                if (cumul >= p2  && lo === -1)  lo = v;
                 if (cumul >= p98 && hi === 255) hi = v;
             }
+            if (lo === -1) lo = 0;
             const range = Math.max(1, hi - lo);
             for (let i = 0; i < totalPx; i++) {
                 const idx = i * 4;
@@ -308,7 +309,7 @@ export async function cropCardNumberRegion(file) {
             const dataUrl = out.toDataURL('image/jpeg', 0.92);
             resolve(dataUrl.split(',')[1]);
         };
-        img.onerror = () => resolve(null);
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
         img.src = url;
     });
 }
@@ -373,7 +374,7 @@ export async function cropGradingRegions(file, cardBounds) {
             const dataUrl = out.toDataURL('image/jpeg', 0.92);
             resolve(dataUrl.split(',')[1]);
         };
-        img.onerror = () => resolve(null);
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
         img.src = url;
     });
 }

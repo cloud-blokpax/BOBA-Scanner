@@ -5,8 +5,17 @@
 // positions before processing. OCR-first for cost savings.
 // ============================================================
 
-// Resolve escapeHtml from window (defined in ui.js core bundle)
-const escapeHtml = (...args) => window.escapeHtml(...args);
+import { ready, tesseractWorker } from '../state.js';
+import { showToast } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { config } from '../config.js';
+import { findCard } from '../database/database.js';
+import { compressImage } from './image-processing.js';
+import { runOCR } from '../ocr/ocr.js';
+import { checkCorrection } from '../database/scan-learning.js';
+import { getCollections, getCurrentCollectionId, saveCollections } from '../collection/collections.js';
+import { canMakeApiCall, trackApiCall, trackCardAdded } from '../auth/user-management.js';
+import { callAPI } from './scanner.js';
 
 const BINDER_LAYOUTS = [
   { label: '3 × 3', rows: 3, cols: 3, icon: '▦' },
@@ -431,7 +440,7 @@ async function _processOneCell(cell, result) {
   result.imageUrl = imageUrl;
 
   // ── OCR-first path (free) ──────────────────────────────────────
-  if (ready.ocr && typeof tesseractWorker !== 'undefined' && tesseractWorker) {
+  if (ready.ocr && tesseractWorker) {
     try {
       const ocrResult = await Promise.race([
         runOCR(result.displayUrl),
@@ -442,7 +451,7 @@ async function _processOneCell(cell, result) {
         let match = findCard(ocrResult.cardNumber);
 
         // Try scan learning correction
-        if (!match && typeof checkCorrection === 'function') {
+        if (!match) {
           const corrected = checkCorrection(ocrResult.cardNumber);
           if (corrected) match = findCard(corrected);
         }
@@ -462,7 +471,7 @@ async function _processOneCell(cell, result) {
   }
 
   // ── AI fallback ────────────────────────────────────────────────
-  const canCall = typeof canMakeApiCall === 'function' ? await canMakeApiCall() : true;
+  const canCall = await canMakeApiCall();
   if (!canCall) {
     result.status = 'error';
     result.error = 'API limit reached';
@@ -483,7 +492,7 @@ async function _processOneCell(cell, result) {
     return;
   }
 
-  if (typeof trackApiCall === 'function') await trackApiCall('scan', true, config.aiCost, 1);
+  await trackApiCall('scan', true, config.aiCost, 1);
 
   result.match = match;
   result.scanType = 'ai';
@@ -598,6 +607,11 @@ async function _commitBinderBatch() {
     return;
   }
 
+  // Get collections once and add all cards, then save once to avoid data-loss race
+  const collections = getCollections();
+  const col = collections.find(c => c.id === getCurrentCollectionId());
+  if (!col) { showToast('No collection found', '❌'); return; }
+
   let added = 0;
   for (const entry of toAdd) {
     const card = {
@@ -612,7 +626,7 @@ async function _commitBinderBatch() {
       power: entry.match.Power || '',
       imageUrl: entry.imageUrl || '',
       fileName: `binder_cell_${entry.idx}.jpg`,
-      scanType: entry.scanType === 'free' ? 'free' : 'ai',
+      scanType: entry.scanType === 'free' ? 'ocr' : 'ai',
       scanMethod: entry.scanType === 'free'
         ? `Free OCR (${Math.round(entry.confidence || 0)}%)`
         : 'AI + Database',
@@ -624,18 +638,13 @@ async function _commitBinderBatch() {
       confidence: entry.confidence,
     };
 
-    const collections = getCollections();
-    const col = collections.find(c => c.id === getCurrentCollectionId());
-    if (!col) continue;
-
     col.cards.push(card);
     col.stats.scanned++;
-    if (card.scanType === 'free') col.stats.free++;
+    if (card.scanType === 'ocr') col.stats.free++;
     if (card.scanType === 'ai') col.stats.aiCalls = (col.stats.aiCalls || 0) + 1;
-    saveCollections(collections);
 
-    if (typeof addToScanHistory === 'function') {
-      addToScanHistory({
+    if (typeof window.addToScanHistory === 'function') {
+      window.addToScanHistory({
         hero: card.hero,
         cardNumber: card.cardNumber,
         set: card.set,
@@ -647,9 +656,10 @@ async function _commitBinderBatch() {
     added++;
   }
 
-  if (typeof trackCardAdded === 'function') await trackCardAdded();
-  if (typeof updateStats === 'function') updateStats();
-  if (typeof renderCards === 'function') renderCards();
+  saveCollections(collections);
+  await trackCardAdded();
+  if (typeof window.updateStats === 'function') window.updateStats();
+  if (typeof window.renderCards === 'function') window.renderCards();
 
   _closeBinderScanner();
 

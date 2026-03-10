@@ -12,6 +12,7 @@
 
 import { appConfig } from '../state.js';
 import { showToast } from '../../ui/toast.js';
+import { handleUserSignIn } from './user-management.js';
 
 let googleUser     = null;
 let authInitialized = false;
@@ -114,9 +115,7 @@ export async function handleCredentialResponse(response) {
 
     // FIXED: Single sequential auth flow — no setTimeout race conditions.
     // handleUserSignIn in user-management.js handles everything from here.
-    if (typeof handleUserSignIn === 'function') {
-      await handleUserSignIn(googleUser);
-    }
+    await handleUserSignIn(googleUser);
 
   } catch (err) {
     console.error('❌ Credential handling error:', err);
@@ -153,9 +152,7 @@ export async function restoreSession() {
   // If this fails (mobile network, timeout, etc.), the UI session is preserved.
   // We never delete the saved session just because a network call failed.
   try {
-    if (typeof handleUserSignIn === 'function') {
-      await handleUserSignIn(googleUser);
-    }
+    await handleUserSignIn(googleUser);
   } catch (networkErr) {
     // Network/Supabase error — stay logged in with cached identity,
     // limits will use defaults until next successful sync.

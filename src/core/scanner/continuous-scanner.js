@@ -3,6 +3,7 @@
 // and auto-captures when a card is stable in frame.
 
 import { showToast } from '../../ui/toast.js';
+import { processImage } from './scanner.js';
 
 let _stream = null;
 let _scanning = false;
@@ -208,13 +209,11 @@ async function captureFrame(video) {
     closeContinuousScanner();
 
     // Process through the existing pipeline
-    if (typeof processImage === 'function') {
-      try {
-        await processImage(file);
-      } catch (err) {
-        console.error('Continuous scan processing error:', err);
-        showToast('Scan failed — please try again', '❌');
-      }
+    try {
+      await processImage(file);
+    } catch (err) {
+      console.error('Continuous scan processing error:', err);
+      showToast('Scan failed — please try again', '❌');
     }
   }, 'image/jpeg', 0.85);
 }

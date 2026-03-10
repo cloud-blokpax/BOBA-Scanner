@@ -47,7 +47,7 @@ function wireUpEvents() {
     if (btnPriceCheck) btnPriceCheck.addEventListener('click', function(e) {
         e.stopPropagation();
         window.scanMode = 'pricecheck';
-        if (typeof ensurePriceCheckCollection === 'function') ensurePriceCheckCollection();
+        if (typeof window.ensurePriceCheckCollection === 'function') window.ensurePriceCheckCollection();
         if (scanOptionsPanel) scanOptionsPanel.style.display = 'none';
         const input = fi();
         if (input) { input.removeAttribute('capture'); input.click(); }
@@ -66,12 +66,12 @@ function wireUpEvents() {
     const btnHeaderSettings = document.getElementById('btnHeaderSettings');
     if (btnHeaderSettings) btnHeaderSettings.addEventListener('click', function(e) {
         e.stopPropagation();
-        openSettings();
+        window.openSettings();
     });
     const btnSettingsLegacy = document.getElementById('btnSettings');
     if (btnSettingsLegacy) btnSettingsLegacy.addEventListener('click', function(e) {
         e.stopPropagation();
-        openSettings();
+        window.openSettings();
     });
 
     // "My Collection" quick-access button — switches to the Collection tab
@@ -112,7 +112,7 @@ function wireUpEvents() {
     });
 
     const btnSignIn = document.getElementById('btnSignIn');
-    if (btnSignIn) btnSignIn.addEventListener('click', showSignInPrompt);
+    if (btnSignIn) btnSignIn.addEventListener('click', () => { if (typeof window.showSignInPrompt === 'function') window.showSignInPrompt(); });
 
     const btnSignOut = document.getElementById('btnSignOut');
     if (btnSignOut) btnSignOut.addEventListener('click', function() {
@@ -120,13 +120,13 @@ function wireUpEvents() {
     });
 
     const settingsModalClose = document.getElementById('settingsModalClose');
-    if (settingsModalClose) settingsModalClose.addEventListener('click', closeSettings);
+    if (settingsModalClose) settingsModalClose.addEventListener('click', () => { if (typeof window.closeSettings === 'function') window.closeSettings(); });
 
     const settingsCloseBtn = document.getElementById('settingsCloseBtn');
-    if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettings);
+    if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', () => { if (typeof window.closeSettings === 'function') window.closeSettings(); });
 
     const settingsModalBackdrop = document.getElementById('settingsModalBackdrop');
-    if (settingsModalBackdrop) settingsModalBackdrop.addEventListener('click', closeSettings);
+    if (settingsModalBackdrop) settingsModalBackdrop.addEventListener('click', () => { if (typeof window.closeSettings === 'function') window.closeSettings(); });
 
     // Tool buttons — wired here (not inline onclick) to survive SES lockdown from browser extensions
     const btnBatchScan = document.getElementById('btnBatchScan');
@@ -172,7 +172,7 @@ function wireUpEvents() {
             if (typeof window.bottomNavSwitchTab === 'function') {
                 window.bottomNavSwitchTab('deck');
             } else if (typeof window.sliderSwitch === 'function') {
-                sliderSwitch('deck_building');
+                window.sliderSwitch('deck_building');
             }
         });
     }
@@ -221,7 +221,7 @@ function wireUpEvents() {
             id === 'price_check' ? 'sliderBtnPriceCheck' : 'sliderBtnDeckBuilder'
         );
         if (btn) btn.addEventListener('click', () => {
-            if (typeof sliderSwitch === 'function') sliderSwitch(id);
+            if (typeof window.sliderSwitch === 'function') window.sliderSwitch(id);
         });
     });
 

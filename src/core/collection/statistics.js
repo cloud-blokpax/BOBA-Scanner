@@ -22,7 +22,7 @@ export function showStatsModal() {
 
   const cards   = collection.cards || [];
   const total   = cards.length;
-  const free    = cards.filter(c => c.scanType === 'free').length;
+  const free    = cards.filter(c => c.scanType === 'ocr').length;
   const ai      = cards.filter(c => c.scanType === 'ai' || c.scanType === 'manual').length;
   const rtl     = cards.filter(c => c.readyToList).length;
   const listed  = cards.filter(c => c.listingStatus === 'listed').length;
