@@ -6,12 +6,11 @@ const escapeHtml = (...args) => window.escapeHtml(...args);
 
 // ── Grade a card from a base64 image ─────────────────────────────────────────
 async function gradeCard(imageData, cornerRegionData = null) {
-  const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
-    ? appConfig.apiBase
-    : 'https://boba.cards/api';
+  const cfg = window.appConfig || {};
+  const apiBase = cfg.apiBase || 'https://boba.cards/api';
 
   const headers = { 'Content-Type': 'application/json' };
-  const apiToken = (typeof appConfig !== 'undefined') ? appConfig.apiToken : null;
+  const apiToken = cfg.apiToken || (typeof getApiToken === 'function' ? getApiToken() : null);
   if (apiToken) headers['X-Api-Token'] = apiToken;
 
   const bodyObj = { imageData };

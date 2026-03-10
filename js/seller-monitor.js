@@ -38,7 +38,8 @@ window.getMonitorSettings = getMonitorSettings;
 
 async function fetchSellerListings(sellerUsername) {
   const headers = { 'Content-Type': 'application/json' };
-  if (appConfig.apiToken) headers['X-Api-Token'] = appConfig.apiToken;
+  const cfg = window.appConfig || {};
+  if (cfg.apiToken) headers['X-Api-Token'] = cfg.apiToken;
 
   const res = await fetch('/api/ebay-browse', {
     method:  'POST',

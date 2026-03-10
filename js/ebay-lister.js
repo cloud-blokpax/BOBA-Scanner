@@ -6,13 +6,15 @@ const escapeHtml = (...args) => window.escapeHtml(...args);
 
 // ── Generate listing via Claude ───────────────────────────────────────────────
 async function generateEbayListing(card) {
-  const apiBase = (typeof appConfig !== 'undefined' && appConfig.apiBase)
-    ? appConfig.apiBase
-    : 'https://boba.cards/api';
+  const cfg = window.appConfig || {};
+  const apiBase = cfg.apiBase || 'https://boba.cards/api';
 
   const prompt = buildListingPrompt(card);
 
   const headers = { 'Content-Type': 'application/json' };
+  const apiToken = cfg.apiToken || (typeof getApiToken === 'function' ? getApiToken() : null);
+  if (apiToken) headers['X-Api-Token'] = apiToken;
+
   // Reuse the existing /api/anthropic endpoint — send a text-only request
   const res = await fetch(`${apiBase}/anthropic`, {
     method: 'POST',

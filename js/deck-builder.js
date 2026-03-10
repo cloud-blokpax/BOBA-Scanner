@@ -972,7 +972,7 @@ function showAddToCollectionPrompt(cards, deckName) {
 
   const limit = (typeof userLimits !== 'undefined' && userLimits)
     ? userLimits.maxCards
-    : (typeof DEFAULT_LIMITS !== 'undefined' ? DEFAULT_LIMITS.authenticated.maxCards : 25);
+    : (window.DEFAULT_LIMITS ? window.DEFAULT_LIMITS.authenticated.maxCards : 25);
   const currentTotal = (typeof getCollections === 'function')
     ? getCollections().reduce((s, c) => s + c.cards.length, 0) : 0;
 
