@@ -212,19 +212,19 @@
 
                 <!-- Collection quick-access: My Collection / Price Check / Deck Builder -->
                 <div class="collection-nav-row">
-                    <button class="btn-collection-nav" id="btnOpenCollection">
+                    <button class="btn-collection-nav" id="btnOpenCollection" aria-label="View My Collection">
                         <span class="btn-icon">🎴</span>
-                        <span>My Collection</span>
+                        <span>Collection</span>
                         <span class="collection-nav-count" id="collectionNavCount"></span>
                     </button>
-                    <button class="btn-pricecheck-nav" id="btnOpenPriceCheck">
+                    <button class="btn-pricecheck-nav" id="btnOpenPriceCheck" aria-label="View Price Check">
                         <span class="btn-icon">💰</span>
                         <span>Price Check</span>
                         <span class="collection-nav-count" id="priceCheckNavCount"></span>
                     </button>
-                    <button class="btn-deckbuilder-nav" id="btnOpenDeckBuilderNav">
+                    <button class="btn-deckbuilder-nav" id="btnOpenDeckBuilderNav" aria-label="View Deck Builder">
                         <span class="btn-icon">🃏</span>
-                        <span>Deck Builder</span>
+                        <span>Deck</span>
                         <span class="collection-nav-count" id="deckBuilderNavCount"></span>
                     </button>
                 </div>
@@ -390,10 +390,13 @@
     <div class="more-sheet-backdrop" id="moreSheetBackdrop" aria-hidden="true"></div>
     <div class="more-sheet" id="moreSheet" role="dialog" aria-modal="true" aria-label="More options">
         <div class="more-sheet-handle"></div>
+        <div class="more-sheet-title">More</div>
         <div class="more-sheet-body">
             <button class="more-sheet-item" id="moreSettings">
                 <span class="more-sheet-icon">⚙️</span> Settings
             </button>
+            <div class="more-sheet-divider"></div>
+            <div class="more-sheet-section-label">Tools</div>
             <button class="more-sheet-item" id="moreExportCSV">
                 <span class="more-sheet-icon">📄</span> Export CSV
             </button>
@@ -409,7 +412,7 @@
             <button class="more-sheet-item" id="moreReadyToList">
                 <span class="more-sheet-icon">🏷️</span> Ready to List
             </button>
-            <!-- Magical features — shown based on feature flags -->
+            <!-- Smart Tools — shown based on feature flags -->
             <div id="moreMagicalSection" style="display:none;">
                 <div class="more-sheet-divider"></div>
                 <div class="more-sheet-section-label">✨ Smart Tools</div>
@@ -423,6 +426,7 @@
                     <span class="more-sheet-icon">🛒</span> List on eBay
                 </button>
             </div>
+            <!-- Admin — shown based on role -->
             <div id="moreAdminSection" style="display:none;">
                 <div class="more-sheet-divider"></div>
                 <div class="more-sheet-section-label">Admin</div>

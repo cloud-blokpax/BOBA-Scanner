@@ -915,16 +915,26 @@ function wireUpEvents() {
         openSettings();
     });
 
-    // "My Collection" quick-access button below upload
+    // "My Collection" quick-access button — switches to the Collection tab
     const btnOpenCollection = document.getElementById('btnOpenCollection');
     if (btnOpenCollection) btnOpenCollection.addEventListener('click', function() {
-        if (typeof openCollectionModal === 'function') openCollectionModal();
+        if (typeof window.bottomNavSwitchTab === 'function') {
+            window.bottomNavSwitchTab('collection');
+            if (typeof window.sliderSwitch === 'function') window.sliderSwitch('my_collection');
+        } else if (typeof openCollectionModal === 'function') {
+            openCollectionModal();
+        }
     });
 
-    // "Price Check" quick-access button below upload
+    // "Price Check" quick-access button — switches to Collection tab, selects Price Check slider
     const btnOpenPriceCheck = document.getElementById('btnOpenPriceCheck');
     if (btnOpenPriceCheck) btnOpenPriceCheck.addEventListener('click', function() {
-        if (typeof openPriceCheckModal === 'function') openPriceCheckModal();
+        if (typeof window.bottomNavSwitchTab === 'function') {
+            window.bottomNavSwitchTab('collection');
+            if (typeof window.sliderSwitch === 'function') window.sliderSwitch('price_check');
+        } else if (typeof openPriceCheckModal === 'function') {
+            openPriceCheckModal();
+        }
     });
 
     const btnExportCSV = document.getElementById('btnExportCSV');
@@ -994,11 +1004,15 @@ function wireUpEvents() {
         });
     }
 
-    // Deck Builder nav shortcut (bottom row → jumps to slider tab)
+    // Deck Builder nav shortcut (home screen row → switches to Deck tab)
     const btnOpenDeckBuilderNav = document.getElementById('btnOpenDeckBuilderNav');
     if (btnOpenDeckBuilderNav) {
         btnOpenDeckBuilderNav.addEventListener('click', function() {
-            if (typeof window.sliderSwitch === 'function') sliderSwitch('deck_building');
+            if (typeof window.bottomNavSwitchTab === 'function') {
+                window.bottomNavSwitchTab('deck');
+            } else if (typeof window.sliderSwitch === 'function') {
+                sliderSwitch('deck_building');
+            }
         });
     }
 

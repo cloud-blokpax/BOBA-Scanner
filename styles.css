@@ -572,59 +572,91 @@ body {
 }
 .btn-group-item .btn-icon { font-size: 18px; }
 
-/* ── Collection Nav Buttons ───────────────────────────── */
+/* ── Collection Quick-Nav Row ─────────────────────────── */
+/* Shown on scan tab as a fast shortcut strip to other collections */
 .collection-nav-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
-  flex-wrap: wrap;
   width: 100%;
   max-width: 480px;
-  margin: 14px auto 0;
+  margin: 16px auto 0;
 }
 
 .btn-collection-nav,
-.btn-pricecheck-nav {
+.btn-pricecheck-nav,
+.btn-deckbuilder-nav {
   flex: 1;
-  min-width: 140px;
-  max-width: 220px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 11px 16px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1.5px solid;
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  border: 1px solid var(--border);
   cursor: pointer;
   transition: all var(--transition-fast);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 56px;
+  position: relative;
+}
+
+.btn-collection-nav .btn-icon,
+.btn-pricecheck-nav .btn-icon,
+.btn-deckbuilder-nav .btn-icon {
+  font-size: 18px;
+  display: block;
 }
 
 .btn-collection-nav {
-  background: rgba(59,130,246,0.08);
-  border-color: rgba(59,130,246,0.25);
+  border-color: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
 }
-.btn-collection-nav:hover {
-  background: rgba(59,130,246,0.14);
-  border-color: rgba(59,130,246,0.4);
+.btn-collection-nav:hover,
+.btn-collection-nav:active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: scale(0.97);
 }
 
 .btn-pricecheck-nav {
-  background: rgba(16,185,129,0.08);
-  border-color: rgba(16,185,129,0.25);
+  border-color: rgba(16, 185, 129, 0.2);
   color: #6ee7b7;
 }
-.btn-pricecheck-nav:hover {
-  background: rgba(16,185,129,0.14);
-  border-color: rgba(16,185,129,0.4);
+.btn-pricecheck-nav:hover,
+.btn-pricecheck-nav:active {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.4);
+  transform: scale(0.97);
+}
+
+.btn-deckbuilder-nav {
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+.btn-deckbuilder-nav:hover,
+.btn-deckbuilder-nav:active {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.4);
+  transform: scale(0.97);
 }
 
 .collection-nav-count {
-  font-size: 12px;
-  opacity: 0.7;
-  font-weight: 500;
+  font-size: 10px;
+  opacity: 0.65;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* ── Scan tools row: Batch Scan + Deck Builder equal tiles ─ */
@@ -2077,15 +2109,17 @@ a.listing-badge:hover { opacity: .85; }
     left: 0;
     right: 0;
     height: calc(var(--bottom-nav-height) + var(--safe-bottom));
-    padding-bottom: var(--safe-bottom);
-    background: rgba(7, 11, 20, 0.97);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid var(--border);
+    padding: 0 8px var(--safe-bottom);
+    background: rgba(7, 11, 20, 0.98);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
     display: flex;
-    align-items: stretch;
-    z-index: var(--z-sticky);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+    align-items: center;
+    /* z-index above more-sheet-backdrop so nav taps always reach the nav bar,
+       even when the More sheet is open. switchTab() closes the sheet first. */
+    z-index: calc(var(--z-sticky) + 25);
+    box-shadow: 0 -1px 0 rgba(245, 158, 11, 0.06), 0 -8px 32px rgba(0, 0, 0, 0.6);
 }
 
 .bottom-nav-item {
@@ -2094,65 +2128,74 @@ a.listing-badge:hover { opacity: .85; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 10px 8px;
+    gap: 3px;
+    padding: 8px 4px;
+    margin: 4px 3px;
     border: none;
     background: transparent;
     cursor: pointer;
     color: var(--text-muted);
-    transition: color var(--transition-fast), background-color 0.15s ease;
+    border-radius: 14px;
+    transition: color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
     position: relative;
     font-family: var(--font-sans);
-    /* iOS: remove 300ms tap delay and ensure reliable touch response */
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-    min-height: 56px;
-    /* Ensure nothing can overlay and steal taps */
+    min-height: 52px;
     -webkit-user-select: none;
     user-select: none;
 }
 
 .bottom-nav-item:active,
 .bottom-nav-item.tapped {
-    background: rgba(245, 158, 11, 0.15);
-    transform: scale(0.94);
-    transition: transform 0.06s ease-out, background 0.06s ease-out;
+    transform: scale(0.91);
+    background: rgba(245, 158, 11, 0.1);
+    transition: transform 0.07s ease-out, background 0.07s ease-out;
 }
 
 .bottom-nav-item.active {
     color: var(--gold);
+    background: rgba(245, 158, 11, 0.1);
 }
 
-.bottom-nav-item.active::before {
+/* Gold glow dot above active icon */
+.bottom-nav-item.active::after {
     content: '';
     position: absolute;
-    top: 0;
-    left: 20%;
-    right: 20%;
-    height: 2px;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
     background: var(--gold);
-    border-radius: 0 0 3px 3px;
-    box-shadow: 0 0 8px var(--gold-glow);
+    border-radius: 99px;
+    box-shadow: 0 0 8px var(--gold);
+    opacity: 0.9;
 }
 
 .bottom-nav-icon {
-    font-size: 24px;
+    font-size: 22px;
     line-height: 1;
+    transition: transform 0.15s ease;
+}
+
+.bottom-nav-item.active .bottom-nav-icon {
+    transform: scale(1.08) translateY(-1px);
 }
 
 .bottom-nav-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
 }
 
 .bottom-nav-badge {
     position: absolute;
-    top: 5px;
-    right: calc(50% - 20px);
-    min-width: 16px;
-    height: 16px;
+    top: 4px;
+    right: calc(50% - 18px);
+    min-width: 15px;
+    height: 15px;
     background: var(--gold);
     color: #0d1524;
     border-radius: 99px;
@@ -2162,6 +2205,7 @@ a.listing-badge:hover { opacity: .85; }
     align-items: center;
     justify-content: center;
     padding: 0 3px;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
 }
 
 .bottom-nav-badge:not(:empty) {
@@ -2177,10 +2221,10 @@ a.listing-badge:hover { opacity: .85; }
 .more-sheet-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    z-index: calc(var(--z-sticky) + 10);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: calc(var(--z-sticky) + 22);
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--transition-base);
@@ -2197,15 +2241,16 @@ a.listing-badge:hover { opacity: .85; }
     left: 0;
     right: 0;
     background: var(--bg-surface);
-    border-radius: 20px 20px 0 0;
-    border: 1px solid var(--border-strong);
+    border-radius: 24px 24px 0 0;
+    border: 1px solid rgba(148, 163, 184, 0.15);
     border-bottom: none;
-    z-index: calc(var(--z-sticky) + 11);
+    z-index: calc(var(--z-sticky) + 23);
     transform: translateY(100%);
-    transition: transform var(--transition-slow);
-    padding-bottom: calc(var(--safe-bottom) + 16px);
-    max-height: 85vh;
+    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+    padding-bottom: calc(var(--safe-bottom) + 20px);
+    max-height: 82vh;
     overflow-y: auto;
+    box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.7);
 }
 
 .more-sheet.active {
@@ -2213,28 +2258,39 @@ a.listing-badge:hover { opacity: .85; }
 }
 
 .more-sheet-handle {
-    width: 36px;
+    width: 40px;
     height: 4px;
-    background: var(--border-strong);
+    background: rgba(148, 163, 184, 0.25);
     border-radius: 99px;
-    margin: 12px auto 8px;
+    margin: 14px auto 4px;
     flex-shrink: 0;
 }
 
+/* Sheet title row */
+.more-sheet-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 4px 24px 12px;
+}
+
 .more-sheet-body {
-    padding: 4px 0 0;
+    padding: 0;
 }
 
 .more-sheet-item {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 15px 24px;
+    gap: 16px;
+    padding: 14px 24px;
     border: none;
     background: transparent;
     font-family: var(--font-sans);
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-primary);
     cursor: pointer;
@@ -2244,10 +2300,12 @@ a.listing-badge:hover { opacity: .85; }
     -webkit-tap-highlight-color: transparent;
     -webkit-user-select: none;
     user-select: none;
+    letter-spacing: -0.01em;
 }
 
 .more-sheet-item:hover,
-.more-sheet-item:active {
+.more-sheet-item:active,
+.more-sheet-item.tapped {
     background: var(--bg-elevated);
 }
 
@@ -2257,24 +2315,30 @@ a.listing-badge:hover { opacity: .85; }
 
 .more-sheet-icon {
     font-size: 20px;
-    width: 28px;
-    text-align: center;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-elevated);
+    border-radius: 10px;
     flex-shrink: 0;
+    text-align: center;
 }
 
 .more-sheet-divider {
     height: 1px;
     background: var(--border);
-    margin: 6px 0;
+    margin: 8px 24px;
 }
 
 .more-sheet-section-label {
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: var(--text-muted);
-    padding: 4px 24px 8px;
+    padding: 8px 24px 6px;
 }
 
 .more-sheet-disclosure {
@@ -2339,7 +2403,6 @@ a.listing-badge:hover { opacity: .85; }
 
 /* Elements always hidden — replaced by new UI */
 #statsContainer          { display: none !important; }
-.collection-nav-row      { display: none !important; }
 #exportSection           { display: none !important; }
 #tournamentToolsRow      { display: none !important; } /* moved to More sheet */
 
@@ -2353,6 +2416,9 @@ body.tab-scan #fabContainer         { display: none !important; }
 /* Collection tab: hide scan area */
 body.tab-collection #uploadArea  { display: none !important; }
 body.tab-collection #statsStrip  { display: none !important; }
+
+/* Scan tab: also hide the quick-nav row context — it shows as the bottom strip */
+/* No hiding needed — collection-nav-row is visible on scan tab by design */
 
 /* Header: hide old settings + sign-out buttons (kept in DOM for JS compatibility) */
 .btn-header-settings { display: none !important; }
@@ -2436,6 +2502,42 @@ body.tab-scan .scan-tools-row .btn-tool-item:active {
 /* ── WCAG: touch-action fix (replaces user-scalable=no) ─────── */
 button, a, input, select, textarea, [role="button"] {
     touch-action: manipulation;
+}
+
+/* ── Quick-nav row: hide when not on scan tab ──────────────── */
+body.tab-collection .collection-nav-row { display: none !important; }
+
+/* ── Scan tab: upload section full-bleed polish ────────────── */
+body.tab-scan .upload-section {
+    border-radius: 20px;
+    margin-bottom: 0;
+}
+
+/* Scan tab: tighten stats strip top spacing */
+body.tab-scan .stats-strip {
+    margin-top: 10px;
+}
+
+/* ── Quick-nav row: tap feedback ───────────────────────────── */
+.btn-collection-nav:active,
+.btn-pricecheck-nav:active,
+.btn-deckbuilder-nav:active {
+    transform: scale(0.94) !important;
+}
+
+/* ── Stats strip toggle: larger touch target ───────────────── */
+.stats-strip-toggle {
+    min-height: 44px;
+}
+
+/* ── FAB: ensure always above bottom nav ───────────────────── */
+.fab-container {
+    z-index: calc(var(--z-sticky) + 19);
+}
+
+/* ── Loading overlay: keep above everything ────────────────── */
+.loading-overlay {
+    z-index: calc(var(--z-modal) + 10) !important;
 }
 
 /* ── Skeleton Loading States ────────────────────────────────── */

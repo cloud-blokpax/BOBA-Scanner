@@ -1,30 +1,40 @@
 /**
  * bottom-nav.js — Bottom navigation bar + More sheet for BOBA Scanner
  * Provides tab-based navigation: Scan | Collection | Deck | More
+ *
+ * Mobile-first: uses pointerdown for instant tab switching so taps feel
+ * immediate on iOS/Android. `click` is preserved as a desktop fallback.
  */
 (function () {
     'use strict';
 
     let currentTab = 'scan';
+    // Track last pointerdown-triggered switch to suppress the synthetic click
+    // that fires ~300ms later on touch devices (ghost-click prevention).
+    let lastPointerSwitch = 0;
 
     // ── Tab switching ────────────────────────────────────────────────────────
 
     function setActiveTab(tab) {
         document.querySelectorAll('.bottom-nav-item').forEach(function (btn) {
-            btn.classList.toggle('active', btn.dataset.tab === tab);
+            var isActive = btn.dataset.tab === tab;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
     }
 
     function switchTab(tab) {
+        // Always close the More sheet when switching away from it
+        closeMoreSheet();
+
         if (tab === 'more') {
             openMoreSheet();
             return;
         }
 
         if (tab === 'deck') {
-            // Switch to the collection view and show deck cards in the main grid
             setActiveTab('deck');
-            currentTab = 'collection';
+            currentTab = 'deck';
             document.body.classList.remove('tab-scan');
             document.body.classList.add('tab-collection');
             if (typeof window.sliderSwitch === 'function') {
@@ -41,7 +51,6 @@
         if (tab === 'collection') {
             document.body.classList.remove('tab-scan');
             document.body.classList.add('tab-collection');
-            // Trigger card render if the function is available
             if (typeof window.renderCards === 'function') {
                 window.renderCards();
             }
@@ -60,6 +69,10 @@
         if (sheet) sheet.classList.add('active');
         if (backdrop) backdrop.classList.add('active');
         document.body.style.overflow = 'hidden';
+        // Mark the More button as active
+        document.querySelectorAll('.bottom-nav-item[data-tab="more"]').forEach(function (btn) {
+            btn.classList.add('active');
+        });
     }
 
     function closeMoreSheet() {
@@ -68,18 +81,31 @@
         if (sheet) sheet.classList.remove('active');
         if (backdrop) backdrop.classList.remove('active');
         document.body.style.overflow = '';
+        // Restore the correct active tab indicator
+        document.querySelectorAll('.bottom-nav-item[data-tab="more"]').forEach(function (btn) {
+            btn.classList.remove('active');
+        });
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────
 
     function wireMoreItem(id, fn) {
         var el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('click', function () {
-                closeMoreSheet();
-                fn();
-            });
-        }
+        if (!el) return;
+
+        // Pointer feedback
+        el.addEventListener('pointerdown', function () { el.classList.add('tapped'); });
+        el.addEventListener('pointerup', function () {
+            setTimeout(function () { el.classList.remove('tapped'); }, 150);
+        });
+        el.addEventListener('pointercancel', function () { el.classList.remove('tapped'); });
+
+        // Action on click — `touch-action: manipulation` removes the 300ms delay,
+        // so click fires quickly on touch. No suppression needed here.
+        el.addEventListener('click', function () {
+            closeMoreSheet();
+            fn();
+        });
     }
 
     function initBottomNav() {
@@ -87,35 +113,43 @@
         document.body.classList.add('tab-scan');
 
         // Wire bottom nav tab buttons
-        // Use pointerdown for instant visual feedback on iOS Chrome where
-        // CSS :active is unreliable and click fires after a perceptible delay.
+        // Strategy: use pointerdown to switch immediately (bypasses 300ms iOS click delay
+        // and any invisible overlay that might intercept a deferred click event).
         document.querySelectorAll('.bottom-nav-item[data-tab]').forEach(function (btn) {
-            // Immediate visual feedback on touch/pointer down
-            btn.addEventListener('pointerdown', function () {
+            btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
+
+            btn.addEventListener('pointerdown', function (e) {
                 btn.classList.add('tapped');
+                lastPointerSwitch = Date.now();
+                switchTab(btn.dataset.tab);
             });
-            // Clear feedback after lift or cancel
+
             btn.addEventListener('pointerup', function () {
                 setTimeout(function () { btn.classList.remove('tapped'); }, 120);
             });
+
             btn.addEventListener('pointercancel', function () {
                 btn.classList.remove('tapped');
             });
+
             btn.addEventListener('pointerleave', function () {
                 btn.classList.remove('tapped');
             });
+
+            // Desktop click fallback — skipped if we just handled via pointerdown
             btn.addEventListener('click', function () {
+                if (Date.now() - lastPointerSwitch < 600) return;
                 switchTab(btn.dataset.tab);
             });
         });
 
-        // Close more sheet on backdrop click
+        // Close more sheet on backdrop click/tap
         var backdrop = document.getElementById('moreSheetBackdrop');
         if (backdrop) {
-            backdrop.addEventListener('click', closeMoreSheet);
+            backdrop.addEventListener('pointerdown', closeMoreSheet);
         }
 
-        // Swipe-down to close more sheet
+        // Swipe-down gesture to close more sheet
         var sheet = document.getElementById('moreSheet');
         var touchStartY = 0;
         if (sheet) {
@@ -128,7 +162,7 @@
             }, { passive: true });
         }
 
-        // Wire More sheet items to existing global functions
+        // ── More sheet item wiring ──────────────────────────────────────────
         wireMoreItem('moreSettings', function () {
             if (typeof window.openSettings === 'function') window.openSettings();
         });
@@ -148,6 +182,15 @@
         wireMoreItem('moreReadyToList', function () {
             if (typeof window.openReadyToListView === 'function') window.openReadyToListView();
         });
+        wireMoreItem('moreSetCompletion', function () {
+            if (typeof window.analyzeSetCompletion === 'function') window.analyzeSetCompletion();
+        });
+        wireMoreItem('moreGradeCard', function () {
+            if (typeof window.triggerGradeCardWithPicker === 'function') window.triggerGradeCardWithPicker();
+        });
+        wireMoreItem('moreEbayLister', function () {
+            if (typeof window.triggerEbayListerWithPicker === 'function') window.triggerEbayListerWithPicker();
+        });
         wireMoreItem('moreCreateTournament', function () {
             if (typeof window.showCreateTournamentModal === 'function') window.showCreateTournamentModal();
         });
@@ -164,5 +207,11 @@
     window.closeMoreSheet = closeMoreSheet;
     window.openMoreSheet = openMoreSheet;
 
-    document.addEventListener('DOMContentLoaded', initBottomNav);
+    // Run on DOMContentLoaded — or immediately if DOM is already ready
+    // (Vite module bundles sometimes run after the event has fired)
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initBottomNav);
+    } else {
+        initBottomNav();
+    }
 })();
