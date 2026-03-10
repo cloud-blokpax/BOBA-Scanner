@@ -1,7 +1,9 @@
 /* ========================================
    UI ENHANCEMENTS - MODERN INTERACTIONS
-   Bo Jackson Card Scanner
+   ES Module — Bo Jackson Card Scanner
    ======================================== */
+
+import { showToast } from './toast.js';
 
 // ========================================
 // INITIALIZATION
@@ -454,9 +456,7 @@ function showInstallPrompt() {
         const { outcome } = await window.deferredPrompt.userChoice;
         
         if (outcome === 'accepted') {
-            if (typeof showToast === 'function') {
-                showToast('App installed!', '✓');
-            }
+            showToast('App installed!', '✓');
         }
         
         window.deferredPrompt = null;
@@ -482,3 +482,5 @@ window.UIEnhancements = {
 setupNetworkIndicator();
 
 console.log('✨ UI Enhancements loaded');
+
+export { initializeUIEnhancements };

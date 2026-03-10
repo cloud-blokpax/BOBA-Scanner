@@ -1,19 +1,26 @@
-// js/tags.js — Tag management, filtering, and bulk operations
+// ES Module — Tag management, filtering, and bulk operations
 // Tags are stored in localStorage under 'userTags' and synced to Supabase.
+
+import { getCollections, saveCollections } from '../../core/collection/collections.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { showToast } from '../../ui/toast.js';
+import { buildEbaySearchUrl } from '../ebay/ebay.js';
+import { isFeatureEnabled } from '../../core/infra/feature-flags.js';
+import { schedulePush } from '../../core/sync/sync.js';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-function getAllTags() {
+export function getAllTags() {
     try { return JSON.parse(localStorage.getItem('userTags') || '[]'); }
     catch { return []; }
 }
 
-function saveAllTags(tags) {
+export function saveAllTags(tags) {
     localStorage.setItem('userTags', JSON.stringify([...new Set(tags)]));
-    if (typeof schedulePush === 'function') schedulePush();
+    schedulePush();
 }
 
-function addTag(name) {
+export function addTag(name) {
     const clean = name.trim();
     if (!clean) return;
     const tags = getAllTags();
@@ -23,7 +30,7 @@ function addTag(name) {
     }
 }
 
-function deleteTagGlobally(name) {
+export function deleteTagGlobally(name) {
     // Remove from tag list
     saveAllTags(getAllTags().filter(t => t !== name));
     // Remove from all cards
@@ -40,15 +47,15 @@ function deleteTagGlobally(name) {
 // ── Pending tags for next scan ────────────────────────────────────────────────
 let _pendingTags = [];
 
-function getPendingTags()      { return _pendingTags; }
-function setPendingTags(tags)  { _pendingTags = [...tags]; }
-function clearPendingTags()    { _pendingTags = []; }
+export function getPendingTags()      { return _pendingTags; }
+export function setPendingTags(tags)  { _pendingTags = [...tags]; }
+export function clearPendingTags()    { _pendingTags = []; }
 
 // ── Pre-upload tag prompt ─────────────────────────────────────────────────────
 // Called by scanner.js before processing. Returns a Promise that resolves
 // when the user dismisses the modal (with or without tags).
 
-function promptForTags() {
+export function promptForTags() {
     return new Promise((resolve) => {
         const existing = getAllTags();
 
@@ -315,7 +322,7 @@ window.applyBulkTags = function(action) {
 };
 
 // ── Render collection modal (replaces version in sync.js) ─────────────────────
-function renderCollectionModal() {
+export function renderCollectionModal() {
     const body  = document.getElementById('collectionModalBody');
     const count = document.getElementById('collectionCount');
     if (!body) return;
@@ -394,7 +401,7 @@ function renderCollectionModal() {
         const hasImage   = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
         const isSelected = _selectedCards.has(card._key);
         const cardTags   = (card.tags || []).filter(Boolean);
-        const ebayUrl    = (typeof buildEbaySearchUrl === 'function') ? buildEbaySearchUrl(card) : null;
+        const ebayUrl    = buildEbaySearchUrl(card);
 
         const listingBadge = card.listingStatus === 'listed' && card.listingUrl
             ? `<a href="${escapeHtml(card.listingUrl)}" target="_blank" rel="noopener noreferrer"

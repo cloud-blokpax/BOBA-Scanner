@@ -1,5 +1,5 @@
 // ============================================================
-// js/themes.js — Theme Engine
+// js/themes.js — Theme Engine (ES Module)
 // Controls visibility and order of UI sections.
 // Admins create & publish themes. Members can customize.
 // Regular users can only apply admin-published themes.
@@ -7,6 +7,9 @@
 // Architecture: CSS-injection. applyTheme() writes one <style> tag.
 // No display:none in JS, no DOM manipulation — everything via CSS.
 // ============================================================
+
+import { escapeHtml } from './utils.js';
+import { showToast } from './toast.js';
 
 // ── Registry: everything that can be themed ───────────────────────────────────
 
@@ -239,7 +242,7 @@ window.renderThemeSettingsSection = async function() {
   // Wire member customize
   document.getElementById('themeCustomizeBtn')?.addEventListener('click', () => {
     window.closeSettings?.();
-    openThemeEditor(window._activeThemeConfig || defaultThemeConfig(), false, async (config) => {
+    window.openThemeEditor(window._activeThemeConfig || defaultThemeConfig(), false, async (config) => {
       applyTheme(config);
       const ok = await saveCustomTheme(config);
       if (ok) showToast('Custom theme saved', '🎨');
@@ -518,5 +521,7 @@ window.adminDeleteTheme = async function(themeId) {
   showToast('Theme deleted', '✅');
   return true;
 };
+
+export { applyTheme, clearTheme, defaultThemeConfig, THEME_SECTIONS, THEME_ELEMENTS };
 
 console.log('✅ Themes module loaded');

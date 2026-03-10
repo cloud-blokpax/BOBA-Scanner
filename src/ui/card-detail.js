@@ -1,9 +1,18 @@
 // ── src/ui/card-detail.js ────────────────────────────────────────────────────
-// Card Detail Modal: openCardDetail, openCollectionCardDetail,
+// ES Module — Card Detail Modal: openCardDetail, openCollectionCardDetail,
 // removeCardFromDetail, scrollToCard, updateCardDetailField,
 // clearCardListingStatus, addDetailTag, removeDetailTag,
 // and the IIFE that calls wireUpEvents + initUploadArea on load.
-// No imports/exports — all files share global scope via Vite concat.
+
+import { getCollections, getCurrentCollectionId, setCurrentCollectionId, saveCollections } from '../core/collection/collections.js';
+import { escapeHtml } from './utils.js';
+import { showToast } from './toast.js';
+import { compressImage } from '../core/scanner/image-processing.js';
+import { renderCards } from './cards-grid.js';
+import { wireUpEvents } from './events.js';
+import { initUploadArea } from './upload-area.js';
+import { buildEbaySearchUrl, buildEbaySoldUrl, fetchEbayAvgPrice } from '../features/ebay/ebay.js';
+import { isFeatureEnabled } from '../core/infra/feature-flags.js';
 
 // ── Card Detail Modal ────────────────────────────────────────────────────────
 
@@ -16,8 +25,8 @@ window.openCardDetail = function(index) {
     const card = collection.cards[index];
     document.getElementById('cardDetailModal')?.remove();
 
-    const ebayUrl  = (typeof buildEbaySearchUrl === 'function') ? buildEbaySearchUrl(card) : null;
-    const ebaySoldUrl = (typeof buildEbaySoldUrl === 'function') ? buildEbaySoldUrl(card) : null;
+    const ebayUrl  = buildEbaySearchUrl(card);
+    const ebaySoldUrl = buildEbaySoldUrl(card);
     const ebayBtn  = ebayUrl
         ? `<a href="${ebayUrl}" target="_blank" rel="noopener" class="btn-ebay" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">🛒 Search eBay</a>`
         : '';
@@ -365,10 +374,10 @@ window.openCardDetail = function(index) {
             </div>
             <div class="modal-footer" style="gap:8px;flex-wrap:wrap;">
                 ${ebayBtn}
-                ${(typeof isFeatureEnabled === 'function' && isFeatureEnabled('condition_grader'))
+                ${isFeatureEnabled('condition_grader')
                     ? `<button class="btn-secondary" onclick="gradeCardFromDetail(${index})" title="AI estimates PSA grade" style="white-space:nowrap;">🔬 Grade</button>`
                     : ''}
-                ${(typeof isFeatureEnabled === 'function' && isFeatureEnabled('ebay_lister'))
+                ${isFeatureEnabled('ebay_lister')
                     ? `<button class="btn-secondary" onclick="ebayListFromDetail(${index})" title="Generate eBay listing" style="white-space:nowrap;">🛒 List</button>`
                     : ''}
                 <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('cardDetailModal').remove()">Close</button>
@@ -489,10 +498,6 @@ window.openCardDetail = function(index) {
         const refreshBtn = document.getElementById('detailEbayRefresh');
         if (el) { el.textContent = 'Loading...'; el.style.color = '#111827'; }
         if (refreshBtn) refreshBtn.disabled = true;
-        if (typeof fetchEbayAvgPrice !== 'function') {
-            if (el) { el.textContent = 'N/A'; el.style.color = '#9ca3af'; }
-            return;
-        }
         fetchEbayAvgPrice(card).then(result => {
             const el2 = document.getElementById('detailEbayPriceValue');
             const rb  = document.getElementById('detailEbayRefresh');

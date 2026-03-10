@@ -1,4 +1,4 @@
-// App initialization — FIXED
+// App initialization — ES Module
 //
 // Fix 1: fileInput 'change' listener is now attached immediately on
 //         DOMContentLoaded, NOT after the async init chain completes.
@@ -11,19 +11,31 @@
 //         Without appConfig.apiToken the API returned 401 Unauthorized
 //         on every scan attempt, silently failing in the catch block.
 
+import { loadAppConfig } from './core/state.js';
+import { loadDatabase } from './core/database/database.js';
+import { loadOpenCV } from './core/scanner/opencv.js';
+import { handleFiles } from './core/scanner/scanner.js';
+import { initGoogleAuth, restoreSession } from './core/auth/google-auth.js';
+import { initUserManagement, updateLimitsUI } from './core/auth/user-management.js';
+import { loadCollections, getCollections } from './core/collection/collections.js';
+import { initUploadArea } from './ui/upload-area.js';
+import { loadFeatureFlags, isFeatureEnabled } from './core/infra/feature-flags.js';
+import { hasCameraSupport, openContinuousScanner } from './core/scanner/continuous-scanner.js';
+import { showToast } from './ui/toast.js';
+
 // ── Step 1: Wire fileInput immediately — before ANY async work ────────────────
 // This runs synchronously as soon as the script tag is parsed.
-// handleFiles is defined in scanner.js which loads before app.js.
+// handleFiles is imported from scanner.js.
 function attachFileInputNow() {
     const fileInput = document.getElementById('fileInput');
-    if (fileInput && typeof handleFiles === 'function') {
+    if (fileInput) {
         fileInput.addEventListener('change', handleFiles);
         console.log('📎 File input wired immediately');
     } else {
         // DOM not ready yet — wait for it
         document.addEventListener('DOMContentLoaded', function onReady() {
             const fi = document.getElementById('fileInput');
-            if (fi && typeof handleFiles === 'function') {
+            if (fi) {
                 fi.addEventListener('change', handleFiles);
                 console.log('📎 File input wired on DOMContentLoaded');
             }
@@ -40,34 +52,19 @@ async function init() {
 
     try {
         // FIXED: Load app config FIRST — everything downstream needs it.
-        // appConfig.apiToken is required by /api/anthropic (returns 401 without it).
-        // appConfig.supabaseUrl/Key needed by initUserManagement.
-        // appConfig.googleClientId needed by initGoogleAuth.
-        if (typeof loadAppConfig === 'function') {
-            await loadAppConfig();
-        }
+        await loadAppConfig();
 
         // Initialize user management (needs appConfig.supabaseUrl)
-        if (typeof initUserManagement === 'function') {
-            await initUserManagement();
-        }
+        await initUserManagement();
 
         // Restore session from localStorage FIRST — independent of Google SDK.
-        // restoreSession() only needs localStorage, not the Google library.
-        // This runs on every page load/refresh so the user stays logged in.
-        if (typeof restoreSession === 'function') {
-            await restoreSession();
-        }
+        await restoreSession();
 
         // Load collections from localStorage
-        if (typeof loadCollections === 'function') {
-            loadCollections();
-        }
+        loadCollections();
 
         // Initialize Google Auth (sets up sign-in button, handles new logins)
-        if (typeof initGoogleAuth === 'function') {
-            await initGoogleAuth();
-        }
+        await initGoogleAuth();
 
         // Load DB and OpenCV in parallel
         await Promise.all([
@@ -76,29 +73,23 @@ async function init() {
         ]);
 
         // Init upload area drag-and-drop (buttons already wired via onclick in HTML)
-        if (typeof initUploadArea === 'function') {
-            initUploadArea();
-        }
+        initUploadArea();
 
         // Update scan limits display
-        if (typeof updateLimitsUI === 'function') {
-            updateLimitsUI();
-        }
+        updateLimitsUI();
 
         // Load feature flags and wire magical feature buttons
-        if (typeof loadFeatureFlags === 'function') {
-            await loadFeatureFlags();
-            wireMagicalFeatureButtons();
-        }
+        await loadFeatureFlags();
+        wireMagicalFeatureButtons();
 
         // Show Live Scan option in scan panel (if device has camera)
-        if (typeof hasCameraSupport === 'function' && hasCameraSupport()) {
+        if (hasCameraSupport()) {
             const btnLiveScan = document.getElementById('btnLiveScan');
             if (btnLiveScan) btnLiveScan.style.display = '';
             btnLiveScan?.addEventListener('click', () => {
                 const panel = document.getElementById('scanOptionsPanel');
                 if (panel) panel.style.display = 'none';
-                if (typeof openContinuousScanner === 'function') openContinuousScanner();
+                openContinuousScanner();
             });
         }
 
@@ -111,17 +102,15 @@ async function init() {
         console.error('❌ Initialization error:', err);
         // Still remove skeletons on error so the real UI is visible
         document.body.classList.add('app-loaded');
-        if (typeof showToast === 'function') {
-            showToast('Some features may not be available', '⚠️');
-        }
+        showToast('Some features may not be available', '⚠️');
     }
 }
 
 // ── Magical feature button wiring ────────────────────────────────────────────
 function wireMagicalFeatureButtons() {
-    const hasGrader     = typeof isFeatureEnabled === 'function' && isFeatureEnabled('condition_grader');
-    const hasSetComp    = typeof isFeatureEnabled === 'function' && isFeatureEnabled('set_completion');
-    const hasEbayLister = typeof isFeatureEnabled === 'function' && isFeatureEnabled('ebay_lister');
+    const hasGrader     = isFeatureEnabled('condition_grader');
+    const hasSetComp    = isFeatureEnabled('set_completion');
+    const hasEbayLister = isFeatureEnabled('ebay_lister');
     const hasAny        = hasGrader || hasSetComp || hasEbayLister;
 
     // Show/hide the magical features row in Tools & Export
@@ -141,31 +130,29 @@ function wireMagicalFeatureButtons() {
     if (listBtn)    listBtn.style.display     = hasEbayLister ? '' : 'none';
 
     // Wire click handlers (main toolbar)
+    // These reference lazy-loaded functions, so keep typeof guards
     gradeBtn?.addEventListener('click', () => {
-        if (typeof triggerGradeCard === 'function') triggerGradeCard();
+        if (typeof window.triggerGradeCard === 'function') window.triggerGradeCard();
     });
     setCompBtn?.addEventListener('click', () => {
-        if (typeof analyzeSetCompletion === 'function') analyzeSetCompletion();
+        if (typeof window.analyzeSetCompletion === 'function') window.analyzeSetCompletion();
     });
     listBtn?.addEventListener('click', () => {
-        // Use the most recently scanned card from collections
-        const cards = (typeof getCollections === 'function')
-            ? getCollections().flatMap(c => c.cards).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            : [];
-        if (typeof triggerEbayLister === 'function') triggerEbayLister(cards[0] || null);
+        const cards = getCollections().flatMap(c => c.cards).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        if (typeof window.triggerEbayLister === 'function') window.triggerEbayLister(cards[0] || null);
     });
 
     // Wire click handlers (More sheet) — use pickers so user can choose which card
     document.getElementById('moreGradeCard')?.addEventListener('click', () => {
-        if (typeof triggerGradeCardWithPicker === 'function') triggerGradeCardWithPicker();
-        else if (typeof triggerGradeCard === 'function') triggerGradeCard();
+        if (typeof window.triggerGradeCardWithPicker === 'function') window.triggerGradeCardWithPicker();
+        else if (typeof window.triggerGradeCard === 'function') window.triggerGradeCard();
     });
     document.getElementById('moreSetCompletion')?.addEventListener('click', () => {
-        if (typeof analyzeSetCompletion === 'function') analyzeSetCompletion();
+        if (typeof window.analyzeSetCompletion === 'function') window.analyzeSetCompletion();
     });
     document.getElementById('moreEbayLister')?.addEventListener('click', () => {
-        if (typeof triggerEbayListerWithPicker === 'function') triggerEbayListerWithPicker();
-        else if (typeof triggerEbayLister === 'function') triggerEbayLister(null);
+        if (typeof window.triggerEbayListerWithPicker === 'function') window.triggerEbayListerWithPicker();
+        else if (typeof window.triggerEbayLister === 'function') window.triggerEbayLister(null);
     });
 
     // Expose card "⋯ More" button globally (called from renderCards inline HTML)

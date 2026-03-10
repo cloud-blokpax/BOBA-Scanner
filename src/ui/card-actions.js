@@ -1,9 +1,11 @@
 // ── src/ui/card-actions.js ───────────────────────────────────────────────────
-// Cross-collection card copy: moveCardToCollection() from the detail modal.
-// No imports/exports — all files share global scope via Vite concat.
+// ES Module — Cross-collection card copy: moveCardToCollection() from the detail modal.
+
+import { getCollections, getCurrentCollectionId, copyCardToCollection } from '../core/collection/collections.js';
+import { showToast } from './toast.js';
 
 // ── Cross-collection card copy from detail modal ────────────────────────────
-window.moveCardToCollection = function(cardIndex, targetCollectionId) {
+export function moveCardToCollection(cardIndex, targetCollectionId) {
   const collections = getCollections();
   const currentId   = getCurrentCollectionId();
   const collection  = collections.find(c => c.id === currentId);
@@ -24,4 +26,6 @@ window.moveCardToCollection = function(cardIndex, targetCollectionId) {
   } else {
     showToast('Already in that collection', '⚠️');
   }
-};
+}
+
+window.moveCardToCollection = moveCardToCollection;

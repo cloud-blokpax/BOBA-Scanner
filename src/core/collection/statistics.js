@@ -1,10 +1,18 @@
 // ============================================================
-// js/statistics.js — Collection Stats Dashboard v1.1
+// ES Module — Collection Stats Dashboard v1.1
 // Shows: scan stats, breakdown by set/year/parallel/weapon,
 //        condition breakdown, listing status, ready-to-list count
 // ============================================================
 
-function showStatsModal() {
+import { getCollections, getCurrentCollectionId, saveCollections } from './collections.js';
+import { updateCard } from '../scanner/scanner.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { showToast } from '../../ui/toast.js';
+import { openExportModal } from '../../features/export/export.js';
+import { fetchEbayAvgPrice } from '../../features/ebay/ebay.js';
+import { renderCards } from '../../ui/cards-grid.js';
+
+export function showStatsModal() {
   document.getElementById('statsModal')?.remove();
 
   const cols       = getCollections();
@@ -200,10 +208,6 @@ async function _bulkFetch(refetchAll) {
     return;
   }
 
-  if (typeof fetchEbayAvgPrice !== 'function') {
-    showToast('eBay price module not loaded', '❌');
-    return;
-  }
 
   const btn = document.getElementById('statsRefreshBtn');
   if (btn) { btn.disabled = true; btn.textContent = `Fetching 0 / ${targets.length}…`; }

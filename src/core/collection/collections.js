@@ -426,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Cross-collection card movement ─────────────────────────────────────────
 // Copy a card into a target collection (if not already present there).
 // Returns true if the card was actually added.
-window.copyCardToCollection = function(card, targetCollectionId) {
+export function copyCardToCollection(card, targetCollectionId) {
   const cols = getCollections();
 
   // Ensure target exists (auto-create price_check / deck_building if needed)
@@ -456,7 +456,7 @@ window.copyCardToCollection = function(card, targetCollectionId) {
 };
 
 // Remove a card from a specific collection by index.
-window.removeCardFromCollectionByIndex = function(collectionId, cardIndex) {
+export function removeCardFromCollectionByIndex(collectionId, cardIndex) {
   const cols = getCollections();
   const col  = cols.find(c => c.id === collectionId);
   if (!col || !col.cards[cardIndex]) return false;
@@ -466,5 +466,8 @@ window.removeCardFromCollectionByIndex = function(collectionId, cardIndex) {
   saveCollections(cols);
   return true;
 };
+
+window.copyCardToCollection = copyCardToCollection;
+window.removeCardFromCollectionByIndex = removeCardFromCollectionByIndex;
 
 console.log('✅ Collections module loaded');

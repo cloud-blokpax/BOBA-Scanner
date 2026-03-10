@@ -1,8 +1,13 @@
-// js/export.js — CSV export v1.1
+// ES Module — CSV export v1.1
 // New: condition, notes, readyToList, listingStatus, suggestedPrice fields
 //      Ready-to-List filter option, template save/load, price multiplier
 
-const EXPORT_FIELDS = [
+import { getCollections, getCurrentCollectionId } from '../../core/collection/collections.js';
+import { escapeHtml } from '../../ui/utils.js';
+import { showToast } from '../../ui/toast.js';
+import { buildEbaySearchUrl } from '../ebay/ebay.js';
+
+export const EXPORT_FIELDS = [
     { key: 'cardId',          label: 'Card ID',                default: true  },
     { key: 'hero',            label: 'Hero Name',              default: true  },
     { key: 'athlete',         label: 'Athlete Inspiration',    default: true  },
@@ -34,7 +39,7 @@ function getPriceMultiplier() {
 }
 
 // Open the export modal
-function openExportModal() {
+export function openExportModal() {
     const allCards = getCollections().flatMap(c => c.cards);
     if (allCards.length === 0) { showToast('No cards to export', '⚠️'); return; }
 
@@ -259,7 +264,7 @@ function generateCSV(cards, fields) {
         let val = card[f.key];
         if (f.key === 'tags')         val = Array.isArray(val) ? val.join(' | ') : '';
         if (f.key === 'readyToList')  val = val ? 'Yes' : 'No';
-        if (f.key === 'ebaySearchUrl' && typeof buildEbaySearchUrl === 'function') {
+        if (f.key === 'ebaySearchUrl') {
             val = buildEbaySearchUrl(card) || '';
         }
         if (f.key === 'ebayAvgPrice' || f.key === 'ebayLowPrice' || f.key === 'ebayHighPrice') {

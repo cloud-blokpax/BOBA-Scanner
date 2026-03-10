@@ -1,13 +1,19 @@
 // ── src/ui/card-corrections.js ───────────────────────────────────────────────
-// Wrong Card Correction: correctCard() modal that replaces identification
+// ES Module — Wrong Card Correction: correctCard() modal that replaces identification
 // metadata while preserving image, condition, notes, tags, and listing data.
-// No imports/exports — all files share global scope via Vite concat.
+
+import { getCollections, getCurrentCollectionId, saveCollections } from '../core/collection/collections.js';
+import { database } from '../core/state.js';
+import { escapeHtml } from './utils.js';
+import { showToast } from './toast.js';
+import { renderCards } from './cards-grid.js';
+import { getAthleteForHero } from '../collections/boba/heroes.js';
 
 // ── Wrong Card Correction ─────────────────────────────────────────────────────
 // Opens a card search modal that replaces only the identification metadata of an
 // existing card while preserving its image, condition, notes, tags, and listing data.
 
-window.correctCard = function(idx) {
+export function correctCard(idx) {
     document.getElementById('correctCardModal')?.remove();
 
     const collections = getCollections();
@@ -63,7 +69,7 @@ window.correctCard = function(idx) {
             resultsEl.innerHTML = `<p style="text-align:center;color:#f59e0b;padding:16px 0;">⚠️ Type a card number or name</p>`;
             return;
         }
-        if (typeof database === 'undefined' || !database.length) {
+        if (!database.length) {
             resultsEl.innerHTML = `<p style="text-align:center;color:#6b7280;padding:16px 0;">⏳ Database still loading — try again in a moment</p>`;
             return;
         }
@@ -104,7 +110,7 @@ window.correctCard = function(idx) {
             col2.cards[idx] = Object.assign({}, existing, {
                 cardId:     String(match['Card ID'] || ''),
                 hero:       match.Name               || '',
-                athlete:    (typeof getAthleteForHero === 'function') ? (getAthleteForHero(match.Name) || '') : '',
+                athlete:    getAthleteForHero(match.Name) || '',
                 year:       match.Year               || '',
                 set:        match.Set                || '',
                 cardNumber: match['Card Number']     || '',
@@ -137,7 +143,9 @@ window.correctCard = function(idx) {
     document.getElementById('correctCardBtn')?.addEventListener('pointerdown', e => { e.preventDefault(); clearTimeout(_debounce); runSearch(); });
 
     setTimeout(() => { try { input?.focus(); } catch(_) {} }, 120);
-};
+}
+
+window.correctCard = correctCard;
 
 console.log('✅ UI helpers loaded');
 

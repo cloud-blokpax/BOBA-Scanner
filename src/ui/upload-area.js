@@ -1,7 +1,9 @@
 // ── src/ui/upload-area.js ────────────────────────────────────────────────────
-// Upload area initialization, settings modal, camera/gallery handlers,
+// ES Module — Upload area initialization, settings modal, camera/gallery handlers,
 // sign-in prompt, auth UI, user menu, and screen reader announcements.
-// No imports/exports — all files share global scope via Vite concat.
+
+import { config } from '../core/config.js';
+import { showToast } from './toast.js';
 
 function initUploadArea() {
     const uploadArea = document.getElementById('uploadArea');
@@ -65,14 +67,12 @@ window.openSettings = function() {
         const rangeThreshold = document.getElementById('rangeThreshold');
         const thresholdValue = document.getElementById('thresholdValue');
         
-        if (typeof config !== 'undefined') {
-            if (toggleAutoDetect) toggleAutoDetect.checked = config.autoDetect;
-            if (togglePerspective) togglePerspective.checked = config.perspective;
-            if (toggleRegionOcr) toggleRegionOcr.checked = config.regionOcr;
-            if (selectQuality) selectQuality.value = config.quality;
-            if (rangeThreshold) rangeThreshold.value = config.threshold;
-            if (thresholdValue) thresholdValue.textContent = config.threshold;
-        }
+        if (toggleAutoDetect) toggleAutoDetect.checked = config.autoDetect;
+        if (togglePerspective) togglePerspective.checked = config.perspective;
+        if (toggleRegionOcr) toggleRegionOcr.checked = config.regionOcr;
+        if (selectQuality) selectQuality.value = config.quality;
+        if (rangeThreshold) rangeThreshold.value = config.threshold;
+        if (thresholdValue) thresholdValue.textContent = config.threshold;
 
         // Show theme section only for signed-in users, then populate it
         const themeGroup = document.getElementById('themeSettingGroup');
@@ -83,7 +83,7 @@ window.openSettings = function() {
             }
         }
     } else {
-        showToast('Settings coming soon!', '⚙️');
+        showToast('Settings coming soon!', '\u2699\uFE0F');
     }
 };
 
@@ -225,4 +225,4 @@ window.announceToScreenReader = function(message) {
     }, 1000);
 };
 
-
+export { initUploadArea };
