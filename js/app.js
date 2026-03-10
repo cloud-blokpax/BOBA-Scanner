@@ -91,11 +91,13 @@ async function init() {
             wireMagicalFeatureButtons();
         }
 
-        // Wire up continuous scanner button (if device has camera)
+        // Show Live Scan option in scan panel (if device has camera)
         if (typeof hasCameraSupport === 'function' && hasCameraSupport()) {
-            const liveScanRow = document.getElementById('liveScanRow');
-            if (liveScanRow) liveScanRow.style.display = '';
-            document.getElementById('btnLiveScan')?.addEventListener('click', () => {
+            const btnLiveScan = document.getElementById('btnLiveScan');
+            if (btnLiveScan) btnLiveScan.style.display = '';
+            btnLiveScan?.addEventListener('click', () => {
+                const panel = document.getElementById('scanOptionsPanel');
+                if (panel) panel.style.display = 'none';
                 if (typeof openContinuousScanner === 'function') openContinuousScanner();
             });
         }

@@ -127,39 +127,47 @@
                 <input type="file" id="fileInput" accept="image/*" style="display: none;">
                 <input type="file" id="fileInputPriceCheck" accept="image/*" style="display: none;">
                 
-                <!-- Two primary scan actions -->
+                <!-- Primary action: Upload or Capture (opens scan options) -->
                 <div class="scan-actions-row">
-                    <button class="btn-scan-primary" id="btnChooseImage">
-                        <span class="btn-icon">📚</span>
-                        <span>Upload to Collection</span>
-                    </button>
-                    <button class="btn-scan-secondary" id="btnPriceCheck">
-                        <span class="btn-icon">💰</span>
-                        <span>Check eBay Prices</span>
+                    <button class="btn-scan-primary" id="btnUploadCapture" style="max-width:320px;">
+                        <span class="btn-icon">📷</span>
+                        <span>Upload or Capture</span>
                     </button>
                 </div>
 
-                <!-- Live camera scan (continuous detection) -->
-                <div class="scan-tools-row" id="liveScanRow" style="display:none;">
-                    <button class="btn-tool-item" id="btnLiveScan" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border-color:#059669;">
-                        <span class="btn-icon">📹</span>
-                        <span>Live Scan</span>
+                <!-- Scan options dropdown (hidden by default) -->
+                <div class="scan-options-panel" id="scanOptionsPanel" style="display:none;">
+                    <button class="scan-option-item" id="btnChooseImage">
+                        <span class="scan-option-icon">📚</span>
+                        <span class="scan-option-label">Upload to Collection</span>
+                    </button>
+                    <button class="scan-option-item" id="btnPriceCheck">
+                        <span class="scan-option-icon">💰</span>
+                        <span class="scan-option-label">Check eBay Prices</span>
+                    </button>
+                    <button class="scan-option-item" id="btnLiveScan" style="display:none;">
+                        <span class="scan-option-icon">📹</span>
+                        <span class="scan-option-label">Live Scan</span>
+                    </button>
+                    <button class="scan-option-item" id="btnBatchScan">
+                        <span class="scan-option-icon">📦</span>
+                        <span class="scan-option-label">Batch Scan</span>
+                    </button>
+                    <button class="scan-option-item" id="btnBinderScan">
+                        <span class="scan-option-icon">📖</span>
+                        <span class="scan-option-label">Binder Scan</span>
                     </button>
                 </div>
 
-                <!-- Secondary tools: Batch Scan + Binder Scan + Deck Builder -->
+                <!-- Deck Builder + View Collection row -->
                 <div class="scan-tools-row">
-                    <button class="btn-tool-item" id="btnBatchScan">
-                        <span class="btn-icon">📦</span>
-                        <span>Batch Scan</span>
-                    </button>
-                    <button class="btn-tool-item" id="btnBinderScan" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border-color:#6366f1;">
-                        <span class="btn-icon">📖</span>
-                        <span>Binder Scan</span>
-                    </button>
                     <button class="btn-tool-item btn-tool-deck" id="btnDeckBuilder">
                         <span class="btn-icon">🃏</span>
                         <span>Deck Builder</span>
+                    </button>
+                    <button class="btn-tool-item" id="btnViewCollection" style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border-color:#3b82f6;">
+                        <span class="btn-icon">🎴</span>
+                        <span>View Collection</span>
                     </button>
                 </div>
 

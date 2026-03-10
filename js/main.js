@@ -29,11 +29,11 @@ function lazyWire(globalName, moduleName, fnName) {
   const original = window[globalName];
   if (original) return; // already defined (e.g. by core scripts)
 
-  window[globalName] = async function(...args) {
+  const wrapper = async function(...args) {
     const mod = await lazyModules[moduleName]();
     // After import, the module's side effects set window[globalName]
     // to the real function. Call it.
-    if (typeof window[globalName] === 'function' && window[globalName] !== arguments.callee) {
+    if (typeof window[globalName] === 'function' && window[globalName] !== wrapper) {
       return window[globalName](...args);
     }
     // Fallback: try the named export
@@ -41,6 +41,7 @@ function lazyWire(globalName, moduleName, fnName) {
       return mod[fnName || globalName](...args);
     }
   };
+  window[globalName] = wrapper;
 }
 
 // Admin Dashboard
