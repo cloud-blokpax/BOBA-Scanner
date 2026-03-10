@@ -168,6 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_actions_created ON admin_actions(created_at
 
 -- ============================================================
 -- Row Level Security (RLS) Policies
+-- Drop existing policies first so this script is fully re-runnable.
 -- ============================================================
 
 -- Enable RLS on all tables
@@ -183,6 +184,45 @@ ALTER TABLE admin_templates                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_admin_template_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_stats                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_actions                  ENABLE ROW LEVEL SECURITY;
+
+-- Drop all policies (safe if they don't exist yet)
+DO $$ BEGIN
+  -- users
+  DROP POLICY IF EXISTS users_select_own   ON users;
+  DROP POLICY IF EXISTS users_insert_self  ON users;
+  DROP POLICY IF EXISTS users_update_own   ON users;
+  -- system_settings
+  DROP POLICY IF EXISTS settings_select    ON system_settings;
+  DROP POLICY IF EXISTS settings_upsert    ON system_settings;
+  -- api_call_logs
+  DROP POLICY IF EXISTS logs_insert_own    ON api_call_logs;
+  DROP POLICY IF EXISTS logs_select_admin  ON api_call_logs;
+  -- feature_flags
+  DROP POLICY IF EXISTS flags_select       ON feature_flags;
+  DROP POLICY IF EXISTS flags_modify_admin ON feature_flags;
+  -- user_feature_overrides
+  DROP POLICY IF EXISTS overrides_select_own   ON user_feature_overrides;
+  DROP POLICY IF EXISTS overrides_modify_admin ON user_feature_overrides;
+  -- themes
+  DROP POLICY IF EXISTS themes_select_public ON themes;
+  DROP POLICY IF EXISTS themes_modify_admin  ON themes;
+  -- collections
+  DROP POLICY IF EXISTS collections_own ON collections;
+  -- tournaments
+  DROP POLICY IF EXISTS tournaments_select ON tournaments;
+  DROP POLICY IF EXISTS tournaments_insert ON tournaments;
+  DROP POLICY IF EXISTS tournaments_update ON tournaments;
+  -- admin_templates
+  DROP POLICY IF EXISTS templates_select       ON admin_templates;
+  DROP POLICY IF EXISTS templates_modify_admin ON admin_templates;
+  -- user_admin_template_assignments
+  DROP POLICY IF EXISTS assignments_select ON user_admin_template_assignments;
+  DROP POLICY IF EXISTS assignments_modify ON user_admin_template_assignments;
+  -- system_stats
+  DROP POLICY IF EXISTS stats_admin ON system_stats;
+  -- admin_actions
+  DROP POLICY IF EXISTS actions_admin ON admin_actions;
+END $$;
 
 -- ── users ──
 -- Users can read/update their own row; admins can read/update all.
