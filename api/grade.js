@@ -1,96 +1,83 @@
 // api/grade.js — AI Condition Grader endpoint
 // Uses Claude Vision to estimate PSA/BGS grade for a trading card image.
-// Completely server-side prompt — client only sends the image.
+// Completely server-side prompt — client only sends the image + optional metadata.
 
-const GRADE_PROMPT = `You are an expert trading card grader with 20 years of experience grading cards for PSA and BGS.
+// ── Prompt builder ──────────────────────────────────────────────────────────
+// Builds the grading prompt dynamically based on:
+//   - whether a zoomed corner grid is provided (dual-image mode)
+//   - whether programmatic centering data was computed at scan time
 
-Analyze this trading card image carefully and estimate its condition grade.
+function buildGradePrompt(hasCornersGrid, centeringData) {
+  const imageContext = hasCornersGrid
+    ? `Two images are provided:
+1. The full card image — use for overall assessment and surface condition.
+2. A 2×2 grid showing all 4 corners zoomed in (top-left, top-right in top row; bottom-left, bottom-right in bottom row). Use these zoomed views for precise corner and edge assessment.`
+    : `One card image is provided. Use it for all assessment.`;
 
-Evaluate these specific attributes (be honest and precise):
-1. CORNERS — Are they sharp, slightly rounded, or clearly rounded/dinged?
-2. EDGES — Any chips, nicks, roughness, or fraying?
-3. SURFACE — Any scratches, print defects, stains, creases, or loss of gloss?
-4. CENTERING — Estimate the left/right and top/bottom border ratios (e.g. 55/45)
+  const cornersInstr = hasCornersGrid
+    ? `1. CORNERS — Using the zoomed corner grid, assess EACH corner individually: Is it sharp/crisp, slightly rounded, moderately rounded, or clearly dinged/damaged? Compare corners to each other — are some worse than others?`
+    : `1. CORNERS — Assess each corner: sharp, slightly rounded, or clearly rounded/dinged?`;
 
-Grade scale:
+  const edgesInstr = hasCornersGrid
+    ? `2. EDGES — Using the zoomed corners AND full card image, inspect all four edges for chips, nicks, roughness, fraying, or whitening. Note which specific edges show wear.`
+    : `2. EDGES — Check for chips, nicks, roughness, or fraying along all edges.`;
+
+  // Centering block — either inject measured values or instruct AI to estimate
+  let centeringBlock;
+  if (centeringData && centeringData.lr && centeringData.tb) {
+    centeringBlock = `4. CENTERING (pre-measured from original scan geometry):
+   Left/Right: ${centeringData.lr}
+   Top/Bottom: ${centeringData.tb}
+   These values were computed from the card's position in the original photo before cropping. Use these exact values in your response. Factor them into the grade using PSA centering thresholds.`;
+  } else {
+    centeringBlock = `4. CENTERING — This card image has been pre-cropped with artificial uniform padding around the card edges. The image edges do NOT represent the card's actual borders.
+   Look for the card's own PRINTED borders within the image. If you can see them, estimate the left/right and top/bottom ratios.
+   If the card has full-bleed art with no visible printed borders, respond with "N/A (full-bleed)".
+   Do NOT measure from the image edges — those are artificial.`;
+  }
+
+  return `You are an expert trading card grader with 20 years of experience grading cards for PSA and BGS.
+
+${imageContext}
+
+NOTE: This card image has been cropped from a larger photo with padding added around the card edges. The outermost border you see is artificial background, not part of the card. Focus your analysis on the card itself.
+
+Evaluate these specific attributes. Be honest, precise, and SPECIFIC to THIS card:
+${cornersInstr}
+${edgesInstr}
+3. SURFACE — Examine carefully for scratches, print defects, stains, creases, loss of gloss, or color issues. Note the specific location and severity of any defects found.
+${centeringBlock}
+
+Grade scale (PSA standards):
 - PSA 10 (Gem Mint): Perfect in every way, centering within 55/45 or better on both axes
-- PSA 9 (Mint): Minimal imperfections, centering within 60/40 or better
-- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering within 65/35 or better
-- PSA 7 (Near Mint): Slight corner/edge wear visible under magnification
-- PSA 6 (Excellent-Mint): Minor visible corner/edge wear, light surface issues
-- PSA 5 (Excellent): Obvious wear but no major defects
-- PSA 4 and below: Significant wear, creases, damage, or heavy print defects
+- PSA 9 (Mint): One minor flaw only, centering within 60/40 or better
+- PSA 8 (Near Mint-Mint): Very slight wear on one or two corners, centering within 65/35 or better
+- PSA 7 (Near Mint): Slight wear on multiple corners/edges visible to naked eye, minor surface issues allowed
+- PSA 6 (Excellent-Mint): Visible corner wear, minor edge nicks, light surface wear
+- PSA 5 (Excellent): Obvious wear, no major creases or stains
+- PSA 4 and below: Significant wear, creases, stains, or damage
 
-CENTERING MEASUREMENT INSTRUCTIONS (CRITICAL — read carefully):
-Look at the ACTUAL borders of THIS card image. Measure (visually) the width of each border:
-- Compare the LEFT border width to the RIGHT border width to get the L/R ratio.
-- Compare the TOP border width to the BOTTOM border width to get the T/B ratio.
-Every card has DIFFERENT centering. A perfectly centered card is 50/50. An off-center card might be 55/45, 60/40, 70/30, etc.
-You MUST report the actual ratios you observe on THIS card — do NOT copy values from examples or use placeholder numbers.
-If the card has no visible borders (full-bleed art), state that and estimate from any visible frame edges.
+IMPORTANT GRADING GUIDELINES:
+- Each card is UNIQUE. Describe the SPECIFIC defects (or perfections) you observe on THIS card.
+- Do NOT use generic or templated descriptions. If corners are sharp, say so specifically. If one corner is worse than others, identify which one.
+- A PSA 7 is NOT a default grade. Carefully assess whether the card is better or worse than Near Mint.
+- Be critical but fair. Most raw cards from packs grade between PSA 7-9, but variation within that range matters.
 
-Return ONLY valid JSON with no markdown:
+Return ONLY valid JSON with no markdown formatting:
 {
   "grade": <1-10>,
   "grade_label": "<grade name>",
   "confidence": <0-100>,
-  "centering": "<measured L/R> L/R, <measured T/B> T/B",
-  "corners": "<describe what you actually see on each corner>",
-  "edges": "<describe actual edge condition>",
-  "surface": "<describe actual surface condition>",
-  "summary": "<your assessment of this specific card>",
+  "centering": "<L/R> L/R, <T/B> T/B",
+  "corners": "<describe what you see on EACH corner specifically>",
+  "edges": "<describe actual edge condition — which edges show wear?>",
+  "surface": "<describe actual surface condition — location of any defects>",
+  "summary": "<2-3 sentence assessment of this specific card>",
   "submit_recommendation": "yes|maybe|no"
 }
 
-Do NOT reuse example numbers. Every card you grade should have different centering unless they truly are identical.
-
-submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
-
-const GRADE_PROMPT_DUAL = `You are an expert trading card grader with 20 years of experience grading cards for PSA and BGS.
-
-Two images are provided:
-1. The full card image — use for overall assessment, centering, and surface condition.
-2. A 2×2 grid showing all 4 corners zoomed in (top-left, top-right in top row; bottom-left, bottom-right in bottom row). Use these zoomed views for precise corner and edge assessment.
-
-Evaluate these specific attributes (be honest and precise):
-1. CORNERS — Using the zoomed corner grid, assess each corner: sharp, slightly rounded, or clearly rounded/dinged?
-2. EDGES — Using the zoomed corners AND full card, check for chips, nicks, roughness, or fraying along all edges.
-3. SURFACE — Any scratches, print defects, stains, creases, or loss of gloss?
-4. CENTERING — Estimate the left/right and top/bottom border ratios (e.g. 55/45)
-
-Grade scale:
-- PSA 10 (Gem Mint): Perfect in every way, centering within 55/45 or better on both axes
-- PSA 9 (Mint): Minimal imperfections, centering within 60/40 or better
-- PSA 8 (Near Mint-Mint): Light wear on corners/edges, centering within 65/35 or better
-- PSA 7 (Near Mint): Slight corner/edge wear visible under magnification
-- PSA 6 (Excellent-Mint): Minor visible corner/edge wear, light surface issues
-- PSA 5 (Excellent): Obvious wear but no major defects
-- PSA 4 and below: Significant wear, creases, damage, or heavy print defects
-
-CENTERING MEASUREMENT INSTRUCTIONS (CRITICAL — read carefully):
-Using the FULL CARD image (first image), measure the actual border widths:
-- Compare the LEFT border width to the RIGHT border width to get the L/R ratio.
-- Compare the TOP border width to the BOTTOM border width to get the T/B ratio.
-Every card has DIFFERENT centering. A perfectly centered card is 50/50. An off-center card might be 55/45, 60/40, 70/30, etc.
-You MUST report the actual ratios you observe on THIS card — do NOT copy values from examples or use placeholder numbers.
-If the card has no visible borders (full-bleed art), state that and estimate from any visible frame edges.
-
-Return ONLY valid JSON with no markdown:
-{
-  "grade": <1-10>,
-  "grade_label": "<grade name>",
-  "confidence": <0-100>,
-  "centering": "<measured L/R> L/R, <measured T/B> T/B",
-  "corners": "<describe what you see on each corner using the zoomed grid>",
-  "edges": "<describe actual edge condition>",
-  "surface": "<describe actual surface condition>",
-  "summary": "<your assessment of this specific card>",
-  "submit_recommendation": "yes|maybe|no"
+submit_recommendation: "yes" = grade 8+ likely, worth the grading fee; "maybe" = borderline 7-8, could go either way; "no" = grade 6 or below, not cost-effective to submit`;
 }
-
-Do NOT reuse example numbers. Every card you grade should have different centering unless they truly are identical.
-
-submit_recommendation values: "yes" (worth grading), "maybe" (borderline), "no" (not cost-effective)`;
 
 const RATE_LIMIT_MAX    = 20;  // grading is more expensive — lower limit
 const RATE_LIMIT_WINDOW = 60;
@@ -187,7 +174,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData, cornerRegionData } = req.body;
+    const { imageData, cornerRegionData, centeringData } = req.body;
     if (!imageData) return res.status(400).json({ error: 'Missing image data' });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -208,14 +195,13 @@ export default async function handler(req, res) {
       });
     }
 
-    contentParts.push({
-      type: 'text',
-      text: cornerRegionData ? GRADE_PROMPT_DUAL : GRADE_PROMPT
-    });
+    // Build prompt dynamically based on available metadata
+    const prompt = buildGradePrompt(!!cornerRegionData, centeringData || null);
+    contentParts.push({ type: 'text', text: prompt });
 
     const requestBody = JSON.stringify({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 500,
+      model:      'claude-sonnet-4-6',
+      max_tokens: 1024,
       messages: [{
         role: 'user',
         content: contentParts

@@ -131,6 +131,10 @@ async function processBatchEntry(entry) {
     const cropped = await cropToCard(entry.file);
     const src     = cropped ? cropped.blob : entry.file;
 
+    // Centering + bounds computed by cropToCard from the original photo geometry
+    entry.centeringData = cropped?.centering || null;
+    entry.cardBounds    = cropped?.cardBounds || null;
+
     const imageBase64 = await compressImage(src);
     entry.imageBase64 = imageBase64;
 
@@ -245,7 +249,9 @@ async function commitBatch() {
       scanType: entry.scanType,
       scanMethod: entry.scanType === 'free' ? `Free OCR (${Math.round(entry.confidence || 0)}%)` : 'AI + Database',
       timestamp: new Date().toISOString(), tags: [],
-      condition: '', notes: '', readyToList: false, confidence: entry.confidence
+      condition: '', notes: '', readyToList: false, confidence: entry.confidence,
+      centeringData: entry.centeringData || null,
+      cardBounds: entry.cardBounds || null
     };
     const collections = getCollections();
     const col = collections.find(c => c.id === getCurrentCollectionId());

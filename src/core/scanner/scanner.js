@@ -67,6 +67,10 @@ async function processImage(file) {
   const cropped  = await cropToCard(file);
   const src      = cropped ? cropped.blob : file;
 
+  // Centering + card bounds computed by cropToCard from the original photo geometry
+  const centeringData = cropped?.centering || null;
+  const cardBounds    = cropped?.cardBounds || null;
+
   const imageBase64 = await compressImage(src);
 
   // Generate cropped card-number region for dual-image AI fallback
@@ -85,7 +89,7 @@ async function processImage(file) {
   // at which point the blob URL is no longer referenced.
   const revokeTimer = setTimeout(() => URL.revokeObjectURL(displayUrl), 5 * 60 * 1000);
   try {
-    return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64);
+    return await _doProcessImage(imageBase64, displayUrl, displayUrl, file.name, imageBase64, numberRegionBase64, centeringData, cardBounds);
   } catch (err) {
     // On failure, revoke immediately — no card was added to reference it
     clearTimeout(revokeTimer);
@@ -94,7 +98,7 @@ async function processImage(file) {
   }
 }
 
-async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null, numberRegionBase64 = null) {
+async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, storedBase64 = null, numberRegionBase64 = null, centeringData = null, cardBounds = null) {
   let match      = null;
   let cardNum    = null;
   let heroName   = null;
@@ -117,7 +121,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
         if (match) {
           showLoading(false);
           const ocrConf = ocrResult.confidence || 70;
-          addCard(match, imageUrl, fileName, 'ocr', ocrConf, ocrConf < 70, storedBase64);
+          addCard(match, imageUrl, fileName, 'ocr', ocrConf, ocrConf < 70, storedBase64, false, centeringData, cardBounds);
           setProgress(100);
           if (typeof addToScanHistory === 'function') {
             addToScanHistory({
@@ -136,7 +140,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
             match = findCard(corrected);
             if (match) {
               showLoading(false);
-              addCard(match, imageUrl, fileName, 'ocr', 80, false, storedBase64);
+              addCard(match, imageUrl, fileName, 'ocr', 80, false, storedBase64, false, centeringData, cardBounds);
               setProgress(100);
               if (typeof addToScanHistory === 'function') {
                 addToScanHistory({
@@ -184,7 +188,7 @@ async function _doProcessImage(imageBase64, imageUrl, displayUrl, fileName, stor
     if (match) {
       showLoading(false);
       const lowConf = confidence < 70;
-      addCard(match, imageUrl, fileName, 'ai', confidence, lowConf, storedBase64);
+      addCard(match, imageUrl, fileName, 'ai', confidence, lowConf, storedBase64, false, centeringData, cardBounds);
       setProgress(100);
 
       // Record AI correction for scan learning — next time OCR reads this, skip AI
@@ -589,7 +593,7 @@ function showDuplicateModal(dupeCount, cardName, onConfirm) {
   });
 }
 
-function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null, _skipDupeCheck = false) {
+function addCard(match, displayUrl, fileName, type, confidence = null, lowConfidence = false, imageBase64 = null, _skipDupeCheck = false, centeringData = null, cardBounds = null) {
   console.log('Adding card:', match['Card Number']);
 
   // ── Deck Builder intercept ─────────────────────────────────────────────
@@ -658,7 +662,7 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     // Non-blocking custom modal replaces native confirm() which is unreliable
     // on iOS Chrome and blocks the UI thread on every scan.
     return void showDuplicateModal(dupeCount, match.Name || cardNum, () => {
-      addCard(match, displayUrl, fileName, type, confidence, lowConfidence, imageBase64, true);
+      addCard(match, displayUrl, fileName, type, confidence, lowConfidence, imageBase64, true, centeringData, cardBounds);
     });
   }
 
@@ -688,7 +692,10 @@ function addCard(match, displayUrl, fileName, type, confidence = null, lowConfid
     listingStatus: null,
     listingUrl:    null,
     listingPrice:  null,
-    soldAt:        null
+    soldAt:        null,
+    // Centering + bounds computed from original photo geometry at scan time
+    centeringData,
+    cardBounds
   };
 
   if (typeof clearPendingTags === 'function') clearPendingTags();

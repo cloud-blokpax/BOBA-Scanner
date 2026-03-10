@@ -5,7 +5,7 @@
 const escapeHtml = (...args) => window.escapeHtml(...args);
 
 // ── Grade a card from a base64 image ─────────────────────────────────────────
-async function gradeCard(imageData, cornerRegionData = null) {
+async function gradeCard(imageData, cornerRegionData = null, centeringData = null) {
   const cfg = window.appConfig || {};
   const apiBase = cfg.apiBase || 'https://boba.cards/api';
 
@@ -15,6 +15,7 @@ async function gradeCard(imageData, cornerRegionData = null) {
 
   const bodyObj = { imageData };
   if (cornerRegionData) bodyObj.cornerRegionData = cornerRegionData;
+  if (centeringData)    bodyObj.centeringData    = centeringData;
 
   const res = await fetch(`${apiBase}/grade`, {
     method: 'POST',
@@ -85,6 +86,10 @@ function showGradeModal(result, cardName, cardIndex) {
           </div>
 
         </div>
+        ${(!result.gradeVersion || result.gradeVersion < 2) && cardIndex !== undefined ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:0 16px 12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:16px;">✨</span>
+            <span>New grading engine available with improved accuracy. <strong id="gradeUpgradeLink" style="cursor:pointer;text-decoration:underline;">Re-grade now</strong></span>
+          </div>` : ''}
         <div class="modal-footer">
           <div style="font-size:11px;color:#9ca3af;flex:1;">AI estimate only — not a certified grade</div>
           ${cardIndex !== undefined ? `<button class="btn-secondary" id="gradeRegradeBtn" style="white-space:nowrap;">🔄 Re-grade</button>` : ''}
@@ -100,6 +105,10 @@ function showGradeModal(result, cardName, cardIndex) {
   document.querySelector('#gradeModal .modal-backdrop')?.addEventListener('click', () => document.getElementById('gradeModal')?.remove());
   if (cardIndex !== undefined) {
     document.getElementById('gradeRegradeBtn')?.addEventListener('click', () => {
+      document.getElementById('gradeModal')?.remove();
+      gradeCardFromDetail(cardIndex, true);
+    });
+    document.getElementById('gradeUpgradeLink')?.addEventListener('click', () => {
       document.getElementById('gradeModal')?.remove();
       gradeCardFromDetail(cardIndex, true);
     });
@@ -119,7 +128,13 @@ function renderGradeRow(icon, label, value) {
 }
 
 // ── Prepare high-res image + corner grid for grading ──────────────────────────
-async function prepareGradingImages(url) {
+// Accepts either a card object (with imageUrl, centeringData, cardBounds) or a
+// plain URL string for backward compatibility (scan-preview grading).
+async function prepareGradingImages(cardOrUrl) {
+  const url          = (typeof cardOrUrl === 'string') ? cardOrUrl : cardOrUrl.imageUrl;
+  const centeringData = (typeof cardOrUrl === 'object') ? (cardOrUrl.centeringData || null) : null;
+  const cardBounds    = (typeof cardOrUrl === 'object') ? (cardOrUrl.cardBounds    || null) : null;
+
   const blob = await fetch(url).then(r => {
     if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
     return r.blob();
@@ -128,11 +143,12 @@ async function prepareGradingImages(url) {
   const imageData = (typeof compressImageForGrading === 'function')
     ? await compressImageForGrading(blob)
     : await urlToBase64(url);
-  // Generate 2×2 corner grid for precise corner assessment
+  // Generate 2×2 corner grid — pass cardBounds so corners are extracted
+  // from the actual card area, not the artificial padding
   const cornerRegionData = (typeof cropGradingRegions === 'function')
-    ? await cropGradingRegions(blob).catch(() => null)
+    ? await cropGradingRegions(blob, cardBounds).catch(() => null)
     : null;
-  return { imageData, cornerRegionData };
+  return { imageData, cornerRegionData, centeringData };
 }
 
 // ── Grade a specific card by index (from card detail modal or card grid) ──────
@@ -161,10 +177,13 @@ async function gradeCardFromDetail(index, forceRegrade = false) {
 
   showLoading(true, 'Analyzing card condition...');
   try {
-    const { imageData, cornerRegionData } = await prepareGradingImages(card.imageUrl);
-    const result = await gradeCard(imageData, cornerRegionData);
+    const { imageData, cornerRegionData, centeringData } = await prepareGradingImages(card);
+    const result = await gradeCard(imageData, cornerRegionData, centeringData);
     showLoading(false);
     if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.innerHTML = origText; }
+
+    // Stamp grade version so the UI can detect old vs new grading engine
+    result.gradeVersion = 2;
 
     // Persist grade to card object
     card.aiGrade = result;
@@ -209,8 +228,9 @@ async function triggerGradeCard() {
       || 'Card';
     showLoading(true, 'Analyzing card condition...');
     try {
-      const { imageData, cornerRegionData } = await prepareGradingImages(previewImg.src);
-      const result = await gradeCard(imageData, cornerRegionData);
+      // Scan-preview path — no stored card, so no centering/bounds metadata
+      const { imageData, cornerRegionData, centeringData } = await prepareGradingImages(previewImg.src);
+      const result = await gradeCard(imageData, cornerRegionData, centeringData);
       showLoading(false);
       showGradeModal(result, cardName);
     } catch (err) {

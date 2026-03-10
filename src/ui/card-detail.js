@@ -164,13 +164,17 @@ window.openCardDetail = function(index) {
         // AI Grade section — only shown if a grade has been computed
         if (c.aiGrade) {
             const g = c.aiGrade;
+            // Prefer programmatic centering from scan geometry, fall back to AI estimate
+            const displayCentering = c.centeringData
+                ? `${c.centeringData.lr} L/R, ${c.centeringData.tb} T/B`
+                : g.centering;
             sections.push({
                 title: 'AI Grade', icon: '🔬',
                 rows: [
                     ['Grade',       g.grade != null ? `PSA ${g.grade}` : null],
                     ['Label',       fmtStr(g.grade_label)],
                     ['Confidence',  fmtPct(g.confidence)],
-                    ['Centering',   fmtStr(g.centering)],
+                    ['Centering',   fmtStr(displayCentering)],
                     ['Corners',     fmtStr(g.corners)],
                     ['Edges',       fmtStr(g.edges)],
                     ['Surface',     fmtStr(g.surface)],
@@ -187,7 +191,7 @@ window.openCardDetail = function(index) {
             'ebaySoldPrice','ebaySoldDate','ebaySoldAvgPrice','ebaySoldCount','ebaySoldFetched','ebaySoldUrl',
             'tags','notes','readyToList','listingStatus','listingTitle','listingPrice','listingUrl','listingItemId','soldAt',
             'scanMethod','scanType','confidence','lowConfidence','fileName','timestamp',
-            'imageUrl','id','cardId','aiGrade'
+            'imageUrl','id','cardId','aiGrade','centeringData','cardBounds'
         ]);
         const extraRows = Object.entries(c)
             .filter(([k, v]) => !knownFields.has(k) && v != null && v !== '' && typeof v !== 'object')
@@ -269,19 +273,27 @@ window.openCardDetail = function(index) {
                 ${card.aiGrade ? (() => {
                     const g = card.aiGrade;
                     const gc = g.grade >= 9 ? '#16a34a' : g.grade >= 7 ? '#d97706' : g.grade >= 5 ? '#ea580c' : '#dc2626';
+                    // Prefer programmatic centering from scan geometry, fall back to AI estimate
+                    const displayCentering = card.centeringData
+                        ? `${card.centeringData.lr} L/R, ${card.centeringData.tb} T/B`
+                        : (g.centering || 'N/A');
+                    const isOldGrade = !g.gradeVersion || g.gradeVersion < 2;
                     return `<div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:16px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                             <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">AI Grade</div>
                             <div style="font-size:28px;font-weight:900;color:${gc};line-height:1;">PSA ${g.grade} <span style="font-size:14px;font-weight:600;">${escapeHtml(g.grade_label || '')}</span></div>
                         </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
-                            <div><span style="color:#6b7280;">Centering:</span> <strong style="color:#111827;">${escapeHtml(g.centering || 'N/A')}</strong></div>
+                            <div><span style="color:#6b7280;">Centering:</span> <strong style="color:#111827;">${escapeHtml(displayCentering)}</strong></div>
                             <div><span style="color:#6b7280;">Confidence:</span> <strong style="color:#111827;">${g.confidence || 0}%</strong></div>
                             <div style="grid-column:1/-1;"><span style="color:#6b7280;">Corners:</span> <span style="color:#374151;">${escapeHtml(g.corners || 'N/A')}</span></div>
                             <div style="grid-column:1/-1;"><span style="color:#6b7280;">Edges:</span> <span style="color:#374151;">${escapeHtml(g.edges || 'N/A')}</span></div>
                             <div style="grid-column:1/-1;"><span style="color:#6b7280;">Surface:</span> <span style="color:#374151;">${escapeHtml(g.surface || 'N/A')}</span></div>
                         </div>
                         ${g.summary ? `<div style="margin-top:8px;font-size:12px;color:#374151;border-top:1px solid #d1fae5;padding-top:8px;">${escapeHtml(g.summary)}</div>` : ''}
+                        ${isOldGrade ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d1fae5;font-size:11px;color:#92400e;display:flex;align-items:center;gap:6px;">
+                            <span>✨</span> Improved grading engine available — <strong style="cursor:pointer;text-decoration:underline;" onclick="gradeCardFromDetail(${index},true)">Re-grade</strong>
+                        </div>` : ''}
                     </div>`;
                 })() : ''}
 
