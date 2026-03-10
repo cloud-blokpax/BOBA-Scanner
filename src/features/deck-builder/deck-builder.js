@@ -615,7 +615,7 @@ function renderQueueRow(entry, idx, type) {
                 border-radius:10px;margin-bottom:6px;border:1px solid ${c.border};">
       <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;overflow:hidden;background:#e5e7eb;">
         ${card.imageUrl
-          ? `<img src="${card.imageUrl}" style="width:100%;height:100%;object-fit:cover;">`
+          ? `<img src="${escapeHtml(card.imageUrl)}" style="width:100%;height:100%;object-fit:cover;">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">🎴</div>`}
       </div>
       <div style="flex:1;min-width:0;">

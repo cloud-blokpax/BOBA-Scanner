@@ -166,11 +166,11 @@ function escayHtml(str) { return escapeHtml(str); }
 
 // ── List a specific card by index (from card detail modal or card grid) ───────
 async function ebayListFromDetail(index) {
-  const collections = (typeof getCollections === 'function') ? getCollections() : [];
-  const currentId   = (typeof getCurrentCollectionId === 'function') ? getCurrentCollectionId() : 'default';
+  const collections = (typeof window.getCollections === 'function') ? window.getCollections() : [];
+  const currentId   = (typeof window.getCurrentCollectionId === 'function') ? window.getCurrentCollectionId() : 'default';
   const collection  = collections.find(c => c.id === currentId);
   const card        = collection?.cards[index];
-  if (!card) { showToast('Card not found', '❌'); return; }
+  if (!card) { window.showToast('Card not found', '❌'); return; }
   await triggerEbayLister(card);
 }
 
@@ -181,19 +181,20 @@ async function ebayListByIndex(index) {
 
 // ── List from More menu (show card picker first) ──────────────────────────────
 function triggerEbayListerWithPicker() {
-  if (!isFeatureEnabled('ebay_lister')) {
-    showToast('eBay Lister requires membership', '🔒');
+  if (typeof window.isFeatureEnabled === 'function' && !window.isFeatureEnabled('ebay_lister')) {
+    window.showToast('eBay Lister requires membership', '🔒');
     return;
   }
-  showCardPickerModal('🛒 List on eBay', 'Select a card to generate a listing', async (index) => {
+  if (typeof window.showCardPickerModal !== 'function') { window.showToast('Card picker not available', '⚠️'); return; }
+  window.showCardPickerModal('🛒 List on eBay', 'Select a card to generate a listing', async (index) => {
     await ebayListFromDetail(index);
   });
 }
 
 // ── Main trigger — accepts a card object or shows picker if none provided ─────
 async function triggerEbayLister(card) {
-  if (!isFeatureEnabled('ebay_lister')) {
-    showToast('eBay Lister requires membership', '🔒');
+  if (typeof window.isFeatureEnabled === 'function' && !window.isFeatureEnabled('ebay_lister')) {
+    window.showToast('eBay Lister requires membership', '🔒');
     return;
   }
 
@@ -202,13 +203,13 @@ async function triggerEbayLister(card) {
     return;
   }
 
-  showLoading(true, 'Generating eBay listing...');
+  if (typeof window.showLoading === 'function') window.showLoading(true, 'Generating eBay listing...');
   try {
     const listing = await generateEbayListing(card);
-    showLoading(false);
+    if (typeof window.showLoading === 'function') window.showLoading(false);
     showListingModal(listing, card);
   } catch (err) {
-    showLoading(false);
+    if (typeof window.showLoading === 'function') window.showLoading(false);
     console.error('eBay lister error:', err);
     showToast('Listing generation failed — try again', '❌');
   }

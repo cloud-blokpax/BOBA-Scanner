@@ -119,9 +119,10 @@ export function createScanner(options = {}) {
     }
 
     function compressForUpload(file, maxSize = 1400, quality = 0.7) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const img = new Image();
             const url = URL.createObjectURL(file);
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
             img.onload = () => {
                 URL.revokeObjectURL(url);
                 const canvas = document.createElement('canvas');
@@ -143,7 +144,12 @@ export function createScanner(options = {}) {
     function blobToBase64(blob) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
+            reader.onloadend = () => {
+                // Strip the data URL prefix (e.g. "data:image/jpeg;base64,") to get raw base64
+                const dataUrl = reader.result;
+                const base64 = dataUrl.split(',')[1] || dataUrl;
+                resolve(base64);
+            };
             reader.onerror = reject;
             reader.readAsDataURL(blob);
         });

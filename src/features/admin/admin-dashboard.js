@@ -1239,9 +1239,10 @@ function formatAdminAction(a) {
 }
 
 // Auto-load activity log and themes when their tabs are clicked
-const _origShowAdminTab = window.showAdminTab;
+// NOTE: showAdminTab is defined later in this file (line ~1482) and assigned to window.
+// We must call the local function directly rather than capturing a stale reference.
 window.showAdminTab = function(tab, btn) {
-  if (typeof _origShowAdminTab === 'function') _origShowAdminTab(tab, btn);
+  showAdminTab(tab, btn);
   if (tab === 'activity') {
     setTimeout(loadActivityLog, 50);
   }
@@ -1479,5 +1480,6 @@ async function loadUserOverrides() {
 
 // ── Expose to window for lazy-loading ────────────────────────────────────────
 window.openAdminDashboard = openAdminDashboard;
-window.showAdminTab = showAdminTab;
+// window.showAdminTab is set above (line ~1244) as a wrapper that calls showAdminTab()
+// plus auto-loads tab content. Do not overwrite it here.
 window.closeAdminDashboard = closeAdminDashboard;
