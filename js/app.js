@@ -91,10 +91,24 @@ async function init() {
             wireMagicalFeatureButtons();
         }
 
+        // Wire up continuous scanner button (if device has camera)
+        if (typeof hasCameraSupport === 'function' && hasCameraSupport()) {
+            const liveScanRow = document.getElementById('liveScanRow');
+            if (liveScanRow) liveScanRow.style.display = '';
+            document.getElementById('btnLiveScan')?.addEventListener('click', () => {
+                if (typeof openContinuousScanner === 'function') openContinuousScanner();
+            });
+        }
+
+        // Remove skeleton loading placeholders
+        document.body.classList.add('app-loaded');
+
         console.log('✅ Card Scanner Ready!');
 
     } catch (err) {
         console.error('❌ Initialization error:', err);
+        // Still remove skeletons on error so the real UI is visible
+        document.body.classList.add('app-loaded');
         if (typeof showToast === 'function') {
             showToast('Some features may not be available', '⚠️');
         }

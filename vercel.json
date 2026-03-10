@@ -5,7 +5,8 @@
     "api/ebay-browse.js": { "maxDuration": 15 },
     "api/ebay-sold.js":   { "maxDuration": 45 },
     "api/upload-image.js": { "maxDuration": 15 },
-    "api/grade.js":       { "maxDuration": 30 }
+    "api/grade.js":       { "maxDuration": 30 },
+    "api/log.js":         { "maxDuration": 5  }
   },
   "headers": [
     {
