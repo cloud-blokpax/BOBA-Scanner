@@ -331,12 +331,15 @@ function renderCards() {
             'SGC 7', 'SGC 8', 'SGC 9', 'SGC 10'
         ].map(opt => `<option value="${opt}" ${card.condition === opt ? 'selected' : ''}>${opt || 'Condition...'}</option>`).join('');
 
+        const rarityClass = _getRarityGlowClass(card);
+
         return `
-        <div class="card-item" id="card_item_${idx}" data-open-card="${idx}">
-            <div class="card-image-container" data-open-card="${idx}" style="cursor:pointer;" title="Tap to view details">
+        <div class="card-item ${rarityClass} card-stagger-enter" id="card_item_${idx}" data-open-card="${idx}" style="animation-delay:${(pagedItems.indexOf(pagedItems.find(p => p.idx === idx)) || 0) * 60}ms;">
+            <div class="card-image-container" data-open-card="${idx}" style="cursor:pointer;aspect-ratio:5/7;" title="Tap to view details">
                 <img class="card-image"
                      src="${card.imageUrl && !card.imageUrl.startsWith('blob:') ? card.imageUrl : ''}"
                      alt="${escapeHtml(card.cardNumber)}"
+                     loading="lazy"
                      onerror="this.style.display='none'"
                      style="${(!card.imageUrl || card.imageUrl.startsWith('blob:')) ? 'display:none' : ''}">
                 <span class="card-badge ${card.scanType === 'ocr' ? 'badge-free' : 'badge-paid'}">
@@ -344,6 +347,7 @@ function renderCards() {
                 </span>
                 ${lowConfBadge}
                 ${listingBadge}
+                ${card.parallel ? `<span class="rarity-badge rarity-${_getRarityClass(card)}" style="position:absolute;bottom:6px;right:6px;">${escapeHtml(card.parallel)}</span>` : ''}
             </div>
             <div class="card-content" data-open-card="${idx}" style="cursor:pointer;">
                 <div class="card-title-row">
@@ -552,6 +556,23 @@ function renderField(label, field, index, value, autoFilled) {
                    onchange="updateCard(${index}, '${field}', this.value)">
         </div>
     `;
+}
+
+// ── Rarity helpers ──────────────────────────────────────────────────────────
+function _getRarityClass(card) {
+    const p = (card.parallel || '').toLowerCase();
+    if (p.includes('legend') || p.includes('gold') || p.includes('1/1')) return 'legendary';
+    if (p.includes('epic') || p.includes('holo') || p.includes('refractor')) return 'epic';
+    if (p.includes('rare') || p.includes('battlefoil')) return 'rare';
+    if (p.includes('first edition') || p.includes('uncommon')) return 'uncommon';
+    if (p) return 'uncommon';
+    return 'common';
+}
+
+function _getRarityGlowClass(card) {
+    const r = _getRarityClass(card);
+    if (r === 'common') return '';
+    return `rarity-glow-${r}`;
 }
 
 // ── Event bus subscriptions ─────────────────────────────────────────────────

@@ -392,6 +392,61 @@
     display: flex;
 }
 
+/* ── Raised FAB (center Collection tab) ────────────────────────────────── */
+.bottom-nav-fab {
+    position: relative;
+    margin-top: -12px;
+    width: 60px;
+    height: 60px;
+    min-height: 60px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: #fff !important;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4), 0 0 0 3px rgba(7, 11, 20, 0.98);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bottom-nav-fab .bottom-nav-label {
+    display: none;
+}
+
+.bottom-nav-fab .bottom-nav-icon {
+    font-size: 24px;
+}
+
+.bottom-nav-fab:active,
+.bottom-nav-fab.tapped {
+    transform: scale(0.9) !important;
+    background: linear-gradient(135deg, #4f46e5, #4338ca);
+}
+
+.bottom-nav-fab.active {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: #fff;
+    box-shadow: 0 4px 24px rgba(99, 102, 241, 0.5), 0 0 0 3px rgba(7, 11, 20, 0.98);
+}
+
+/* Override the gold dot for FAB — use pill indicator below instead */
+.bottom-nav-fab.active::after {
+    display: none;
+}
+
+/* Active pill indicator for non-FAB tabs */
+.bottom-nav-item.active:not(.bottom-nav-fab)::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 3px;
+    background: var(--gold);
+    border-radius: 99px;
+    box-shadow: 0 0 8px var(--gold);
+    opacity: 0.9;
+}
+
 /* ── More Sheet ────────────────────────────────────────────────────────── */
 .more-sheet-backdrop {
     position: fixed;

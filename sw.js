@@ -1,31 +1,35 @@
-// Service Worker — BOBA Scanner v2.0
-// Provides offline support and caches critical assets for instant repeat visits.
-// Version-aware: checks version.json on activate and busts stale caches.
+// Service Worker — BOBA Scanner v3.0 (World-Class PWA)
+// Differentiated caching: cache-first for shell, stale-while-revalidate for DB,
+// network-first for prices. Re-caches critical assets on every launch to protect
+// against iOS 7-day cache eviction.
 
-const CACHE_NAME = 'boba-v3';
-const PRECACHE_URLS = [
+const CACHE_NAME = 'boba-v4';
+const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css',
-  '/card-database.json',
+  '/manifest.json',
   '/version.json'
 ];
+const DB_ASSETS = [
+  '/card-database.json'
+];
 
-// Install — precache critical assets, skip waiting to activate immediately
-// Use individual add() calls so one missing asset doesn't break the whole install
+// Install — precache app shell + DB, skip waiting for immediate activation
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return Promise.allSettled(
-        PRECACHE_URLS.map(url => cache.add(url).catch(err => {
-          console.warn('SW: failed to cache', url, err.message);
-        }))
+        [...APP_SHELL, ...DB_ASSETS].map(url =>
+          cache.add(url).catch(err => {
+            console.warn('SW: failed to cache', url, err.message);
+          })
+        )
       );
     }).then(() => self.skipWaiting())
   );
 });
 
-// Activate — clean up ALL old caches (any name that isn't current)
+// Activate — clean up ALL old caches, claim all clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -34,51 +38,89 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch — stale-while-revalidate for static assets, network-first for API calls
+// Fetch — differentiated strategies per resource type
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests and API calls (always hit network)
+  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
+
+  // API calls — always network, never cache
   if (url.pathname.startsWith('/api/')) return;
 
-  // For navigation requests and same-origin assets: stale-while-revalidate
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        cache.match(event.request).then(cached => {
-          const fetchPromise = fetch(event.request).then(response => {
-            if (response.ok) {
-              cache.put(event.request, response.clone());
-            }
-            return response;
-          }).catch(() => {
-            // Network failed — return cached or offline fallback
-            return cached || new Response('Offline', { status: 503 });
-          });
+  // eBay / price data — network-first with cache fallback
+  if (url.pathname.includes('ebay') || url.pathname.includes('price')) {
+    event.respondWith(networkFirstWithCacheFallback(event.request));
+    return;
+  }
 
-          // Return cached immediately, update in background
-          return cached || fetchPromise;
-        })
-      )
-    );
+  // Card database — stale-while-revalidate (serve cached fast, update in bg)
+  if (url.pathname === '/card-database.json') {
+    event.respondWith(staleWhileRevalidate(event.request));
+    return;
+  }
+
+  // App shell (same origin) — stale-while-revalidate
+  if (url.origin === self.location.origin) {
+    event.respondWith(staleWhileRevalidate(event.request));
     return;
   }
 
   // External resources (CDN, fonts) — cache-first
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
+  event.respondWith(cacheFirst(event.request));
+});
+
+// ── Caching strategies ──────────────────────────────────────────────────────
+
+// Cache-first: serve from cache if available, only fetch on miss
+function cacheFirst(request) {
+  return caches.match(request).then(cached => {
+    if (cached) return cached;
+    return fetch(request).then(response => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+      }
+      return response;
+    });
+  });
+}
+
+// Stale-while-revalidate: serve cached immediately, update in background
+function staleWhileRevalidate(request) {
+  return caches.open(CACHE_NAME).then(cache =>
+    cache.match(request).then(cached => {
+      const fetchPromise = fetch(request).then(response => {
         if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          cache.put(request, response.clone());
         }
         return response;
+      }).catch(() => {
+        return cached || new Response('Offline', { status: 503 });
       });
+
+      return cached || fetchPromise;
     })
   );
-});
+}
+
+// Network-first: try network, fall back to cache
+function networkFirstWithCacheFallback(request) {
+  return fetch(request).then(response => {
+    if (response.ok) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+    }
+    return response;
+  }).catch(() => {
+    return caches.match(request).then(cached => {
+      return cached || new Response(JSON.stringify({ error: 'offline' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+  });
+}
 
 // Background sync — push pending collection changes when connectivity returns
 self.addEventListener('sync', (event) => {
@@ -88,5 +130,17 @@ self.addEventListener('sync', (event) => {
         clients.forEach(client => client.postMessage({ type: 'SYNC_COLLECTIONS' }));
       })
     );
+  }
+});
+
+// Re-cache critical assets on every page load message from client
+// (protects against iOS Safari's aggressive 7-day cache eviction)
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'RECACHE_SHELL') {
+    caches.open(CACHE_NAME).then(cache => {
+      Promise.allSettled(
+        APP_SHELL.map(url => cache.add(url).catch(() => {}))
+      );
+    });
   }
 });

@@ -109,6 +109,18 @@
   --shadow-gold-lg: 0 8px 32px rgba(245,158,11,0.45);
   --shadow-blue: 0 4px 20px rgba(59,130,246,0.35);
 
+  /* Rarity colors (Diablo/WoW universal standard) */
+  --rarity-common:    #9CA3AF;
+  --rarity-uncommon:  #22C55E;
+  --rarity-rare:      #3B82F6;
+  --rarity-epic:      #A855F7;
+  --rarity-legendary: #F59E0B;
+
+  /* Glassmorphism */
+  --glass-bg:     rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-blur:   blur(20px);
+
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4,0,0.2,1);
   --transition-base: 220ms cubic-bezier(0.4,0,0.2,1);

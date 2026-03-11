@@ -8,6 +8,7 @@ function copyStaticAssetsPlugin() {
     'card-database.json',
     'sw.js',
     'version.json',
+    'manifest.json',
   ];
 
   return {
