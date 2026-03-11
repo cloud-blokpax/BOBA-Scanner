@@ -205,7 +205,7 @@ async function gradeCardFromDetail(index, forceRegrade = false) {
   }
 
   // Disable the Grade button and show a spinner so the user knows work is happening
-  const gradeBtn = document.querySelector('#cardDetailModal .modal-footer button[onclick*="gradeCardFromDetail"]');
+  const gradeBtn = document.getElementById('btnGradeFromDetail');
   const origText = gradeBtn?.innerHTML || '🔬 Grade';
   if (gradeBtn) { gradeBtn.disabled = true; gradeBtn.innerHTML = '⏳ Analyzing…'; }
 
