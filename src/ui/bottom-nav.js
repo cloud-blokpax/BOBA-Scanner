@@ -63,6 +63,16 @@ function switchTab(tab) {
         // scan
         document.body.classList.remove('tab-collection');
         document.body.classList.add('tab-scan');
+        // If already on scan tab, open the scan options panel or trigger file picker
+        if (currentTab === 'scan') {
+            var panel = document.getElementById('scanOptionsPanel');
+            if (panel) {
+                panel.style.display = panel.style.display === 'none' ? '' : 'none';
+            } else {
+                var fi = document.getElementById('fileInput');
+                if (fi) { fi.removeAttribute('capture'); fi.click(); }
+            }
+        }
     }
 }
 

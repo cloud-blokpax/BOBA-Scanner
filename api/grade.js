@@ -31,8 +31,8 @@ function buildGradePrompt(hasCornersGrid, centeringData) {
    These values were computed from the card's position in the original photo before cropping. Use these exact values in your response. Factor them into the grade using PSA centering thresholds.`;
   } else {
     centeringBlock = `4. CENTERING — This card image has been pre-cropped with artificial uniform padding around the card edges. The image edges do NOT represent the card's actual borders.
-   Look for the card's own PRINTED borders within the image. If you can see them, estimate the left/right and top/bottom ratios.
-   If the card has full-bleed art with no visible printed borders, respond with "N/A (full-bleed)".
+   Look for the card's own PRINTED borders within the image. If you can see them, estimate the left/right and top/bottom ratios (e.g. "50/50 L/R, 48/52 T/B").
+   If the card has full-bleed art with no visible printed borders, respond with "50/50 L/R, 50/50 T/B" and note in your summary that centering could not be assessed due to full-bleed design.
    Do NOT measure from the image edges — those are artificial.`;
   }
 

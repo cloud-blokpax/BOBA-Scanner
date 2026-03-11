@@ -422,7 +422,7 @@
     z-index: calc(var(--z-sticky) + 23);
     transform: translateY(100%);
     transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-    padding-bottom: calc(var(--safe-bottom) + 20px);
+    padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px);
     max-height: 82vh;
     overflow-y: auto;
     box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.7);

@@ -176,9 +176,11 @@ window.openCardDetail = function(index) {
         if (c.aiGrade) {
             const g = c.aiGrade;
             // Prefer programmatic centering from scan geometry, fall back to AI estimate
-            const displayCentering = c.centeringData
+            const rawCentering = c.centeringData
                 ? `${c.centeringData.lr} L/R, ${c.centeringData.tb} T/B`
-                : g.centering;
+                : (g.centering || '');
+            // Clean up verbose N/A variants from AI
+            const displayCentering = rawCentering.toLowerCase().startsWith('n/a') ? null : rawCentering;
             sections.push({
                 title: 'AI Grade', icon: '🔬',
                 rows: [
@@ -285,9 +287,11 @@ window.openCardDetail = function(index) {
                     const g = card.aiGrade;
                     const gc = g.grade >= 9 ? '#16a34a' : g.grade >= 7 ? '#d97706' : g.grade >= 5 ? '#ea580c' : '#dc2626';
                     // Prefer programmatic centering from scan geometry, fall back to AI estimate
-                    const displayCentering = card.centeringData
+                    const rawCentering = card.centeringData
                         ? `${card.centeringData.lr} L/R, ${card.centeringData.tb} T/B`
                         : (g.centering || 'N/A');
+                    // Clean up verbose N/A variants from AI (e.g. "N/A (full-bleed)")
+                    const displayCentering = rawCentering.toLowerCase().startsWith('n/a') ? 'N/A' : rawCentering;
                     const isOldGrade = !g.gradeVersion || g.gradeVersion < 2;
                     return `<div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:16px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
