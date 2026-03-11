@@ -38,6 +38,7 @@ export async function loadAppConfig() {
   } catch (err) {
     console.error('❌ Failed to load app config:', err);
     appConfig = { supabaseUrl: '', supabaseKey: '', googleClientId: '', apiToken: '' };
+    ready.config = true; // Mark as ready even on error so downstream code isn't blocked
   }
 }
 

@@ -90,12 +90,14 @@ async function init() {
         // Show Live Scan option in scan panel (if device has camera)
         if (hasCameraSupport()) {
             const btnLiveScan = document.getElementById('btnLiveScan');
-            if (btnLiveScan) btnLiveScan.style.display = '';
-            btnLiveScan?.addEventListener('click', () => {
-                const panel = document.getElementById('scanOptionsPanel');
-                if (panel) panel.style.display = 'none';
-                openContinuousScanner();
-            });
+            if (btnLiveScan) {
+                btnLiveScan.style.display = '';
+                btnLiveScan.addEventListener('click', () => {
+                    const panel = document.getElementById('scanOptionsPanel');
+                    if (panel) panel.style.display = 'none';
+                    openContinuousScanner();
+                });
+            }
         }
 
         // Remove skeleton loading placeholders
