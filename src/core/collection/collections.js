@@ -229,7 +229,7 @@ export function addCardToCollection(card) {
 
   col.cards.push(card);
   col.stats.scanned++;
-  if (card.scanType === 'free') col.stats.free++;
+  if (card.scanType === 'ocr') col.stats.free++;
   if (card.cost) col.stats.cost = (col.stats.cost || 0) + card.cost;
   if (card.scanMethod === 'AI') col.stats.aiCalls = (col.stats.aiCalls || 0) + 1;
 

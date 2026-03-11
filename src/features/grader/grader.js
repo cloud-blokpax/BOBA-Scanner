@@ -153,8 +153,8 @@ async function prepareGradingImages(cardOrUrl) {
 
 // ── Grade a specific card by index (from card detail modal or card grid) ──────
 async function gradeCardFromDetail(index, forceRegrade = false) {
-  const collections = (typeof getCollections === 'function') ? getCollections() : [];
-  const currentId   = (typeof getCurrentCollectionId === 'function') ? getCurrentCollectionId() : 'default';
+  const collections = (typeof window.getCollections === 'function') ? window.getCollections() : [];
+  const currentId   = (typeof window.getCurrentCollectionId === 'function') ? window.getCurrentCollectionId() : 'default';
   const collection  = collections.find(c => c.id === currentId);
   const card        = collection?.cards[index];
   if (!card) { showToast('Card not found', '❌'); return; }
@@ -187,7 +187,7 @@ async function gradeCardFromDetail(index, forceRegrade = false) {
 
     // Persist grade to card object
     card.aiGrade = result;
-    if (typeof saveCollections === 'function') saveCollections();
+    if (typeof window.saveCollections === 'function') window.saveCollections(collections);
 
     showGradeModal(result, card.hero || card.cardNumber || 'Card', index);
   } catch (err) {

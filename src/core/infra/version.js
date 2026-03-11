@@ -3,6 +3,8 @@
 // Shows a non-intrusive banner when a newer version is deployed.
 // ============================================================
 
+import { escapeHtml } from '../../ui/utils.js';
+
 export const APP_VERSION = '1.1.0';
 
 export async function checkForUpdates() {
@@ -31,8 +33,8 @@ export function showUpdateBanner(version, notes) {
     <div class="update-banner-content">
       <span class="update-banner-icon">✨</span>
       <span class="update-banner-text">
-        <strong>Update available (v${version})</strong>
-        ${notes ? `<span class="update-banner-notes"> — ${notes}</span>` : ''}
+        <strong>Update available (v${escapeHtml(version)})</strong>
+        ${notes ? `<span class="update-banner-notes"> — ${escapeHtml(notes)}</span>` : ''}
       </span>
     </div>
     <div class="update-banner-actions">
@@ -69,7 +71,7 @@ export function injectVersionIntoSettings() {
     <h3>About</h3>
     <p style="font-size:13px;color:#666;margin:0;">
       BOBA Scanner v${APP_VERSION}
-      <button onclick="checkForUpdates().then(() => showToast('Version check complete', '✓'))"
+      <button id="versionCheckBtn"
               style="margin-left:10px;padding:3px 10px;font-size:12px;border:1px solid #ddd;
                      border-radius:6px;background:white;cursor:pointer;">
         Check for updates
@@ -77,6 +79,11 @@ export function injectVersionIntoSettings() {
     </p>
   `;
   settingsBody.appendChild(versionEl);
+  document.getElementById('versionCheckBtn')?.addEventListener('click', () => {
+    checkForUpdates().then(() => {
+      if (typeof window.showToast === 'function') window.showToast('Version check complete', '✓');
+    });
+  });
 }
 
 // Run version check 4 seconds after load (non-blocking)

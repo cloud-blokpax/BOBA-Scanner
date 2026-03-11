@@ -21,8 +21,8 @@ export function moveCardToCollection(cardIndex, targetCollectionId) {
     const targetNames = { default: 'My Collection', price_check: 'Price Check', deck_building: 'Deck Builder' };
     const name = targetNames[targetCollectionId] || targetCollectionId;
     showToast(`Copied to ${name}`, '✅');
-    if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
-    if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
+    if (typeof window.updateCollectionSlider === 'function') window.updateCollectionSlider();
+    if (typeof window.updateCollectionNavCounts === 'function') window.updateCollectionNavCounts();
   } else {
     showToast('Already in that collection', '⚠️');
   }

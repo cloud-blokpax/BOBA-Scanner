@@ -196,7 +196,7 @@ window.signOut = function() {
         window.currentUser = null;
     }
     
-    updateAuthUI(null);
+    window.updateAuthUI(null);
     showToast('Signed out successfully', '👋');
     
     setTimeout(() => {

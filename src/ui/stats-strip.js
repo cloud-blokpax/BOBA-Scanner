@@ -17,9 +17,9 @@ export function updateStats() {
     const rate   = stats.scanned > 0 ? Math.round((stats.free / stats.scanned) * 100) : 0;
 
     // Use actual user limits from userLimits (set after sign-in) or guest defaults
-    const isGuest    = typeof userLimits === 'undefined' || !userLimits;
-    const cardLimit  = isGuest ? 5  : (userLimits.maxCards    || 5);
-    const aiLimit    = isGuest ? 1  : (userLimits.maxApiCalls || 1);
+    const isGuest    = typeof window.userLimits === 'undefined' || !window.userLimits;
+    const cardLimit  = isGuest ? 5  : (window.userLimits.maxCards    || 5);
+    const aiLimit    = isGuest ? 1  : (window.userLimits.maxApiCalls || 1);
     const sublabel   = isGuest ? 'Guest limit' : 'Your limit';
 
     const statCards      = document.getElementById('statCards');
@@ -68,7 +68,7 @@ export function updateCollectionNavCounts() {
         if (moreCollBadge) moreCollBadge.textContent = mainCount > 0 ? String(mainCount) : '';
 
         // Also refresh the slider counts
-        if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
+        if (typeof window.updateCollectionSlider === 'function') window.updateCollectionSlider();
     } catch(e) {}
 }
 window.updateCollectionNavCounts = updateCollectionNavCounts;
@@ -77,8 +77,8 @@ window.showToast = showToast;
 
 // Open Price Check modal — delegates to the dedicated function in tags.js
 window.openPriceCheckModal = function() {
-    if (typeof openPriceCheckCollectionModal === 'function') {
-        openPriceCheckCollectionModal();
+    if (typeof window.openPriceCheckCollectionModal === 'function') {
+        window.openPriceCheckCollectionModal();
     }
 };
 

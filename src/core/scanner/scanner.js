@@ -60,7 +60,7 @@ export async function handleFiles(e) {
   setProgress(0);
 }
 
-async function processImage(file) {
+export async function processImage(file) {
   console.log(`Processing: ${file.name}`);
 
   const cropped  = await cropToCard(file);
@@ -398,7 +398,7 @@ function _cacheSet(b64, result) {
 
 // ── API call ──────────────────────────────────────────────────────────────────
 
-async function callAPI(imageBase64, numberRegionBase64 = null) {
+export async function callAPI(imageBase64, numberRegionBase64 = null) {
   console.log('Calling API backend...');
 
   const cached = _cacheGet(imageBase64);
@@ -617,7 +617,7 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
     imageUrl:      displayUrl,
     fileName,
     scanType:      type,
-    scanMethod:    type === 'free'   ? `Free OCR (${Math.round(confidence || 0)}%)` :
+    scanMethod:    type === 'ocr'    ? `Free OCR (${Math.round(confidence || 0)}%)` :
                    type === 'manual' ? 'Manual Search' : 'AI + Database',
     confidence,
     lowConfidence,
@@ -638,8 +638,8 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
 
   collection.cards.push(card);
   collection.stats.scanned++;
-  if (type === 'free') collection.stats.free++;
-  if (type === 'ai')   collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
+  if (type === 'ocr') collection.stats.free++;
+  if (type === 'ai')  collection.stats.aiCalls = (collection.stats.aiCalls || 0) + 1;
 
   const newCardIndex = collection.cards.length - 1;
 
@@ -701,7 +701,7 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
     setTimeout(() => window.openCollectionCardDetail(popupColId, newCardIndex), 150);
   }
 
-  if (navigator.vibrate) navigator.vibrate(type === 'free' ? 50 : [50, 100, 50]);
+  if (navigator.vibrate) navigator.vibrate(type === 'ocr' ? 50 : [50, 100, 50]);
 
   const dupeNote = dupeCount > 0 ? ` (copy #${dupeCount + 1})` : '';
   const confNote = lowConfidence ? ' ⚠️ low confidence — please verify' : '';
@@ -774,7 +774,7 @@ export function removeCard(index) {
 
   collection.cards.splice(index, 1);
   collection.stats.scanned = Math.max(0, collection.stats.scanned - 1);
-  if (card.scanType === 'free') collection.stats.free = Math.max(0, collection.stats.free - 1);
+  if (card.scanType === 'ocr') collection.stats.free = Math.max(0, collection.stats.free - 1);
 
   saveCollections(collections);
   if (typeof trackCardAdded === 'function') trackCardAdded();

@@ -159,12 +159,13 @@ function cropAndPreprocess(sourceCanvas, region) {
     }
     const p2Count  = Math.floor(totalPx * 0.02);
     const p98Count = Math.floor(totalPx * 0.98);
-    let cumul = 0, lo = 0, hi = 255;
+    let cumul = 0, lo = -1, hi = 255;
     for (let v = 0; v < 256; v++) {
         cumul += hist[v];
-        if (cumul >= p2Count  && lo === 0)   lo = v;
+        if (cumul >= p2Count  && lo === -1)  lo = v;
         if (cumul >= p98Count && hi === 255) hi = v;
     }
+    if (lo === -1) lo = 0;
     const range = Math.max(1, hi - lo);
     for (let i = 0; i < totalPx; i++) {
         const idx = i * 4;

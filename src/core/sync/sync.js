@@ -213,7 +213,7 @@ function mergeCollections(local, remote, tombstones) {
         ...col,
         stats: {
             scanned: col.cards.length,
-            free:    col.cards.filter(c => c.scanType === 'free').length,
+            free:    col.cards.filter(c => c.scanType === 'ocr').length,
             aiCalls: col.cards.filter(c => c.scanType === 'ai').length,
             cost:    col.cards.filter(c => c.scanType === 'ai').length * 0.002
         }
@@ -494,8 +494,8 @@ function _syncRenderCollectionModal_LEGACY() {
                 <div class="collection-card-info">
                     <div class="collection-card-name">${escapeHtml(card.hero || 'Unknown')}</div>
                     <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
-                    <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
-                        ${card.scanType === 'free' ? 'Free OCR' : 'AI'}
+                    <span class="collection-card-badge ${card.scanType === 'ocr' ? 'free' : 'ai'}">
+                        ${card.scanType === 'ocr' ? 'Free OCR' : 'AI'}
                     </span>
                 </div>
             </div>`;

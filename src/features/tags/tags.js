@@ -472,8 +472,8 @@ export function renderCollectionModal() {
                     ? `<div class="card-tags-row">${cardTags.map(t => `<span class="tag-chip tag-chip-sm">${escapeHtml(t)}</span>`).join('')}</div>`
                     : ''}
                 <div class="collection-card-footer">
-                    <span class="collection-card-badge ${card.scanType === 'free' ? 'free' : 'ai'}">
-                        ${card.scanType === 'deck' ? 'Deck' : card.scanType === 'free' ? 'Free OCR' : 'AI'}
+                    <span class="collection-card-badge ${card.scanType === 'ocr' ? 'free' : 'ai'}">
+                        ${card.scanType === 'deck' ? 'Deck' : card.scanType === 'ocr' ? 'Free OCR' : 'AI'}
                     </span>
                 </div>
             </div>

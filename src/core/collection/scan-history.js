@@ -57,13 +57,13 @@ function renderScanHistoryModal() {
     : history.map(entry => {
         const ago    = timeAgo(entry.timestamp);
         const icon   = entry.success ? '✅' : '❌';
-        const badge  = entry.scanType === 'free'
+        const badge  = entry.scanType === 'ocr'
           ? '<span style="background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;">OCR</span>'
           : entry.scanType === 'ai'
           ? '<span style="background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;">AI</span>'
           : '<span style="background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;">Failed</span>';
 
-        const confText = (entry.confidence && entry.scanType === 'free')
+        const confText = (entry.confidence && entry.scanType === 'ocr')
           ? `<span style="font-size:11px;color:#9ca3af;">${Math.round(entry.confidence)}% conf</span>`
           : '';
 

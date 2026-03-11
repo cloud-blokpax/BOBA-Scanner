@@ -131,7 +131,7 @@ function matchListingsToCollection(listings, collections) {
 // ── Apply listing status to cards ─────────────────────────────────────────────
 
 function applyListingStatuses(matches, activeItemIds) {
-  const collections = getCollections();
+  const collections = window.getCollections();
   let updated = 0;
   const LISTED_TAG = 'Listed on eBay';
 
@@ -179,8 +179,8 @@ function applyListingStatuses(matches, activeItemIds) {
   }
 
   if (updated > 0) {
-    saveCollections(collections);
-    if (typeof renderCards === 'function') renderCards();
+    window.saveCollections(collections);
+    if (typeof window.renderCards === 'function') window.renderCards();
   }
 
   return updated;
@@ -206,7 +206,7 @@ async function checkSellerListings(manual = false) {
   try {
     const { listings } = await fetchSellerListings(settings.sellerUsername);
     const activeIds     = new Set(listings.map(l => l.itemId));
-    const collections   = getCollections();
+    const collections   = window.getCollections();
     const matches       = matchListingsToCollection(listings, collections);
     const updated       = applyListingStatuses(matches, activeIds);
 
@@ -242,7 +242,7 @@ function showMonitorResultsToast(listedCount, updated, matches) {
   document.getElementById('monitorResultsToast')?.remove();
 
   // Get first matched card's index in the current collection for "View" link
-  const currentId = getCurrentCollectionId();
+  const currentId = window.getCurrentCollectionId();
   const firstMatchKey = Object.keys(matches).find(k => k.startsWith(currentId + ':'));
   const firstCardIndex = firstMatchKey ? parseInt(firstMatchKey.split(':')[1]) : null;
 

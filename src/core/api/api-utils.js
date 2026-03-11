@@ -13,19 +13,24 @@ async function fetchWithRetry(url, options = {}, retries = 3, timeout = 5000) {
     const { signal } = controller;
 
     const fetchPromise = fetch(url, { ...options, signal });
-    const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => { controller.abort(); reject(new Error('Request timed out')); }, timeout)
-    );
+    const timeoutId = setTimeout(() => { controller.abort(); }, timeout);
 
     try {
-        const response = await Promise.race([fetchPromise, timeoutPromise]);
+        const response = await fetchPromise;
+        clearTimeout(timeoutId);
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
         return response;
     } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            error = new Error('Request timed out');
+        }
         if (retries > 0) {
-            console.warn(`Fetch failed, retrying... (${retries} retries left)`);
+            const backoffMs = (4 - retries) * 1000; // 1s, 2s, 3s
+            console.warn(`Fetch failed, retrying in ${backoffMs}ms... (${retries} retries left)`);
+            await new Promise(r => setTimeout(r, backoffMs));
             return fetchWithRetry(url, options, retries - 1, timeout);
         } else {
             throw error;

@@ -193,11 +193,11 @@ function setupPullToRefresh() {
     }, { passive: true });
     
     document.addEventListener('touchmove', (e) => {
-        if (!isPulling) return;
-        
+        if (!isPulling || !header) return;
+
         touchCurrentY = e.touches[0].clientY;
         const pullDistance = touchCurrentY - touchStartY;
-        
+
         if (pullDistance > 0 && window.scrollY === 0) {
             const scale = Math.min(pullDistance / refreshThreshold, 1);
             header.style.transform = `translateY(${pullDistance * 0.5}px)`;
@@ -216,13 +216,15 @@ function setupPullToRefresh() {
         }
         
         // Reset
-        header.style.transform = '';
-        header.style.opacity = '';
-        header.style.transition = 'all 0.3s ease';
-        
-        setTimeout(() => {
-            header.style.transition = '';
-        }, 300);
+        if (header) {
+            header.style.transform = '';
+            header.style.opacity = '';
+            header.style.transition = 'all 0.3s ease';
+
+            setTimeout(() => {
+                header.style.transition = '';
+            }, 300);
+        }
         
         isPulling = false;
         touchStartY = 0;
@@ -235,13 +237,13 @@ function refreshApp() {
     triggerHaptic('light');
     
     // Reload collections
-    if (typeof loadCollections === 'function') {
-        loadCollections();
+    if (typeof window.loadCollections === 'function') {
+        window.loadCollections();
     }
-    
+
     // Update UI
-    if (typeof renderCards === 'function') {
-        renderCards();
+    if (typeof window.renderCards === 'function') {
+        window.renderCards();
     }
     
     setTimeout(() => {
@@ -473,7 +475,7 @@ window.UIEnhancements = {
     animateCardEntry,
     animateStatUpdate,
     triggerHaptic,
-    announceToScreenReader,
+    get announceToScreenReader() { return window.announceToScreenReader; },
     optimizeImageDisplay,
     refreshApp
 };
