@@ -41,12 +41,33 @@ function showGradeModal(result, cardName, cardIndex) {
   document.getElementById('gradeModal')?.remove();
 
   const grade = result.grade || 0;
-  const gradeColor = grade >= 9 ? '#16a34a' : grade >= 7 ? '#d97706' : grade >= 5 ? '#ea580c' : '#dc2626';
+  const gradeDisplay = (grade % 1 !== 0) ? grade.toFixed(1) : String(grade);
+  const gradeColor = grade >= 9 ? '#16a34a' : grade >= 8 ? '#22c55e' : grade >= 7 ? '#d97706' : grade >= 5 ? '#ea580c' : '#dc2626';
+
+  // Qualifier badge — shown when AI detected a grading qualifier (OC, MC, MK, ST, PD, OF)
+  const qualifierLabels = {
+    OC: 'Off Center', MC: 'Miscut', MK: 'Marks',
+    ST: 'Staining',   PD: 'Print Defect', OF: 'Out of Focus'
+  };
+  const qualifierHtml = result.qualifier
+    ? `<div style="display:inline-block;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:600;color:#92400e;margin-top:6px;">
+        ${result.qualifier} — ${escapeHtml(qualifierLabels[result.qualifier] || result.qualifier)}
+        <span style="font-weight:400;color:#b45309;"> (~2 grade market reduction)</span>
+       </div>`
+    : '';
+
+  // Centering — use new split front/back fields, fall back to legacy centering field
+  const frontCentering = result.front_centering || result.centering || null;
+  const backCentering  = (result.back_centering && result.back_centering !== 'not assessed') ? result.back_centering : null;
+  const centeringDisplay = (frontCentering && backCentering)
+    ? `Front: ${frontCentering} · Back: ${backCentering}`
+    : frontCentering;
+
   const submitBadge = {
-    yes:   { label: 'Worth Submitting', color: '#16a34a', icon: '✅' },
-    maybe: { label: 'Borderline',       color: '#d97706', icon: '⚠️' },
-    no:    { label: 'Not Cost-Effective', color: '#6b7280', icon: '💡' }
-  }[result.submit_recommendation] || { label: 'Unknown', color: '#6b7280', icon: '❓' };
+    yes:   { label: 'Worth Submitting',   color: '#16a34a', icon: '✅', bg: '#f0fdf4', border: '#d1fae5' },
+    maybe: { label: 'Borderline',         color: '#d97706', icon: '⚠️', bg: '#fffbeb', border: '#fde68a' },
+    no:    { label: 'Not Cost-Effective', color: '#6b7280', icon: '💡', bg: '#f9fafb', border: '#e5e7eb' }
+  }[result.submit_recommendation] || { label: 'Unknown', color: '#6b7280', icon: '❓', bg: '#f9fafb', border: '#e5e7eb' };
 
   const wrapper = document.createElement('div');
   wrapper.innerHTML = `
@@ -61,16 +82,17 @@ function showGradeModal(result, cardName, cardIndex) {
 
           <div style="text-align:center;margin-bottom:20px;">
             <div style="font-size:13px;color:#6b7280;margin-bottom:4px;">${escapeHtml(cardName || 'Card')}</div>
-            <div style="font-size:72px;font-weight:900;color:${gradeColor};line-height:1;">${grade}</div>
-            <div style="font-size:18px;font-weight:700;color:${gradeColor};margin-top:4px;">PSA ${grade} · ${escapeHtml(result.grade_label || '')}</div>
+            <div style="font-size:72px;font-weight:900;color:${gradeColor};line-height:1;">${gradeDisplay}</div>
+            <div style="font-size:18px;font-weight:700;color:${gradeColor};margin-top:4px;">PSA ${gradeDisplay} · ${escapeHtml(result.grade_label || '')}</div>
+            ${qualifierHtml}
             <div style="font-size:13px;color:#6b7280;margin-top:4px;">Confidence: ${result.confidence || 0}%</div>
           </div>
 
           <div style="display:grid;gap:10px;margin-bottom:16px;">
-            ${renderGradeRow('📐', 'Centering',  result.centering)}
-            ${renderGradeRow('🔻', 'Corners',    result.corners)}
-            ${renderGradeRow('📏', 'Edges',      result.edges)}
-            ${renderGradeRow('✨', 'Surface',    result.surface)}
+            ${renderGradeRow('📐', 'Centering', centeringDisplay)}
+            ${renderGradeRow('🔻', 'Corners',   result.corners)}
+            ${renderGradeRow('📏', 'Edges',     result.edges)}
+            ${renderGradeRow('✨', 'Surface',   result.surface)}
           </div>
 
           <div style="background:#f9fafb;border-radius:10px;padding:14px;margin-bottom:14px;">
@@ -78,7 +100,7 @@ function showGradeModal(result, cardName, cardIndex) {
             <div style="font-size:13px;color:#374151;line-height:1.5;">${escapeHtml(result.summary || '')}</div>
           </div>
 
-          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f0fdf4;border-radius:8px;border:1px solid #d1fae5;">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:${submitBadge.bg};border-radius:8px;border:1px solid ${submitBadge.border};">
             <span style="font-size:18px;">${submitBadge.icon}</span>
             <div>
               <div style="font-size:13px;font-weight:600;color:${submitBadge.color};">${submitBadge.label}</div>
@@ -87,7 +109,7 @@ function showGradeModal(result, cardName, cardIndex) {
           </div>
 
         </div>
-        ${(!result.gradeVersion || result.gradeVersion < 2) && cardIndex !== undefined ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:0 16px 12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">
+        ${(!result.gradeVersion || result.gradeVersion < 3) && cardIndex !== undefined ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:0 16px 12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">
             <span style="font-size:16px;">✨</span>
             <span>New grading engine available with improved accuracy. <strong id="gradeUpgradeLink" style="cursor:pointer;text-decoration:underline;">Re-grade now</strong></span>
           </div>` : ''}
@@ -180,7 +202,7 @@ async function gradeCardFromDetail(index, forceRegrade = false) {
     if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.innerHTML = origText; }
 
     // Stamp grade version so the UI can detect old vs new grading engine
-    result.gradeVersion = 2;
+    result.gradeVersion = 3;
 
     // Persist grade to card object
     card.aiGrade = result;
