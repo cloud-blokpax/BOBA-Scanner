@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Professional Bo Jackson trading card scanner with AI-powered identification">
-    <meta name="theme-color" content="#2563eb">
+    <meta name="theme-color" content="#070b14">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎴</text></svg>">
 
     <!-- Prevent search engine indexing and caching -->
@@ -16,9 +16,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Card Scanner">
-    
-    <title>Bo Jackson Card Scanner | AI-Powered Card Recognition</title>
+    <meta name="apple-mobile-web-app-title" content="BOBA Scanner">
+    <link rel="manifest" href="/manifest.json">
+
+    <title>BOBA Scanner | AI-Powered Card Recognition</title>
     
     <!-- Google Fonts preconnect (Syne + DM Sans loaded via styles.css @import) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -328,11 +329,15 @@
         
     <!-- Bottom Navigation Bar -->
     <nav class="bottom-nav" id="bottomNav" role="navigation" aria-label="Main navigation">
-        <button class="bottom-nav-item active" data-tab="scan" aria-label="Scan">
+        <button class="bottom-nav-item active" data-tab="scan" aria-label="Scan" aria-selected="true">
             <span class="bottom-nav-icon">📷</span>
             <span class="bottom-nav-label">Scan</span>
         </button>
-        <button class="bottom-nav-item" data-tab="more" aria-label="More options">
+        <button class="bottom-nav-item bottom-nav-fab" data-tab="collection" aria-label="Collection" aria-selected="false">
+            <span class="bottom-nav-icon">🎴</span>
+            <span class="bottom-nav-label">Collection</span>
+        </button>
+        <button class="bottom-nav-item" data-tab="more" aria-label="More options" aria-selected="false">
             <span class="bottom-nav-icon">···</span>
             <span class="bottom-nav-label">More</span>
         </button>

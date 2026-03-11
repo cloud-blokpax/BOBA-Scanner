@@ -22,6 +22,11 @@ import { initUploadArea } from './ui/upload-area.js';
 import { loadFeatureFlags, isFeatureEnabled } from './core/infra/feature-flags.js';
 import { hasCameraSupport, openContinuousScanner } from './core/scanner/continuous-scanner.js';
 import { showToast } from './ui/toast.js';
+import { showOnboarding, shouldShowOnboarding, enhanceEmptyState } from './ui/onboarding.js';
+import { initIOSInstallPrompt } from './ui/ios-install-prompt.js';
+// Pre-import for side effects (registers globally)
+import './ui/card-tilt.js';
+import './ui/scan-result-sheet.js';
 
 // ── Step 1: Wire fileInput immediately — before ANY async work ────────────────
 // This runs synchronously as soon as the script tag is parsed.
@@ -96,7 +101,31 @@ async function init() {
         // Remove skeleton loading placeholders
         document.body.classList.add('app-loaded');
 
-        console.log('✅ Card Scanner Ready!');
+        // Enhance empty collection state with better CTA
+        enhanceEmptyState();
+
+        // iOS install prompt (shows Add to Home Screen instructions in browser mode)
+        initIOSInstallPrompt();
+
+        // Request persistent storage (protects against iOS 7-day cache eviction)
+        if (navigator.storage?.persist) {
+            navigator.storage.persist().catch(() => {});
+        }
+
+        // Tell service worker to re-cache critical assets on every launch
+        if (navigator.serviceWorker?.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'RECACHE_SHELL' });
+        }
+
+        // Value-first onboarding (scan before signup)
+        if (shouldShowOnboarding()) {
+            const scanNow = await showOnboarding();
+            if (scanNow && hasCameraSupport()) {
+                openContinuousScanner();
+            }
+        }
+
+        console.log('✅ BOBA Scanner Ready!');
 
     } catch (err) {
         console.error('❌ Initialization error:', err);

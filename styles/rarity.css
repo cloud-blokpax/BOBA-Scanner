@@ -1,0 +1,85 @@
+/* ============================================================
+   RARITY — Color-coded rarity system with tiered glow effects
+   Gray → Green → Blue → Purple → Gold (Diablo/WoW standard)
+   ============================================================ */
+
+/* ── Rarity badges ─────────────────────────────────────── */
+.rarity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Common — flat, no glow */
+.rarity-common {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--rarity-common);
+  border: 1px solid rgba(156, 163, 175, 0.25);
+}
+
+/* Uncommon — subtle glow */
+.rarity-uncommon {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--rarity-uncommon);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.2);
+}
+
+/* Rare — soft blue glow */
+.rarity-rare {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--rarity-rare);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Epic — animated pulse glow */
+.rarity-epic {
+  background: rgba(168, 85, 247, 0.12);
+  color: var(--rarity-epic);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.35);
+  animation: rarityPulseEpic 2s ease-in-out infinite;
+}
+
+@keyframes rarityPulseEpic {
+  0%, 100% { box-shadow: 0 0 8px rgba(168, 85, 247, 0.35); }
+  50%      { box-shadow: 0 0 16px rgba(168, 85, 247, 0.55); }
+}
+
+/* Legendary — holographic shimmer + gold glow */
+.rarity-legendary {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(234, 179, 8, 0.2));
+  color: var(--rarity-legendary);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+  animation: rarityShimmerLegendary 3s ease-in-out infinite;
+}
+
+@keyframes rarityShimmerLegendary {
+  0%   { box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+  33%  { box-shadow: 0 0 16px rgba(234, 179, 8, 0.5); }
+  66%  { box-shadow: 0 0 12px rgba(251, 191, 36, 0.45); }
+  100% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+}
+
+/* ── Card border glow for grid thumbnails ──────────────── */
+.card-item.rarity-glow-uncommon { border-color: rgba(34, 197, 94, 0.3); }
+.card-item.rarity-glow-rare     { border-color: rgba(59, 130, 246, 0.35); box-shadow: 0 0 8px rgba(59, 130, 246, 0.15); }
+.card-item.rarity-glow-epic     { border-color: rgba(168, 85, 247, 0.35); box-shadow: 0 0 8px rgba(168, 85, 247, 0.15); }
+.card-item.rarity-glow-legendary { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 12px rgba(245, 158, 11, 0.2); }
+
+/* ── Respect reduced motion ────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .rarity-epic,
+  .rarity-legendary {
+    animation: none;
+  }
+}

@@ -13,5 +13,9 @@
 @import './modals.css';
 @import './admin.css';
 @import './deck-builder.css';
+@import './rarity.css';
+@import './viewfinder.css';
+@import './card-reveal.css';
+@import './card-effects.css';
 @import './themes.css';
 @import './responsive.css';

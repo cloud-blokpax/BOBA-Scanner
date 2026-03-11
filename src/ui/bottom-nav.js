@@ -51,11 +51,14 @@ function switchTab(tab) {
     }
 
     setActiveTab(tab);
-    currentTab = tab;
 
     if (tab === 'collection') {
+        currentTab = 'collection';
         document.body.classList.remove('tab-scan');
         document.body.classList.add('tab-collection');
+        if (typeof window.sliderSwitch === 'function') {
+            window.sliderSwitch('my_collection');
+        }
         if (typeof window.renderCards === 'function') {
             window.renderCards();
         }
@@ -73,6 +76,7 @@ function switchTab(tab) {
                 if (fi) { fi.removeAttribute('capture'); fi.click(); }
             }
         }
+        currentTab = 'scan';
     }
 }
 

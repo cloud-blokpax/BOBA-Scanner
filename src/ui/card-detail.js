@@ -15,6 +15,7 @@ import { buildEbaySearchUrl, buildEbaySoldUrl, fetchEbayAvgPrice } from '../feat
 import { isFeatureEnabled } from '../core/infra/feature-flags.js';
 import { updateCard, removeCard } from '../core/scanner/scanner.js';
 import { updateAuthUI } from '../core/auth/google-auth.js';
+import { attachCardTilt } from './card-tilt.js';
 
 // ── Card Detail Modal ────────────────────────────────────────────────────────
 
@@ -467,6 +468,17 @@ window.openCardDetail = function(index) {
         imgWrap.addEventListener('touchmove', (e) => {
             if (zoomLevel > 0) e.stopPropagation();
         }, { passive: true });
+
+        // 3D card tilt effect (only when not zoomed)
+        const tiltCleanup = attachCardTilt(imgWrap, { maxAngle: 10, shimmer: true });
+        // Clean up tilt when modal is removed
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById('cardDetailModal')) {
+                tiltCleanup();
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true });
     }
 
     // ── Re-attach photo ───────────────────────────────────────────────────
