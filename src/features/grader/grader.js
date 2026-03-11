@@ -1,12 +1,12 @@
 // js/grader.js — AI Condition Grader
 // Estimates PSA/BGS card grade using Claude Vision via /api/grade
 
-import { compressImageForGrading, cropGradingRegions } from '../../core/scanner/image-processing.js';
+import { compressImageForGrading, cropGradingRegions, measureAndVisualizeCentering } from '../../core/scanner/image-processing.js';
 import { showToast, showLoading } from '../../ui/toast.js';
 import { escapeHtml } from '../../ui/utils.js';
 
 // ── Grade a card from a base64 image ─────────────────────────────────────────
-async function gradeCard(imageData, cornerRegionData = null, centeringData = null) {
+async function gradeCard(imageData, cornerRegionData = null, centeringData = null, centeringImageData = null) {
   const cfg = window.appConfig || {};
   const apiBase = cfg.apiBase || 'https://boba.cards/api';
 
@@ -15,8 +15,9 @@ async function gradeCard(imageData, cornerRegionData = null, centeringData = nul
   if (apiToken) headers['X-Api-Token'] = apiToken;
 
   const bodyObj = { imageData };
-  if (cornerRegionData) bodyObj.cornerRegionData = cornerRegionData;
-  if (centeringData)    bodyObj.centeringData    = centeringData;
+  if (cornerRegionData)    bodyObj.cornerRegionData    = cornerRegionData;
+  if (centeringData)       bodyObj.centeringData       = centeringData;
+  if (centeringImageData)  bodyObj.centeringImageData  = centeringImageData;
 
   const res = await fetch(`${apiBase}/grade`, {
     method: 'POST',
@@ -150,24 +151,38 @@ function renderGradeRow(icon, label, value) {
     </div>`;
 }
 
-// ── Prepare high-res image + corner grid for grading ──────────────────────────
+// ── Prepare high-res image + corner grid + centering overlay for grading ──────
 // Accepts either a card object (with imageUrl, centeringData, cardBounds) or a
 // plain URL string for backward compatibility (scan-preview grading).
 async function prepareGradingImages(cardOrUrl) {
-  const url          = (typeof cardOrUrl === 'string') ? cardOrUrl : cardOrUrl.imageUrl;
-  const centeringData = (typeof cardOrUrl === 'object') ? (cardOrUrl.centeringData || null) : null;
+  const url           = (typeof cardOrUrl === 'string') ? cardOrUrl : cardOrUrl.imageUrl;
+  const storedCentering = (typeof cardOrUrl === 'object') ? (cardOrUrl.centeringData || null) : null;
   const cardBounds    = (typeof cardOrUrl === 'object') ? (cardOrUrl.cardBounds    || null) : null;
 
   const blob = await fetch(url).then(r => {
     if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
     return r.blob();
   });
+
   // Use higher-quality compression for grading (2000px, quality 0.92)
   const imageData = await compressImageForGrading(blob);
+
   // Generate 2×2 corner grid — pass cardBounds so corners are extracted
   // from the actual card area, not the artificial padding
   const cornerRegionData = await cropGradingRegions(blob, cardBounds).catch(() => null);
-  return { imageData, cornerRegionData, centeringData };
+
+  // Measure centering from the card's printed border widths — this mirrors PSA
+  // and TAG methodology (border width left vs right, top vs bottom).
+  // Only attempt on cards that went through cropToCard (have artificial padding).
+  let centeringData = storedCentering;
+  let centeringImageData = null;
+  if (cardBounds) {
+    const measured = await measureAndVisualizeCentering(blob).catch(() => ({ centering: null, centeringImageData: null }));
+    if (measured.centering) centeringData = measured.centering;
+    centeringImageData = measured.centeringImageData;
+  }
+
+  return { imageData, cornerRegionData, centeringData, centeringImageData };
 }
 
 // ── Grade a specific card by index (from card detail modal or card grid) ──────
@@ -196,8 +211,8 @@ async function gradeCardFromDetail(index, forceRegrade = false) {
 
   showLoading(true, 'Analyzing card condition...');
   try {
-    const { imageData, cornerRegionData, centeringData } = await prepareGradingImages(card);
-    const result = await gradeCard(imageData, cornerRegionData, centeringData);
+    const { imageData, cornerRegionData, centeringData, centeringImageData } = await prepareGradingImages(card);
+    const result = await gradeCard(imageData, cornerRegionData, centeringData, centeringImageData);
     showLoading(false);
     if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.innerHTML = origText; }
 
