@@ -591,5 +591,6 @@ export function closeProfileModal() {
 }
 
 window.isAdmin = isAdmin;
+window.trackCardAdded = trackCardAdded;
 
 console.log('✅ User management module loaded');

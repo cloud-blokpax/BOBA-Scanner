@@ -659,8 +659,8 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
       if (col && col.cards[newCardIndex]) {
         col.cards[newCardIndex].imageUrl = uploadedUrl;
         saveCollections(cols);
-        if (typeof renderCards === 'function') renderCards();
-        if (typeof renderCollectionModal === 'function') renderCollectionModal();
+        if (typeof window.renderCards === 'function') window.renderCards();
+        if (typeof window.renderCollectionModal === 'function') window.renderCollectionModal();
         const modal = document.getElementById('cardDetailModal');
         if (modal) {
           const detailImg = modal.querySelector('img[data-card-index]');
@@ -684,17 +684,17 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
     }).catch(() => {});
   }
 
-  if (typeof trackCardAdded === 'function') trackCardAdded();
+  if (typeof window.trackCardAdded === 'function') window.trackCardAdded();
 
   if (isPriceCheck) {
     setCurrentCollectionId('price_check');
     if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
   }
 
-  if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
+  if (typeof window.updateCollectionNavCounts === 'function') window.updateCollectionNavCounts();
 
-  if (typeof updateStats === 'function') updateStats();
-  if (typeof renderCards === 'function') renderCards();
+  if (typeof window.updateStats === 'function') window.updateStats();
+  if (typeof window.renderCards === 'function') window.renderCards();
 
   if (typeof window.openCollectionCardDetail === 'function') {
     const popupColId = isPriceCheck ? 'price_check' : getCurrentCollectionId();
@@ -736,7 +736,7 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
         }
 
         saveCollections(cols2);
-        if (typeof renderCards === 'function') renderCards();
+        if (typeof window.renderCards === 'function') window.renderCards();
 
         const parts = [];
         if (priceData?.count > 0) {
@@ -777,9 +777,9 @@ export function removeCard(index) {
   if (card.scanType === 'ocr') collection.stats.free = Math.max(0, collection.stats.free - 1);
 
   saveCollections(collections);
-  if (typeof trackCardAdded === 'function') trackCardAdded();
-  if (typeof updateStats === 'function') updateStats();
-  if (typeof renderCards === 'function') renderCards();
+  if (typeof window.trackCardAdded === 'function') window.trackCardAdded();
+  if (typeof window.updateStats === 'function') window.updateStats();
+  if (typeof window.renderCards === 'function') window.renderCards();
   showToast('Card removed', '🗑️');
 }
 

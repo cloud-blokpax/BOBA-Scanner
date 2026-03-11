@@ -71,6 +71,7 @@ export function updateCollectionNavCounts() {
         if (typeof window.updateCollectionSlider === 'function') window.updateCollectionSlider();
     } catch(e) {}
 }
+window.updateStats = updateStats;
 window.updateCollectionNavCounts = updateCollectionNavCounts;
 window.showLoading = showLoading;
 window.showToast = showToast;
