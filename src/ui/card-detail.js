@@ -308,7 +308,7 @@ window.openCardDetail = function(index) {
                         </div>
                         ${g.summary ? `<div style="margin-top:8px;font-size:12px;color:#374151;border-top:1px solid #d1fae5;padding-top:8px;">${escapeHtml(g.summary)}</div>` : ''}
                         ${isOldGrade ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d1fae5;font-size:11px;color:#92400e;display:flex;align-items:center;gap:6px;">
-                            <span>✨</span> Improved grading engine available — <strong style="cursor:pointer;text-decoration:underline;" onclick="gradeCardFromDetail(${index},true)">Re-grade</strong>
+                            <span>✨</span> Improved grading engine available — <strong id="btnRegradeCard" style="cursor:pointer;text-decoration:underline;">Re-grade</strong>
                         </div>` : ''}
                     </div>`;
                 })() : ''}
@@ -382,10 +382,10 @@ window.openCardDetail = function(index) {
             <div class="modal-footer" style="gap:8px;flex-wrap:wrap;">
                 ${ebayBtn}
                 ${isFeatureEnabled('condition_grader')
-                    ? `<button class="btn-secondary" onclick="gradeCardFromDetail(${index})" title="AI estimates PSA grade" style="white-space:nowrap;">🔬 Grade</button>`
+                    ? `<button class="btn-secondary" id="btnGradeFromDetail" title="AI estimates PSA grade" style="white-space:nowrap;">🔬 Grade</button>`
                     : ''}
                 ${isFeatureEnabled('ebay_lister')
-                    ? `<button class="btn-secondary" onclick="ebayListFromDetail(${index})" title="Generate eBay listing" style="white-space:nowrap;">🛒 List</button>`
+                    ? `<button class="btn-secondary" id="btnListFromDetail" title="Generate eBay listing" style="white-space:nowrap;">🛒 List</button>`
                     : ''}
                 <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('cardDetailModal').remove()">Close</button>
                 <button class="btn-secondary" style="color:#ef4444;border-color:#ef4444;" onclick="removeCardFromDetail(${index})">🗑️ Remove</button>
@@ -550,6 +550,19 @@ window.openCardDetail = function(index) {
     }
 
     document.getElementById('detailEbayRefresh')?.addEventListener('click', runEbayPriceFetch);
+
+    // Wire up lazy-loaded feature buttons (Grade, List, Re-grade) via addEventListener
+    // so they work even if the lazy module hasn't loaded yet — the lazyWire wrapper on
+    // window will trigger the dynamic import on first click.
+    document.getElementById('btnGradeFromDetail')?.addEventListener('click', () => {
+        if (typeof window.gradeCardFromDetail === 'function') window.gradeCardFromDetail(index);
+    });
+    document.getElementById('btnListFromDetail')?.addEventListener('click', () => {
+        if (typeof window.ebayListFromDetail === 'function') window.ebayListFromDetail(index);
+    });
+    document.getElementById('btnRegradeCard')?.addEventListener('click', () => {
+        if (typeof window.gradeCardFromDetail === 'function') window.gradeCardFromDetail(index, true);
+    });
 
     // Async: fetch eBay avg price after modal renders (skip if we have a recent price)
     const lastFetch = card.ebayPriceFetched ? new Date(card.ebayPriceFetched) : null;
