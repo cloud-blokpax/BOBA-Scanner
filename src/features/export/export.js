@@ -5,7 +5,7 @@
 import { getCollections, getCurrentCollectionId } from '../../core/collection/collections.js';
 import { escapeHtml } from '../../ui/utils.js';
 import { showToast } from '../../ui/toast.js';
-import { buildEbaySearchUrl } from '../ebay/ebay.js';
+import { buildEbaySearchUrl } from '../marketplace/ebay.js';
 
 export const EXPORT_FIELDS = [
     { key: 'cardId',          label: 'Card ID',                default: true  },

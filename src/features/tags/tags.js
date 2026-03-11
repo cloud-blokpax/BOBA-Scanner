@@ -4,7 +4,7 @@
 import { getCollections, saveCollections } from '../../core/collection/collections.js';
 import { escapeHtml } from '../../ui/utils.js';
 import { showToast } from '../../ui/toast.js';
-import { buildEbaySearchUrl } from '../ebay/ebay.js';
+import { buildEbaySearchUrl } from '../marketplace/ebay.js';
 import { isFeatureEnabled } from '../../core/infra/feature-flags.js';
 import { schedulePush } from '../../core/sync/sync.js';
 
