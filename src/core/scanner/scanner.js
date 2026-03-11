@@ -12,7 +12,7 @@ import { findCard } from '../database/database.js';
 import { cropToCard, compressImage, cropCardNumberRegion } from './image-processing.js';
 import { runOCR } from '../ocr/ocr.js';
 import { checkCorrection, recordCorrection } from '../database/scan-learning.js';
-import { getAthleteForHero } from '../../collections/boba/heroes.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 import { getCollections, saveCollections, getCurrentCollectionId, setCurrentCollectionId } from '../collection/collections.js';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
@@ -313,18 +313,18 @@ function runManualSearch() {
     return;
   }
 
-  el.innerHTML = results.slice(0, 20).map(card => `
-    <div class="manual-search-row" data-card-id="${escapeHtml(String(card['Card ID']))}">
+  const adapter = getActiveAdapter();
+  el.innerHTML = results.slice(0, 20).map(card => {
+    const sr = adapter.formatSearchResult(card);
+    return `
+    <div class="manual-search-row" data-card-id="${escapeHtml(sr.id)}">
       <div class="manual-search-info">
-        <div class="manual-search-name">${escapeHtml(card.Name || '')}</div>
-        <div class="manual-search-meta">
-          ${escapeHtml(card['Card Number'] || '')} · ${escapeHtml(card.Year || '')} · ${escapeHtml(card.Set || '')}
-          ${card.Parallel && card.Parallel !== 'Base' ? `· ${escapeHtml(card.Parallel)}` : ''}
-        </div>
+        <div class="manual-search-name">${escapeHtml(sr.title)}</div>
+        <div class="manual-search-meta">${escapeHtml(sr.subtitle)}</div>
       </div>
       <span class="btn-tag-add" style="font-size:12px;padding:6px 12px;cursor:pointer;white-space:nowrap;">+ Add</span>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   el.onclick = function(e) {
     const row = e.target.closest('[data-card-id]');
@@ -369,10 +369,10 @@ window.closeManualSearch = closeManualSearch;
 export function searchDatabase(query) {
   if (!ready.db || !database.length) return [];
   const q = query.toUpperCase().trim();
+  const adapter = getActiveAdapter();
+  const searchFields = adapter ? adapter.getSearchableFields().map(f => f.dbField) : ['Card Number', 'Name', 'Set'];
   return database.filter(card => {
-    return String(card['Card Number'] ?? '').toUpperCase().includes(q) ||
-           String(card.Name           ?? '').toUpperCase().includes(q) ||
-           String(card.Set            ?? '').toUpperCase().includes(q);
+    return searchFields.some(field => String(card[field] ?? '').toUpperCase().includes(q));
   });
 }
 
@@ -413,6 +413,8 @@ export async function callAPI(imageBase64, numberRegionBase64 = null) {
 
   const bodyObj = { imageData: imageBase64 };
   if (numberRegionBase64) bodyObj.numberRegionData = numberRegionBase64;
+  const _adapter = getActiveAdapter();
+  if (_adapter) bodyObj.collectionType = _adapter.id;
 
   const MAX_RETRIES  = 2;
   const RETRY_DELAYS = [1000, 2000];
@@ -604,35 +606,17 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
     });
   }
 
-  const card = {
-    cardId:        String(match['Card ID']     || ''),
-    hero:          match.Name                  || '',
-    athlete:       getAthleteForHero(match.Name) || '',
-    year:          match.Year                  || '',
-    set:           match.Set                   || '',
-    cardNumber:    match['Card Number']        || '',
-    pose:          match.Parallel              || '',
-    weapon:        match.Weapon                || '',
-    power:         match.Power                 || '',
-    imageUrl:      displayUrl,
+  const adapter = getActiveAdapter();
+  const card = adapter.buildCardFromMatch(match, {
+    displayUrl,
     fileName,
-    scanType:      type,
-    scanMethod:    type === 'ocr'    ? `Free OCR (${Math.round(confidence || 0)}%)` :
-                   type === 'manual' ? 'Manual Search' : 'AI + Database',
+    type,
     confidence,
     lowConfidence,
-    timestamp:     new Date().toISOString(),
-    tags:          (typeof getPendingTags === 'function') ? getPendingTags() : [],
-    condition:     '',
-    notes:         '',
-    readyToList:   false,
-    listingStatus: null,
-    listingUrl:    null,
-    listingPrice:  null,
-    soldAt:        null,
+    tags: (typeof getPendingTags === 'function') ? getPendingTags() : [],
     centeringData,
-    cardBounds
-  };
+    cardBounds,
+  });
 
   if (typeof clearPendingTags === 'function') clearPendingTags();
 

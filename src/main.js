@@ -52,8 +52,8 @@ import './core/sync/image-storage.js';
 import './features/tags/tags.js';
 import './core/sync/sync.js';
 
-// eBay
-import './features/ebay/ebay.js';
+// Marketplace (eBay)
+import './features/marketplace/ebay.js';
 
 // Infrastructure
 import './core/infra/version.js';
@@ -64,7 +64,7 @@ import './ui/themes.js';
 import './ui/bottom-nav.js';
 import './core/infra/feature-flags.js';
 import './core/scanner/continuous-scanner.js';
-import './features/ebay/price-trends.js';
+import './features/marketplace/price-trends.js';
 import './ui/ui-enhancements.js';
 
 // App init — MUST BE LAST: orchestrates init
@@ -78,12 +78,12 @@ const lazyModules = {
   adminDashboard: () => import('./features/admin/admin-dashboard.js'),
   grader:         () => import('./features/grader/grader.js'),
   setCompletion:  () => import('./features/set-completion/set-completion.js'),
-  ebayLister:     () => import('./features/ebay/ebay-lister.js'),
+  ebayLister:     () => import('./features/marketplace/ebay-lister.js'),
   tournaments:    () => import('./features/tournaments/tournaments.js'),
   deckBuilder:    () => import('./features/deck-builder/deck-builder.js'),
   batchScanner:   () => import('./core/scanner/batch-scanner.js'),
   binderScanner:  () => import('./core/scanner/binder-scanner.js'),
-  sellerMonitor:  () => import('./features/ebay/seller-monitor.js'),
+  sellerMonitor:  () => import('./features/marketplace/seller-monitor.js'),
   templates:      () => import('./features/export/templates.js'),
 };
 

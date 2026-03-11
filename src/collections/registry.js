@@ -44,3 +44,6 @@ export function getAdapter(id) {
 export function listAdapters() {
     return Object.values(_adapters).map(a => ({ id: a.id, displayName: a.displayName }));
 }
+
+// Make getActiveAdapter available to lazy-loaded modules (e.g. deck-builder)
+window.getActiveAdapter = getActiveAdapter;

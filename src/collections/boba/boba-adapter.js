@@ -58,7 +58,7 @@ export class BobaAdapter extends CollectionAdapter {
             scanType:      scanMeta.type,
             scanMethod:    this.buildScanMethodLabel(scanMeta.type, scanMeta.confidence),
             confidence:    scanMeta.confidence,
-            lowConfidence: scanMeta.lowConfidence,
+            lowConfidence: scanMeta.lowConfidence || false,
             timestamp:     new Date().toISOString(),
             tags:          scanMeta.tags || [],
             condition:     '',
@@ -68,6 +68,8 @@ export class BobaAdapter extends CollectionAdapter {
             listingUrl:    null,
             listingPrice:  null,
             soldAt:        null,
+            centeringData: scanMeta.centeringData || null,
+            cardBounds:    scanMeta.cardBounds || null,
         };
     }
 
@@ -122,17 +124,94 @@ Return ONLY valid JSON with no markdown or extra text:
 }`;
     }
 
+    buildEbayQuery(card) {
+        const s = v => String(v ?? '').trim();
+        const parts = [];
+
+        parts.push('bo jackson battle arena');
+
+        const cardNum = s(card.cardNumber);
+        if (cardNum) parts.push(cardNum);
+
+        const hero = s(card.hero);
+        if (hero && hero.toLowerCase() !== 'unknown') parts.push(hero);
+
+        const athlete = s(card.athlete);
+        if (athlete) parts.push(athlete);
+
+        return parts.join(' ');
+    }
+
     resolveMetadata(match) {
-        const athlete = getAthleteForHero(match.Name) || '';
+        const athlete = getAthleteForHero(match.Name || match.hero) || '';
         return { athlete };
     }
 
     get ocrWhitelist() {
         return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ';
     }
+
+    // ── BOBA-specific OCR regions ──────────────────────────────────────────────
+    getOCRRegions() {
+        return [
+            { x: 0.01, y: 0.84, w: 0.35, h: 0.13 },  // bottom-left (most common)
+            { x: 0.60, y: 0.84, w: 0.35, h: 0.13 },  // bottom-right (alternate layouts)
+            { x: 0.0,  y: 0.80, w: 1.0,  h: 0.18 },  // full bottom strip (fallback)
+        ];
+    }
+
+    getCardNumberCropRegion() {
+        return { x: 0.0, y: 0.82, w: 0.40, h: 0.15 };
+    }
+
+    getScanConfig() {
+        return {
+            quality: 0.7,
+            threshold: 60,
+            maxSize: 1400,
+            aiCost: 0.002,
+            region: { x: 0.05, y: 0.85, w: 0.4, h: 0.12 }
+        };
+    }
+
+    getDatabaseConfig() {
+        return {
+            idbName: 'boba-scanner',
+            storeName: 'card-db',
+            databaseUrl: '/card-database.json',
+        };
+    }
+
+    getSearchableFields() {
+        return [
+            { key: 'cardNumber', label: 'Card Number', dbField: 'Card Number' },
+            { key: 'name',      label: 'Name',         dbField: 'Name' },
+            { key: 'set',       label: 'Set',           dbField: 'Set' },
+        ];
+    }
+
+    formatSearchResult(dbRecord) {
+        const parts = [
+            dbRecord['Card Number'] || '',
+            dbRecord.Year ? String(dbRecord.Year) : '',
+            dbRecord.Set || '',
+        ].filter(Boolean);
+        const parallel = dbRecord.Parallel;
+        if (parallel && parallel !== 'Base') parts.push(parallel);
+
+        return {
+            id:       String(dbRecord['Card ID'] || ''),
+            title:    dbRecord.Name || '',
+            subtitle: parts.join(' · '),
+        };
+    }
+
+    getAIResponseFields() {
+        return ['cardNumber', 'hero', 'year', 'set', 'pose', 'weapon', 'power', 'confidence'];
+    }
 }
 
-// Register the BOBA adapter
+// Register the BOBA adapter as default
 registerAdapter(new BobaAdapter());
 setActiveAdapter('boba');
 

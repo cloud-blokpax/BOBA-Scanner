@@ -381,11 +381,25 @@ window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imag
     return;
   }
 
-  // ── Build card object (mirrors scanner.js addCard) ─────────────────────
-  const card = {
+  // ── Build card object via adapter ───────────────────────────────────────
+  const _adp = (typeof window.CollectionAdapter !== 'undefined' && typeof window.getActiveAdapter === 'function')
+    ? window.getActiveAdapter() : null;
+  let card;
+  if (_adp) {
+    card = _adp.buildCardFromMatch(match, {
+      displayUrl: imageUrl || '',
+      fileName:   fileName || '',
+      type:       'deck',
+      confidence: null,
+      lowConfidence: false,
+      tags: [],
+    });
+    card.scanMethod = 'Deck Builder';
+  } else {
+    card = {
     cardId:      String(match['Card ID']     || ''),
     hero:        match.Name                  || '',
-    athlete:     (typeof getAthleteForHero === 'function') ? (getAthleteForHero(match.Name) || '') : '',
+    athlete:     '',
     year:        match.Year                  || '',
     set:         match.Set                   || '',
     cardNumber:  match['Card Number']        || '',
@@ -408,6 +422,7 @@ window.deckBuilderOnCardScanned = async function(match, imageUrl, fileName, imag
     dbsCost: null,
     ability: null,
   };
+  } // end else (fallback without adapter)
 
   // Add to queue immediately so UI feels responsive
   const entry = { card, dbsData: null, parallel: pType, imageBase64 };

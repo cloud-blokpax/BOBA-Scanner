@@ -1,8 +1,11 @@
 // api/anthropic.js
 
-// Prompt is defined server-side to prevent prompt-injection abuse of this
-// endpoint and to allow tuning without client-side deploys.
-const CARD_PROMPT = `You are analyzing a Bo Jackson trading card. Extract the following information:
+// Prompts are defined server-side to prevent prompt-injection abuse.
+// Keyed by collectionType — the client sends which adapter is active.
+// Unknown collection types fall back to the 'boba' prompts.
+const PROMPTS = {
+  boba: {
+    single: `You are analyzing a Bo Jackson trading card. Extract the following information:
 
 CRITICAL LOCATIONS ON THE CARD:
 1. CARD NUMBER — BOTTOM LEFT corner. Format: Letters-Numbers e.g. "BLBF-84", "BF-108", "EDLCA-22", "GLBF-12".
@@ -26,9 +29,8 @@ Return ONLY valid JSON with no markdown or extra text:
   "weapon": "Weapon name or None",
   "power": "125",
   "confidence": 90
-}`;
-
-const CARD_PROMPT_DUAL = `You are analyzing a Bo Jackson trading card. Two images are provided:
+}`,
+    dual: `You are analyzing a Bo Jackson trading card. Two images are provided:
 1. The full card image — use this for hero name, set, power, pose, weapon, and year.
 2. A zoomed, contrast-enhanced crop of the BOTTOM-LEFT card number region — use this for the card number.
 
@@ -47,7 +49,11 @@ Return ONLY valid JSON with no markdown or extra text:
   "weapon": "Weapon name or None",
   "power": "125",
   "confidence": 90
-}`;
+}`,
+  },
+  // Future collections add their prompts here:
+  // pokemon: { single: '...', dual: '...' },
+};
 
 const RATE_LIMIT_MAX    = 30;
 const RATE_LIMIT_WINDOW = 60; // seconds
@@ -153,7 +159,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData, image, numberRegionData } = req.body;
+    const { imageData, image, numberRegionData, collectionType } = req.body;
     const finalImageData = imageData || image;
 
     if (!finalImageData) {
@@ -186,9 +192,11 @@ export default async function handler(req, res) {
       });
     }
 
+    // Select prompt based on collection type (defaults to boba)
+    const prompts = PROMPTS[collectionType] || PROMPTS.boba;
     contentParts.push({
       type: 'text',
-      text: numberRegionData ? CARD_PROMPT_DUAL : CARD_PROMPT
+      text: numberRegionData ? prompts.dual : prompts.single
     });
 
     const requestBody = JSON.stringify({

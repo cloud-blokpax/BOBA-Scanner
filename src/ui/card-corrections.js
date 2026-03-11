@@ -7,7 +7,7 @@ import { database } from '../core/state.js';
 import { escapeHtml } from './utils.js';
 import { showToast } from './toast.js';
 import { renderCards } from './cards-grid.js';
-import { getAthleteForHero } from '../collections/boba/heroes.js';
+import { getActiveAdapter } from '../collections/registry.js';
 
 // ── Wrong Card Correction ─────────────────────────────────────────────────────
 // Opens a card search modal that replaces only the identification metadata of an
@@ -74,27 +74,27 @@ export function correctCard(idx) {
             return;
         }
         const q = query.toUpperCase();
+        const adapter = getActiveAdapter();
+        const searchFields = adapter ? adapter.getSearchableFields().map(f => f.dbField) : ['Card Number', 'Name', 'Set'];
         const results = database.filter(c =>
-            String(c['Card Number'] ?? '').toUpperCase().includes(q) ||
-            String(c.Name           ?? '').toUpperCase().includes(q) ||
-            String(c.Set            ?? '').toUpperCase().includes(q)
+            searchFields.some(field => String(c[field] ?? '').toUpperCase().includes(q))
         ).slice(0, 20);
 
         if (!results.length) {
             resultsEl.innerHTML = `<p style="text-align:center;color:#9ca3af;padding:20px 0;">No cards found for "<strong>${escapeHtml(query)}</strong>"</p>`;
             return;
         }
-        resultsEl.innerHTML = results.map(c => `
-            <div class="manual-search-row" data-fix-card-id="${escapeHtml(String(c['Card ID']))}">
+        resultsEl.innerHTML = results.map(c => {
+            const sr = adapter.formatSearchResult(c);
+            return `
+            <div class="manual-search-row" data-fix-card-id="${escapeHtml(sr.id)}">
               <div class="manual-search-info">
-                <div class="manual-search-name">${escapeHtml(c.Name || '')}</div>
-                <div class="manual-search-meta">
-                  ${escapeHtml(c['Card Number'] || '')} · ${escapeHtml(String(c.Year || ''))} · ${escapeHtml(c.Set || '')}
-                  ${c.Parallel && c.Parallel !== 'Base' ? `· ${escapeHtml(c.Parallel)}` : ''}
-                </div>
+                <div class="manual-search-name">${escapeHtml(sr.title)}</div>
+                <div class="manual-search-meta">${escapeHtml(sr.subtitle)}</div>
               </div>
               <span class="btn-tag-add" style="font-size:12px;padding:6px 12px;cursor:pointer;white-space:nowrap;">Select</span>
-            </div>`).join('');
+            </div>`;
+        }).join('');
 
         function applyFix(cardId) {
             const match = database.find(c => String(c['Card ID']) === String(cardId));
@@ -107,18 +107,28 @@ export function correctCard(idx) {
 
             const existing = col2.cards[idx];
             // Replace identification fields only — keep image, condition, notes, tags, listing data
-            col2.cards[idx] = Object.assign({}, existing, {
-                cardId:     String(match['Card ID'] || ''),
-                hero:       match.Name               || '',
-                athlete:    getAthleteForHero(match.Name) || '',
-                year:       match.Year               || '',
-                set:        match.Set                || '',
-                cardNumber: match['Card Number']     || '',
-                pose:       match.Parallel           || '',
-                weapon:     match.Weapon             || '',
-                power:      match.Power              || '',
+            const adp = getActiveAdapter();
+            const corrected = adp.buildCardFromMatch(match, {
+                displayUrl: existing.imageUrl,
+                fileName: existing.fileName,
+                type: existing.scanType,
+                confidence: existing.confidence,
+                lowConfidence: false,
+                tags: existing.tags || [],
+                centeringData: existing.centeringData || null,
+                cardBounds: existing.cardBounds || null,
+            });
+            // Preserve user-edited fields from the original card
+            col2.cards[idx] = Object.assign({}, existing, corrected, {
                 scanMethod: 'Corrected',
-                scanType:   existing.scanType,
+                condition:  existing.condition,
+                notes:      existing.notes,
+                tags:       existing.tags,
+                readyToList:   existing.readyToList,
+                listingStatus: existing.listingStatus,
+                listingUrl:    existing.listingUrl,
+                listingPrice:  existing.listingPrice,
+                soldAt:        existing.soldAt,
             });
 
             saveCollections(cols2);

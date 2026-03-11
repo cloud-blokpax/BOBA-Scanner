@@ -6,7 +6,8 @@ import { getCollections, getCurrentCollectionId, setCurrentCollectionId, saveCol
 import { escapeHtml } from './utils.js';
 import { showToast } from './toast.js';
 import { on } from '../core/event-bus.js';
-import { fetchEbayAvgPrice } from '../features/ebay/ebay.js';
+import { fetchEbayAvgPrice } from '../features/marketplace/ebay.js';
+import { getActiveAdapter } from '../collections/registry.js';
 
 function renderCards() {
     console.log('🎨 Rendering cards...');
@@ -88,15 +89,12 @@ function renderCards() {
     if (searchClear) searchClear.style.display = searchQuery ? 'block' : 'none';
 
     // Build filtered array while preserving original indices (needed for card operations)
+    const _adapter = getActiveAdapter();
+    const _searchFields = _adapter ? _adapter.getFieldDefinitions().map(f => f.key) : ['hero', 'cardNumber', 'athlete', 'set', 'pose', 'weapon'];
     let filteredWithIdx = allCards.reduce((acc, card, idx) => {
         const q = searchQuery;
         if (!q ||
-            String(card.hero       || '').toUpperCase().includes(q) ||
-            String(card.cardNumber || '').toUpperCase().includes(q) ||
-            String(card.athlete    || '').toUpperCase().includes(q) ||
-            String(card.set        || '').toUpperCase().includes(q) ||
-            String(card.pose       || '').toUpperCase().includes(q) ||
-            String(card.weapon     || '').toUpperCase().includes(q) ||
+            _searchFields.some(f => String(card[f] || '').toUpperCase().includes(q)) ||
             (Array.isArray(card.tags) && card.tags.some(t => t.toUpperCase().includes(q)))
         ) {
             acc.push({ card, idx });

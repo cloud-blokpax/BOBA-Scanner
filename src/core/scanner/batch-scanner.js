@@ -14,6 +14,7 @@ import { cropToCard, compressImage } from './image-processing.js';
 import { getCollections, getCurrentCollectionId, saveCollections } from '../collection/collections.js';
 import { canMakeApiCall, trackApiCall, trackCardAdded } from '../auth/user-management.js';
 import { callAPI } from './scanner.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 const BATCH_CAP = 10;
 let _pendingResults  = [];
@@ -178,7 +179,9 @@ async function processBatchEntry(entry) {
 
     // Flag duplicates for user awareness
     const allCards = getCollections().flatMap(c => c.cards);
-    entry.isDuplicate = allCards.some(c => c.cardId && c.cardId === String(match['Card ID'] || ''));
+    const _adp = getActiveAdapter();
+    const _matchId = String(match[_adp ? _adp.cardIdField : 'Card ID'] || '');
+    entry.isDuplicate = allCards.some(c => c.cardId && c.cardId === _matchId);
 
   } catch (err) {
     entry.status = 'error';
@@ -253,20 +256,18 @@ async function commitBatch() {
   if (!col) { showToast('No collection found', '❌'); return; }
 
   let added = 0;
+  const adapter = getActiveAdapter();
   for (const entry of toAdd) {
-    const card = {
-      cardId: entry.match['Card ID'] || '', hero: entry.match.Name || '',
-      year: entry.match.Year || '', set: entry.match.Set || '',
-      cardNumber: entry.match['Card Number'] || '', pose: entry.match.Parallel || '',
-      weapon: entry.match.Weapon || '', power: entry.match.Power || '',
-      imageUrl: entry.imageUrl || '', fileName: entry.file.name,
-      scanType: entry.scanType,
-      scanMethod: entry.scanType === 'ocr' ? `Free OCR (${Math.round(entry.confidence || 0)}%)` : 'AI + Database',
-      timestamp: new Date().toISOString(), tags: [],
-      condition: '', notes: '', readyToList: false, confidence: entry.confidence,
+    const card = adapter.buildCardFromMatch(entry.match, {
+      displayUrl: entry.imageUrl || '',
+      fileName: entry.file.name,
+      type: entry.scanType,
+      confidence: entry.confidence,
+      lowConfidence: false,
+      tags: [],
       centeringData: entry.centeringData || null,
-      cardBounds: entry.cardBounds || null
-    };
+      cardBounds: entry.cardBounds || null,
+    });
     col.cards.push(card);
     col.stats.scanned++;
     if (card.scanType === 'ocr') col.stats.free++;

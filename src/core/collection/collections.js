@@ -9,7 +9,7 @@
 import { escapeHtml } from '../../ui/utils.js';
 import { showToast } from '../../ui/toast.js';
 import { emit } from '../../core/event-bus.js';
-import { getAthleteForHero } from '../../collections/boba/heroes.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 const DEFAULT_COLLECTION = {
   id: 'default',
@@ -74,7 +74,8 @@ function migrateBackfillAthletes() {
   // One-time migration: add athlete field to cards that were scanned before
   // heroes.js was added or before the batch scanner was updated.
   try {
-    if (typeof getAthleteForHero !== 'function') return;
+    const adapter = getActiveAdapter();
+    if (!adapter) return;
     if (localStorage.getItem('athletesBackfilled') === 'v1') return; // already done
     const cols = JSON.parse(localStorage.getItem('collections') || '[]');
     if (!Array.isArray(cols)) return;
@@ -82,8 +83,8 @@ function migrateBackfillAthletes() {
     for (const col of cols) {
       for (const card of (col.cards || [])) {
         if (!card.athlete && card.hero) {
-          const athlete = getAthleteForHero(card.hero);
-          if (athlete) { card.athlete = athlete; changed = true; }
+          const meta = adapter.resolveMetadata({ Name: card.hero });
+          if (meta.athlete) { card.athlete = meta.athlete; changed = true; }
         }
       }
     }
@@ -375,7 +376,9 @@ export function exportCollections() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `boba-collections-${Date.now()}.json`;
+  const _adp = getActiveAdapter();
+  const _prefix = _adp ? _adp.id : 'card';
+  a.download = `${_prefix}-collections-${Date.now()}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

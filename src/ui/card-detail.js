@@ -11,11 +11,12 @@ import { compressImage } from '../core/scanner/image-processing.js';
 import { renderCards } from './cards-grid.js';
 import { wireUpEvents } from './events.js';
 import { initUploadArea } from './upload-area.js';
-import { buildEbaySearchUrl, buildEbaySoldUrl, fetchEbayAvgPrice } from '../features/ebay/ebay.js';
+import { buildEbaySearchUrl, buildEbaySoldUrl, fetchEbayAvgPrice } from '../features/marketplace/ebay.js';
 import { isFeatureEnabled } from '../core/infra/feature-flags.js';
 import { updateCard, removeCard } from '../core/scanner/scanner.js';
 import { updateAuthUI } from '../core/auth/google-auth.js';
 import { attachCardTilt } from './card-tilt.js';
+import { getActiveAdapter } from '../collections/registry.js';
 
 // ── Card Detail Modal ────────────────────────────────────────────────────────
 
@@ -110,20 +111,27 @@ window.openCardDetail = function(index) {
         const fmtPct      = v => (v != null && v !== '') ? `${Math.round(v)}%` : null;
         const fmtArr      = v => (Array.isArray(v) && v.filter(Boolean).length) ? escapeHtml(v.filter(Boolean).join(', ')) : null;
 
+        // Build Card Info rows dynamically from adapter field definitions
+        const _detailAdapter = getActiveAdapter();
+        const _fieldDefs = _detailAdapter ? _detailAdapter.getFieldDefinitions() : [];
+        const _cardInfoRows = _fieldDefs.length > 0
+            ? _fieldDefs.map(f => [f.label, fmtStr(c[f.key])]).concat([['Condition', fmtStr(c.condition)]])
+            : [
+                ['Hero / Character',    fmtStr(c.hero)],
+                ['Athlete',             fmtStr(c.athlete)],
+                ['Card Number',         fmtStr(c.cardNumber)],
+                ['Year',                fmtStr(c.year)],
+                ['Set',                 fmtStr(c.set)],
+                ['Parallel / Pose',     fmtStr(c.pose)],
+                ['Weapon',              fmtStr(c.weapon)],
+                ['Power',               fmtStr(c.power)],
+                ['Condition',           fmtStr(c.condition)],
+              ];
+
         const sections = [
             {
                 title: 'Card Info', icon: '🃏',
-                rows: [
-                    ['Hero / Character',    fmtStr(c.hero)],
-                    ['Athlete',             fmtStr(c.athlete)],
-                    ['Card Number',         fmtStr(c.cardNumber)],
-                    ['Year',                fmtStr(c.year)],
-                    ['Set',                 fmtStr(c.set)],
-                    ['Parallel / Pose',     fmtStr(c.pose)],
-                    ['Weapon',              fmtStr(c.weapon)],
-                    ['Power',               fmtStr(c.power)],
-                    ['Condition',           fmtStr(c.condition)],
-                ]
+                rows: _cardInfoRows
             },
             {
                 title: 'eBay Active Listings', icon: '🛒',
@@ -205,7 +213,9 @@ window.openCardDetail = function(index) {
             'ebaySoldPrice','ebaySoldDate','ebaySoldAvgPrice','ebaySoldCount','ebaySoldFetched','ebaySoldUrl',
             'tags','notes','readyToList','listingStatus','listingTitle','listingPrice','listingUrl','listingItemId','soldAt',
             'scanMethod','scanType','confidence','lowConfidence','fileName','timestamp',
-            'imageUrl','id','cardId','aiGrade','centeringData','cardBounds'
+            'imageUrl','id','cardId','aiGrade','centeringData','cardBounds',
+            // Include adapter-defined fields so they don't appear as "Additional"
+            ...(_fieldDefs.map(f => f.key)),
         ]);
         const extraRows = Object.entries(c)
             .filter(([k, v]) => !knownFields.has(k) && v != null && v !== '' && typeof v !== 'object')
@@ -319,15 +329,22 @@ window.openCardDetail = function(index) {
                         <div style="font-size:11px;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Athlete Inspiration</div>
                         <div style="font-size:15px;font-weight:700;color:#1e3a5f;margin-top:2px;">${escapeHtml(card.athlete)}</div>
                     </div>` : ''}
-                    ${[
-                        ['Card #', card.cardNumber], ['Year', card.year],
-                        ['Set', card.set], ['Parallel', card.pose],
-                        ['Weapon', card.weapon], ['Power', card.power]
-                    ].map(([label, val]) => val ? `
-                        <div style="background:#f9fafb;border-radius:8px;padding:10px;">
-                            <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">${label}</div>
-                            <div style="font-size:14px;font-weight:600;color:#111827;margin-top:2px;">${escapeHtml(String(val))}</div>
-                        </div>` : '').join('')}
+                    ${(() => {
+                        const _da = getActiveAdapter();
+                        const _defs = _da ? _da.getFieldDefinitions() : [];
+                        // Use adapter fields, excluding hero/athlete (shown separately above)
+                        const _displayFields = _defs.length > 0
+                            ? _defs.filter(f => f.key !== 'hero' && f.key !== 'athlete' && f.key !== 'cardId')
+                                   .map(f => [f.label, card[f.key]])
+                            : [['Card #', card.cardNumber], ['Year', card.year],
+                               ['Set', card.set], ['Parallel', card.pose],
+                               ['Weapon', card.weapon], ['Power', card.power]];
+                        return _displayFields.map(([label, val]) => val ? `
+                            <div style="background:#f9fafb;border-radius:8px;padding:10px;">
+                                <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">${label}</div>
+                                <div style="font-size:14px;font-weight:600;color:#111827;margin-top:2px;">${escapeHtml(String(val))}</div>
+                            </div>` : '').join('');
+                    })()}
                 </div>
 
                 <div style="margin-bottom:12px;">

@@ -9,7 +9,7 @@ import { updateCard } from '../scanner/scanner.js';
 import { escapeHtml } from '../../ui/utils.js';
 import { showToast } from '../../ui/toast.js';
 import { openExportModal } from '../../features/export/export.js';
-import { fetchEbayAvgPrice } from '../../features/ebay/ebay.js';
+import { fetchEbayAvgPrice } from '../../features/marketplace/ebay.js';
 import { renderCards } from '../../ui/cards-grid.js';
 
 export function showStatsModal() {

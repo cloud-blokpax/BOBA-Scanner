@@ -478,7 +478,7 @@ function _syncRenderCollectionModal_LEGACY() {
             <div class="collection-empty">
                 <div class="collection-empty-icon">📭</div>
                 <h3>No cards yet</h3>
-                <p>Scan your first Bo Jackson card to get started!</p>
+                <p>Scan your first card to get started!</p>
             </div>`;
         return;
     }
