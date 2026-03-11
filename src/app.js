@@ -142,18 +142,9 @@ function wireMagicalFeatureButtons() {
         if (typeof window.triggerEbayLister === 'function') window.triggerEbayLister(cards[0] || null);
     });
 
-    // Wire click handlers (More sheet) — use pickers so user can choose which card
-    document.getElementById('moreGradeCard')?.addEventListener('click', () => {
-        if (typeof window.triggerGradeCardWithPicker === 'function') window.triggerGradeCardWithPicker();
-        else if (typeof window.triggerGradeCard === 'function') window.triggerGradeCard();
-    });
-    document.getElementById('moreSetCompletion')?.addEventListener('click', () => {
-        if (typeof window.analyzeSetCompletion === 'function') window.analyzeSetCompletion();
-    });
-    document.getElementById('moreEbayLister')?.addEventListener('click', () => {
-        if (typeof window.triggerEbayListerWithPicker === 'function') window.triggerEbayListerWithPicker();
-        else if (typeof window.triggerEbayLister === 'function') window.triggerEbayLister(null);
-    });
+    // NOTE: More sheet items (moreGradeCard, moreSetCompletion, moreEbayLister)
+    // are already wired via wireMoreItem() in bottom-nav.js.
+    // Do NOT add duplicate click handlers here — it causes double-firing.
 
     // Expose card "⋯ More" button globally (called from renderCards inline HTML)
     if (hasGrader || hasEbayLister) {

@@ -193,7 +193,7 @@ function showDeleteCollectionModal(id) {
     if (getCurrentCollectionId() === id) setCurrentCollectionId('default');
     saveCollections(collections);
     renderCollections();
-    if (typeof renderCards === 'function') renderCards();
+    if (typeof window.renderCards === 'function') window.renderCards();
     showToast('Collection deleted', '🗑️');
   });
 }
@@ -216,8 +216,8 @@ export function switchCollection(id) {
 
   setCurrentCollectionId(id);
   renderCollections();
-  if (typeof renderCards === 'function') renderCards();
-  if (typeof updateStats === 'function') updateStats();
+  if (typeof window.renderCards === 'function') window.renderCards();
+  if (typeof window.updateStats === 'function') window.updateStats();
   showToast(`Switched to ${collection.name}`, '📂');
 }
 
@@ -321,7 +321,7 @@ window.sliderSwitch = function(targetId) {
     if (!collections.find(c => c.id === 'price_check')) return;
     switchCollection('price_check');
     updateCollectionSlider();
-    if (typeof renderCards === 'function') renderCards();
+    if (typeof window.renderCards === 'function') window.renderCards();
   } else if (targetId === 'deck_building') {
     // Show deck cards in the main grid (same experience as My Collection and Price Check)
     if (typeof window.ensureDeckBuildingCollection === 'function') {
@@ -331,11 +331,11 @@ window.sliderSwitch = function(targetId) {
     if (!deckCols.find(c => c.id === 'deck_building')) return;
     switchCollection('deck_building');
     updateCollectionSlider();
-    if (typeof renderCards === 'function') renderCards();
+    if (typeof window.renderCards === 'function') window.renderCards();
   } else {
     switchCollection('default');
     updateCollectionSlider();
-    if (typeof renderCards === 'function') renderCards();
+    if (typeof window.renderCards === 'function') window.renderCards();
   }
 };
 

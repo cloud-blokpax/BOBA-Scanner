@@ -363,7 +363,7 @@ function renderCards() {
                     <span class="btn-ebay-icon">🛒</span><span>Search eBay</span>
                 </button>
                 <button class="btn-wrong-card" onclick="event.stopPropagation();correctCard(${idx})" title="Wrong card? Search for the correct one">⚠️ Wrong Card</button>
-                <button class="btn-detail card-footer-detail" data-open-card="${idx}" title="Edit / View full details">✏️ Edit</button>
+                <button class="btn-detail card-footer-detail" onclick="event.stopPropagation();window.openCardDetail(${idx})" title="Edit / View full details">✏️ Edit</button>
                 <button class="btn-card-more" data-card-more="${idx}" onclick="event.stopPropagation();toggleCardMoreMenu(${idx},this)" title="More options" style="display:none;">⋯</button>
             </div>
         </div>`;
@@ -399,13 +399,8 @@ function renderCards() {
     }
 
     // ── Delegated card-open handler ───────────────────────────────────────
-    // The listeners are on the grid element itself and survive innerHTML replacements.
-    // Guard against duplicate registration but reset when view mode changes.
-    const viewModeKey = `view_${prefs.view}`;
-    if (!grid._listenersAttached || grid._viewModeKey !== viewModeKey) {
-        grid._listenersAttached = false; // force re-attach if view changed
-        grid._viewModeKey = viewModeKey;
-    }
+    // Attach listeners ONCE on the grid element. They survive innerHTML replacements
+    // and work for all view modes since they use data-open-card delegation.
     if (!grid._listenersAttached) {
         grid._listenersAttached = true;
 
@@ -561,5 +556,8 @@ function renderField(label, field, index, value, autoFilled) {
 
 // ── Event bus subscriptions ─────────────────────────────────────────────────
 on('cards:changed', () => renderCards());
+
+// Expose on window so inline handlers, lazy-loaded modules, and sliderSwitch can call it
+window.renderCards = renderCards;
 
 export { renderCards, renderField };

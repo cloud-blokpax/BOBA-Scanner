@@ -809,7 +809,7 @@ async function finalizeDeck() {
   );
 
   // Refresh UI
-  if (typeof renderCards === 'function') renderCards();
+  if (typeof window.renderCards === 'function') window.renderCards();
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
 
   // Tournament mode — track usage, auto-export, and offer "Add to My Collection"
@@ -1040,7 +1040,7 @@ function copyTournamentCardsToCollection(cards) {
   }
 
   saveCollections(cols);
-  if (typeof renderCards === 'function') renderCards();
+  if (typeof window.renderCards === 'function') window.renderCards();
   if (typeof updateCollectionNavCounts === 'function') updateCollectionNavCounts();
   if (typeof updateCollectionSlider === 'function') updateCollectionSlider();
 

@@ -337,15 +337,15 @@ export function toggleCardMoreMenu(index, btn) {
   menu.style.cssText = 'position:absolute;right:0;bottom:100%;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:160px;z-index:100;overflow:hidden;';
 
   const items = [
-    { icon: '🛒', label: 'Search eBay',  fn: () => { if (typeof openEbaySearch === 'function') openEbaySearch(index); } },
+    { icon: '🛒', label: 'Search eBay',  fn: () => { if (typeof window.openEbaySearch === 'function') window.openEbaySearch(index); } },
   ];
 
   if (typeof isFeatureEnabled === 'function') {
     if (isFeatureEnabled('condition_grader')) {
-      items.push({ icon: '🔬', label: 'Grade Card',    fn: () => { if (typeof gradeCardByIndex === 'function') gradeCardByIndex(index); } });
+      items.push({ icon: '🔬', label: 'Grade Card',    fn: () => { if (typeof window.gradeCardFromDetail === 'function') window.gradeCardFromDetail(index); } });
     }
     if (isFeatureEnabled('ebay_lister')) {
-      items.push({ icon: '🏷️', label: 'List on eBay',  fn: () => { if (typeof ebayListByIndex === 'function') ebayListByIndex(index); } });
+      items.push({ icon: '🏷️', label: 'List on eBay',  fn: () => { if (typeof window.ebayListFromDetail === 'function') window.ebayListFromDetail(index); } });
     }
   }
 
@@ -382,5 +382,6 @@ export function toggleCardMoreMenu(index, btn) {
 // ── Expose to lazy-loaded modules (they run in separate module scope) ─────────
 window.isFeatureEnabled    = isFeatureEnabled;
 window.showCardPickerModal = showCardPickerModal;
+window.toggleCardMoreMenu  = toggleCardMoreMenu;
 
 console.log('✅ Feature flags module loaded');
