@@ -11,6 +11,7 @@
 
 import { ready, tesseractWorker, setTesseractWorker } from '../state.js';
 import { setStatus } from '../../ui/toast.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 export async function initTesseract() {
     if (!window.crossOriginIsolated) {
@@ -24,10 +25,12 @@ export async function initTesseract() {
     try {
         setTesseractWorker(await Tesseract.createWorker('eng'));
         // PSM 7 = treat image as a single text line (card numbers are one line)
-        // Character whitelist restricts to valid card-number chars only
+        // Character whitelist from active adapter (restricts to valid card-number chars)
+        const adapter = getActiveAdapter();
+        const whitelist = adapter ? adapter.ocrWhitelist : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ';
         await tesseractWorker.setParameters({
             tessedit_pageseg_mode: '7',
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
+            tessedit_char_whitelist: whitelist,
         });
         ready.ocr = true;
         setStatus('ocr', 'ready');
@@ -47,25 +50,26 @@ export async function runOCR(imageUrl) {
 
     const sourceCanvas = await loadImageToCanvas(imageUrl);
 
-    // Try bottom-left first — most common card number location for BoBA cards
-    const result1 = await runOCROnRegion(sourceCanvas, { x: 0.01, y: 0.84, w: 0.35, h: 0.13 });
-    if (result1.cardNumber) return result1;
+    // Get OCR regions from the active adapter (ordered by priority)
+    const adapter = getActiveAdapter();
+    const regions = adapter ? adapter.getOCRRegions() : [
+        { x: 0.01, y: 0.84, w: 0.35, h: 0.13 },
+        { x: 0.60, y: 0.84, w: 0.35, h: 0.13 },
+        { x: 0.0,  y: 0.80, w: 1.0,  h: 0.18 },
+    ];
 
-    // Bail out early if the worker crashed during the first region
-    if (!ready.ocr || !tesseractWorker) return result1;
-
-    // Try bottom-right for alternate layouts
-    const result2 = await runOCROnRegion(sourceCanvas, { x: 0.60, y: 0.84, w: 0.35, h: 0.13 });
-    if (result2.cardNumber) return result2;
-
-    if (!ready.ocr || !tesseractWorker) return result2;
-
-    // Final fallback: full bottom strip — catches any bottom text
-    const result3 = await runOCROnRegion(sourceCanvas, { x: 0.0, y: 0.80, w: 1.0, h: 0.18 });
-    if (result3.cardNumber) return result3;
+    const results = [];
+    for (const region of regions) {
+        const result = await runOCROnRegion(sourceCanvas, region);
+        results.push(result);
+        if (result.cardNumber) return result;
+        // Bail out early if the worker crashed
+        if (!ready.ocr || !tesseractWorker) break;
+    }
 
     // Return the result with the highest confidence
-    return [result1, result2, result3].reduce((best, r) =>
+    if (results.length === 0) return { text: '', confidence: 0, cardNumber: null };
+    return results.reduce((best, r) =>
         r.confidence > best.confidence ? r : best
     );
 }
@@ -90,9 +94,11 @@ async function runOCROnRegion(sourceCanvas, region) {
         ready.ocr = false;
         try {
             setTesseractWorker(await Tesseract.createWorker('eng'));
+            const _adapter = getActiveAdapter();
+            const _wl = _adapter ? _adapter.ocrWhitelist : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ';
             await tesseractWorker.setParameters({
                 tessedit_pageseg_mode: '7',
-                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
+                tessedit_char_whitelist: _wl,
             });
             ready.ocr = true;
             const result     = await tesseractWorker.recognize(dataUrl);

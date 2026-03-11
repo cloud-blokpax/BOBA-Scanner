@@ -24,6 +24,7 @@ import { hasCameraSupport, openContinuousScanner } from './core/scanner/continuo
 import { showToast } from './ui/toast.js';
 import { showOnboarding, shouldShowOnboarding, enhanceEmptyState } from './ui/onboarding.js';
 import { initIOSInstallPrompt } from './ui/ios-install-prompt.js';
+import { listAdapters, getActiveAdapter, setActiveAdapter } from './collections/registry.js';
 // Pre-import for side effects (registers globally)
 import './ui/card-tilt.js';
 import './ui/scan-result-sheet.js';
@@ -85,6 +86,7 @@ async function init() {
 
         // Load feature flags and wire magical feature buttons
         await loadFeatureFlags();
+        initCollectionTypePicker();
         wireMagicalFeatureButtons();
 
         // Show Live Scan option in scan panel (if device has camera)
@@ -135,6 +137,33 @@ async function init() {
         document.body.classList.add('app-loaded');
         showToast('Some features may not be available', '⚠️');
     }
+}
+
+// ── Collection type picker ──────────────────────────────────────────────────
+function initCollectionTypePicker() {
+    const select = document.getElementById('selectCollectionType');
+    if (!select) return;
+
+    const adapters = listAdapters();
+    const active = getActiveAdapter();
+
+    select.innerHTML = adapters.map(a =>
+        `<option value="${a.id}" ${a.id === active?.id ? 'selected' : ''}>${a.displayName}</option>`
+    ).join('');
+
+    select.addEventListener('change', async () => {
+        const newId = select.value;
+        if (newId === getActiveAdapter()?.id) return;
+
+        setActiveAdapter(newId);
+        showToast(`Switched to ${getActiveAdapter().displayName}`, '🔄');
+
+        // Reload database for the new collection type
+        await loadDatabase();
+
+        // Re-render cards
+        if (typeof window.renderCards === 'function') window.renderCards();
+    });
 }
 
 // ── Magical feature button wiring ────────────────────────────────────────────

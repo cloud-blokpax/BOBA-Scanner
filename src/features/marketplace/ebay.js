@@ -18,6 +18,7 @@ import { getCollections, getCurrentCollectionId, saveCollections } from '../../c
 import { showToast } from '../../ui/toast.js';
 import { getApiToken } from '../../core/state.js';
 import { recordPrice } from './price-trends.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 const EBAY_AFFILIATE = {
   campid:  '5339143193',
@@ -31,39 +32,15 @@ const EBAY_AFFILIATE = {
 const EBAY_SEARCH_BASE = 'https://www.ebay.com/sch/i.html';
 
 // ── Build search query from card metadata ─────────────────────────────────────
-// Strategy: most specific first — card number narrows results dramatically.
-// We always include "bo jackson" to keep results on target.
-// Parallel and weapon are included when non-trivial (skip "Base", "None", etc.)
+// Delegates to the active adapter's buildEbayQuery() for collection-specific
+// search terms (e.g. "bo jackson battle arena" for BOBA).
 
 export function buildEbayQuery(card) {
-  // Helper: safely coerce any value to trimmed string
-  const s = v => String(v ?? '').trim();
+  const adapter = getActiveAdapter();
+  if (adapter) return adapter.buildEbayQuery(card);
 
-  const parts = [];
-
-  // "bo jackson battle arena" — anchors to the game, not just the player
-  parts.push('bo jackson battle arena');
-
-  // Card number — most specific identifier (e.g. BLBF-84)
-  const cardNum = s(card.cardNumber);
-  if (cardNum) parts.push(cardNum);
-
-  // Hero name — helps narrow parallel variants
-  const hero = s(card.hero);
-  if (hero && hero.toLowerCase() !== 'unknown') parts.push(hero);
-
-  // Athlete inspiration — same weight as hero name; sellers often use the real
-  // athlete's name in their listing title (e.g. "Tongue-Twister Tua Tagovailoa")
-  const athlete = s(card.athlete);
-  if (athlete) parts.push(athlete);
-
-  // Intentionally excluded:
-  //   set name  — too verbose, hurts results
-  //   parallel  — most sellers don't include this
-  //   weapon    — rarely in listing titles
-  //   year      — card number already disambiguates
-
-  return parts.join(' ');
+  // Fallback for when no adapter is active
+  return card.cardNumber || '';
 }
 
 // ── Append EPN affiliate params ───────────────────────────────────────────────

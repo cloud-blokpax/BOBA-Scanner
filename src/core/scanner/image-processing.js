@@ -10,6 +10,7 @@
 // ============================================================
 
 import { config } from '../../core/config.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 // ── Card crop constants ───────────────────────────────────────────────────────
 // Target height (px) for the card region after crop.  At 1 200 px the bottom
@@ -506,8 +507,10 @@ export async function cropCardNumberRegion(file) {
             const sw = img.naturalWidth  || img.width;
             const sh = img.naturalHeight || img.height;
 
-            // Extract bottom-left 40% width × 15% height
-            const rx = 0.0, ry = 0.82, rw = 0.40, rh = 0.15;
+            // Extract card number region from adapter (defaults to bottom-left 40% × 15%)
+            const adapter = getActiveAdapter();
+            const cropRegion = adapter ? adapter.getCardNumberCropRegion() : { x: 0.0, y: 0.82, w: 0.40, h: 0.15 };
+            const rx = cropRegion.x, ry = cropRegion.y, rw = cropRegion.w, rh = cropRegion.h;
             const sx = Math.floor(sw * rx);
             const sy = Math.floor(sh * ry);
             const cw = Math.floor(sw * rw);

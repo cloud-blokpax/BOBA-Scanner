@@ -8,36 +8,49 @@
 
 import { ready, database, setDatabase } from '../state.js';
 import { setStatus, showToast } from '../../ui/toast.js';
+import { getActiveAdapter } from '../../collections/registry.js';
 
 // ── IndexedDB cache for card database ─────────────────────────────────────────
 // On first load: fetch card-database.json, store in IDB.
 // On subsequent loads: read from IDB, only re-fetch if version.json is newer.
-const IDB_NAME    = 'boba-scanner';
-const IDB_STORE   = 'card-db';
+// IDB name and store are sourced from the active adapter so each collection
+// type gets its own isolated cache.
 const IDB_VERSION = 1;
 
+function _getDbConfig() {
+  const adapter = getActiveAdapter();
+  if (adapter) {
+    const cfg = adapter.getDatabaseConfig();
+    return { idbName: cfg.idbName, storeName: cfg.storeName, databaseUrl: cfg.databaseUrl };
+  }
+  return { idbName: 'boba-scanner', storeName: 'card-db', databaseUrl: '/card-database.json' };
+}
+
 function openIDB() {
+  const { idbName, storeName } = _getDbConfig();
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    const req = indexedDB.open(idbName, IDB_VERSION);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(storeName);
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);
   });
 }
 
 async function idbGet(db, key) {
+  const { storeName } = _getDbConfig();
   return new Promise((resolve, reject) => {
-    const tx  = db.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get(key);
+    const tx  = db.transaction(storeName, 'readonly');
+    const req = tx.objectStore(storeName).get(key);
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);
   });
 }
 
 async function idbPut(db, key, value) {
+  const { storeName } = _getDbConfig();
   return new Promise((resolve, reject) => {
-    const tx  = db.transaction(IDB_STORE, 'readwrite');
-    const req = tx.objectStore(IDB_STORE).put(value, key);
+    const tx  = db.transaction(storeName, 'readwrite');
+    const req = tx.objectStore(storeName).put(value, key);
     req.onsuccess = () => resolve();
     req.onerror   = e => reject(e.target.error);
   });
@@ -75,7 +88,8 @@ export async function loadDatabase() {
     }
 
     // Cache miss or IDB unavailable — fetch from network
-    const res = await fetch('./card-database.json');
+    const { databaseUrl } = _getDbConfig();
+    const res = await fetch(databaseUrl);
     if (!res.ok) throw new Error('DB not found');
     setDatabase(await res.json());
 
@@ -110,8 +124,10 @@ export function buildCardIndex() {
   cardIndex.clear();
   prefixIndex.clear();
 
+  const adapter = getActiveAdapter();
+  const cnField = adapter ? adapter.cardNumberField : 'Card Number';
   for (const card of database) {
-    const num = normalizeCardNum(card['Card Number'] || '');
+    const num = normalizeCardNum(card[cnField] || '');
     if (!num) continue;
 
     // Exact lookup index
@@ -163,8 +179,10 @@ export function findSimilarCardNumbers(searchNumber, maxDistance = 2) {
   }
 
   const results = [];
+  const _adp = getActiveAdapter();
+  const _cnf = _adp ? _adp.cardNumberField : 'Card Number';
   for (const card of candidateSet) {
-    const cardNum  = normalizeCardNum(card['Card Number'] || '');
+    const cardNum  = normalizeCardNum(card[_cnf] || '');
     const distance = levenshteinDistance(normalized, cardNum);
     if (distance <= maxDistance) {
       results.push({
@@ -186,6 +204,9 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
     console.error('findCard called but:', { dbReady: ready.db, cardNumber });
     return null;
   }
+
+  const _findAdp   = getActiveAdapter();
+  const _nameField = _findAdp ? _findAdp.nameField : 'Name';
 
   const normalizedCardNum = normalizeCardNum(cardNumber);
   const normalizedHero    = heroName ? normalizeCardNum(heroName) : null;
@@ -214,7 +235,7 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
     // Hero-informed fuzzy match
     if (normalizedHero) {
       const heroMatch = similar.find(s => {
-        const dbHero = normalizeCardNum(s.card.Name || '');
+        const dbHero = normalizeCardNum(s.card[_nameField] || '');
         return dbHero === normalizedHero ||
                dbHero.includes(normalizedHero) ||
                normalizedHero.includes(dbHero);
@@ -245,7 +266,7 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
   //                    ice/blue/frost/snow   → "chill" type cards
   function visualThemeScore(card) {
     if (!theme) return 0;
-    const name = (card.Name || '').toLowerCase();
+    const name = (card[_nameField] || '').toLowerCase();
     const parallel = (card.Parallel || '').toLowerCase();
     const combined = name + ' ' + parallel;
 
@@ -264,7 +285,7 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
 
   function heroScore(card) {
     if (!normalizedHero) return 0;
-    const dbHero = normalizeCardNum(card.Name || '');
+    const dbHero = normalizeCardNum(card[_nameField] || '');
     if (dbHero === normalizedHero) return 100;
     if (dbHero.includes(normalizedHero) || normalizedHero.includes(dbHero)) return 50;
     return 0;
@@ -276,7 +297,7 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
   }));
   scored.sort((a, b) => b.score - a.score);
 
-  console.log('🎯 Scored candidates:', scored.map(s => `${s.card.Name} (${s.score})`));
+  console.log('🎯 Scored candidates:', scored.map(s => `${s.card[_nameField]} (${s.score})`));
 
   // Return best-scoring candidate if it's meaningfully better than runner-up
   if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score)) {
@@ -284,16 +305,16 @@ export function findCard(cardNumber, heroName = null, visualTheme = '') {
   }
 
   // Fallback: pure hero name match
-  const exact = exactMatches.find(c => normalizeCardNum(c.Name || '') === normalizedHero);
+  const exact = exactMatches.find(c => normalizeCardNum(c[_nameField] || '') === normalizedHero);
   if (exact) return exact;
 
   const partial = exactMatches.find(c => {
-    const dbHero = normalizeCardNum(c.Name || '');
+    const dbHero = normalizeCardNum(c[_nameField] || '');
     return dbHero.includes(normalizedHero || '') || (normalizedHero || '').includes(dbHero);
   });
   if (partial) return partial;
 
-  console.error('❌ Could not disambiguate. Available:', exactMatches.map(c => c.Name));
+  console.error('❌ Could not disambiguate. Available:', exactMatches.map(c => c[_nameField]));
   return null;
 }
 
