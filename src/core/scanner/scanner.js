@@ -681,7 +681,9 @@ export function addCard(match, displayUrl, fileName, type, confidence = null, lo
           }
         }
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Image upload failed:', err);
+    });
   }
 
   if (typeof window.trackCardAdded === 'function') window.trackCardAdded();

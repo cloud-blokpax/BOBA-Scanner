@@ -397,9 +397,8 @@ export function importCollections(file) {
         if (impCol.id === 'default') continue;
         const idx = merged.findIndex(c => c.id === impCol.id);
         if (idx >= 0) {
-          if (confirm(`Collection "${impCol.name}" already exists. Replace it?`)) {
-            merged[idx] = impCol;
-          }
+          // Auto-merge: imported collection replaces existing one with same id
+          merged[idx] = impCol;
         } else {
           merged.push(impCol);
         }
