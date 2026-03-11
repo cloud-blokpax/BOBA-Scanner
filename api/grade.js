@@ -7,15 +7,27 @@
 //   - whether a zoomed corner grid is provided (dual-image mode)
 //   - whether programmatic centering data was computed at scan time
 
-function buildGradePrompt(hasCornersGrid, centeringData) {
-  const imageContext = hasCornersGrid
-    ? `Two images are provided:
-1. The full card image — use for overall assessment, surface condition, and centering.
-2. A 2×2 grid showing all 4 corners zoomed in (top-left, top-right in top row; bottom-left, bottom-right in bottom row). Use these zoomed views for precise corner and edge assessment.`
-    : `One card image is provided. Use it for all assessment.`;
+function buildGradePrompt(hasCenteringOverlay, hasCornersGrid, centeringData) {
+  // Build the image inventory description based on what was sent
+  let imageIndex = 1;
+  const imageRefs = {};
+  if (hasCenteringOverlay) imageRefs.centering = imageIndex++;
+  imageRefs.fullCard = imageIndex++;
+  if (hasCornersGrid) imageRefs.corners = imageIndex++;
+
+  const totalImages = imageIndex - 1;
+
+  let imageContext = `${totalImages} image${totalImages > 1 ? 's are' : ' is'} provided:\n`;
+  if (hasCenteringOverlay) {
+    imageContext += `${imageRefs.centering}. CENTERING OVERLAY — The card stripped of background, with colored dashed lines marking the detected printed border boundaries on each side. L/R and T/B ratios are labeled; line color = centering quality (green ≤55/45 = PSA 10, lime ≤60/40 = PSA 9, amber ≤65/35 = PSA 8, orange ≤70/30 = PSA 7, red = PSA 6 or below). Use these measured values as the centering in your response.\n`;
+  }
+  imageContext += `${imageRefs.fullCard}. FULL CARD IMAGE — Use for overall condition assessment, surface evaluation, and any centering the overlay cannot cover (e.g. card back).\n`;
+  if (hasCornersGrid) {
+    imageContext += `${imageRefs.corners}. CORNER GRID — 2×2 zoomed grid of all 4 corners (TL/TR top row, BL/BR bottom row). Use for precise corner and edge assessment.`;
+  }
 
   const cornersInstr = hasCornersGrid
-    ? `1. CORNERS — Using the zoomed corner grid, assess EACH corner individually:
+    ? `1. CORNERS — Using the zoomed corner grid (image ${imageRefs.corners}), assess EACH corner individually:
    - Top-left: sharp/crisp, slightly rounded, moderately rounded, or clearly dinged/damaged?
    - Top-right: same assessment
    - Bottom-left: same assessment
@@ -30,20 +42,28 @@ function buildGradePrompt(hasCornersGrid, centeringData) {
    - IMPORTANT: For dark-bordered or colored-bordered cards, even tiny white chips on edges are dramatically visible and significantly lower the grade. Weight edge defects more heavily on such cards.`
     : `2. EDGES — Check all four edges for chips, nicks, roughness, fraying, or whitening. Note which edges show wear. For dark/colored borders, any whitening on edges is especially grade-impacting.`;
 
-  // Centering block — either inject measured values or instruct AI to estimate
+  // Centering block — three tiers: overlay image (best), text values only, or visual estimate
   let centeringBlock;
-  if (centeringData && centeringData.lr && centeringData.tb) {
-    centeringBlock = `4. CENTERING (pre-measured from original scan geometry):
+  if (hasCenteringOverlay && centeringData && centeringData.lr) {
+    centeringBlock = `4. CENTERING — See the centering overlay (image ${imageRefs.centering}).
+   The dashed lines show exactly where the card's printed borders end on each side — the same measurement PSA and TAG perform on every card.
+   Algorithmically computed values:
+     Front Left/Right: ${centeringData.lr}
+     Front Top/Bottom: ${centeringData.tb || 'see overlay'}
+   Use these exact values in your front_centering field. Do NOT re-estimate from the full card image.
+   For back centering: visually inspect if the reverse is visible in image ${imageRefs.fullCard}; otherwise write "not assessed".`;
+  } else if (centeringData && centeringData.lr) {
+    centeringBlock = `4. CENTERING (algorithmically measured from printed border widths):
    Front Left/Right: ${centeringData.lr}
-   Front Top/Bottom: ${centeringData.tb}
-   These values were computed from the card's position in the original photo before cropping. Use these exact values for front centering in your response and factor them into the grade using PSA centering thresholds.
-   For back centering: visually inspect if the card back is visible in the image; otherwise note "not assessed".`;
+   Front Top/Bottom: ${centeringData.tb || 'not measured'}
+   These values were computed by scanning inward from each card edge to find where the printed border meets the artwork — the same methodology PSA uses. Use these exact values in your front_centering field.
+   For back centering: visually inspect if the reverse is visible; otherwise write "not assessed".`;
   } else {
-    centeringBlock = `4. CENTERING — This card image has been pre-cropped with artificial uniform padding. Do NOT measure from the image edges — those are artificial.
-   Look for the card's own PRINTED borders within the image:
-   - FRONT centering: estimate left/right and top/bottom border ratios from the card's own printed border widths (e.g. "52/48 L/R, 54/46 T/B"). The larger number goes first.
-   - BACK centering: if the card back is visible assess it separately; otherwise note "not assessed".
-   - Full-bleed art (no visible printed borders): respond "50/50 L/R, 50/50 T/B" and note centering cannot be assessed due to full-bleed design.`;
+    centeringBlock = `4. CENTERING — Automated measurement was not available (likely full-bleed art or raw image).
+   Look at the card's own PRINTED borders within the full card image (image ${imageRefs.fullCard}):
+   - FRONT: estimate left/right and top/bottom border ratios from the printed border widths (e.g. "52/48 L/R, 54/46 T/B").
+   - BACK: if the reverse is visible assess it; otherwise write "not assessed".
+   - Full-bleed art with no visible printed borders: write "50/50 L/R, 50/50 T/B" and note in summary that centering cannot be measured.`;
   }
 
   return `You are an expert trading card grader with 20 years of experience grading cards for PSA and BGS.
@@ -219,19 +239,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageData, cornerRegionData, centeringData } = req.body;
+    const { imageData, cornerRegionData, centeringData, centeringImageData } = req.body;
     if (!imageData) return res.status(400).json({ error: 'Missing image data' });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Server configuration error' });
 
-    // Build content array — dual-image when corner grid is available
-    const contentParts = [
-      {
+    // Build content array — image order matches numbering in the prompt:
+    // 1. Centering overlay (when available) — sent first so Claude sees measurements first
+    // 2. Full card image — always present
+    // 3. Corner grid (when available)
+    const contentParts = [];
+
+    if (centeringImageData) {
+      contentParts.push({
         type:   'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
-      }
-    ];
+        source: { type: 'base64', media_type: 'image/jpeg', data: centeringImageData }
+      });
+    }
+
+    contentParts.push({
+      type:   'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
+    });
 
     if (cornerRegionData) {
       contentParts.push({
@@ -240,8 +270,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Build prompt dynamically based on available metadata
-    const prompt = buildGradePrompt(!!cornerRegionData, centeringData || null);
+    // Build prompt dynamically based on available inputs
+    const prompt = buildGradePrompt(!!centeringImageData, !!cornerRegionData, centeringData || null);
     contentParts.push({ type: 'text', text: prompt });
 
     const requestBody = JSON.stringify({
