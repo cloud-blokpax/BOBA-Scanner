@@ -258,8 +258,8 @@ async function _bulkFetch(refetchAll) {
     if (done < targets.length) await new Promise(r => setTimeout(r, 400));
   }
 
-  if (typeof syncToCloud === 'function') syncToCloud();
-  renderCards();
+  if (typeof window.syncToCloud === 'function') window.syncToCloud();
+  if (typeof window.renderCards === 'function') window.renderCards();
   showToast(`Prices refreshed for ${done} cards`, '✅');
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Re-fetch all prices'; }
 }

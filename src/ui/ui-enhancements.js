@@ -9,9 +9,12 @@ import { showToast } from './toast.js';
 // INITIALIZATION
 // ========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+// ES modules are deferred — DOMContentLoaded may have already fired.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => initializeUIEnhancements());
+} else {
     initializeUIEnhancements();
-});
+}
 
 function initializeUIEnhancements() {
     setupFloatingActionButton();

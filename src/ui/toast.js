@@ -38,3 +38,7 @@ export function setProgress(percent) {
         progressFill.style.width = `${percent}%`;
     }
 }
+
+// Expose on window for lazy-loaded modules that can't use ES imports
+window.showToast   = showToast;
+window.showLoading = showLoading;

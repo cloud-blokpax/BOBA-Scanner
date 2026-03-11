@@ -1,8 +1,9 @@
 // js/grader.js — AI Condition Grader
 // Estimates PSA/BGS card grade using Claude Vision via /api/grade
 
-// Resolve escapeHtml from window (defined in ui.js core bundle)
-const escapeHtml = (...args) => window.escapeHtml(...args);
+import { compressImageForGrading, cropGradingRegions } from '../../core/scanner/image-processing.js';
+import { showToast, showLoading } from '../../ui/toast.js';
+import { escapeHtml } from '../../ui/utils.js';
 
 // ── Grade a card from a base64 image ─────────────────────────────────────────
 async function gradeCard(imageData, cornerRegionData = null, centeringData = null) {
@@ -10,7 +11,7 @@ async function gradeCard(imageData, cornerRegionData = null, centeringData = nul
   const apiBase = cfg.apiBase || 'https://boba.cards/api';
 
   const headers = { 'Content-Type': 'application/json' };
-  const apiToken = cfg.apiToken || (typeof getApiToken === 'function' ? getApiToken() : null);
+  const apiToken = cfg.apiToken || (typeof window.getApiToken === 'function' ? window.getApiToken() : null);
   if (apiToken) headers['X-Api-Token'] = apiToken;
 
   const bodyObj = { imageData };
@@ -140,14 +141,10 @@ async function prepareGradingImages(cardOrUrl) {
     return r.blob();
   });
   // Use higher-quality compression for grading (2000px, quality 0.92)
-  const imageData = (typeof compressImageForGrading === 'function')
-    ? await compressImageForGrading(blob)
-    : await urlToBase64(url);
+  const imageData = await compressImageForGrading(blob);
   // Generate 2×2 corner grid — pass cardBounds so corners are extracted
   // from the actual card area, not the artificial padding
-  const cornerRegionData = (typeof cropGradingRegions === 'function')
-    ? await cropGradingRegions(blob, cardBounds).catch(() => null)
-    : null;
+  const cornerRegionData = await cropGradingRegions(blob, cardBounds).catch(() => null);
   return { imageData, cornerRegionData, centeringData };
 }
 
@@ -205,18 +202,18 @@ async function gradeCardByIndex(index) {
 
 // ── Grade from More menu (show card picker first) ─────────────────────────────
 function triggerGradeCardWithPicker() {
-  if (!isFeatureEnabled('condition_grader')) {
+  if (!window.isFeatureEnabled('condition_grader')) {
     showToast('Condition Grader requires membership', '🔒');
     return;
   }
-  showCardPickerModal('🔬 Grade Card', 'Select a card to grade', async (index) => {
+  window.showCardPickerModal('🔬 Grade Card', 'Select a card to grade', async (index) => {
     await gradeCardFromDetail(index);
   });
 }
 
 // ── triggerGradeCard: still works if a scan image is visible, else shows picker
 async function triggerGradeCard() {
-  if (!isFeatureEnabled('condition_grader')) {
+  if (!window.isFeatureEnabled('condition_grader')) {
     showToast('Condition Grader requires membership', '🔒');
     return;
   }
