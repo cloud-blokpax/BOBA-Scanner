@@ -48,6 +48,10 @@ self.addEventListener('fetch', (event) => {
   // Skip non-http(s) schemes (e.g. chrome-extension://)
   if (!url.protocol.startsWith('http')) return;
 
+  // Skip cross-origin requests (fonts, external images, etc.)
+  // Let the browser handle these directly — avoids CSP connect-src issues
+  if (url.origin !== self.location.origin) return;
+
   // API calls — always network, never cache
   if (url.pathname.startsWith('/api/')) return;
 
@@ -64,13 +68,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // App shell (same origin) — stale-while-revalidate
-  if (url.origin === self.location.origin) {
-    event.respondWith(staleWhileRevalidate(event.request));
-    return;
-  }
-
-  // External resources (CDN, fonts) — cache-first
-  event.respondWith(cacheFirst(event.request));
+  event.respondWith(staleWhileRevalidate(event.request));
 });
 
 // ── Caching strategies ──────────────────────────────────────────────────────
