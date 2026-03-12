@@ -12,7 +12,7 @@
 	let searchQuery = $state('');
 	let sortBy = $state<'name' | 'added' | 'power'>('added');
 
-	const filteredItems = $derived(() => {
+	const filteredItems = $derived.by(() => {
 		let result = items;
 
 		if (searchQuery) {
@@ -25,7 +25,7 @@
 			);
 		}
 
-		return result.sort((a, b) => {
+		return [...result].sort((a, b) => {
 			switch (sortBy) {
 				case 'name':
 					return (a.card?.name || '').localeCompare(b.card?.name || '');
@@ -55,7 +55,7 @@
 	</div>
 
 	<div class="card-grid">
-		{#each filteredItems() as item (item.id)}
+		{#each filteredItems as item (item.id)}
 			<button
 				class="card-tile"
 				onclick={() => onCardClick?.(item)}

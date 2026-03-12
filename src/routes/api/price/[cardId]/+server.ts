@@ -8,6 +8,7 @@
  */
 
 import { json, error } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
 let _ebayToken: string | null = null;
@@ -16,8 +17,8 @@ let _ebayTokenExp = 0;
 async function getEbayToken(): Promise<string> {
 	if (_ebayToken && Date.now() < _ebayTokenExp) return _ebayToken;
 
-	const clientId = process.env.EBAY_CLIENT_ID;
-	const clientSecret = process.env.EBAY_CLIENT_SECRET;
+	const clientId = env.EBAY_CLIENT_ID;
+	const clientSecret = env.EBAY_CLIENT_SECRET;
 	if (!clientId || !clientSecret) {
 		throw new Error('eBay credentials not configured');
 	}

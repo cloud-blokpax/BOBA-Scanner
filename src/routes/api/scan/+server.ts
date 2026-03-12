@@ -6,17 +6,25 @@
  */
 
 import { json, error } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { checkScanRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
 const MAX_FILE_SIZE = 10_000_000; // 10MB
 const MAX_PIXELS = 16_000_000; // 16 megapixels (pixel bomb protection)
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-const anthropic = new Anthropic({ apiKey: CLAUDE_API_KEY });
+let _anthropic: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+	if (!_anthropic) {
+		const apiKey = env.CLAUDE_API_KEY ?? env.ANTHROPIC_API_KEY ?? '';
+		_anthropic = new Anthropic({ apiKey });
+	}
+	return _anthropic;
+}
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	// ── Auth check ──────────────────────────────────────────
@@ -84,7 +92,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// ── Claude API call ─────────────────────────────────────
 	try {
-		const response = await anthropic.messages.create({
+		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
 			max_tokens: 256,
 			messages: [
