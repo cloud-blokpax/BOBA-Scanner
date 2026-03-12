@@ -3,7 +3,9 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const code = url.searchParams.get('code');
-	const redirectTo = url.searchParams.get('redirectTo') ?? '/';
+	const rawRedirect = url.searchParams.get('redirectTo') ?? '/';
+	// Prevent open redirect: only allow relative paths on the same origin
+	const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
 
 	if (code) {
 		const { error } = await locals.supabase.auth.exchangeCodeForSession(code);

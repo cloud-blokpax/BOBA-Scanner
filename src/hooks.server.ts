@@ -65,7 +65,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	const isProtected = protectedRoutes.some((route) => event.url.pathname.startsWith(route));
 
 	if (isProtected && !event.locals.user) {
-		throw redirect(303, '/auth/login?redirectTo=' + event.url.pathname);
+		throw redirect(303, '/auth/login?redirectTo=' + encodeURIComponent(event.url.pathname));
 	}
 
 	return resolve(event);

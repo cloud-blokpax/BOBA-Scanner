@@ -13,12 +13,19 @@
 	} = $props();
 
 	let adding = $state(false);
+	let addError = $state<string | null>(null);
+	let addSuccess = $state(false);
 
 	async function handleAdd() {
 		if (!result?.card) return;
 		adding = true;
+		addError = null;
+		addSuccess = false;
 		try {
 			await addToCollection(result.card.id);
+			addSuccess = true;
+		} catch (err) {
+			addError = err instanceof Error ? err.message : 'Failed to add card';
 		} finally {
 			adding = false;
 		}
@@ -78,9 +85,13 @@
 					</span>
 				</div>
 
+				{#if addError}
+					<p class="add-error">{addError}</p>
+				{/if}
+
 				<div class="result-actions">
-					<button class="btn-primary" onclick={handleAdd} disabled={adding}>
-						{adding ? 'Adding...' : 'Add to Collection'}
+					<button class="btn-primary" onclick={handleAdd} disabled={adding || addSuccess}>
+						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Add to Collection'}
 					</button>
 					<button class="btn-secondary" onclick={onScanAnother}>
 						Scan Another
@@ -209,6 +220,12 @@
 		background: transparent;
 		border: 1px solid var(--border-color, #1e293b);
 		color: var(--text-primary, #f1f5f9);
+	}
+
+	.add-error {
+		color: #ef4444;
+		font-size: 0.85rem;
+		margin-bottom: 0.5rem;
 	}
 
 	.result-fail {
