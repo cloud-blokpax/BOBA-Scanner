@@ -1,0 +1,141 @@
+/**
+ * Rate Limiting
+ *
+ * Primary: Upstash Redis (@upstash/ratelimit)
+ * Fallback: In-memory Map (for when Redis is unavailable)
+ *
+ * Budget: ~2K Redis commands/day for rate limiting.
+ */
+
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
+import { env } from '$env/dynamic/private';
+
+// ── Upstash Rate Limiters ───────────────────────────────────
+
+let scanLimiter: Ratelimit | null = null;
+let collectionLimiter: Ratelimit | null = null;
+
+function initLimiters() {
+	if (scanLimiter) return;
+
+	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
+	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
+	if (!upstashUrl || !upstashToken) return;
+
+	const redis = new Redis({ url: upstashUrl, token: upstashToken });
+
+	// 20 scans per 60 seconds per user
+	scanLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(20, '60 s'),
+		prefix: 'rl:scan'
+	});
+
+	// 60 collection updates per 60 seconds per user
+	collectionLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(60, '60 s'),
+		prefix: 'rl:col'
+	});
+}
+
+// ── In-Memory Fallback ──────────────────────────────────────
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const WINDOW_MS = 60_000;
+const MAX_SCAN_REQUESTS = 20;
+const MAX_COLLECTION_REQUESTS = 60;
+
+function checkInMemory(key: string, maxRequests: number): boolean {
+	const now = Date.now();
+	const userData = rateLimitMap.get(key) || { count: 0, windowStart: now };
+
+	if (now - userData.windowStart > WINDOW_MS) {
+		userData.count = 1;
+		userData.windowStart = now;
+	} else {
+		userData.count++;
+	}
+
+	rateLimitMap.set(key, userData);
+
+	// Cleanup old entries periodically
+	if (rateLimitMap.size > 1000) {
+		for (const [k, v] of rateLimitMap) {
+			if (now - v.windowStart > WINDOW_MS * 2) rateLimitMap.delete(k);
+		}
+	}
+
+	return userData.count <= maxRequests;
+}
+
+// ── Public API ──────────────────────────────────────────────
+
+export interface RateLimitResult {
+	success: boolean;
+	limit: number;
+	remaining: number;
+	reset: number;
+}
+
+/**
+ * Check scan rate limit for a user.
+ */
+export async function checkScanRateLimit(userId: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (scanLimiter) {
+		try {
+			const result = await scanLimiter.limit(userId);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch {
+			// Fall through to in-memory
+		}
+	}
+
+	// In-memory fallback
+	const key = `scan:${userId}`;
+	const success = checkInMemory(key, MAX_SCAN_REQUESTS);
+	return {
+		success,
+		limit: MAX_SCAN_REQUESTS,
+		remaining: success ? MAX_SCAN_REQUESTS - (rateLimitMap.get(key)?.count || 0) : 0,
+		reset: Date.now() + WINDOW_MS
+	};
+}
+
+/**
+ * Check collection update rate limit for a user.
+ */
+export async function checkCollectionRateLimit(userId: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (collectionLimiter) {
+		try {
+			const result = await collectionLimiter.limit(userId);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch {
+			// Fall through to in-memory
+		}
+	}
+
+	const key = `col:${userId}`;
+	const success = checkInMemory(key, MAX_COLLECTION_REQUESTS);
+	return {
+		success,
+		limit: MAX_COLLECTION_REQUESTS,
+		remaining: success ? MAX_COLLECTION_REQUESTS - (rateLimitMap.get(key)?.count || 0) : 0,
+		reset: Date.now() + WINDOW_MS
+	};
+}

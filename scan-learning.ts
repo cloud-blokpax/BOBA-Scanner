@@ -1,0 +1,102 @@
+/**
+ * Camera Service — getUserMedia wrapper
+ *
+ * Handles:
+ *   - Environment-facing camera selection
+ *   - iOS/Android compatibility
+ *   - Torch/flashlight toggle
+ *   - Stream lifecycle
+ */
+
+let currentStream: MediaStream | null = null;
+
+export interface CameraConfig {
+	facingMode?: 'environment' | 'user';
+	width?: number;
+	height?: number;
+	frameRate?: number;
+}
+
+const DEFAULT_CONFIG: CameraConfig = {
+	facingMode: 'environment',
+	width: 1280,
+	height: 720,
+	frameRate: 30
+};
+
+/**
+ * Start the camera and return the MediaStream.
+ */
+export async function startCamera(config: CameraConfig = {}): Promise<MediaStream> {
+	await stopCamera();
+
+	const settings = { ...DEFAULT_CONFIG, ...config };
+
+	const constraints: MediaStreamConstraints = {
+		video: {
+			facingMode: settings.facingMode,
+			width: { ideal: settings.width },
+			height: { ideal: settings.height },
+			frameRate: { ideal: settings.frameRate }
+		},
+		audio: false
+	};
+
+	try {
+		currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+	} catch {
+		// Fallback: try without specific constraints
+		currentStream = await navigator.mediaDevices.getUserMedia({
+			video: { facingMode: settings.facingMode },
+			audio: false
+		});
+	}
+
+	return currentStream;
+}
+
+/**
+ * Stop the camera and release resources.
+ */
+export async function stopCamera(): Promise<void> {
+	if (currentStream) {
+		currentStream.getTracks().forEach((track) => track.stop());
+		currentStream = null;
+	}
+}
+
+/**
+ * Toggle the torch/flashlight.
+ */
+export async function toggleTorch(enabled: boolean): Promise<boolean> {
+	if (!currentStream) return false;
+
+	const track = currentStream.getVideoTracks()[0];
+	if (!track) return false;
+
+	try {
+		await track.applyConstraints({
+			// @ts-expect-error - torch is a non-standard constraint
+			advanced: [{ torch: enabled }]
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Capture a frame from the current video stream.
+ */
+export function captureFrame(
+	video: HTMLVideoElement
+): ImageBitmap | Promise<ImageBitmap> {
+	return createImageBitmap(video);
+}
+
+/**
+ * Check if the camera is currently active.
+ */
+export function isCameraActive(): boolean {
+	return currentStream !== null && currentStream.active;
+}
