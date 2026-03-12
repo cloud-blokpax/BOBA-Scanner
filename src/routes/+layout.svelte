@@ -71,7 +71,7 @@
 			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
 				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
 				<a href="/set-completion" class="more-item" onclick={() => (showMore = false)}>Set Completion</a>
-			<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
+				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
 				{#if data.user}
