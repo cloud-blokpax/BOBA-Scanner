@@ -177,7 +177,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		contentParts.push({ type: 'text', text: prompt });
 
 		const requestBody = JSON.stringify({
-			model: 'claude-sonnet-4-6',
+			model: 'claude-sonnet-4-6-20250514',
 			max_tokens: 1024,
 			messages: [{ role: 'user', content: contentParts }]
 		});

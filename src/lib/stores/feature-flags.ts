@@ -44,17 +44,6 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: true,
 		enabled_for_member: true,
 		enabled_for_admin: true
-	},
-	{
-		feature_key: 'ebay_lister',
-		display_name: 'One-Tap eBay Lister',
-		description: 'AI writes eBay listing title, description, and suggests pricing',
-		icon: '🛒',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: false,
-		enabled_for_member: true,
-		enabled_for_admin: true
 	}
 ];
 

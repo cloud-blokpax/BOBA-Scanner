@@ -62,7 +62,6 @@
 					ebayAvgPrice: '',
 					ebayLowPrice: '',
 					listingPrice: '',
-					suggestedPrice: '',
 					ebaySearchUrl: ''
 				};
 			});

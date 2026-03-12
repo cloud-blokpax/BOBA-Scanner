@@ -167,7 +167,7 @@ export default async function handler(req, res) {
 ### Updating the Database
 
 1. **Edit the CSV**
-   - Update `radishcarddatabase.csv` with new cards
+   - Update the card database CSV with new cards
 
 2. **Convert to JSON**
    - Use the CSV to JSON converter artifact
