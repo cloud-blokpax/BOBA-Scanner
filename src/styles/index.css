@@ -28,7 +28,40 @@
   --surface-secondary: #0d1524;
 
   --success: #10b981;
+  --success-light: rgba(16, 185, 129, 0.12);
   --danger: #ef4444;
+  --danger-light: rgba(239, 68, 68, 0.12);
+  --warning: #f59e0b;
+  --warning-light: rgba(245, 158, 11, 0.12);
+
+  /* Rarity colors */
+  --rarity-common: #9CA3AF;
+  --rarity-uncommon: #22C55E;
+  --rarity-rare: #3B82F6;
+  --rarity-epic: #A855F7;
+  --rarity-legendary: #F59E0B;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  /* Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Z-index */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-tooltip: 1070;
+
+  /* Bottom nav safe area */
+  --bottom-nav-height: 68px;
+  --safe-bottom: env(safe-area-inset-bottom, 20px);
 }
 
 /* ── Reset ─────────────────────────────────────────────── */
