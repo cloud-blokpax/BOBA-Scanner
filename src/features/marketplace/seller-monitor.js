@@ -3,6 +3,7 @@
 //
 // Resolve escapeHtml from window (defined in ui.js core bundle)
 const escapeHtml = (...args) => window.escapeHtml(...args);
+const showToast = (...args) => window.showToast(...args);
 
 // Polls your eBay seller listings via /api/ebay-browse and
 // matches them against your collection cards.

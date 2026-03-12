@@ -65,28 +65,6 @@ const FEATURE_DEFINITIONS = [
     enabled_for_authenticated: false,
     enabled_for_member: true,
     enabled_for_admin: true
-  },
-  {
-    feature_key: 'portfolio_tracker',
-    display_name: 'Portfolio Time Machine',
-    description: 'Track your collection value over time with price history charts',
-    icon: '📈',
-    enabled_globally: false,
-    enabled_for_guest: false,
-    enabled_for_authenticated: false,
-    enabled_for_member: true,
-    enabled_for_admin: true
-  },
-  {
-    feature_key: 'trade_advisor',
-    display_name: 'Smart Trade Advisor',
-    description: 'Claude analyzes market trends and tells you which cards to sell, hold, or trade',
-    icon: '🧠',
-    enabled_globally: false,
-    enabled_for_guest: false,
-    enabled_for_authenticated: false,
-    enabled_for_member: true,
-    enabled_for_admin: true
   }
 ];
 

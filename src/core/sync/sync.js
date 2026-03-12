@@ -3,7 +3,6 @@
 import { getCollections, saveCollections } from '../collection/collections.js';
 import { currentUser, isGuestMode } from '../auth/user-management.js';
 import { showToast } from '../../ui/toast.js';
-import { escapeHtml } from '../../ui/utils.js';
 import { getAllTags, saveAllTags } from '../../features/tags/tags.js';
 import { renderCards } from '../../ui/cards-grid.js';
 import { updateStats } from '../../ui/stats-strip.js';
@@ -459,50 +458,8 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeCollectionModal();
 });
 
-// Legacy stub — real implementation in tags.js
-function _syncRenderCollectionModal_LEGACY() {
-    const body  = document.getElementById('collectionModalBody');
-    const count = document.getElementById('collectionCount');
-    if (!body) return;
-
-    const allCards = [];
-    for (const col of getCollections()) {
-        for (const card of col.cards) allCards.push(card);
-    }
-    allCards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    if (count) count.textContent = `(${allCards.length} card${allCards.length !== 1 ? 's' : ''})`;
-
-    if (allCards.length === 0) {
-        body.innerHTML = `
-            <div class="collection-empty">
-                <div class="collection-empty-icon">📭</div>
-                <h3>No cards yet</h3>
-                <p>Scan your first card to get started!</p>
-            </div>`;
-        return;
-    }
-
-    body.innerHTML = `<div class="collection-grid">${allCards.map(card => {
-        const hasImage = card.imageUrl && !card.imageUrl.startsWith('blob:') && card.imageUrl.length > 10;
-        return `
-            <div class="collection-card">
-                ${hasImage
-                    ? `<img class="collection-card-image" src="${card.imageUrl}" alt="${escapeHtml(card.cardNumber)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-                    : ''}
-                <div class="collection-card-image no-image" style="${hasImage ? 'display:none' : ''}">🎴</div>
-                <div class="collection-card-info">
-                    <div class="collection-card-name">${escapeHtml(card.hero || 'Unknown')}</div>
-                    <div class="collection-card-meta">${escapeHtml(card.cardNumber || '')} · ${escapeHtml(card.set || '')}</div>
-                    <span class="collection-card-badge ${card.scanType === 'ocr' ? 'free' : 'ai'}">
-                        ${card.scanType === 'ocr' ? 'Free OCR' : 'AI'}
-                    </span>
-                </div>
-            </div>`;
-    }).join('')}</div>`;
-}
-
 window.forceSync = forceSync;
+window.recordDeletedCard = recordDeletedCard;
 
 export { setupAutoSync, schedulePush, forceSync, recordDeletedCard, closeCollectionModal };
 
