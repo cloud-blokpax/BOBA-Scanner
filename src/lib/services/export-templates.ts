@@ -41,7 +41,6 @@ export const EXPORT_FIELDS: ExportField[] = [
 	{ key: 'ebayAvgPrice', label: 'eBay Avg Price', default: false },
 	{ key: 'ebayLowPrice', label: 'eBay Low Price', default: false },
 	{ key: 'listingPrice', label: 'Listing Price', default: false },
-	{ key: 'suggestedPrice', label: 'Suggested Price', default: false },
 	{ key: 'ebaySearchUrl', label: 'eBay Search URL', default: false },
 	{ key: 'rarity', label: 'Rarity', default: false }
 ];
