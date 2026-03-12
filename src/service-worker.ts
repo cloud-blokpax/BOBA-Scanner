@@ -43,6 +43,13 @@ self.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
 	if (url.pathname.startsWith('/api/')) return;
 
+	// Skip non-http(s) schemes (e.g. chrome-extension://)
+	if (!url.protocol.startsWith('http')) return;
+
+	// Skip cross-origin requests (fonts, external images, etc.)
+	// Let the browser handle these directly — avoids CSP connect-src issues
+	if (url.origin !== self.location.origin) return;
+
 	// Cache-first for app assets (build outputs, static files)
 	if (ASSETS.includes(url.pathname)) {
 		event.respondWith(
