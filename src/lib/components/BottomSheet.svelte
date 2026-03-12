@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { addToCollection } from '$lib/stores/collection';
+	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
 	import type { ScanResult } from '$lib/types';
 
 	let {
@@ -15,6 +15,14 @@
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 	let addSuccess = $state(false);
+	let showConfetti = $state(false);
+
+	const ownedCount = $derived(
+		result?.card ? ($ownedCardCounts.get(result.card.id) || 0) : 0
+	);
+
+	const isOwned = $derived(ownedCount > 0);
+	const isLowConfidence = $derived(result ? result.confidence < 0.7 : false);
 
 	async function handleAdd() {
 		if (!result?.card) return;
@@ -24,11 +32,24 @@
 		try {
 			await addToCollection(result.card.id);
 			addSuccess = true;
+			triggerHaptic();
+			triggerConfetti();
 		} catch (err) {
 			addError = err instanceof Error ? err.message : 'Failed to add card';
 		} finally {
 			adding = false;
 		}
+	}
+
+	function triggerHaptic() {
+		if ('vibrate' in navigator) {
+			navigator.vibrate([30, 50, 30]);
+		}
+	}
+
+	function triggerConfetti() {
+		showConfetti = true;
+		setTimeout(() => { showConfetti = false; }, 800);
 	}
 
 	function methodLabel(method: string): string {
@@ -52,7 +73,14 @@
 		{#if result.card}
 			<div class="result-success">
 				<div class="result-header">
-					<h2>{result.card.name}</h2>
+					<div class="result-title-row">
+						<h2>{result.card.name}</h2>
+						{#if isOwned}
+							<span class="ownership-badge owned">In Collection x{ownedCount}</span>
+						{:else}
+							<span class="ownership-badge new-card">New!</span>
+						{/if}
+					</div>
 					{#if result.card.card_number}
 						<span class="result-number">#{result.card.card_number}</span>
 					{/if}
@@ -68,7 +96,17 @@
 					{#if result.card.power}
 						<span class="meta-pill power">PWR {result.card.power}</span>
 					{/if}
+					{#if result.card.rarity}
+						<span class="meta-pill rarity rarity-{result.card.rarity}">{result.card.rarity.replace('_', ' ')}</span>
+					{/if}
 				</div>
+
+				{#if isLowConfidence}
+					<div class="confidence-warning">
+						<span class="warning-icon">!</span>
+						<span>Low confidence ({Math.round(result.confidence * 100)}%) — please verify this is the correct card</span>
+					</div>
+				{/if}
 
 				<div class="result-stats">
 					<span class="stat-item">
@@ -77,7 +115,7 @@
 					</span>
 					<span class="stat-item">
 						<span class="stat-label">Confidence</span>
-						<span class="stat-value">{Math.round(result.confidence * 100)}%</span>
+						<span class="stat-value" class:low-conf={isLowConfidence}>{Math.round(result.confidence * 100)}%</span>
 					</span>
 					<span class="stat-item">
 						<span class="stat-label">Time</span>
@@ -90,9 +128,29 @@
 				{/if}
 
 				<div class="result-actions">
-					<button class="btn-primary" onclick={handleAdd} disabled={adding || addSuccess}>
-						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Add to Collection'}
-					</button>
+					<div class="add-btn-wrapper">
+						<button class="btn-primary" class:success-added={addSuccess} onclick={handleAdd} disabled={adding || addSuccess}>
+							{#if adding}
+								Adding...
+							{:else if addSuccess}
+								Added!
+							{:else if isOwned}
+								Add Another Copy
+							{:else}
+								Add to Collection
+							{/if}
+						</button>
+						{#if showConfetti}
+							<div class="confetti-container">
+								<span class="confetti-dot" style="--angle: 0deg; --dist: 28px; --color: var(--accent-primary)"></span>
+								<span class="confetti-dot" style="--angle: 60deg; --dist: 24px; --color: var(--success)"></span>
+								<span class="confetti-dot" style="--angle: 120deg; --dist: 30px; --color: var(--accent-gold)"></span>
+								<span class="confetti-dot" style="--angle: 180deg; --dist: 22px; --color: var(--accent-primary)"></span>
+								<span class="confetti-dot" style="--angle: 240deg; --dist: 26px; --color: var(--success)"></span>
+								<span class="confetti-dot" style="--angle: 300deg; --dist: 32px; --color: var(--accent-gold)"></span>
+							</div>
+						{/if}
+					</div>
 					<button class="btn-secondary" onclick={onScanAnother}>
 						Scan Another
 					</button>
@@ -240,5 +298,130 @@
 	.result-fail p {
 		color: var(--text-secondary, #94a3b8);
 		margin-bottom: 1rem;
+	}
+
+	/* ── Ownership badges ── */
+	.result-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		flex-wrap: wrap;
+	}
+
+	.ownership-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.2rem 0.6rem;
+		border-radius: 10px;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		animation: badge-appear 0.4s ease-out;
+	}
+
+	.ownership-badge.owned {
+		background: var(--accent-primary-dim, rgba(59, 130, 246, 0.1));
+		color: var(--accent-primary, #3b82f6);
+		border: 1px solid rgba(59, 130, 246, 0.25);
+	}
+
+	.ownership-badge.new-card {
+		background: var(--success-light, rgba(16, 185, 129, 0.12));
+		color: var(--success, #10b981);
+		border: 1px solid rgba(16, 185, 129, 0.25);
+	}
+
+	/* ── Low confidence warning ── */
+	.confidence-warning {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		margin: 0.75rem 0;
+		border-radius: 8px;
+		background: var(--warning-light, rgba(245, 158, 11, 0.12));
+		border: 1px solid rgba(245, 158, 11, 0.25);
+		font-size: 0.8rem;
+		color: var(--warning, #f59e0b);
+		animation: slide-up-fade 0.3s ease-out;
+	}
+
+	.warning-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--warning, #f59e0b);
+		color: #000;
+		font-size: 0.7rem;
+		font-weight: 800;
+		flex-shrink: 0;
+	}
+
+	.low-conf {
+		color: var(--warning, #f59e0b);
+	}
+
+	/* ── Rarity pill colors ── */
+	.rarity.rarity-common { color: var(--rarity-common, #9CA3AF); }
+	.rarity.rarity-uncommon { color: var(--rarity-uncommon, #22C55E); }
+	.rarity.rarity-rare { color: var(--rarity-rare, #3B82F6); }
+	.rarity.rarity-ultra_rare { color: var(--rarity-epic, #A855F7); }
+	.rarity.rarity-legendary { color: var(--rarity-legendary, #F59E0B); }
+
+	/* ── Add button success animation ── */
+	.success-added {
+		background: var(--success, #10b981) !important;
+		animation: success-pop 0.35s ease-out;
+	}
+
+	.add-btn-wrapper {
+		flex: 1;
+		position: relative;
+	}
+
+	.add-btn-wrapper .btn-primary {
+		width: 100%;
+	}
+
+	/* ── Confetti burst ── */
+	.confetti-container {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		pointer-events: none;
+	}
+
+	.confetti-dot {
+		position: absolute;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color);
+		transform-origin: center;
+		animation: confetti-fly 0.7s ease-out forwards;
+	}
+
+	@keyframes confetti-fly {
+		0% {
+			opacity: 1;
+			transform: translate(0, 0) scale(0);
+		}
+		50% {
+			opacity: 1;
+			transform: translate(
+				calc(cos(var(--angle)) * var(--dist)),
+				calc(sin(var(--angle)) * var(--dist))
+			) scale(1);
+		}
+		100% {
+			opacity: 0;
+			transform: translate(
+				calc(cos(var(--angle)) * var(--dist) * 1.5),
+				calc(sin(var(--angle)) * var(--dist) * 1.5)
+			) scale(0.5);
+		}
 	}
 </style>

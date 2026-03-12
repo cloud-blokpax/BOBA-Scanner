@@ -14,6 +14,8 @@
 	let torchOn = $state(false);
 	let cameraReady = $state(false);
 	let scanning = $state(false);
+	let scanSuccess = $state(false);
+	let scanFailed = $state(false);
 
 	const statusText = $derived.by(() => {
 		const state = $scanState;
@@ -27,13 +29,27 @@
 			case 'processing':
 				return 'Processing...';
 			case 'complete':
-				return 'Done!';
+				return 'Card found!';
 			case 'error':
-				return state.error || 'Error';
+				return state.error || 'Scan failed — try again';
 			default:
 				return 'Point camera at card';
 		}
 	});
+
+	const statusType = $derived.by(() => {
+		const state = $scanState;
+		if (state.status === 'complete') return 'success';
+		if (state.status === 'error') return 'error';
+		if (['tier1', 'tier2', 'tier3', 'processing', 'capturing'].includes(state.status)) return 'scanning';
+		return 'idle';
+	});
+
+	function triggerHaptic(pattern: number[] = [15]) {
+		if ('vibrate' in navigator) {
+			navigator.vibrate(pattern);
+		}
+	}
 
 	onMount(async () => {
 		try {
@@ -56,12 +72,23 @@
 	async function handleCapture() {
 		if (!videoEl || scanning) return;
 		scanning = true;
+		scanSuccess = false;
+		scanFailed = false;
+		triggerHaptic();
 
 		try {
 			const bitmap = await captureFrame(videoEl);
 			const result = await scanImage(bitmap);
-			if (result) {
+			if (result?.card) {
+				scanSuccess = true;
+				triggerHaptic([30, 60, 30]);
 				onResult?.(result);
+				setTimeout(() => { scanSuccess = false; }, 1200);
+			} else {
+				scanFailed = true;
+				triggerHaptic([50, 30, 50]);
+				if (result) onResult?.(result);
+				setTimeout(() => { scanFailed = false; }, 1200);
 			}
 		} finally {
 			scanning = false;
@@ -70,6 +97,7 @@
 
 	async function handleTorchToggle() {
 		torchOn = !torchOn;
+		triggerHaptic();
 		await toggleTorch(torchOn);
 	}
 
@@ -79,10 +107,20 @@
 		if (!file) return;
 
 		scanning = true;
+		scanSuccess = false;
+		scanFailed = false;
+
 		try {
 			const result = await scanImage(file);
-			if (result) {
+			if (result?.card) {
+				scanSuccess = true;
+				triggerHaptic([30, 60, 30]);
 				onResult?.(result);
+				setTimeout(() => { scanSuccess = false; }, 1200);
+			} else {
+				scanFailed = true;
+				if (result) onResult?.(result);
+				setTimeout(() => { scanFailed = false; }, 1200);
 			}
 		} finally {
 			scanning = false;
@@ -102,14 +140,17 @@
 			class="camera-feed"
 		></video>
 
-		<!-- Corner brackets -->
-		<div class="bracket top-left"></div>
-		<div class="bracket top-right"></div>
-		<div class="bracket bottom-left"></div>
-		<div class="bracket bottom-right"></div>
+		<!-- Corner brackets — flash green on success, red on fail -->
+		<div class="bracket top-left" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
+		<div class="bracket top-right" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
+		<div class="bracket bottom-left" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
+		<div class="bracket bottom-right" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
 
 		<!-- Status overlay -->
-		<div class="status-overlay">
+		<div class="status-overlay" class:status-success={statusType === 'success'} class:status-error={statusType === 'error'} class:status-scanning={statusType === 'scanning'}>
+			{#if statusType === 'scanning'}
+				<span class="status-spinner"></span>
+			{/if}
 			<span class="status-text">{statusText}</span>
 		</div>
 	</div>
@@ -210,6 +251,27 @@
 		border-bottom-right-radius: 8px;
 	}
 
+	/* Bracket animations */
+	.bracket-success {
+		animation: bracket-flash-success 1s ease-out;
+	}
+
+	.bracket-fail {
+		animation: bracket-flash-fail 0.8s ease-out;
+	}
+
+	@keyframes bracket-flash-success {
+		0% { border-color: var(--accent-primary, #3b82f6); }
+		25% { border-color: var(--success, #10b981); box-shadow: 0 0 16px rgba(16, 185, 129, 0.5); }
+		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+	}
+
+	@keyframes bracket-flash-fail {
+		0% { border-color: var(--accent-primary, #3b82f6); }
+		25% { border-color: var(--danger, #ef4444); box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
+		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+	}
+
 	.status-overlay {
 		position: absolute;
 		bottom: 2rem;
@@ -219,6 +281,36 @@
 		background: rgba(0, 0, 0, 0.7);
 		border-radius: 20px;
 		backdrop-filter: blur(8px);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		transition: background 0.3s, border-color 0.3s;
+		border: 1px solid transparent;
+	}
+
+	.status-overlay.status-success {
+		background: rgba(16, 185, 129, 0.15);
+		border-color: rgba(16, 185, 129, 0.3);
+	}
+
+	.status-overlay.status-error {
+		background: rgba(239, 68, 68, 0.15);
+		border-color: rgba(239, 68, 68, 0.3);
+	}
+
+	.status-overlay.status-scanning {
+		background: rgba(59, 130, 246, 0.12);
+		border-color: rgba(59, 130, 246, 0.2);
+	}
+
+	.status-spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: white;
+		border-radius: 50%;
+		animation: spin 0.7s linear infinite;
+		flex-shrink: 0;
 	}
 
 	.status-text {
