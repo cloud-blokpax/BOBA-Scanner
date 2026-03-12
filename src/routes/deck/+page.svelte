@@ -12,7 +12,7 @@
 		deckCards.reduce((sum, item) => sum + (item.card?.power || 0), 0)
 	);
 
-	const weaponCounts = $derived(() => {
+	const weaponCounts = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const item of deckCards) {
 			const weapon = item.card?.weapon_type || 'None';
@@ -58,7 +58,7 @@
 
 			<div class="deck-stats">
 				<span>Total Power: {totalPower}</span>
-				{#each Object.entries(weaponCounts()) as [weapon, count]}
+				{#each Object.entries(weaponCounts) as [weapon, count]}
 					<span class="weapon-stat">{weapon}: {count}</span>
 				{/each}
 			</div>

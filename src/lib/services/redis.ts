@@ -10,17 +10,17 @@
  */
 
 import { Redis } from '@upstash/redis';
+import { env } from '$env/dynamic/private';
 import type { HashCacheEntry } from '$lib/types';
-
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
 
 let redis: Redis | null = null;
 
 function getRedis(): Redis | null {
-	if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
+	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
+	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
+	if (!upstashUrl || !upstashToken) return null;
 	if (!redis) {
-		redis = new Redis({ url: UPSTASH_URL, token: UPSTASH_TOKEN });
+		redis = new Redis({ url: upstashUrl, token: upstashToken });
 	}
 	return redis;
 }

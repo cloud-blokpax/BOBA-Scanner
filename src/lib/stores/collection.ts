@@ -87,14 +87,15 @@ export async function addToCollection(
 
 	if (error) throw error;
 
+	const item = (data as unknown) as CollectionItem;
 	collectionItems.update((items) => {
 		const existing = items.findIndex(
 			(i) => i.card_id === cardId && i.condition === condition
 		);
 		if (existing >= 0) {
-			items[existing] = data as CollectionItem;
+			items[existing] = item;
 		} else {
-			items.unshift(data as CollectionItem);
+			items.unshift(item);
 		}
 		return items;
 	});
@@ -111,8 +112,8 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 
 	const { error } = await supabase
 		.from('collections_v2')
-		.update({ quantity })
-		.eq('id', itemId);
+		.update({ quantity } as never)
+		.eq('id' as never, itemId);
 
 	if (error) throw error;
 
@@ -125,7 +126,7 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
  * Remove a card from the collection.
  */
 export async function removeFromCollection(itemId: string): Promise<void> {
-	const { error } = await supabase.from('collections_v2').delete().eq('id', itemId);
+	const { error } = await supabase.from('collections_v2').delete().eq('id' as never, itemId);
 
 	if (error) throw error;
 

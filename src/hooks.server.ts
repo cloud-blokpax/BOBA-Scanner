@@ -1,21 +1,23 @@
 import { createServerClient } from '@supabase/ssr';
 import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
-
-const PUBLIC_SUPABASE_URL = process.env.PUBLIC_SUPABASE_URL ?? '';
-const PUBLIC_SUPABASE_ANON_KEY = process.env.PUBLIC_SUPABASE_ANON_KEY ?? '';
+import { env as publicEnv } from '$env/dynamic/public';
 
 const supabaseHandle: Handle = async ({ event, resolve }) => {
-	event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
-		cookies: {
-			getAll: () => event.cookies.getAll(),
-			setAll: (cookies) => {
-				cookies.forEach(({ name, value, options }) => {
-					event.cookies.set(name, value, { ...options, path: '/' });
-				});
+	event.locals.supabase = createServerClient(
+		publicEnv.PUBLIC_SUPABASE_URL ?? '',
+		publicEnv.PUBLIC_SUPABASE_ANON_KEY ?? '',
+		{
+			cookies: {
+				getAll: () => event.cookies.getAll(),
+				setAll: (cookies: Array<{ name: string; value: string; options: Record<string, unknown> }>) => {
+					cookies.forEach(({ name, value, options }) => {
+						event.cookies.set(name, value, { ...options, path: '/' });
+					});
+				}
 			}
 		}
-	});
+	);
 
 	/**
 	 * SECURITY: Always use getUser() for auth checks, never getSession() alone.

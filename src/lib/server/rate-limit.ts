@@ -9,9 +9,7 @@
 
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
-
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
+import { env } from '$env/dynamic/private';
 
 // ── Upstash Rate Limiters ───────────────────────────────────
 
@@ -20,9 +18,12 @@ let collectionLimiter: Ratelimit | null = null;
 
 function initLimiters() {
 	if (scanLimiter) return;
-	if (!UPSTASH_URL || !UPSTASH_TOKEN) return;
 
-	const redis = new Redis({ url: UPSTASH_URL, token: UPSTASH_TOKEN });
+	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
+	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
+	if (!upstashUrl || !upstashToken) return;
+
+	const redis = new Redis({ url: upstashUrl, token: upstashToken });
 
 	// 20 scans per 60 seconds per user
 	scanLimiter = new Ratelimit({

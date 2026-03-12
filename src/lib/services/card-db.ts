@@ -42,7 +42,7 @@ export async function loadCardDatabase(): Promise<Card[]> {
 		throw new Error('Card database unavailable');
 	}
 
-	cards = data as Card[];
+	cards = (data as unknown) as Card[];
 	buildIndexes();
 	isLoaded = true;
 

@@ -15,7 +15,7 @@
 	let cameraReady = $state(false);
 	let scanning = $state(false);
 
-	const statusText = $derived(() => {
+	const statusText = $derived.by(() => {
 		const state = $scanState;
 		switch (state.status) {
 			case 'tier1':
@@ -110,7 +110,7 @@
 
 		<!-- Status overlay -->
 		<div class="status-overlay">
-			<span class="status-text">{statusText()}</span>
+			<span class="status-text">{statusText}</span>
 		</div>
 	</div>
 
