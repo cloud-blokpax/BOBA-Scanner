@@ -1,59 +1,37 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "framework": "sveltekit",
   "functions": {
-    "api/anthropic.js":   { "maxDuration": 30 },
-    "api/config.js":      { "maxDuration": 5  },
+    "api/scan.func": { "maxDuration": 30 },
+    "api/price.func": { "maxDuration": 10 },
+    "api/upload.func": { "maxDuration": 15 },
+    "api/anthropic.js": { "maxDuration": 30 },
+    "api/config.js": { "maxDuration": 5 },
     "api/ebay-browse.js": { "maxDuration": 15 },
-    "api/ebay-sold.js":   { "maxDuration": 45 },
+    "api/ebay-sold.js": { "maxDuration": 45 },
     "api/upload-image.js": { "maxDuration": 15 },
-    "api/grade.js":       { "maxDuration": 30 },
-    "api/log.js":         { "maxDuration": 5  }
+    "api/grade.js": { "maxDuration": 30 },
+    "api/log.js": { "maxDuration": 5 }
   },
   "headers": [
-    {
-      "source": "/card-database.json",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=3600" }
-      ]
-    },
-    {
-      "source": "/version.json",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-      ]
-    },
-    {
-      "source": "/assets/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
-    },
-    {
-      "source": "/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-      ]
-    },
     {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "X-XSS-Protection", "value": "1; mode=block" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' cdn.jsdelivr.net accounts.google.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com accounts.google.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob: *.supabase.co lh3.googleusercontent.com; connect-src 'self' data: blob: *.supabase.co api.anthropic.com api.ebay.com accounts.google.com cdn.jsdelivr.net fonts.googleapis.com fonts.gstatic.com; frame-src accounts.google.com; worker-src 'self' blob:" },
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' blob: data: https://*.supabase.co lh3.googleusercontent.com; media-src 'self' blob: mediastream:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://api.ebay.com; worker-src 'self' blob:; frame-ancestors 'none'; upgrade-insecure-requests"
+        },
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=(), interest-cohort=()" },
         { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" },
         { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive, nosnippet" }
       ]
     },
     {
-      "source": "/index.html",
+      "source": "/api/price/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        { "key": "Cache-Control", "value": "s-maxage=3600, stale-while-revalidate=7200" }
       ]
     }
   ]
