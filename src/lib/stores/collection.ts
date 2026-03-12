@@ -22,6 +22,64 @@ export const collectionCount = derived(collectionItems, ($items) =>
 export const uniqueCardCount = derived(collectionItems, ($items) => $items.length);
 
 /**
+ * Get the total quantity of a specific card across all conditions.
+ */
+export function getOwnedCount(cardId: string): number {
+	let count = 0;
+	const unsub = collectionItems.subscribe(($items) => {
+		count = $items
+			.filter((i) => i.card_id === cardId)
+			.reduce((sum, i) => sum + i.quantity, 0);
+	});
+	unsub();
+	return count;
+}
+
+/**
+ * Derived store mapping card_id → total owned quantity for fast lookups.
+ */
+export const ownedCardCounts = derived(collectionItems, ($items) => {
+	const map = new Map<string, number>();
+	for (const item of $items) {
+		map.set(item.card_id, (map.get(item.card_id) || 0) + item.quantity);
+	}
+	return map;
+});
+
+/**
+ * Get unique set codes from the collection.
+ */
+export const collectionSets = derived(collectionItems, ($items) => {
+	const sets = new Set<string>();
+	for (const item of $items) {
+		if (item.card?.set_code) sets.add(item.card.set_code);
+	}
+	return [...sets].sort();
+});
+
+/**
+ * Get unique rarities from the collection.
+ */
+export const collectionRarities = derived(collectionItems, ($items) => {
+	const rarities = new Set<string>();
+	for (const item of $items) {
+		if (item.card?.rarity) rarities.add(item.card.rarity);
+	}
+	return [...rarities].sort();
+});
+
+/**
+ * Get unique weapon types from the collection.
+ */
+export const collectionWeaponTypes = derived(collectionItems, ($items) => {
+	const types = new Set<string>();
+	for (const item of $items) {
+		if (item.card?.weapon_type) types.add(item.card.weapon_type);
+	}
+	return [...types].sort();
+});
+
+/**
  * Load collection from Supabase (with card data join).
  * Falls back to IndexedDB cache if offline.
  */
