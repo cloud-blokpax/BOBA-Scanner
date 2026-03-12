@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { getPrice } from '$lib/stores/prices';
 	import type { PriceData } from '$lib/types';
 
@@ -8,9 +7,15 @@
 	let priceData = $state<PriceData | null>(null);
 	let loading = $state(true);
 
-	onMount(async () => {
-		priceData = await getPrice(cardId);
-		loading = false;
+	$effect(() => {
+		// Re-fetch when cardId changes
+		const id = cardId;
+		loading = true;
+		priceData = null;
+		getPrice(id).then((data) => {
+			priceData = data;
+			loading = false;
+		});
 	});
 
 	function formatPrice(val: number | null): string {

@@ -6,7 +6,6 @@
 	import type { ScanResult } from '$lib/types';
 
 	let scanResult = $state<ScanResult | null>(null);
-	let showScanner = $state(true);
 
 	onMount(() => {
 		initScanner();
@@ -18,7 +17,6 @@
 
 	function handleScanAnother() {
 		scanResult = null;
-		showScanner = true;
 	}
 
 	function handleClose() {
@@ -31,9 +29,7 @@
 </svelte:head>
 
 <div class="scan-page">
-	{#if showScanner}
-		<Scanner onResult={handleResult} />
-	{/if}
+	<Scanner onResult={handleResult} />
 
 	<BottomSheet
 		result={scanResult}

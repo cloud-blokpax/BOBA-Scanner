@@ -27,7 +27,7 @@ let imageWorker: Comlink.Remote<{
 let ocrWorker: Comlink.Remote<{
 	initialize: (whitelist?: string) => Promise<void>;
 	recognizeText: (blob: Blob) => Promise<{ text: string; confidence: number; words: Array<{ text: string; confidence: number }> }>;
-	extractCardNumber: (text: string) => string | null;
+	extractCardNumber: (text: string) => Promise<string | null>;
 	terminate: () => Promise<void>;
 }> | null = null;
 
@@ -123,8 +123,6 @@ export async function recognizeCard(
 
 // ── Tier 1: Hash Cache Lookup ───────────────────────────────
 
-const HASH_DISTANCE_THRESHOLD = 5;
-
 async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	const hash = await imageWorker!.computeDHash(bitmap);
 
@@ -188,12 +186,8 @@ async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			const ocrResult = await ocrWorker!.recognizeText(processedBlob);
 			if (ocrResult.confidence < 30) continue;
 
-			// Extract card number
-			const cardNumber = ocrWorker!.extractCardNumber(ocrResult.text);
-			if (!cardNumber) continue;
-
-			// Look up in local card database
-			const resolvedNumber = await cardNumber;
+			// Extract card number (Comlink wraps return in Promise)
+			const resolvedNumber = await ocrWorker!.extractCardNumber(ocrResult.text);
 			if (!resolvedNumber) continue;
 
 			const card = findCard(resolvedNumber);

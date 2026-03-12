@@ -19,9 +19,18 @@
 		}
 	}
 
+	let updating = $state(false);
+
 	async function handleQuantityChange(delta: number) {
-		if (!item) return;
-		await updateQuantity(item.id, item.quantity + delta);
+		if (!item || updating) return;
+		const newQty = item.quantity + delta;
+		if (newQty < 0) return;
+		updating = true;
+		try {
+			await updateQuantity(item.id, newQty);
+		} finally {
+			updating = false;
+		}
 	}
 </script>
 
@@ -63,13 +72,13 @@
 
 					<div class="quantity-controls">
 						<span class="qty-label">Quantity:</span>
-						<button class="qty-btn" onclick={() => handleQuantityChange(-1)} disabled={item.quantity <= 1}>-</button>
+						<button class="qty-btn" onclick={() => handleQuantityChange(-1)} disabled={item.quantity <= 1 || updating}>-</button>
 						<span class="qty-value">{item.quantity}</span>
-						<button class="qty-btn" onclick={() => handleQuantityChange(1)}>+</button>
+						<button class="qty-btn" onclick={() => handleQuantityChange(1)} disabled={updating}>+</button>
 					</div>
 
 					<div class="condition-badge">
-						Condition: {item.condition?.replace('_', ' ') || 'Near Mint'}
+						Condition: {item.condition?.replaceAll('_', ' ') || 'Near Mint'}
 					</div>
 
 					{#if item.card?.id}
