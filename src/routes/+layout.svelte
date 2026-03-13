@@ -66,21 +66,21 @@
 	</main>
 
 	<nav class="bottom-nav">
-		<a href="/scan" class="nav-item" class:active={currentPath === '/scan'}>
-			<span class="nav-icon">📷</span>
-			<span class="nav-label">Scan</span>
+		<a href="/scan" class="bottom-nav-item" class:active={currentPath === '/scan'}>
+			<span class="bottom-nav-icon">📷</span>
+			<span class="bottom-nav-label">Scan</span>
 		</a>
-		<a href="/collection" class="nav-item" class:active={currentPath === '/collection'}>
-			<span class="nav-icon">📚</span>
-			<span class="nav-label">Collection</span>
+		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
+			<span class="bottom-nav-icon">📚</span>
+			<span class="bottom-nav-label">Collection</span>
 		</a>
-		<a href="/deck" class="nav-item" class:active={currentPath === '/deck'}>
-			<span class="nav-icon">🃏</span>
-			<span class="nav-label">Deck</span>
+		<a href="/deck" class="bottom-nav-item" class:active={currentPath === '/deck'}>
+			<span class="bottom-nav-icon">🃏</span>
+			<span class="bottom-nav-label">Deck</span>
 		</a>
-		<button class="nav-item" class:active={showMore} onclick={() => (showMore = !showMore)}>
-			<span class="nav-icon">...</span>
-			<span class="nav-label">More</span>
+		<button class="bottom-nav-item" class:active={showMore} onclick={() => (showMore = !showMore)}>
+			<span class="bottom-nav-icon">···</span>
+			<span class="bottom-nav-label">More</span>
 		</button>
 	</nav>
 

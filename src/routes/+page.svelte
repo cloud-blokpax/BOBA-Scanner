@@ -1,5 +1,21 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { scanImage } from '$lib/stores/scanner';
+
 	let { data } = $props();
+	let fileInput = $state<HTMLInputElement | null>(null);
+
+	function handleUploadClick() {
+		fileInput?.click();
+	}
+
+	async function handleFileSelected(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		// Navigate to scan page — the file will be processed there
+		goto('/scan');
+	}
 </script>
 
 <svelte:head>
@@ -18,6 +34,18 @@
 					<span class="action-label">Scan Cards</span>
 					<span class="action-desc">Identify cards instantly with AI</span>
 				</a>
+				<button class="action-card" onclick={handleUploadClick}>
+					<span class="action-icon">📁</span>
+					<span class="action-label">Upload Image</span>
+					<span class="action-desc">Identify from a photo</span>
+				</button>
+				<input
+					bind:this={fileInput}
+					type="file"
+					accept="image/jpeg,image/png,image/webp"
+					onchange={handleFileSelected}
+					hidden
+				/>
 				<a href="/collection" class="action-card">
 					<span class="action-icon">📚</span>
 					<span class="action-label">My Collection</span>
