@@ -159,6 +159,9 @@
 							</div>
 						{/if}
 					</div>
+					<a href="/grader" class="btn btn-grade" onclick={onClose}>
+						Grade Card
+					</a>
 					<button class="btn btn-scan-another" onclick={onScanAnother}>
 						Scan Another
 					</button>
@@ -434,6 +437,14 @@
 	.btn-added {
 		background: var(--success, #10b981) !important;
 		animation: success-pop 0.35s ease-out;
+	}
+
+	.btn-grade {
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid rgba(168, 85, 247, 0.3);
+		color: #a855f7;
+		text-align: center;
+		text-decoration: none;
 	}
 
 	.btn-scan-another {
