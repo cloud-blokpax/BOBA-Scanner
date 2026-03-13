@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { supabase } from '$lib/services/supabase';
+	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast';
 	import { debounce } from '$lib/utils';
 	import {
@@ -24,8 +24,9 @@
 	interface LogRow {
 		id: string;
 		user_id: string | null;
-		action: string;
-		details: string | null;
+		call_type: string;
+		error_message: string | null;
+		success: boolean;
 		created_at: string;
 	}
 
@@ -70,11 +71,17 @@
 
 	async function loadDashboard() {
 		loading = true;
+		const client = getSupabase();
+		if (!client) {
+			showToast('Supabase not configured', 'x');
+			loading = false;
+			return;
+		}
 		try {
 			const [usersRes, logsRes, statsRes] = await Promise.all([
-				supabase.from('users').select('*').order('created_at', { ascending: false }).limit(100),
-				supabase.from('error_logs').select('*').order('created_at', { ascending: false }).limit(50),
-				supabase.from('system_settings').select('key, value').in('key', ['total_scans', 'total_cards'])
+				client.from('users').select('*').order('created_at', { ascending: false }).limit(100),
+				client.from('api_call_logs').select('*').order('created_at', { ascending: false }).limit(50),
+				client.from('system_settings').select('key, value').in('key', ['total_scans', 'total_cards'])
 			]);
 
 			if (usersRes.data) {
@@ -325,8 +332,11 @@
 				<div class="logs-list">
 					{#each logs as log}
 						<div class="log-entry">
-							<div class="log-action">{log.action}</div>
-							<div class="log-details">{log.details || ''}</div>
+							<div class="log-action">
+								{log.call_type}
+								{#if !log.success}<span class="badge" style="background: #ef444420; color: #ef4444; margin-left: 0.5rem;">Failed</span>{/if}
+							</div>
+							<div class="log-details">{log.error_message || ''}</div>
 							<div class="log-time">{formatDate(log.created_at)}</div>
 						</div>
 					{/each}
