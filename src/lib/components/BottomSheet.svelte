@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
+	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult } from '$lib/types';
 
 	let {
@@ -32,18 +33,12 @@
 		try {
 			await addToCollection(result.card.id);
 			addSuccess = true;
-			triggerHaptic();
+			triggerHaptic('successAdd');
 			triggerConfetti();
 		} catch (err) {
 			addError = err instanceof Error ? err.message : 'Failed to add card';
 		} finally {
 			adding = false;
-		}
-	}
-
-	function triggerHaptic() {
-		if ('vibrate' in navigator) {
-			navigator.vibrate([30, 50, 30]);
 		}
 	}
 

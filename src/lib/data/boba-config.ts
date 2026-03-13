@@ -16,7 +16,13 @@ export const BOBA_SCAN_CONFIG = {
 	ocrConfidenceThreshold: 30,
 	blurThreshold: 100,
 	maxUploadSize: 1024,
-	aiCostPerScan: 0.003
+	aiCostPerScan: 0.003,
+	/** Maximum file size for API upload (bytes) */
+	maxFileSize: 10_000_000,
+	/** Maximum pixel count (pixel bomb protection) */
+	maxPixels: 16_000_000,
+	/** Allowed MIME types for card image uploads */
+	allowedImageTypes: ['image/jpeg', 'image/png', 'image/webp']
 } as const;
 
 export const BOBA_RARITIES = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] as const;

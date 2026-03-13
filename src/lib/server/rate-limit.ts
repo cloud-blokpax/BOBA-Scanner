@@ -102,10 +102,11 @@ export async function checkScanRateLimit(userId: string): Promise<RateLimitResul
 	// In-memory fallback
 	const key = `scan:${userId}`;
 	const success = checkInMemory(key, MAX_SCAN_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
 	return {
 		success,
 		limit: MAX_SCAN_REQUESTS,
-		remaining: success ? MAX_SCAN_REQUESTS - (rateLimitMap.get(key)?.count || 0) : 0,
+		remaining: Math.max(0, MAX_SCAN_REQUESTS - count),
 		reset: Date.now() + WINDOW_MS
 	};
 }
@@ -132,10 +133,11 @@ export async function checkCollectionRateLimit(userId: string): Promise<RateLimi
 
 	const key = `col:${userId}`;
 	const success = checkInMemory(key, MAX_COLLECTION_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
 	return {
 		success,
 		limit: MAX_COLLECTION_REQUESTS,
-		remaining: success ? MAX_COLLECTION_REQUESTS - (rateLimitMap.get(key)?.count || 0) : 0,
+		remaining: Math.max(0, MAX_COLLECTION_REQUESTS - count),
 		reset: Date.now() + WINDOW_MS
 	};
 }

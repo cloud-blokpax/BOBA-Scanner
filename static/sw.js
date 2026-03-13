@@ -97,10 +97,16 @@ function staleWhileRevalidate(request) {
         }
         return response;
       }).catch(() => {
-        return cached || new Response('Offline', { status: 503 });
+        if (cached) return cached;
+        return new Response('Offline', { status: 503 });
       });
 
-      return cached || fetchPromise;
+      if (cached) {
+        // Serve stale, revalidate in background (fire-and-forget)
+        fetchPromise.catch(() => {});
+        return cached;
+      }
+      return fetchPromise;
     })
   );
 }

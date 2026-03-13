@@ -1,19 +1,6 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast';
-
-	interface GradeResult {
-		grade: number;
-		grade_label: string | null;
-		qualifier: string | null;
-		confidence: number | null;
-		front_centering: string | null;
-		back_centering: string | null;
-		corners: string | null;
-		edges: string | null;
-		surface: string | null;
-		summary: string | null;
-		submit_recommendation: string | null;
-	}
+	import type { GradeResult } from '$lib/types';
 
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);

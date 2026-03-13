@@ -91,6 +91,24 @@ export interface HashCacheEntry {
 	last_seen: string;
 }
 
+// ── Grading Types ──────────────────────────────────────────────
+
+export type GradeQualifier = 'OC' | 'MC' | 'MK' | 'ST' | 'PD' | 'OF';
+
+export interface GradeResult {
+	grade: number;
+	grade_label: string | null;
+	qualifier: GradeQualifier | null;
+	confidence: number | null;
+	front_centering: string | null;
+	back_centering: string | null;
+	corners: string | null;
+	edges: string | null;
+	surface: string | null;
+	summary: string | null;
+	submit_recommendation: 'yes' | 'maybe' | 'no' | null;
+}
+
 // ── Image Processing ────────────────────────────────────────────
 
 export interface BlurCheckResult {

@@ -15,7 +15,7 @@ import { supabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
 import { addToScanHistory } from '$lib/stores/scan-history';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
-import type { Card, ScanResult, ScanMethod } from '$lib/types';
+import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
 // ── Worker instances ────────────────────────────────────────
 
@@ -156,7 +156,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	const hash = await imageWorker!.computeDHash(bitmap);
 
 	// Layer 1: IndexedDB (instant, free)
-	const idbEntry = await idb.getHash(hash) as { card_id: string; confidence: number } | undefined;
+	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
 	if (idbEntry) {
 		const card = findCard(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
 		if (card) {
@@ -177,7 +177,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 		.eq('phash', hash)
 		.single();
 
-	const supaEntry = supaEntryRaw as { card_id: string; confidence: number } | null;
+	const supaEntry = supaEntryRaw as Pick<HashCacheEntry, 'card_id' | 'confidence'> | null;
 
 	if (supaEntry) {
 		const card = findCard(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
