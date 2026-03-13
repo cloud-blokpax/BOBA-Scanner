@@ -94,7 +94,7 @@ export async function recognizeCard(
 		};
 	}
 
-	// Helper to record scan result to history before returning
+	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
 		const final = { ...result, processing_ms: Math.round(performance.now() - startTime) };
 		addToScanHistory({
@@ -105,6 +105,14 @@ export async function recognizeCard(
 			success: final.card_id !== null,
 			processingMs: final.processing_ms
 		});
+
+		// Auto-tag card with its parallel name
+		if (final.card?.parallel && final.card_id) {
+			import('$lib/stores/tags').then(({ addTag }) => {
+				addTag(final.card_id!, final.card!.parallel!);
+			}).catch(() => {});
+		}
+
 		return final;
 	}
 

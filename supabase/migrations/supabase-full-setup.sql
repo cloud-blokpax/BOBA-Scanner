@@ -249,9 +249,22 @@ CREATE TABLE IF NOT EXISTS public.scan_metrics (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- ── parallel_rarity_config (admin-managed parallel→rarity mapping) ──
+CREATE TABLE IF NOT EXISTS public.parallel_rarity_config (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parallel_name   TEXT UNIQUE NOT NULL,
+  rarity          TEXT NOT NULL DEFAULT 'common',
+  sort_order      INTEGER DEFAULT 0,
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  updated_by      UUID REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- ============================================================
 -- 3. INDEXES
 -- ============================================================
+
+-- Parallel rarity config indexes
+CREATE INDEX IF NOT EXISTS idx_parallel_rarity_name ON parallel_rarity_config(parallel_name);
 
 -- Cards indexes
 CREATE INDEX IF NOT EXISTS idx_cards_search ON cards USING GIN(search_vector);
@@ -422,6 +435,25 @@ CREATE POLICY "hash_select_authenticated" ON hash_cache
   FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "hash_manage_service" ON hash_cache
+  FOR ALL TO service_role USING (true);
+
+-- Parallel rarity config: readable by all, writable by authenticated (admin check at app level)
+ALTER TABLE parallel_rarity_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "parallel_config_select_anon" ON parallel_rarity_config;
+CREATE POLICY "parallel_config_select_anon" ON parallel_rarity_config
+  FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "parallel_config_select_authenticated" ON parallel_rarity_config;
+CREATE POLICY "parallel_config_select_authenticated" ON parallel_rarity_config
+  FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "parallel_config_manage_authenticated" ON parallel_rarity_config;
+CREATE POLICY "parallel_config_manage_authenticated" ON parallel_rarity_config
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "parallel_config_manage_service" ON parallel_rarity_config;
+CREATE POLICY "parallel_config_manage_service" ON parallel_rarity_config
   FOR ALL TO service_role USING (true);
 
 -- Scan metrics: insert by authenticated, managed by service role

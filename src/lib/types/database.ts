@@ -262,6 +262,25 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['scan_metrics']['Insert']>;
 				Relationships: [];
 			};
+			parallel_rarity_config: {
+				Row: {
+					id: string;
+					parallel_name: string;
+					rarity: string;
+					sort_order: number;
+					updated_at: string;
+					updated_by: string | null;
+				};
+				Insert: {
+					parallel_name: string;
+					rarity?: string;
+					sort_order?: number;
+					updated_at?: string;
+					updated_by?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['parallel_rarity_config']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: Record<string, never>;
