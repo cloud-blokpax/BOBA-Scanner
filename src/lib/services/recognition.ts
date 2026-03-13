@@ -13,6 +13,8 @@ import { idb } from './idb';
 import { findCard, loadCardDatabase, normalizeCardNum } from './card-db';
 import { getSupabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
+import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
+import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { addToScanHistory } from '$lib/stores/scan-history';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
@@ -25,13 +27,6 @@ let imageWorker: Comlink.Remote<{
 	resizeForUpload: (bitmap: ImageBitmap, max?: number) => Promise<Blob>;
 	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;
 	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
-}> | null = null;
-
-let ocrWorker: Comlink.Remote<{
-	initialize: (whitelist?: string) => Promise<void>;
-	recognizeText: (blob: Blob) => Promise<{ text: string; confidence: number; words: Array<{ text: string; confidence: number }> }>;
-	extractCardNumber: (text: string) => Promise<string | null>;
-	terminate: () => Promise<void>;
 }> | null = null;
 
 // Tracks the last OCR reading for correction recording
@@ -49,13 +44,8 @@ export async function initWorkers(): Promise<void> {
 		imageWorker = Comlink.wrap(ImageWorker);
 	}
 
-	if (!ocrWorker) {
-		const OcrWorker = new Worker(
-			new URL('$lib/workers/ocr-worker.ts', import.meta.url),
-			{ type: 'module' }
-		);
-		ocrWorker = Comlink.wrap(OcrWorker);
-	}
+	// Initialize Tesseract directly (it manages its own worker internally)
+	await initOcr();
 }
 
 /**
@@ -221,15 +211,15 @@ async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 				5000, 'OCR preprocess'
 			);
 
-			// Run OCR in OCR worker (timeout at 10s per region)
+			// Run OCR (Tesseract manages its own worker internally, timeout at 10s per region)
 			const ocrResult = await withTimeout(
-				ocrWorker!.recognizeText(processedBlob),
+				recognizeText(processedBlob),
 				10000, 'OCR recognition'
 			);
 			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
 			// Extract card number
-			const resolvedNumber = await ocrWorker!.extractCardNumber(ocrResult.text);
+			const resolvedNumber = extractCardNumber(ocrResult.text);
 			if (!resolvedNumber) continue;
 
 			// Track the raw OCR reading for potential correction recording
