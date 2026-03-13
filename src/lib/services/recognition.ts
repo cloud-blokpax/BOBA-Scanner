@@ -44,8 +44,8 @@ export async function initWorkers(): Promise<void> {
 		imageWorker = Comlink.wrap(ImageWorker);
 	}
 
-	// Initialize Tesseract directly (it manages its own worker internally)
-	await initOcr();
+	// TODO: Tesseract is currently disabled — skip initialization
+	// await initOcr();
 }
 
 /**
@@ -113,15 +113,15 @@ export async function recognizeCard(
 		return finalize(tier1Result);
 	}
 
-	// ── TIER 2: OCR + Fuzzy Match ───────────────────────────
-	onTierChange?.(2);
-	const tier2Result = await runTier2(bitmap);
-	if (tier2Result) {
-		// Write hash back to cache for future lookups
-		const hash = await imageWorker!.computeDHash(bitmap);
-		await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
-		return finalize(tier2Result);
-	}
+	// ── TIER 2: OCR + Fuzzy Match (DISABLED — Tesseract not working) ──
+	// TODO: Re-enable once Tesseract issues are resolved
+	// onTierChange?.(2);
+	// const tier2Result = await runTier2(bitmap);
+	// if (tier2Result) {
+	// 	const hash = await imageWorker!.computeDHash(bitmap);
+	// 	await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
+	// 	return finalize(tier2Result);
+	// }
 
 	// ── TIER 3: Claude API ──────────────────────────────────
 	onTierChange?.(3);
@@ -131,9 +131,10 @@ export async function recognizeCard(
 		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
-		if (tier3Result.card_id && tier3Result.card?.card_number && _lastOcrReading) {
-			recordCorrection(_lastOcrReading, tier3Result.card.card_number, 'ai');
-		}
+		// TODO: Re-enable when Tesseract is fixed — _lastOcrReading is never set while OCR is disabled
+		// if (tier3Result.card_id && tier3Result.card?.card_number && _lastOcrReading) {
+		// 	recordCorrection(_lastOcrReading, tier3Result.card.card_number, 'ai');
+		// }
 	}
 	return finalize(
 		tier3Result || { card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: 0 }
