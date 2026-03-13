@@ -90,7 +90,7 @@ export async function toggleTorch(enabled: boolean): Promise<boolean> {
  */
 export function captureFrame(
 	video: HTMLVideoElement
-): ImageBitmap | Promise<ImageBitmap> {
+): Promise<ImageBitmap> {
 	return createImageBitmap(video);
 }
 

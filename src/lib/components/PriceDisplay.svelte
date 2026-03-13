@@ -10,12 +10,21 @@
 	$effect(() => {
 		// Re-fetch when cardId changes
 		const id = cardId;
+		let cancelled = false;
 		loading = true;
 		priceData = null;
 		getPrice(id).then((data) => {
-			priceData = data;
-			loading = false;
+			if (!cancelled) {
+				priceData = data;
+				loading = false;
+			}
+		}).catch(() => {
+			if (!cancelled) {
+				priceData = null;
+				loading = false;
+			}
 		});
+		return () => { cancelled = true; };
 	});
 
 	function formatPrice(val: number | null): string {

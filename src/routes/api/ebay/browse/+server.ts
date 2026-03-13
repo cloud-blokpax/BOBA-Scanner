@@ -22,7 +22,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'eBay API not configured' }, { status: 503 });
 	}
 
-	const body = await request.json();
+	let body: Record<string, unknown>;
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'Invalid JSON body');
+	}
 	const seller = typeof body.seller === 'string' ? body.seller : undefined;
 	const query = typeof body.query === 'string' ? body.query.slice(0, 200) : undefined;
 	const cardNumber = typeof body.cardNumber === 'string' ? body.cardNumber.slice(0, 20) : undefined;
