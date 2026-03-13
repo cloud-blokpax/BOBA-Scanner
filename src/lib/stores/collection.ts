@@ -7,7 +7,7 @@
  *   - Reactive Svelte store
  */
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { supabase } from '$lib/services/supabase';
 import { idb } from '$lib/services/idb';
 import { recordDeletedCard } from '$lib/services/sync';
@@ -26,14 +26,10 @@ export const uniqueCardCount = derived(collectionItems, ($items) => $items.lengt
  * Get the total quantity of a specific card across all conditions.
  */
 export function getOwnedCount(cardId: string): number {
-	let count = 0;
-	const unsub = collectionItems.subscribe(($items) => {
-		count = $items
-			.filter((i) => i.card_id === cardId)
-			.reduce((sum, i) => sum + i.quantity, 0);
-	});
-	unsub();
-	return count;
+	const items = get(collectionItems);
+	return items
+		.filter((i) => i.card_id === cardId)
+		.reduce((sum, i) => sum + i.quantity, 0);
 }
 
 /**
@@ -177,8 +173,8 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 
 	const { error } = await supabase
 		.from('collections_v2')
-		.update({ quantity } as { quantity: number } & Record<string, unknown>)
-		.eq('id' as 'card_id', itemId);
+		.update({ quantity })
+		.eq('id', itemId);
 
 	if (error) throw error;
 
@@ -192,14 +188,10 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
  */
 export async function removeFromCollection(itemId: string): Promise<void> {
 	// Capture card_id before removing from store
-	let cardId: string | null = null;
-	const unsub = collectionItems.subscribe(($items) => {
-		const item = $items.find((i) => i.id === itemId);
-		if (item) cardId = item.card_id;
-	});
-	unsub();
+	const items = get(collectionItems);
+	const cardId = items.find((i) => i.id === itemId)?.card_id ?? null;
 
-	const { error } = await supabase.from('collections_v2').delete().eq('id' as 'card_id', itemId);
+	const { error } = await supabase.from('collections_v2').delete().eq('id', itemId);
 
 	if (error) throw error;
 

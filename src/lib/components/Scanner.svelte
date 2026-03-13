@@ -3,6 +3,7 @@
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
+	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
 	let {
@@ -64,12 +65,6 @@
 		return 'idle';
 	});
 
-	function triggerHaptic(pattern: number[] = [15]) {
-		if ('vibrate' in navigator) {
-			navigator.vibrate(pattern);
-		}
-	}
-
 	onMount(async () => {
 		try {
 			const stream = await startCamera();
@@ -93,7 +88,7 @@
 		scanning = true;
 		scanSuccess = false;
 		scanFailed = false;
-		triggerHaptic();
+		triggerHaptic('tap');
 
 		try {
 			const bitmap = await captureFrame(videoEl);
@@ -103,15 +98,15 @@
 				scanSuccess = true;
 				// Rarity-scaled haptics
 				const r = result.card.rarity;
-				if (r === 'legendary') triggerHaptic([20, 40, 20, 40, 60]);
-				else if (r === 'ultra_rare') triggerHaptic([20, 40, 30, 50]);
-				else triggerHaptic([30, 60, 30]);
+				if (r === 'legendary') triggerHaptic('legendary');
+				else if (r === 'ultra_rare') triggerHaptic('ultraRare');
+				else triggerHaptic('success');
 				onResult?.(result);
 				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
 			} else {
 				revealedCard = null;
 				scanFailed = true;
-				triggerHaptic([50, 30, 50]);
+				triggerHaptic('error');
 				if (result) onResult?.(result);
 				setTimeout(() => { scanFailed = false; }, 1200);
 			}
@@ -122,7 +117,7 @@
 
 	async function handleTorchToggle() {
 		torchOn = !torchOn;
-		triggerHaptic();
+		triggerHaptic('tap');
 		await toggleTorch(torchOn);
 	}
 
@@ -141,9 +136,9 @@
 				revealedCard = result.card;
 				scanSuccess = true;
 				const r = result.card.rarity;
-				if (r === 'legendary') triggerHaptic([20, 40, 20, 40, 60]);
-				else if (r === 'ultra_rare') triggerHaptic([20, 40, 30, 50]);
-				else triggerHaptic([30, 60, 30]);
+				if (r === 'legendary') triggerHaptic('legendary');
+				else if (r === 'ultra_rare') triggerHaptic('ultraRare');
+				else triggerHaptic('success');
 				onResult?.(result);
 				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
 			} else {

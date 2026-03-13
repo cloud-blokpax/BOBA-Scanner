@@ -10,11 +10,10 @@ import { env } from '$env/dynamic/private';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { checkScanRateLimit } from '$lib/server/rate-limit';
+import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { RequestHandler } from './$types';
 
-const MAX_FILE_SIZE = 10_000_000; // 10MB
-const MAX_PIXELS = 16_000_000; // 16 megapixels (pixel bomb protection)
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: ALLOWED_TYPES } = BOBA_SCAN_CONFIG;
 
 let _anthropic: Anthropic | null = null;
 
@@ -61,7 +60,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Image too large (max 10MB)');
 	}
 
-	if (!ALLOWED_TYPES.includes(imageFile.type)) {
+	if (!(ALLOWED_TYPES as readonly string[]).includes(imageFile.type)) {
 		throw error(400, 'Invalid image type. Allowed: JPEG, PNG, WebP');
 	}
 

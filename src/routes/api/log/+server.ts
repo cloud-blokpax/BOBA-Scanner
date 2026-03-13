@@ -9,6 +9,34 @@ import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
+// Simple IP-based rate limit for unauthenticated error logging (100 per minute)
+const logRateMap = new Map<string, { count: number; windowStart: number }>();
+const LOG_WINDOW_MS = 60_000;
+const MAX_LOG_REQUESTS = 100;
+
+function checkLogRateLimit(ip: string): boolean {
+	const now = Date.now();
+	const entry = logRateMap.get(ip) || { count: 0, windowStart: now };
+
+	if (now - entry.windowStart > LOG_WINDOW_MS) {
+		entry.count = 1;
+		entry.windowStart = now;
+	} else {
+		entry.count++;
+	}
+
+	logRateMap.set(ip, entry);
+
+	// Periodic cleanup
+	if (logRateMap.size > 500) {
+		for (const [k, v] of logRateMap) {
+			if (now - v.windowStart > LOG_WINDOW_MS * 2) logRateMap.delete(k);
+		}
+	}
+
+	return entry.count <= MAX_LOG_REQUESTS;
+}
+
 interface ClientError {
 	type?: string;
 	message?: string;
@@ -21,7 +49,13 @@ interface ClientError {
 	session?: string;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+	// Rate limit by IP to prevent log spam
+	const clientIp = getClientAddress();
+	if (!checkLogRateLimit(clientIp)) {
+		return new Response(null, { status: 429 });
+	}
+
 	try {
 		const errors: ClientError[] = await request.json();
 
