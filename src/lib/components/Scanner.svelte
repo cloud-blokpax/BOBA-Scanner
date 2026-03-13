@@ -2,7 +2,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
-	import type { ScanResult } from '$lib/types';
+	import ScanEffects from '$lib/components/ScanEffects.svelte';
+	import type { ScanResult, Card } from '$lib/types';
 
 	let {
 		onResult
@@ -16,6 +17,24 @@
 	let scanning = $state(false);
 	let scanSuccess = $state(false);
 	let scanFailed = $state(false);
+	let revealedCard = $state<Card | null>(null);
+
+	// Rarity → color mapping for bracket effects
+	const RARITY_COLORS: Record<string, { color: string; glow: number; pulses: number }> = {
+		common:     { color: '#9CA3AF', glow: 8,  pulses: 1 },
+		uncommon:   { color: '#22C55E', glow: 12, pulses: 1 },
+		rare:       { color: '#3B82F6', glow: 16, pulses: 1 },
+		ultra_rare: { color: '#A855F7', glow: 20, pulses: 2 },
+		legendary:  { color: '#F59E0B', glow: 28, pulses: 3 }
+	};
+
+	const revealColor = $derived(RARITY_COLORS[revealedCard?.rarity ?? ''] ?? null);
+	const bracketAnimClass = $derived.by(() => {
+		if (!scanSuccess || !revealColor) return '';
+		if (revealColor.pulses === 3) return 'bracket-reveal-triple';
+		if (revealColor.pulses === 2) return 'bracket-reveal-double';
+		return 'bracket-reveal';
+	});
 
 	const statusText = $derived.by(() => {
 		const state = $scanState;
@@ -80,11 +99,17 @@
 			const bitmap = await captureFrame(videoEl);
 			const result = await scanImage(bitmap);
 			if (result?.card) {
+				revealedCard = result.card;
 				scanSuccess = true;
-				triggerHaptic([30, 60, 30]);
+				// Rarity-scaled haptics
+				const r = result.card.rarity;
+				if (r === 'legendary') triggerHaptic([20, 40, 20, 40, 60]);
+				else if (r === 'ultra_rare') triggerHaptic([20, 40, 30, 50]);
+				else triggerHaptic([30, 60, 30]);
 				onResult?.(result);
-				setTimeout(() => { scanSuccess = false; }, 1200);
+				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
 			} else {
+				revealedCard = null;
 				scanFailed = true;
 				triggerHaptic([50, 30, 50]);
 				if (result) onResult?.(result);
@@ -113,11 +138,16 @@
 		try {
 			const result = await scanImage(file);
 			if (result?.card) {
+				revealedCard = result.card;
 				scanSuccess = true;
-				triggerHaptic([30, 60, 30]);
+				const r = result.card.rarity;
+				if (r === 'legendary') triggerHaptic([20, 40, 20, 40, 60]);
+				else if (r === 'ultra_rare') triggerHaptic([20, 40, 30, 50]);
+				else triggerHaptic([30, 60, 30]);
 				onResult?.(result);
-				setTimeout(() => { scanSuccess = false; }, 1200);
+				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
 			} else {
+				revealedCard = null;
 				scanFailed = true;
 				if (result) onResult?.(result);
 				setTimeout(() => { scanFailed = false; }, 1200);
@@ -140,11 +170,39 @@
 			class="camera-feed"
 		></video>
 
-		<!-- Corner brackets — flash green on success, red on fail -->
-		<div class="bracket top-left" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
-		<div class="bracket top-right" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
-		<div class="bracket bottom-left" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
-		<div class="bracket bottom-right" class:bracket-success={scanSuccess} class:bracket-fail={scanFailed}></div>
+		<!-- Corner brackets — rarity-colored on success, red on fail -->
+		<div
+			class="bracket top-left {bracketAnimClass}"
+			class:bracket-fail={scanFailed}
+			style:--reveal-color={revealColor?.color ?? ''}
+			style:--reveal-glow="{revealColor?.glow ?? 0}px"
+		></div>
+		<div
+			class="bracket top-right {bracketAnimClass}"
+			class:bracket-fail={scanFailed}
+			style:--reveal-color={revealColor?.color ?? ''}
+			style:--reveal-glow="{revealColor?.glow ?? 0}px"
+		></div>
+		<div
+			class="bracket bottom-left {bracketAnimClass}"
+			class:bracket-fail={scanFailed}
+			style:--reveal-color={revealColor?.color ?? ''}
+			style:--reveal-glow="{revealColor?.glow ?? 0}px"
+		></div>
+		<div
+			class="bracket bottom-right {bracketAnimClass}"
+			class:bracket-fail={scanFailed}
+			style:--reveal-color={revealColor?.color ?? ''}
+			style:--reveal-glow="{revealColor?.glow ?? 0}px"
+		></div>
+
+		<!-- Scan effects overlay (particles, scan line, vignette) -->
+		<ScanEffects
+			scanning={statusType === 'scanning'}
+			revealed={scanSuccess}
+			rarity={revealedCard?.rarity ?? null}
+			weaponType={revealedCard?.weapon_type ?? null}
+		/>
 
 		<!-- Status overlay -->
 		<div class="status-overlay" class:status-success={statusType === 'success'} class:status-error={statusType === 'error'} class:status-scanning={statusType === 'scanning'}>
@@ -251,24 +309,57 @@
 		border-bottom-right-radius: 8px;
 	}
 
-	/* Bracket animations */
-	.bracket-success {
-		animation: bracket-flash-success 1s ease-out;
+	/* Bracket animations — rarity-driven reveal */
+	.bracket-reveal {
+		animation: bracket-flash-reveal 1s ease-out;
 	}
+
+	.bracket-reveal-double {
+		animation: bracket-flash-reveal-double 1.2s ease-out;
+	}
+
+	.bracket-reveal-triple {
+		animation: bracket-flash-reveal-triple 1.6s ease-out;
+		border-width: 0; /* reset, animation controls it */
+	}
+
+	/* Keep the directional border widths during triple animation */
+	.bracket-reveal-triple.top-left { border-top-width: 3px; border-left-width: 3px; }
+	.bracket-reveal-triple.top-right { border-top-width: 3px; border-right-width: 3px; }
+	.bracket-reveal-triple.bottom-left { border-bottom-width: 3px; border-left-width: 3px; }
+	.bracket-reveal-triple.bottom-right { border-bottom-width: 3px; border-right-width: 3px; }
 
 	.bracket-fail {
 		animation: bracket-flash-fail 0.8s ease-out;
 	}
 
-	@keyframes bracket-flash-success {
-		0% { border-color: var(--accent-primary, #3b82f6); }
-		25% { border-color: var(--success, #10b981); box-shadow: 0 0 16px rgba(16, 185, 129, 0.5); }
+	@keyframes bracket-flash-reveal {
+		0%   { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		25%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 50%, transparent); }
+		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+	}
+
+	@keyframes bracket-flash-reveal-double {
+		0%   { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		20%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 50%, transparent); }
+		40%  { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		55%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 40%, transparent); }
+		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+	}
+
+	@keyframes bracket-flash-reveal-triple {
+		0%   { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		15%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 55%, transparent); }
+		30%  { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		45%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 45%, transparent); }
+		60%  { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+		75%  { border-color: var(--reveal-color); box-shadow: 0 0 var(--reveal-glow) color-mix(in srgb, var(--reveal-color) 35%, transparent); }
 		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
 	}
 
 	@keyframes bracket-flash-fail {
-		0% { border-color: var(--accent-primary, #3b82f6); }
-		25% { border-color: var(--danger, #ef4444); box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
+		0%   { border-color: var(--accent-primary, #3b82f6); }
+		25%  { border-color: var(--danger, #ef4444); box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
 		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
 	}
 
