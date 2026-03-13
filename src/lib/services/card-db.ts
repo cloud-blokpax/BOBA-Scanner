@@ -138,7 +138,11 @@ export function normalizeCardNum(val: string): string {
 }
 
 /**
- * Find a card by card number with optional hero name disambiguation.
+ * Find a card by card number with optional hero name verification.
+ *
+ * When heroName is provided, it is used both for disambiguation (multiple
+ * cards sharing the same number) and for verification (ensuring the matched
+ * card actually belongs to the expected hero).
  */
 export function findCard(
 	cardNumber: string,
@@ -147,27 +151,74 @@ export function findCard(
 	if (!isLoaded || !cardNumber) return null;
 
 	const normalized = normalizeCardNum(cardNumber);
+	const normalizedHero = heroName?.toUpperCase().trim() || null;
 
 	// Step 1: Exact match via index (O(1))
 	const exactMatches = cardIndex.get(normalized) || [];
 
-	if (exactMatches.length === 1) return exactMatches[0];
-
-	if (exactMatches.length > 1 && heroName) {
-		const normalizedHero = heroName.toUpperCase();
-		const heroMatch = exactMatches.find(
-			(c) => c.name?.toUpperCase() === normalizedHero || c.hero_name?.toUpperCase() === normalizedHero
-		);
-		if (heroMatch) return heroMatch;
+	if (exactMatches.length === 1) {
+		const card = exactMatches[0];
+		// Verify hero name if provided — reject mismatches
+		if (normalizedHero && !heroMatches(card, normalizedHero)) {
+			console.warn(
+				`[card-db] Card number "${normalized}" found but hero mismatch: ` +
+				`expected="${normalizedHero}", actual name="${card.name}" hero="${card.hero_name}"`
+			);
+			// Don't return a wrong card — fall through to fuzzy match
+			// which may find the right card with a slightly different number
+		} else {
+			return card;
+		}
 	}
 
-	if (exactMatches.length > 0) return exactMatches[0];
+	if (exactMatches.length > 1) {
+		if (normalizedHero) {
+			const heroMatch = exactMatches.find((c) => heroMatches(c, normalizedHero));
+			if (heroMatch) return heroMatch;
+		}
+		// Multiple matches but no hero provided or no hero match — ambiguous
+		// Still return first match as a best guess when no hero info
+		if (!normalizedHero) return exactMatches[0];
+		// Hero was provided but didn't match any — don't return wrong card
+		console.warn(
+			`[card-db] Card number "${normalized}" has ${exactMatches.length} matches but none match hero="${normalizedHero}"`
+		);
+	}
 
-	// Step 2: Fuzzy match via prefix pre-filtering
+	// Step 2: Fuzzy match via prefix pre-filtering, hero-aware
 	const fuzzyResults = findSimilarCardNumbers(cardNumber, 2);
-	if (fuzzyResults.length > 0) return fuzzyResults[0].card;
+	if (fuzzyResults.length > 0) {
+		// If hero name is available, prefer fuzzy results that match the hero
+		if (normalizedHero) {
+			const heroFuzzy = fuzzyResults.find((r) => heroMatches(r.card, normalizedHero));
+			if (heroFuzzy) return heroFuzzy.card;
+		}
+		// Without hero info, return best fuzzy match
+		if (!normalizedHero) return fuzzyResults[0].card;
+	}
 
 	return null;
+}
+
+/**
+ * Check if a card's name or hero_name matches the given hero string.
+ * Uses case-insensitive comparison with support for partial/contains matching
+ * to handle slight naming variations from AI identification.
+ */
+function heroMatches(card: Card, normalizedHero: string): boolean {
+	const cardName = card.name?.toUpperCase() || '';
+	const cardHero = card.hero_name?.toUpperCase() || '';
+
+	// Exact match on either field
+	if (cardName === normalizedHero || cardHero === normalizedHero) return true;
+
+	// Contains match (handles cases like "Air Jordan" vs "AIR JORDAN III")
+	if (cardName && normalizedHero.length >= 3 &&
+		(cardName.includes(normalizedHero) || normalizedHero.includes(cardName))) return true;
+	if (cardHero && normalizedHero.length >= 3 &&
+		(cardHero.includes(normalizedHero) || normalizedHero.includes(cardHero))) return true;
+
+	return false;
 }
 
 /**
