@@ -13,6 +13,7 @@ import { idb } from './idb';
 import { findCard, loadCardDatabase, normalizeCardNum } from './card-db';
 import { supabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
+import { addToScanHistory } from '$lib/stores/scan-history';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod } from '$lib/types';
 
@@ -93,14 +94,25 @@ export async function recognizeCard(
 		};
 	}
 
+	// Helper to record scan result to history before returning
+	function finalize(result: ScanResult): ScanResult {
+		const final = { ...result, processing_ms: Math.round(performance.now() - startTime) };
+		addToScanHistory({
+			cardNumber: final.card?.card_number ?? null,
+			heroName: final.card?.hero_name ?? null,
+			method: final.scan_method || 'unknown',
+			confidence: final.confidence,
+			success: final.card_id !== null,
+			processingMs: final.processing_ms
+		});
+		return final;
+	}
+
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
 	onTierChange?.(1);
 	const tier1Result = await runTier1(bitmap);
 	if (tier1Result) {
-		return {
-			...tier1Result,
-			processing_ms: Math.round(performance.now() - startTime)
-		};
+		return finalize(tier1Result);
 	}
 
 	// ── TIER 2: OCR + Fuzzy Match ───────────────────────────
@@ -110,10 +122,7 @@ export async function recognizeCard(
 		// Write hash back to cache for future lookups
 		const hash = await imageWorker!.computeDHash(bitmap);
 		await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
-		return {
-			...tier2Result,
-			processing_ms: Math.round(performance.now() - startTime)
-		};
+		return finalize(tier2Result);
 	}
 
 	// ── TIER 3: Claude API ──────────────────────────────────
@@ -128,10 +137,9 @@ export async function recognizeCard(
 			recordCorrection(_lastOcrReading, tier3Result.card.card_number, 'ai');
 		}
 	}
-	return {
-		...(tier3Result || { card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0 }),
-		processing_ms: Math.round(performance.now() - startTime)
-	};
+	return finalize(
+		tier3Result || { card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: 0 }
+	);
 }
 
 // ── Tier 1: Hash Cache Lookup ───────────────────────────────
@@ -268,7 +276,8 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			card,
 			scan_method: 'claude',
 			confidence: result.card.confidence || 0.9,
-			processing_ms: 0
+			processing_ms: 0,
+			variant: result.card.variant || null
 		};
 	}
 

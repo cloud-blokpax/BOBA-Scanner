@@ -3,6 +3,8 @@
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { supabase } from '$lib/services/supabase';
+	import { initErrorTracking } from '$lib/services/error-tracking';
+	import { initVersionChecking } from '$lib/services/version';
 	import '../styles/index.css';
 
 	let { children, data } = $props();
@@ -16,7 +18,24 @@
 			invalidate('supabase:auth');
 		});
 
-		return () => subscription.unsubscribe();
+		// Initialize error tracking (sends client errors to /api/log)
+		const cleanupErrors = initErrorTracking();
+
+		// Initialize version checking (checks /version.json periodically)
+		const cleanupVersion = initVersionChecking();
+
+		// Register Service Worker for PWA offline support
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/sw.js').catch((err) => {
+				console.warn('SW registration failed:', err);
+			});
+		}
+
+		return () => {
+			subscription.unsubscribe();
+			cleanupErrors();
+			cleanupVersion();
+		};
 	});
 
 	const currentPath = $derived($page.url.pathname);

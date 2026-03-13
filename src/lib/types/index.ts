@@ -43,6 +43,7 @@ export interface ScanResult {
 	scan_method: ScanMethod;
 	confidence: number;
 	processing_ms: number;
+	variant?: string | null;
 }
 
 export interface ScanPipelineState {
