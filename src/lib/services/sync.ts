@@ -2,14 +2,17 @@
  * Cloud sync service — bidirectional collection sync.
  *
  * Uses IDB-backed tombstones (not localStorage) and batched Supabase operations.
+ * Depends on collection-service.ts for data fetching (not the store directly)
+ * to avoid circular dependencies.
  */
 
 import { browser } from '$app/environment';
 import { get } from 'svelte/store';
 import { getSupabase } from '$lib/services/supabase';
 import { user } from '$lib/stores/auth';
-import { collectionItems, loadCollection } from '$lib/stores/collection';
+import { collectionItems } from '$lib/stores/collection';
 import { idb } from '$lib/services/idb';
+import { fetchCollection } from '$lib/services/collection-service';
 
 const PUSH_DEBOUNCE = 2000;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -115,6 +118,8 @@ async function pushToCloud(skipLock = false): Promise<void> {
 
 /**
  * Full bidirectional sync: push local changes, then pull remote state.
+ * Uses fetchCollection from collection-service (not loadCollection from store)
+ * to avoid circular dependency.
  */
 export async function fullSync(): Promise<void> {
 	const currentUser = get(user);
@@ -127,8 +132,9 @@ export async function fullSync(): Promise<void> {
 	try {
 		// Push first (skipLock=true since we already hold the lock)
 		await pushToCloud(true);
-		// Then pull remote state
-		await loadCollection();
+		// Then pull remote state and update the store
+		const items = await fetchCollection();
+		collectionItems.set(items);
 	} catch (err) {
 		console.error('Full sync error:', err);
 	} finally {

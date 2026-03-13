@@ -1,0 +1,115 @@
+/**
+ * Collection data service — handles Supabase CRUD operations.
+ *
+ * Separates data fetching from store state management.
+ * Both the collection store and sync service depend on this,
+ * breaking the previous circular dependency.
+ */
+
+import { supabase } from '$lib/services/supabase';
+import { idb } from '$lib/services/idb';
+import type { CollectionItem } from '$lib/types';
+
+/**
+ * Fetch collection from Supabase with card data join.
+ * Falls back to IndexedDB cache if offline.
+ */
+export async function fetchCollection(): Promise<CollectionItem[]> {
+	try {
+		const { data, error } = await supabase
+			.from('collections_v2')
+			.select(`
+				*,
+				card:cards(*)
+			`)
+			.order('added_at', { ascending: false });
+
+		if (error) throw error;
+
+		const items = (data || []) as CollectionItem[];
+
+		// Cache in IndexedDB for offline use
+		try {
+			await idb.setCollectionItems(items);
+		} catch {
+			// Non-critical
+		}
+
+		return items;
+	} catch {
+		// Try IndexedDB fallback
+		try {
+			const cached = await idb.getCollectionItems();
+			if (cached.length > 0) {
+				return cached as CollectionItem[];
+			}
+		} catch {
+			// Both sources failed
+		}
+		return [];
+	}
+}
+
+/**
+ * Upsert a card into the collection via Supabase.
+ * Returns the upserted item with joined card data.
+ */
+export async function upsertCollectionItem(
+	cardId: string,
+	condition = 'near_mint',
+	notes: string | null = null
+): Promise<CollectionItem> {
+	const { data: sessionData } = await supabase.auth.getSession();
+	const userId = sessionData?.session?.user?.id;
+	if (!userId) throw new Error('Not authenticated');
+
+	const { data, error } = await supabase
+		.from('collections_v2')
+		.upsert(
+			{
+				user_id: userId,
+				card_id: cardId,
+				condition,
+				notes,
+				quantity: 1
+			},
+			{ onConflict: 'user_id,card_id,condition' }
+		)
+		.select(`*, card:cards(*)`)
+		.single();
+
+	if (error) throw error;
+
+	return data as unknown as CollectionItem;
+}
+
+/**
+ * Update quantity of a collection item in Supabase.
+ */
+export async function updateItemQuantity(itemId: string, quantity: number): Promise<void> {
+	const { error } = await supabase
+		.from('collections_v2')
+		.update({ quantity })
+		.eq('id', itemId);
+
+	if (error) throw error;
+}
+
+/**
+ * Delete a collection item from Supabase.
+ */
+export async function deleteCollectionItem(itemId: string): Promise<void> {
+	const { error } = await supabase.from('collections_v2').delete().eq('id', itemId);
+	if (error) throw error;
+}
+
+/**
+ * Record a card deletion tombstone for sync.
+ */
+export async function recordDeletion(cardId: string): Promise<void> {
+	try {
+		await idb.addTombstone(cardId);
+	} catch {
+		console.warn('Failed to record deletion tombstone for sync');
+	}
+}

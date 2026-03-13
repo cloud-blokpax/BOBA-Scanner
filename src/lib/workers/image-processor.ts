@@ -6,22 +6,21 @@
  *   - hammingDistance(hash1, hash2) → number
  *   - resizeForUpload(imageBitmap, maxDimension) → Blob
  *   - checkBlurry(imageBitmap, threshold) → { isBlurry, variance }
- *   - cropAndPreprocess(imageBitmap, region) → ImageData (for OCR)
+ *   - preprocessForOCR(imageBitmap, region) → Blob
  */
 import * as Comlink from 'comlink';
 
+interface OcrRegion {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
 const imageProcessor = {
-	/**
-	 * Compute dHash (difference hash) for perceptual image matching.
-	 * Compares adjacent pixel intensities to produce a rotation/scale-invariant hash.
-	 *
-	 * @param {ImageBitmap} imageBitmap - Input image
-	 * @param {number} hashSize - Hash grid size (default 8 = 64-bit hash)
-	 * @returns {string} 16-char hex hash
-	 */
-	async computeDHash(imageBitmap, hashSize = 8) {
+	async computeDHash(imageBitmap: ImageBitmap, hashSize = 8): Promise<string> {
 		const canvas = new OffscreenCanvas(hashSize + 1, hashSize);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, 0, 0, hashSize + 1, hashSize);
 		const pixels = ctx.getImageData(0, 0, hashSize + 1, hashSize).data;
 
@@ -42,13 +41,7 @@ const imageProcessor = {
 			.padStart(hashSize * 2, '0');
 	},
 
-	/**
-	 * Calculate Hamming distance between two hex hashes.
-	 * < 5  = same card
-	 * < 10 = similar (variant/foil)
-	 * > 15 = different card
-	 */
-	hammingDistance(hash1, hash2) {
+	hammingDistance(hash1: string, hash2: string): number {
 		let distance = 0;
 		const a = BigInt('0x' + hash1);
 		const b = BigInt('0x' + hash2);
@@ -60,10 +53,7 @@ const imageProcessor = {
 		return distance;
 	},
 
-	/**
-	 * Resize image for upload/API call. Returns JPEG Blob.
-	 */
-	async resizeForUpload(imageBitmap, maxDimension = 1024) {
+	async resizeForUpload(imageBitmap: ImageBitmap, maxDimension = 1024): Promise<Blob> {
 		const scale = Math.min(
 			1,
 			maxDimension / Math.max(imageBitmap.width, imageBitmap.height)
@@ -71,32 +61,24 @@ const imageProcessor = {
 		const w = Math.round(imageBitmap.width * scale);
 		const h = Math.round(imageBitmap.height * scale);
 		const canvas = new OffscreenCanvas(w, h);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, 0, 0, w, h);
 		return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
 	},
 
-	/**
-	 * Generate a small thumbnail for collection grid display.
-	 */
-	async generateThumbnail(imageBitmap, size = 200) {
+	async generateThumbnail(imageBitmap: ImageBitmap, size = 200): Promise<Blob> {
 		const aspect = imageBitmap.width / imageBitmap.height;
 		const w = aspect > 1 ? size : Math.round(size * aspect);
 		const h = aspect > 1 ? Math.round(size / aspect) : size;
 		const canvas = new OffscreenCanvas(w, h);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, 0, 0, w, h);
 		return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
 	},
 
-	/**
-	 * Check if image is blurry using Laplacian variance.
-	 * @param {ImageBitmap} imageBitmap
-	 * @param {number} threshold - Variance below this = blurry (default 100)
-	 */
-	async checkBlurry(imageBitmap, threshold = 100) {
+	async checkBlurry(imageBitmap: ImageBitmap, threshold = 100): Promise<{ isBlurry: boolean; variance: number }> {
 		const canvas = new OffscreenCanvas(200, 150);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, 0, 0, 200, 150);
 		const { data } = ctx.getImageData(0, 0, 200, 150);
 
@@ -139,12 +121,7 @@ const imageProcessor = {
 		return { isBlurry: variance < threshold, variance };
 	},
 
-	/**
-	 * Crop and preprocess a region for OCR.
-	 * Ported from src/core/ocr/ocr.js cropAndPreprocess().
-	 * Returns preprocessed ImageData ready for Tesseract.
-	 */
-	async preprocessForOCR(imageBitmap, region) {
+	async preprocessForOCR(imageBitmap: ImageBitmap, region: OcrRegion): Promise<Blob> {
 		const sw = imageBitmap.width;
 		const sh = imageBitmap.height;
 		const sx = Math.floor(sw * region.x);
@@ -155,7 +132,7 @@ const imageProcessor = {
 		// Scale 4x for crisper character rendering
 		const SCALE = 4;
 		const canvas = new OffscreenCanvas(sw2 * SCALE, sh2 * SCALE);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, sx, sy, sw2, sh2, 0, 0, canvas.width, canvas.height);
 
 		const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -210,15 +187,15 @@ const imageProcessor = {
 		const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
 		for (let y = 0; y < h; y++) {
 			for (let x = 0; x < w; x++) {
-				let sum = 0;
+				let ksum = 0;
 				for (let dy = -1; dy <= 1; dy++) {
 					for (let dx = -1; dx <= 1; dx++) {
 						const ny = Math.min(h - 1, Math.max(0, y + dy));
 						const nx = Math.min(w - 1, Math.max(0, x + dx));
-						sum += gray[ny * w + nx] * kernel[(dy + 1) * 3 + (dx + 1)];
+						ksum += gray[ny * w + nx] * kernel[(dy + 1) * 3 + (dx + 1)];
 					}
 				}
-				sharpened[y * w + x] = Math.min(255, Math.max(0, sum));
+				sharpened[y * w + x] = Math.min(255, Math.max(0, ksum));
 			}
 		}
 

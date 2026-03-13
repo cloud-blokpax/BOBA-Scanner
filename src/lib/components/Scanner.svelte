@@ -83,6 +83,25 @@
 		resetScanner();
 	});
 
+	function handleScanResult(result: ScanResult | null) {
+		if (result?.card) {
+			revealedCard = result.card;
+			scanSuccess = true;
+			const r = result.card.rarity;
+			if (r === 'legendary') triggerHaptic('legendary');
+			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
+			else triggerHaptic('success');
+			onResult?.(result);
+			setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
+		} else {
+			revealedCard = null;
+			scanFailed = true;
+			triggerHaptic('error');
+			if (result) onResult?.(result);
+			setTimeout(() => { scanFailed = false; }, 1200);
+		}
+	}
+
 	async function handleCapture() {
 		if (!videoEl || scanning) return;
 		scanning = true;
@@ -92,24 +111,7 @@
 
 		try {
 			const bitmap = await captureFrame(videoEl);
-			const result = await scanImage(bitmap);
-			if (result?.card) {
-				revealedCard = result.card;
-				scanSuccess = true;
-				// Rarity-scaled haptics
-				const r = result.card.rarity;
-				if (r === 'legendary') triggerHaptic('legendary');
-				else if (r === 'ultra_rare') triggerHaptic('ultraRare');
-				else triggerHaptic('success');
-				onResult?.(result);
-				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
-			} else {
-				revealedCard = null;
-				scanFailed = true;
-				triggerHaptic('error');
-				if (result) onResult?.(result);
-				setTimeout(() => { scanFailed = false; }, 1200);
-			}
+			handleScanResult(await scanImage(bitmap));
 		} finally {
 			scanning = false;
 		}
@@ -131,22 +133,7 @@
 		scanFailed = false;
 
 		try {
-			const result = await scanImage(file);
-			if (result?.card) {
-				revealedCard = result.card;
-				scanSuccess = true;
-				const r = result.card.rarity;
-				if (r === 'legendary') triggerHaptic('legendary');
-				else if (r === 'ultra_rare') triggerHaptic('ultraRare');
-				else triggerHaptic('success');
-				onResult?.(result);
-				setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
-			} else {
-				revealedCard = null;
-				scanFailed = true;
-				if (result) onResult?.(result);
-				setTimeout(() => { scanFailed = false; }, 1200);
-			}
+			handleScanResult(await scanImage(file));
 		} finally {
 			scanning = false;
 			input.value = '';
