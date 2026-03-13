@@ -2,17 +2,17 @@
 	import { showToast } from '$lib/stores/toast';
 
 	interface GradeResult {
-		overallGrade: number;
-		subGrades: {
-			centering: number;
-			corners: number;
-			edges: number;
-			surface: number;
-		};
+		grade: number;
+		grade_label: string | null;
 		qualifier: string | null;
-		confidence: number;
-		recommendations: string[];
-		gradeVersion: number;
+		confidence: number | null;
+		front_centering: string | null;
+		back_centering: string | null;
+		corners: string | null;
+		edges: string | null;
+		surface: string | null;
+		summary: string | null;
+		submit_recommendation: string | null;
 	}
 
 	let imageFile = $state<File | null>(null);
@@ -75,10 +75,7 @@
 				throw new Error(err.error || `Grading failed: ${res.status}`);
 			}
 
-			const data = await res.json();
-			const text = data.content?.[0]?.text || '';
-			const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-			result = JSON.parse(cleaned);
+			result = await res.json();
 			showToast('Grading complete', 'check');
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : 'Grading failed', 'x');
@@ -132,46 +129,54 @@
 
 	{#if result}
 		<div class="result-card">
-			<div class="overall-grade" style="color: {gradeColor(result.overallGrade)}">
-				<div class="grade-number">{result.overallGrade}</div>
+			<div class="overall-grade" style="color: {gradeColor(result.grade)}">
+				<div class="grade-number">{result.grade}</div>
 				<div class="grade-scale">/ 10</div>
 			</div>
 
-			{#if result.qualifier}
-				<div class="qualifier">{result.qualifier}</div>
+			{#if result.grade_label}
+				<div class="grade-label">{result.grade_label}</div>
 			{/if}
 
-			<div class="confidence">
-				Confidence: {(result.confidence * 100).toFixed(0)}%
-			</div>
+			{#if result.qualifier}
+				<div class="qualifier">Qualifier: {result.qualifier}</div>
+			{/if}
+
+			{#if result.confidence}
+				<div class="confidence">
+					Confidence: {result.confidence}%
+				</div>
+			{/if}
 
 			<div class="sub-grades">
 				<div class="sub-grade">
 					<span class="sub-label">Centering</span>
-					<span class="sub-value" style="color: {gradeColor(result.subGrades.centering)}">{result.subGrades.centering}</span>
+					<span class="sub-value">{result.front_centering || 'N/A'}</span>
 				</div>
 				<div class="sub-grade">
 					<span class="sub-label">Corners</span>
-					<span class="sub-value" style="color: {gradeColor(result.subGrades.corners)}">{result.subGrades.corners}</span>
+					<span class="sub-value">{result.corners || 'N/A'}</span>
 				</div>
 				<div class="sub-grade">
 					<span class="sub-label">Edges</span>
-					<span class="sub-value" style="color: {gradeColor(result.subGrades.edges)}">{result.subGrades.edges}</span>
+					<span class="sub-value">{result.edges || 'N/A'}</span>
 				</div>
 				<div class="sub-grade">
 					<span class="sub-label">Surface</span>
-					<span class="sub-value" style="color: {gradeColor(result.subGrades.surface)}">{result.subGrades.surface}</span>
+					<span class="sub-value">{result.surface || 'N/A'}</span>
 				</div>
 			</div>
 
-			{#if result.recommendations.length > 0}
-				<div class="recommendations">
-					<h3>Recommendations</h3>
-					<ul>
-						{#each result.recommendations as rec}
-							<li>{rec}</li>
-						{/each}
-					</ul>
+			{#if result.summary}
+				<div class="summary">
+					<h3>Assessment</h3>
+					<p>{result.summary}</p>
+				</div>
+			{/if}
+
+			{#if result.submit_recommendation}
+				<div class="submit-rec">
+					Submit for grading: <strong>{result.submit_recommendation}</strong>
 				</div>
 			{/if}
 
@@ -310,20 +315,30 @@
 		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
-	.sub-value { font-size: 1.25rem; font-weight: 700; }
-	.recommendations {
+	.sub-value { font-size: 0.8rem; font-weight: 500; color: var(--text-primary); }
+	.grade-label {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 0.25rem;
+	}
+	.summary {
 		text-align: left;
 		margin-bottom: 1rem;
 	}
-	.recommendations h3 {
+	.summary h3 {
 		font-size: 0.85rem;
 		font-weight: 600;
 		margin-bottom: 0.5rem;
 	}
-	.recommendations ul {
-		padding-left: 1.25rem;
+	.summary p {
 		font-size: 0.8rem;
 		color: var(--text-secondary);
+		line-height: 1.4;
 	}
-	.recommendations li { margin-bottom: 0.25rem; }
+	.submit-rec {
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		margin-bottom: 1rem;
+	}
 </style>

@@ -103,8 +103,11 @@ export function deleteUserTemplate(id: string): void {
  */
 export async function pushTemplatesToCloud(userId: string): Promise<void> {
 	const templates = getUserTemplates();
-	const { error } = await supabase
-		.from('collections')
+	// Table not in generated types — uses untyped query
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const client = supabase as any;
+	const { error } = await client
+		.from('user_settings')
 		.upsert({ user_id: userId, export_templates: templates }, { onConflict: 'user_id' });
 	if (error) throw error;
 }
@@ -113,8 +116,11 @@ export async function pushTemplatesToCloud(userId: string): Promise<void> {
  * Pull templates from Supabase cloud.
  */
 export async function pullTemplatesFromCloud(userId: string): Promise<ExportTemplate[]> {
-	const { data, error } = await supabase
-		.from('collections')
+	// Table not in generated types — uses untyped query
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const client = supabase as any;
+	const { data, error } = await client
+		.from('user_settings')
 		.select('export_templates')
 		.eq('user_id', userId)
 		.single();
@@ -126,7 +132,7 @@ export async function pullTemplatesFromCloud(userId: string): Promise<ExportTemp
 	// Merge: local wins on conflicts
 	const merged = [...local];
 	for (const rt of remote) {
-		if (!merged.some((t) => t.id === rt.id)) {
+		if (!merged.some((t: ExportTemplate) => t.id === rt.id)) {
 			merged.push(rt);
 		}
 	}
@@ -140,17 +146,20 @@ export async function pullTemplatesFromCloud(userId: string): Promise<ExportTemp
  * Load admin-assigned templates from Supabase.
  */
 export async function loadAdminTemplates(userId: string): Promise<ExportTemplate[]> {
-	const { data, error } = await supabase
+	// Table not in generated types — uses untyped query
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const client = supabase as any;
+	const { data, error } = await client
 		.from('user_admin_template_assignments')
 		.select('admin_template_id, admin_templates(id, name, fields, description)')
 		.eq('user_id', userId);
 
 	if (error || !data) return [];
 
-	return data
+	return (data as Array<{ admin_templates?: { id: string; name: string; fields: string[] } }>)
 		.filter((d) => d.admin_templates)
 		.map((d) => {
-			const t = d.admin_templates as { id: string; name: string; fields: string[] };
+			const t = d.admin_templates!;
 			return {
 				id: t.id,
 				name: t.name,

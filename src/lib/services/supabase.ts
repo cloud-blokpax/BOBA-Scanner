@@ -48,6 +48,6 @@ export const supabase = new Proxy({} as SupabaseClient, {
 				`Supabase not configured. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY env vars.`
 			);
 		}
-		return (client as Record<string | symbol, unknown>)[prop];
+		return (client as unknown as Record<string | symbol, unknown>)[prop];
 	}
 });
