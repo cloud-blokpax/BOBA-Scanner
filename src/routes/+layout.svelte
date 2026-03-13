@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { supabase } from '$lib/services/supabase';
+	import { getSupabase } from '$lib/services/supabase';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
 	import '../styles/index.css';
@@ -11,9 +11,8 @@
 	let showMore = $state(false);
 
 	onMount(() => {
-		const {
-			data: { subscription }
-		} = supabase.auth.onAuthStateChange((_, session) => {
+		const client = getSupabase();
+		const authSubscription = client?.auth.onAuthStateChange((_, session) => {
 			// Re-run server load when auth state changes
 			invalidate('supabase:auth');
 		});
@@ -32,7 +31,7 @@
 		}
 
 		return () => {
-			subscription.unsubscribe();
+			authSubscription?.data.subscription.unsubscribe();
 			cleanupErrors();
 			cleanupVersion();
 		};
@@ -54,7 +53,7 @@
 			<div class="header-actions">
 				{#if data.user}
 					<span class="user-name">{data.user.email}</span>
-					<button class="btn-secondary" onclick={() => supabase.auth.signOut()}>Sign Out</button>
+					<button class="btn-secondary" onclick={() => getSupabase()?.auth.signOut()}>Sign Out</button>
 				{:else}
 					<a href="/auth/login" class="btn-primary">Sign In</a>
 				{/if}

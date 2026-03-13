@@ -37,26 +37,28 @@
 		{/if}
 	</section>
 
-	<section class="features-section">
-		<h2>Three-Tier Recognition</h2>
-		<div class="feature-grid">
-			<div class="feature-card">
-				<span class="feature-icon">⚡</span>
-				<h3>Hash Cache</h3>
-				<p>Instant recognition for previously scanned cards. Free.</p>
+	{#if !data.user}
+		<section class="features-section">
+			<h2>Three-Tier Recognition</h2>
+			<div class="feature-grid">
+				<div class="feature-card">
+					<span class="feature-icon">⚡</span>
+					<h3>Hash Cache</h3>
+					<p>Instant recognition for previously scanned cards. Free.</p>
+				</div>
+				<div class="feature-card">
+					<span class="feature-icon">🔍</span>
+					<h3>OCR Engine</h3>
+					<p>Client-side text recognition with fuzzy matching. Free.</p>
+				</div>
+				<div class="feature-card">
+					<span class="feature-icon">🤖</span>
+					<h3>Claude AI</h3>
+					<p>Advanced AI identification for ambiguous cards.</p>
+				</div>
 			</div>
-			<div class="feature-card">
-				<span class="feature-icon">🔍</span>
-				<h3>OCR Engine</h3>
-				<p>Client-side text recognition with fuzzy matching. Free.</p>
-			</div>
-			<div class="feature-card">
-				<span class="feature-icon">🤖</span>
-				<h3>Claude AI</h3>
-				<p>Advanced AI identification for ambiguous cards. ~$0.002/scan.</p>
-			</div>
-		</div>
-	</section>
+		</section>
+	{/if}
 </div>
 
 <style>
