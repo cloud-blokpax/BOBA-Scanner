@@ -11,6 +11,7 @@
 
 import { STATIC_CARDS } from '$lib/data/static-cards';
 import { idb } from './idb';
+import { loadParallelConfig, getParallelRarity } from './parallel-config';
 import type { Card } from '$lib/types';
 
 // ── In-memory indexes ──────────────────────────────────────
@@ -45,6 +46,9 @@ export async function loadCardDatabase(): Promise<Card[]> {
 	buildIndexes();
 	isLoaded = true;
 
+	// Apply admin-configured parallel→rarity mappings
+	applyParallelConfig().catch(() => {});
+
 	// Seed IDB from static data so future loads are faster
 	try {
 		await idb.setCards(cards);
@@ -78,6 +82,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		if (data.length > cards.length) {
 			cards = data as unknown as Card[];
 			buildIndexes();
+			await applyParallelConfig();
 			try {
 				await idb.setCards(cards);
 				await idb.setCardsVersion('supabase-' + new Date().toISOString());
@@ -87,6 +92,21 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		}
 	} catch {
 		// Supabase unavailable — static data is sufficient
+	}
+}
+
+/**
+ * Apply admin-configured parallel→rarity mappings to all loaded cards.
+ * Called after loading parallel config from Supabase.
+ */
+async function applyParallelConfig(): Promise<void> {
+	const config = await loadParallelConfig();
+	if (config.size === 0) return;
+
+	for (const card of cards) {
+		if (card.parallel) {
+			card.rarity = getParallelRarity(card.parallel);
+		}
 	}
 }
 

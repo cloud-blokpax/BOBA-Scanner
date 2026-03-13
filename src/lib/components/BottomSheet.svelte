@@ -90,6 +90,9 @@
 					{#if result.card.set_code}
 						<span class="meta-pill">{result.card.set_code}</span>
 					{/if}
+					{#if result.card.parallel}
+						<span class="meta-pill parallel-tag">{result.card.parallel}</span>
+					{/if}
 					{#if result.card.weapon_type}
 						<span class="meta-pill">{result.card.weapon_type}</span>
 					{/if}
@@ -221,6 +224,12 @@
 	.meta-pill.power {
 		color: var(--accent-gold, #f59e0b);
 		font-weight: 600;
+	}
+
+	.meta-pill.parallel-tag {
+		color: var(--accent-primary, #3b82f6);
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		font-weight: 500;
 	}
 
 	.result-stats {

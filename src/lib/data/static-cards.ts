@@ -42,6 +42,7 @@ function mapCard(raw: RawCard): Card {
 		athlete_name: getAthleteForHero(heroName) || null,
 		set_code: raw.Set || 'Unknown',
 		card_number: raw['Card Number'] != null ? String(raw['Card Number']) : null,
+		parallel: raw.Parallel || null,
 		power: raw.Power || null,
 		rarity: mapParallelToRarity(raw.Parallel),
 		weapon_type: raw.Weapon || null,
@@ -56,7 +57,7 @@ function mapCard(raw: RawCard): Card {
  * Paper = common, standard Battlefoil = uncommon, named foils = rare,
  * Superfoil/Inspired Ink = ultra_rare, Promo = legendary.
  */
-function mapParallelToRarity(parallel: string | null): Card['rarity'] {
+export function mapParallelToRarity(parallel: string | null): Card['rarity'] {
 	if (!parallel) return 'common';
 	const p = parallel.toLowerCase();
 	if (p === 'paper' || p === 'play' || p === 'bonus play') return 'common';

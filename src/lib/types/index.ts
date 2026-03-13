@@ -7,6 +7,7 @@ export interface Card {
 	athlete_name: string | null;
 	set_code: string;
 	card_number: string | null;
+	parallel: string | null;
 	power: number | null;
 	rarity: CardRarity | null;
 	weapon_type: string | null;
