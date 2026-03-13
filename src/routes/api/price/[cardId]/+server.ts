@@ -14,6 +14,11 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const { cardId } = params;
 
+	// Validate cardId format (UUID or alphanumeric identifier)
+	if (!cardId || !/^[\w-]{1,64}$/.test(cardId)) {
+		throw error(400, 'Invalid card ID');
+	}
+
 	if (!isEbayConfigured()) {
 		return json({ error: 'eBay pricing not available' }, { status: 503 });
 	}

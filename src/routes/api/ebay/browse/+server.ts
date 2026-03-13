@@ -22,7 +22,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'eBay API not configured' }, { status: 503 });
 	}
 
-	const { seller, query, cardNumber, hero } = await request.json();
+	const body = await request.json();
+	const seller = typeof body.seller === 'string' ? body.seller : undefined;
+	const query = typeof body.query === 'string' ? body.query.slice(0, 200) : undefined;
+	const cardNumber = typeof body.cardNumber === 'string' ? body.cardNumber.slice(0, 20) : undefined;
+	const hero = typeof body.hero === 'string' ? body.hero.slice(0, 100) : undefined;
 
 	// Mode 1: keyword price lookup
 	if (query) {
@@ -84,11 +88,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Missing seller username or query');
 	}
 
+	// Validate seller username: eBay usernames are alphanumeric with dots, hyphens, underscores (max 64 chars)
+	const sanitizedSeller = seller.trim();
+	if (!/^[\w.\-]{1,64}$/i.test(sanitizedSeller)) {
+		throw error(400, 'Invalid seller username');
+	}
+
 	try {
 		const token = await getEbayToken();
 		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 		searchUrl.searchParams.set('q', 'bo jackson');
-		searchUrl.searchParams.set('filter', `sellers:{${seller.trim()}}`);
+		searchUrl.searchParams.set('filter', `sellers:{${sanitizedSeller}}`);
 		searchUrl.searchParams.set('limit', '200');
 
 		const browseRes = await fetch(searchUrl.toString(), {

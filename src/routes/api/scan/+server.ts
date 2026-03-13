@@ -136,7 +136,12 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
 		}
 
-		const cardData = JSON.parse(jsonMatch[0]);
+		let cardData;
+		try {
+			cardData = JSON.parse(jsonMatch[0]);
+		} catch {
+			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
+		}
 
 		// Track scan in database
 		try {
