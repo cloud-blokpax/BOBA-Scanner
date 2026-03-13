@@ -39,6 +39,12 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 		recognitionCount = 0;
 	}
 
+	// Guard: reject tiny blobs that would cause Tesseract internal warnings
+	// ("ridiculously small scaling factor", "Image too small to scale!! (1x1)")
+	if (imageBlob.size < 100) {
+		return { text: '', confidence: 0, words: [] };
+	}
+
 	const { data } = await worker!.recognize(imageBlob);
 
 	// Extract words from block→paragraph→line→word hierarchy
