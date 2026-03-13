@@ -316,26 +316,43 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 
 	console.debug(`[scan:tier3] Claude identified: card_number="${result.card.card_number}", hero="${result.card.hero_name}", confidence=${result.card.confidence}`);
 
-	// Match Claude response to local card database
-	const card = findCard(
-		result.card.card_number,
-		result.card.hero_name || result.card.card_name
-	);
+	// Match Claude response to local card database (hero-verified)
+	const claudeHero = result.card.hero_name || result.card.card_name || null;
+	const claudeNumber = result.card.card_number;
+	const card = findCard(claudeNumber, claudeHero);
 
 	if (card) {
-		console.debug(`[scan:tier3] Matched to local DB: id=${card.id}, number=${card.card_number}, name=${card.hero_name}`);
+		// Cross-verify: ensure the matched card's hero aligns with Claude's identification
+		const matchedHero = (card.hero_name || card.name || '').toUpperCase();
+		const expectedHero = (claudeHero || '').toUpperCase();
+		let confidence = result.card.confidence || 0.9;
+
+		if (expectedHero && matchedHero && expectedHero !== matchedHero) {
+			// Partial match check (e.g. "AIR JORDAN" contains "AIR JORDAN")
+			const isPartialMatch = matchedHero.includes(expectedHero) || expectedHero.includes(matchedHero);
+			if (!isPartialMatch) {
+				console.warn(
+					`[scan:tier3] Hero mismatch after findCard: Claude said "${claudeHero}" ` +
+					`but matched card has hero="${card.hero_name}", name="${card.name}". ` +
+					`Reducing confidence.`
+				);
+				confidence = Math.min(confidence, 0.5);
+			}
+		}
+
+		console.debug(`[scan:tier3] Matched to local DB: id=${card.id}, number=${card.card_number}, hero="${card.hero_name}", confidence=${confidence}`);
 		return {
 			card_id: card.id,
 			card,
 			scan_method: 'claude',
-			confidence: result.card.confidence || 0.9,
+			confidence,
 			processing_ms: 0,
 			variant: result.card.variant || null
 		};
 	}
 
-	console.warn(`[scan:tier3] Claude identified card_number="${result.card.card_number}" hero="${result.card.hero_name}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
-	_lastTier3FailReason = `AI identified "${result.card.card_number}" (${result.card.hero_name || result.card.card_name}) but card not found in database`;
+	console.warn(`[scan:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
+	_lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 	return null;
 }
 
