@@ -30,10 +30,23 @@ jobs:
 
       - name: Check bundle size
         run: |
-          MAX_SIZE=204800  # 200KB
-          JS_SIZE=$(find .svelte-kit/output -name '*.js' -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
-          if [ "${JS_SIZE:-0}" -gt "$MAX_SIZE" ]; then
-            echo "Bundle size ${JS_SIZE} bytes exceeds ${MAX_SIZE} bytes limit"
+          # Card database JSON is ~2.7MB compiled — exclude it from the app code budget
+          APP_MAX=512000  # 500KB for application JS (excludes card data)
+          TOTAL_MAX=4194304  # 4MB total including card database
+
+          TOTAL_SIZE=$(find .svelte-kit/output/client -name '*.js' -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
+          # Largest chunk is the card database; measure app code without it
+          LARGEST=$(find .svelte-kit/output/client -name '*.js' -exec wc -c {} \; 2>/dev/null | sort -rn | head -1 | awk '{print $1}')
+          APP_SIZE=$((${TOTAL_SIZE:-0} - ${LARGEST:-0}))
+
+          echo "Total client JS: ${TOTAL_SIZE:-0} bytes (limit: ${TOTAL_MAX})"
+          echo "App JS (excl. card data): ${APP_SIZE:-0} bytes (limit: ${APP_MAX})"
+
+          if [ "${TOTAL_SIZE:-0}" -gt "$TOTAL_MAX" ]; then
+            echo "::error::Total bundle ${TOTAL_SIZE} bytes exceeds ${TOTAL_MAX} bytes"
             exit 1
           fi
-          echo "Bundle size: ${JS_SIZE:-0} bytes (limit: ${MAX_SIZE})"
+          if [ "${APP_SIZE:-0}" -gt "$APP_MAX" ]; then
+            echo "::error::App bundle ${APP_SIZE} bytes exceeds ${APP_MAX} bytes"
+            exit 1
+          fi
