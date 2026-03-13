@@ -1,11 +1,15 @@
 /**
  * Card Database Service
  *
- * Loads the card database from Supabase, caches in IndexedDB,
- * and builds in-memory indexes for O(1) lookups and fuzzy search.
+ * Loading priority:
+ *   1. IndexedDB cache (may contain fresher Supabase data from last session)
+ *   2. Static bundled JSON (always available, ships with the build)
+ *   3. Background Supabase refresh (picks up cards added after deployment)
+ *
+ * Tier 1 and Tier 2 scanning always work, even fully offline.
  */
 
-import { supabase } from './supabase';
+import { STATIC_CARDS } from '$lib/data/static-cards';
 import { idb } from './idb';
 import type { Card } from '$lib/types';
 
@@ -16,51 +20,78 @@ const prefixIndex = new Map<string, Card[]>();
 let isLoaded = false;
 
 /**
- * Load the card database. Checks IDB cache first, then Supabase.
+ * Load the card database. Guarantees a usable card index is available.
+ * Never throws — falls back to static data if all else fails.
  */
 export async function loadCardDatabase(): Promise<Card[]> {
 	if (isLoaded && cards.length > 0) return cards;
 
+	// Layer 1: IndexedDB cache (may have fresher Supabase data)
 	try {
-		// Check IDB cache
 		const cached = await idb.getCards();
 		if (cached && cached.length > 0) {
 			cards = cached as Card[];
 			buildIndexes();
 			isLoaded = true;
+			refreshFromSupabaseInBackground();
 			return cards;
 		}
 	} catch {
-		// IDB unavailable, continue to fetch
+		// IDB unavailable — continue to static fallback
 	}
 
-	// Fetch from Supabase
-	const { data, error } = await supabase.from('cards').select('*');
-
-	if (error) {
-		console.error('Failed to load card database:', error.message);
-		throw new Error('Card database unavailable');
-	}
-
-	cards = (data as unknown) as Card[];
+	// Layer 2: Static bundled JSON (always available)
+	cards = STATIC_CARDS;
 	buildIndexes();
 	isLoaded = true;
 
-	// Cache in IDB for offline use
+	// Seed IDB from static data so future loads are faster
 	try {
 		await idb.setCards(cards);
-		await idb.setCardsVersion(new Date().toISOString());
+		await idb.setCardsVersion('static-' + new Date().toISOString());
 	} catch {
 		// IDB write failure is non-critical
 	}
+
+	// Layer 3: Background Supabase refresh (non-blocking)
+	refreshFromSupabaseInBackground();
 
 	return cards;
 }
 
 /**
+ * Non-blocking background refresh from Supabase.
+ * If Supabase has more/newer cards, update the in-memory index and IDB cache.
+ * If Supabase is unavailable, this silently does nothing.
+ */
+async function refreshFromSupabaseInBackground(): Promise<void> {
+	try {
+		// Dynamic import so Supabase is not a hard dependency
+		const { getSupabase } = await import('./supabase');
+		const supabase = getSupabase();
+		if (!supabase) return;
+
+		const { data, error } = await supabase.from('cards').select('*');
+		if (error || !data || data.length === 0) return;
+
+		// Only update if Supabase has more cards than current set
+		if (data.length > cards.length) {
+			cards = data as unknown as Card[];
+			buildIndexes();
+			try {
+				await idb.setCards(cards);
+				await idb.setCardsVersion('supabase-' + new Date().toISOString());
+			} catch {
+				// Non-critical
+			}
+		}
+	} catch {
+		// Supabase unavailable — static data is sufficient
+	}
+}
+
+/**
  * Build lookup indexes from the loaded card array.
- * - cardIndex: Map<normalizedCardNumber, Card[]> for O(1) exact lookup
- * - prefixIndex: Map<2-char prefix, Card[]> for fuzzy pre-filtering
  */
 function buildIndexes() {
 	cardIndex.clear();
@@ -103,7 +134,6 @@ export function findCard(
 	if (exactMatches.length === 1) return exactMatches[0];
 
 	if (exactMatches.length > 1 && heroName) {
-		// Disambiguate by hero name
 		const normalizedHero = heroName.toUpperCase();
 		const heroMatch = exactMatches.find(
 			(c) => c.name?.toUpperCase() === normalizedHero || c.hero_name?.toUpperCase() === normalizedHero
@@ -122,7 +152,6 @@ export function findCard(
 
 /**
  * Fuzzy search using Levenshtein distance.
- * Pre-filters by 2-char prefix to avoid scanning all 17k+ cards.
  */
 export function findSimilarCardNumbers(
 	searchNumber: string,
@@ -131,7 +160,6 @@ export function findSimilarCardNumbers(
 	const normalized = normalizeCardNum(searchNumber);
 	const prefix = normalized.slice(0, 2);
 
-	// Gather candidates: same prefix + adjacent prefixes (Levenshtein <= 1)
 	const candidateSet = new Set<Card>();
 	for (const [key, cardList] of prefixIndex) {
 		if (levenshteinDistance(key, prefix) <= 1) {
@@ -184,7 +212,7 @@ export function getAllCards(): Card[] {
 }
 
 /**
- * Get a card by its UUID.
+ * Get a card by its ID (string).
  */
 export function getCardById(id: string): Card | undefined {
 	return cards.find((c) => c.id === id);

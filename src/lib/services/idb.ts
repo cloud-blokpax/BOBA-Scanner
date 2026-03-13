@@ -10,14 +10,15 @@
  */
 
 const DB_NAME = 'boba-scanner-v2';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
 	cards: 'cards',
 	hashCache: 'hash-cache',
 	collections: 'collections',
 	prices: 'prices',
-	meta: 'meta'
+	meta: 'meta',
+	tombstones: 'tombstones'
 } as const;
 
 type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -48,6 +49,10 @@ function openDB(): Promise<IDBDatabase> {
 			}
 			if (!db.objectStoreNames.contains(STORES.meta)) {
 				db.createObjectStore(STORES.meta);
+			}
+			if (!db.objectStoreNames.contains(STORES.tombstones)) {
+				const tombstoneStore = db.createObjectStore(STORES.tombstones, { keyPath: 'cardId' });
+				tombstoneStore.createIndex('deletedAt', 'deletedAt');
 			}
 		};
 
@@ -166,6 +171,17 @@ export const idb = {
 	async setCollectionItems(items: unknown[]) {
 		await clear(STORES.collections);
 		await bulkPut(STORES.collections, items);
+	},
+
+	// Tombstones (for sync deletion tracking)
+	async getTombstones(): Promise<Array<{ cardId: string; deletedAt: number }>> {
+		return getAll(STORES.tombstones);
+	},
+	async addTombstone(cardId: string) {
+		await put(STORES.tombstones, { cardId, deletedAt: Date.now() });
+	},
+	async clearTombstones() {
+		await clear(STORES.tombstones);
 	},
 
 	// Meta

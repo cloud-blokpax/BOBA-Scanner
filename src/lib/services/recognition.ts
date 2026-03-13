@@ -1,7 +1,7 @@
 /**
  * Three-Tier Recognition Pipeline
  *
- * Tier 1: Perceptual Hash (dHash) → IndexedDB → Redis → Supabase hash_cache
+ * Tier 1: Perceptual Hash (dHash) → IndexedDB → Supabase hash_cache
  * Tier 2: Tesseract.js OCR → Fuzzy match against local card DB
  * Tier 3: Claude API → Server-side identification
  *
@@ -12,6 +12,8 @@ import * as Comlink from 'comlink';
 import { idb } from './idb';
 import { findCard, loadCardDatabase, normalizeCardNum } from './card-db';
 import { supabase } from './supabase';
+import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
+import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod } from '$lib/types';
 
 // ── Worker instances ────────────────────────────────────────
@@ -30,6 +32,9 @@ let ocrWorker: Comlink.Remote<{
 	extractCardNumber: (text: string) => Promise<string | null>;
 	terminate: () => Promise<void>;
 }> | null = null;
+
+// Tracks the last OCR reading for correction recording
+let _lastOcrReading: string | null = null;
 
 /**
  * Initialize the Web Workers. Call once on app start.
@@ -67,6 +72,9 @@ export async function recognizeCard(
 	await initWorkers();
 	await loadCardDatabase();
 
+	// Reset OCR reading tracker for this scan
+	_lastOcrReading = null;
+
 	// Convert to ImageBitmap for worker transfer
 	const bitmap =
 		imageSource instanceof ImageBitmap
@@ -74,7 +82,7 @@ export async function recognizeCard(
 			: await createImageBitmap(imageSource);
 
 	// ── Check blur ──────────────────────────────────────────
-	const blurResult = await imageWorker!.checkBlurry(bitmap, 100);
+	const blurResult = await imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
 	if (blurResult.isBlurry) {
 		return {
 			card_id: null,
@@ -114,6 +122,11 @@ export async function recognizeCard(
 	if (tier3Result) {
 		const hash = await imageWorker!.computeDHash(bitmap);
 		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence);
+
+		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
+		if (tier3Result.card_id && tier3Result.card?.card_number && _lastOcrReading) {
+			recordCorrection(_lastOcrReading, tier3Result.card.card_number, 'ai');
+		}
 	}
 	return {
 		...(tier3Result || { card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0 }),
@@ -170,33 +183,34 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 
 // ── Tier 2: OCR + Fuzzy Match ───────────────────────────────
 
-const OCR_REGIONS = [
-	{ x: 0.01, y: 0.84, w: 0.35, h: 0.13 }, // Bottom-left (card number)
-	{ x: 0.60, y: 0.84, w: 0.35, h: 0.13 }, // Bottom-right
-	{ x: 0.0, y: 0.80, w: 1.0, h: 0.18 }    // Full bottom strip
-];
-
 async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
-	for (const region of OCR_REGIONS) {
+	for (const region of BOBA_OCR_REGIONS) {
 		try {
 			// Preprocess region in image worker
 			const processedBlob = await imageWorker!.preprocessForOCR(bitmap, region);
 
 			// Run OCR in OCR worker
 			const ocrResult = await ocrWorker!.recognizeText(processedBlob);
-			if (ocrResult.confidence < 30) continue;
+			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
-			// Extract card number (Comlink wraps return in Promise)
+			// Extract card number
 			const resolvedNumber = await ocrWorker!.extractCardNumber(ocrResult.text);
 			if (!resolvedNumber) continue;
 
-			const card = findCard(resolvedNumber);
+			// Track the raw OCR reading for potential correction recording
+			_lastOcrReading = resolvedNumber;
+
+			// Check if we have a learned correction for this OCR output
+			const correctedNumber = checkCorrection(resolvedNumber);
+			const lookupNumber = correctedNumber || resolvedNumber;
+
+			const card = findCard(lookupNumber);
 			if (card) {
 				return {
 					card_id: card.id,
 					card,
-					scan_method: 'tesseract',
-					confidence: ocrResult.confidence / 100,
+					scan_method: 'tesseract' as ScanMethod,
+					confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100,
 					processing_ms: 0
 				};
 			}

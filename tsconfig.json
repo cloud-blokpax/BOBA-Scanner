@@ -13,16 +13,7 @@
 		"target": "ES2020"
 	},
 	"exclude": [
-		"src/core/**",
-		"src/ui/**",
-		"src/features/**",
-		"src/collections/**",
-		"src/embed/**",
-		"src/sdk/**",
-		"src/app.js",
-		"src/main.js",
 		"tests/**",
-		"api/**",
 		"src/lib/workers/**"
 	]
 }
