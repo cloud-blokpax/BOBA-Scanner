@@ -9,7 +9,7 @@
 	let {
 		onResult
 	}: {
-		onResult?: (result: ScanResult) => void;
+		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 	} = $props();
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
@@ -88,7 +88,7 @@
 
 	let lastFailReason = $state<string | null>(null);
 
-	function handleScanResult(result: ScanResult | null) {
+	function handleScanResult(result: ScanResult | null, imageUrl?: string) {
 		if (result?.card) {
 			revealedCard = result.card;
 			scanSuccess = true;
@@ -97,16 +97,25 @@
 			if (r === 'legendary') triggerHaptic('legendary');
 			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
 			else triggerHaptic('success');
-			onResult?.(result);
+			onResult?.(result, imageUrl);
 			setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
 		} else {
 			revealedCard = null;
 			scanFailed = true;
 			lastFailReason = result?.failReason || null;
 			triggerHaptic('error');
-			if (result) onResult?.(result);
+			if (result) onResult?.(result, imageUrl);
 			setTimeout(() => { scanFailed = false; }, 1200);
 		}
+	}
+
+	function bitmapToDataUrl(bitmap: ImageBitmap): string {
+		const canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(bitmap, 0, 0);
+		return canvas.toDataURL('image/jpeg', 0.85);
 	}
 
 	async function handleCapture() {
@@ -118,7 +127,8 @@
 
 		try {
 			const bitmap = await captureFrame(videoEl);
-			handleScanResult(await scanImage(bitmap));
+			const imageUrl = bitmapToDataUrl(bitmap);
+			handleScanResult(await scanImage(bitmap), imageUrl);
 		} finally {
 			scanning = false;
 		}
@@ -140,7 +150,8 @@
 		scanFailed = false;
 
 		try {
-			handleScanResult(await scanImage(file));
+			const imageUrl = URL.createObjectURL(file);
+			handleScanResult(await scanImage(file), imageUrl);
 		} finally {
 			scanning = false;
 			input.value = '';
