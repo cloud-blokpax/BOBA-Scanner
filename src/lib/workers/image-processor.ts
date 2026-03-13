@@ -243,6 +243,22 @@ const imageProcessor = {
 		}
 
 		ctx.putImageData(imageData, 0, 0);
+
+		// Check if the thresholded image has enough dark (text) pixels.
+		// If the region is nearly all-white after binarisation, there's no text
+		// to recognise — skip early to avoid Tesseract internal warnings
+		// ("ridiculously small scaling factor", "Image too small to scale").
+		let darkPixels = 0;
+		for (let i = 0; i < totalPx; i++) {
+			if (data[i * 4] === 0) darkPixels++;
+		}
+		const darkRatio = darkPixels / totalPx;
+		if (darkRatio < 0.005 || darkRatio > 0.95) {
+			throw new Error(
+				`OCR region has no usable text content (dark pixel ratio: ${(darkRatio * 100).toFixed(1)}%)`
+			);
+		}
+
 		return canvas.convertToBlob({ type: 'image/png' });
 	}
 };
