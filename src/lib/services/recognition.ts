@@ -10,7 +10,7 @@
 
 import * as Comlink from 'comlink';
 import { idb } from './idb';
-import { findCard, loadCardDatabase, normalizeCardNum, getAllCards } from './card-db';
+import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards } from './card-db';
 import { getSupabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
@@ -164,7 +164,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	// Layer 1: IndexedDB (instant, free)
 	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
 	if (idbEntry) {
-		const card = findCard(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
+		const card = getCardById(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
 		if (card) {
 			return {
 				card_id: card.id,
@@ -189,7 +189,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	}
 
 	if (supaEntry) {
-		const card = findCard(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
+		const card = getCardById(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
 		if (card) {
 			// Write back to IDB for next time
 			await idb.setHash({ phash: hash, card_id: supaEntry.card_id, confidence: supaEntry.confidence });

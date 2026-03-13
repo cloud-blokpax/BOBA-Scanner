@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner';
+	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
+	import { triggerHaptic } from '$lib/utils/haptics';
 	import { onMount } from 'svelte';
 	import type { ScanResult } from '$lib/types';
 
@@ -7,6 +9,14 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let uploadResult = $state<ScanResult | null>(null);
 	let uploading = $state(false);
+	let adding = $state(false);
+	let addSuccess = $state(false);
+	let addError = $state<string | null>(null);
+
+	const ownedCount = $derived(
+		uploadResult?.card ? ($ownedCardCounts.get(uploadResult.card.id) || 0) : 0
+	);
+	const isOwned = $derived(ownedCount > 0);
 
 	onMount(() => {
 		initScanner();
@@ -23,6 +33,8 @@
 
 		uploading = true;
 		uploadResult = null;
+		addSuccess = false;
+		addError = null;
 		try {
 			const result = await scanImage(file);
 			uploadResult = result;
@@ -34,7 +46,25 @@
 
 	function dismissResult() {
 		uploadResult = null;
+		addSuccess = false;
+		addError = null;
 		resetScanner();
+	}
+
+	async function handleAdd() {
+		if (!uploadResult?.card) return;
+		adding = true;
+		addError = null;
+		addSuccess = false;
+		try {
+			await addToCollection(uploadResult.card.id);
+			addSuccess = true;
+			triggerHaptic('successAdd');
+		} catch (err) {
+			addError = err instanceof Error ? err.message : 'Failed to add card';
+		} finally {
+			adding = false;
+		}
 	}
 
 	const statusText = $derived.by(() => {
@@ -61,19 +91,56 @@
 		{#if data.user}
 			{#if uploadResult?.card}
 				<div class="upload-result">
-					<h2 class="result-title">Card Found!</h2>
+					<div class="result-header-row">
+						<h2 class="result-title">Card Found!</h2>
+						{#if isOwned}
+							<span class="ownership-badge owned">In Collection x{ownedCount}</span>
+						{:else}
+							<span class="ownership-badge new-card">New!</span>
+						{/if}
+					</div>
 					<div class="result-card">
 						<div class="result-name">{uploadResult.card.hero_name || uploadResult.card.name}</div>
 						<div class="result-number">#{uploadResult.card.card_number}</div>
 						{#if uploadResult.card.parallel}
 							<div class="result-parallel">{uploadResult.card.parallel}</div>
 						{/if}
+						<div class="result-pills">
+							{#if uploadResult.card.set_code}
+								<span class="meta-pill">{uploadResult.card.set_code}</span>
+							{/if}
+							{#if uploadResult.card.weapon_type}
+								<span class="meta-pill">{uploadResult.card.weapon_type}</span>
+							{/if}
+							{#if uploadResult.card.power}
+								<span class="meta-pill power">PWR {uploadResult.card.power}</span>
+							{/if}
+							{#if uploadResult.card.rarity}
+								<span class="meta-pill rarity rarity-{uploadResult.card.rarity}">{uploadResult.card.rarity.replace('_', ' ')}</span>
+							{/if}
+						</div>
 						<div class="result-meta">
 							<span>Confidence: {Math.round((uploadResult.confidence ?? 0) * 100)}%</span>
 							<span>Method: {uploadResult.scan_method}</span>
 						</div>
 					</div>
-					<button class="btn-primary" onclick={dismissResult}>Scan Another</button>
+					{#if addError}
+						<p class="add-error">{addError}</p>
+					{/if}
+					<div class="result-actions">
+						<button class="btn-primary" class:success-added={addSuccess} onclick={handleAdd} disabled={adding || addSuccess}>
+							{#if adding}
+								Adding...
+							{:else if addSuccess}
+								Added!
+							{:else if isOwned}
+								Add Another Copy
+							{:else}
+								Add to Collection
+							{/if}
+						</button>
+						<button class="btn-secondary" onclick={dismissResult}>Scan Another</button>
+					</div>
 				</div>
 			{:else if uploadResult && !uploadResult.card}
 				<div class="upload-result">
@@ -288,6 +355,41 @@
 		text-align: center;
 	}
 
+	.result-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.625rem;
+		flex-wrap: wrap;
+		margin-bottom: 1rem;
+	}
+
+	.result-header-row .result-title {
+		margin-bottom: 0;
+	}
+
+	.ownership-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.2rem 0.6rem;
+		border-radius: 10px;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+	}
+
+	.ownership-badge.owned {
+		background: rgba(59, 130, 246, 0.1);
+		color: var(--accent-primary, #3b82f6);
+		border: 1px solid rgba(59, 130, 246, 0.25);
+	}
+
+	.ownership-badge.new-card {
+		background: rgba(16, 185, 129, 0.12);
+		color: var(--success, #10b981);
+		border: 1px solid rgba(16, 185, 129, 0.25);
+	}
+
 	.result-title {
 		font-family: 'Syne', sans-serif;
 		font-size: 1.3rem;
@@ -314,6 +416,37 @@
 		margin-top: 0.25rem;
 	}
 
+	.result-pills {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+	}
+
+	.meta-pill {
+		padding: 0.25rem 0.625rem;
+		border-radius: 12px;
+		background: var(--surface-primary, #070b14);
+		font-size: 0.8rem;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.meta-pill.power {
+		color: var(--accent-gold, #f59e0b);
+		font-weight: 600;
+	}
+
+	.meta-pill.rarity {
+		text-transform: capitalize;
+	}
+
+	.rarity.rarity-common { color: var(--rarity-common, #9CA3AF); }
+	.rarity.rarity-uncommon { color: var(--rarity-uncommon, #22C55E); }
+	.rarity.rarity-rare { color: var(--rarity-rare, #3B82F6); }
+	.rarity.rarity-ultra_rare { color: var(--rarity-epic, #A855F7); }
+	.rarity.rarity-legendary { color: var(--rarity-legendary, #F59E0B); }
+
 	.result-meta {
 		display: flex;
 		justify-content: center;
@@ -321,6 +454,47 @@
 		margin-top: 0.75rem;
 		font-size: 0.8rem;
 		color: var(--text-secondary, #94a3b8);
+	}
+
+	.result-actions {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.result-actions button {
+		flex: 1;
+		padding: 0.875rem;
+		border-radius: 8px;
+		font-weight: 600;
+		font-size: 0.95rem;
+		cursor: pointer;
+	}
+
+	.btn-primary {
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		border: none;
+	}
+
+	.btn-primary:disabled {
+		opacity: 0.5;
+	}
+
+	.btn-secondary {
+		background: transparent;
+		border: 1px solid var(--border-color, #1e293b);
+		color: var(--text-primary, #f1f5f9);
+	}
+
+	.success-added {
+		background: var(--success, #10b981) !important;
+	}
+
+	.add-error {
+		color: #ef4444;
+		font-size: 0.85rem;
+		margin-bottom: 0.5rem;
 	}
 
 	.result-desc {
