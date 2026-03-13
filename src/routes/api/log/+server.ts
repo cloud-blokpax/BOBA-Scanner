@@ -53,7 +53,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	// Rate limit by IP to prevent log spam
 	const clientIp = getClientAddress();
 	if (!checkLogRateLimit(clientIp)) {
-		return new Response(null, { status: 429 });
+		return json({ error: 'Too many log requests' }, { status: 429 });
 	}
 
 	try {

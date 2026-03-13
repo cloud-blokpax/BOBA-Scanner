@@ -18,8 +18,11 @@ const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: AL
 let _anthropic: Anthropic | null = null;
 
 function getAnthropicClient(): Anthropic {
+	const apiKey = env.CLAUDE_API_KEY ?? env.ANTHROPIC_API_KEY ?? '';
+	if (!apiKey) {
+		throw new Error('Anthropic API key not configured');
+	}
 	if (!_anthropic) {
-		const apiKey = env.CLAUDE_API_KEY ?? env.ANTHROPIC_API_KEY ?? '';
 		_anthropic = new Anthropic({ apiKey });
 	}
 	return _anthropic;

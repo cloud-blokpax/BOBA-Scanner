@@ -78,8 +78,8 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		const { data, error } = await supabase.from('cards').select('*');
 		if (error || !data || data.length === 0) return;
 
-		// Only update if Supabase has more cards than current set
-		if (data.length > cards.length) {
+		// Update if Supabase has a different card count (additions or deletions)
+		if (data.length !== cards.length) {
 			cards = data as unknown as Card[];
 			buildIndexes();
 			await applyParallelConfig();

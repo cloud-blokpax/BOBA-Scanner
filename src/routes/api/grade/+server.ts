@@ -35,8 +35,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		);
 	}
 
+	let body: Record<string, unknown>;
 	try {
-		const { imageData, cornerRegionData, centeringData, centeringImageData } = await request.json();
+		body = await request.json();
+	} catch {
+		throw error(400, 'Invalid JSON body');
+	}
+
+	try {
+		const { imageData, cornerRegionData, centeringData, centeringImageData } = body as {
+			imageData?: string;
+			cornerRegionData?: string;
+			centeringData?: unknown;
+			centeringImageData?: string;
+		};
 
 		if (!imageData) {
 			throw error(400, 'Missing image data');
@@ -133,16 +145,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		return json({
 			grade: gradeResult.grade,
-			grade_label: gradeResult.grade_label || null,
-			qualifier: gradeResult.qualifier || null,
-			confidence: gradeResult.confidence || null,
-			front_centering: gradeResult.front_centering || null,
-			back_centering: gradeResult.back_centering || null,
-			corners: gradeResult.corners || null,
-			edges: gradeResult.edges || null,
-			surface: gradeResult.surface || null,
-			summary: gradeResult.summary || null,
-			submit_recommendation: gradeResult.submit_recommendation || null
+			grade_label: gradeResult.grade_label ?? null,
+			qualifier: gradeResult.qualifier ?? null,
+			confidence: gradeResult.confidence ?? null,
+			front_centering: gradeResult.front_centering ?? null,
+			back_centering: gradeResult.back_centering ?? null,
+			corners: gradeResult.corners ?? null,
+			edges: gradeResult.edges ?? null,
+			surface: gradeResult.surface ?? null,
+			summary: gradeResult.summary ?? null,
+			submit_recommendation: gradeResult.submit_recommendation ?? null
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err;

@@ -24,7 +24,9 @@
 	async function compressImage(file: File): Promise<string> {
 		return new Promise((resolve) => {
 			const img = new Image();
+			const objectUrl = URL.createObjectURL(file);
 			img.onload = () => {
+				URL.revokeObjectURL(objectUrl);
 				const canvas = document.createElement('canvas');
 				const maxDim = 2000;
 				let w = img.width;
@@ -40,7 +42,7 @@
 				ctx.drawImage(img, 0, 0, w, h);
 				resolve(canvas.toDataURL('image/jpeg', 0.92));
 			};
-			img.src = URL.createObjectURL(file);
+			img.src = objectUrl;
 		});
 	}
 

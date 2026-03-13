@@ -43,6 +43,6 @@ export async function getEbayToken(): Promise<string> {
 	if (!response.ok) throw new Error(`eBay auth failed: ${response.status}`);
 	const data = await response.json();
 	_token = data.access_token;
-	_tokenExp = Date.now() + (data.expires_in - 60) * 1000;
+	_tokenExp = Date.now() + Math.max(data.expires_in - 60, 0) * 1000;
 	return _token!;
 }
