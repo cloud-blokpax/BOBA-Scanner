@@ -90,6 +90,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const base64 = cleanBuffer.toString('base64');
 
 	// ── Claude API call ─────────────────────────────────────
+	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user.id}`);
 	try {
 		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
@@ -128,10 +129,12 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 		});
 
 		const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+		console.log(`[api/scan] Claude raw response: ${text.substring(0, 500)}`);
 
 		// Extract JSON from response
 		const jsonMatch = text.match(/\{[\s\S]*\}/);
 		if (!jsonMatch) {
+			console.warn('[api/scan] No JSON found in Claude response');
 			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
 		}
 
@@ -139,8 +142,11 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 		try {
 			cardData = JSON.parse(jsonMatch[0]);
 		} catch {
+			console.warn('[api/scan] Failed to parse JSON from Claude response');
 			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
 		}
+
+		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
 
 		// Track scan in database
 		try {
@@ -156,7 +162,7 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 
 		return json({ success: true, card: cardData, method: 'claude' });
 	} catch (err) {
-		console.error('Claude API error:', err);
+		console.error('[api/scan] Claude API error:', err);
 
 		if (err instanceof Anthropic.APIError) {
 			if (err.status === 529) {
