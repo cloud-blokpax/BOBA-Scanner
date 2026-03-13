@@ -1,26 +1,38 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Scanner from '$lib/components/Scanner.svelte';
-	import BottomSheet from '$lib/components/BottomSheet.svelte';
+	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { initScanner } from '$lib/stores/scanner';
 	import type { ScanResult } from '$lib/types';
 
 	let scanResult = $state<ScanResult | null>(null);
+	let capturedImageUrl = $state<string | null>(null);
 
 	onMount(() => {
 		initScanner();
 	});
 
-	function handleResult(result: ScanResult) {
+	function handleResult(result: ScanResult, imageUrl?: string) {
 		scanResult = result;
+		capturedImageUrl = imageUrl ?? null;
 	}
 
 	function handleScanAnother() {
+		cleanupImageUrl();
 		scanResult = null;
+		capturedImageUrl = null;
 	}
 
 	function handleClose() {
+		cleanupImageUrl();
 		scanResult = null;
+		capturedImageUrl = null;
+	}
+
+	function cleanupImageUrl() {
+		if (capturedImageUrl?.startsWith('blob:')) {
+			URL.revokeObjectURL(capturedImageUrl);
+		}
 	}
 </script>
 
@@ -29,13 +41,16 @@
 </svelte:head>
 
 <div class="scan-page">
-	<Scanner onResult={handleResult} />
-
-	<BottomSheet
-		result={scanResult}
-		onClose={handleClose}
-		onScanAnother={handleScanAnother}
-	/>
+	{#if scanResult}
+		<ScanConfirmation
+			result={scanResult}
+			{capturedImageUrl}
+			onScanAnother={handleScanAnother}
+			onClose={handleClose}
+		/>
+	{:else}
+		<Scanner onResult={handleResult} />
+	{/if}
 </div>
 
 <style>
