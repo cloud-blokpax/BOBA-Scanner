@@ -104,7 +104,8 @@ export function featureEnabled(featureKey: string) {
  */
 export async function loadFeatureFlags(): Promise<void> {
 	try {
-		const { data: flags, error: flagErr } = await supabase.from('feature_flags').select('*');
+		const { data: flagsRaw, error: flagErr } = await supabase.from('feature_flags').select('*');
+		const flags = (flagsRaw || []) as FeatureFlag[];
 
 		const flagMap = new Map<string, FeatureFlag>();
 
@@ -116,14 +117,12 @@ export async function loadFeatureFlags(): Promise<void> {
 		} else {
 			// Merge DB flags with definitions
 			for (const def of FEATURE_DEFINITIONS) {
-				const dbFlag = (flags || []).find(
-					(f: { feature_key: string }) => f.feature_key === def.feature_key
-				);
+				const dbFlag = flags.find((f) => f.feature_key === def.feature_key);
 				flagMap.set(def.feature_key, dbFlag ? { ...def, ...dbFlag } : { ...def });
 			}
-			for (const dbFlag of flags || []) {
+			for (const dbFlag of flags) {
 				if (!flagMap.has(dbFlag.feature_key)) {
-					flagMap.set(dbFlag.feature_key, dbFlag as FeatureFlag);
+					flagMap.set(dbFlag.feature_key, dbFlag);
 				}
 			}
 		}
@@ -172,8 +171,13 @@ export async function saveFeatureFlag(
 	updates: Partial<FeatureFlag>
 ): Promise<boolean> {
 	try {
+		// Get existing flag to ensure required fields are present for upsert
+		const existing = get(featureFlags).get(featureKey);
+		const displayName = updates.display_name || existing?.display_name || featureKey;
+		// Strip non-DB fields (icon is local-only)
+		const { icon: _icon, ...dbUpdates } = updates;
 		const { error } = await supabase.from('feature_flags').upsert(
-			{ feature_key: featureKey, ...updates, updated_at: new Date().toISOString() },
+			{ feature_key: featureKey, display_name: displayName, ...dbUpdates, updated_at: new Date().toISOString() },
 			{ onConflict: 'feature_key' }
 		);
 		if (error) throw error;

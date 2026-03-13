@@ -188,6 +188,12 @@ export interface Database {
 					feature_key: string;
 					display_name: string;
 					description?: string | null;
+					enabled_globally?: boolean;
+					enabled_for_guest?: boolean;
+					enabled_for_authenticated?: boolean;
+					enabled_for_member?: boolean;
+					enabled_for_admin?: boolean;
+					updated_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['feature_flags']['Insert']>;
 				Relationships: [];
@@ -212,6 +218,8 @@ export interface Database {
 					max_heroes?: number;
 					max_plays?: number;
 					max_bonus?: number;
+					is_active?: boolean;
+					usage_count?: number;
 				};
 				Update: Partial<Database['public']['Tables']['tournaments']['Insert']>;
 				Relationships: [];

@@ -130,10 +130,16 @@ export async function addToCollection(
 	condition = 'near_mint',
 	notes: string | null = null
 ): Promise<void> {
+	// Get user_id from the current session (required for upsert conflict resolution)
+	const { data: sessionData } = await supabase.auth.getSession();
+	const userId = sessionData?.session?.user?.id;
+	if (!userId) throw new Error('Not authenticated');
+
 	const { data, error } = await supabase
 		.from('collections_v2')
 		.upsert(
 			{
+				user_id: userId,
 				card_id: cardId,
 				condition,
 				notes,
@@ -171,8 +177,8 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 
 	const { error } = await supabase
 		.from('collections_v2')
-		.update({ quantity } as never)
-		.eq('id' as never, itemId);
+		.update({ quantity } as { quantity: number } & Record<string, unknown>)
+		.eq('id' as 'card_id', itemId);
 
 	if (error) throw error;
 
@@ -193,7 +199,7 @@ export async function removeFromCollection(itemId: string): Promise<void> {
 	});
 	unsub();
 
-	const { error } = await supabase.from('collections_v2').delete().eq('id' as never, itemId);
+	const { error } = await supabase.from('collections_v2').delete().eq('id' as 'card_id', itemId);
 
 	if (error) throw error;
 
