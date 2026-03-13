@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { scanImage } from '$lib/stores/scanner';
+	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner';
+	import { onMount } from 'svelte';
+	import type { ScanResult } from '$lib/types';
 
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let uploadResult = $state<ScanResult | null>(null);
+	let uploading = $state(false);
+
+	onMount(() => {
+		initScanner();
+	});
 
 	function handleUploadClick() {
 		fileInput?.click();
@@ -13,9 +20,33 @@
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
-		// Navigate to scan page — the file will be processed there
-		goto('/scan');
+
+		uploading = true;
+		uploadResult = null;
+		try {
+			const result = await scanImage(file);
+			uploadResult = result;
+		} finally {
+			uploading = false;
+			input.value = '';
+		}
 	}
+
+	function dismissResult() {
+		uploadResult = null;
+		resetScanner();
+	}
+
+	const statusText = $derived.by(() => {
+		const state = $scanState;
+		switch (state.status) {
+			case 'tier1': return 'Checking cache...';
+			case 'tier2': return 'Running OCR...';
+			case 'tier3': return 'AI identifying...';
+			case 'processing': return 'Processing...';
+			default: return '';
+		}
+	});
 </script>
 
 <svelte:head>
@@ -28,13 +59,42 @@
 		<p class="hero-subtitle">AI-Powered Bo Jackson Trading Card Recognition</p>
 
 		{#if data.user}
+			{#if uploadResult?.card}
+				<div class="upload-result">
+					<h2 class="result-title">Card Found!</h2>
+					<div class="result-card">
+						<div class="result-name">{uploadResult.card.hero_name || uploadResult.card.name}</div>
+						<div class="result-number">#{uploadResult.card.card_number}</div>
+						{#if uploadResult.card.parallel}
+							<div class="result-parallel">{uploadResult.card.parallel}</div>
+						{/if}
+						<div class="result-meta">
+							<span>Confidence: {Math.round((uploadResult.confidence ?? 0) * 100)}%</span>
+							<span>Method: {uploadResult.scan_method}</span>
+						</div>
+					</div>
+					<button class="btn-primary" onclick={dismissResult}>Scan Another</button>
+				</div>
+			{:else if uploadResult && !uploadResult.card}
+				<div class="upload-result">
+					<h2 class="result-title">Card Not Recognized</h2>
+					<p class="result-desc">Try a clearer photo or use the camera scanner.</p>
+					<button class="btn-primary" onclick={dismissResult}>Try Again</button>
+				</div>
+			{:else if uploading}
+				<div class="upload-status">
+					<div class="upload-spinner"></div>
+					<span>{statusText || 'Processing...'}</span>
+				</div>
+			{/if}
+
 			<div class="quick-actions">
 				<a href="/scan" class="action-card primary">
 					<span class="action-icon">📷</span>
 					<span class="action-label">Scan Cards</span>
-					<span class="action-desc">Identify cards instantly with AI</span>
+					<span class="action-desc">Use camera to identify</span>
 				</a>
-				<button class="action-card" onclick={handleUploadClick}>
+				<button class="action-card upload" onclick={handleUploadClick} disabled={uploading}>
 					<span class="action-icon">📁</span>
 					<span class="action-label">Upload Image</span>
 					<span class="action-desc">Identify from a photo</span>
@@ -214,6 +274,87 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary, #94a3b8);
 		line-height: 1.4;
+	}
+
+	.upload-result {
+		margin: 2rem 0;
+		padding: 1.5rem;
+		border-radius: 12px;
+		background: var(--surface-secondary, #0d1524);
+		border: 1px solid var(--border-color, #1e293b);
+		text-align: center;
+	}
+
+	.result-title {
+		font-family: 'Syne', sans-serif;
+		font-size: 1.3rem;
+		margin-bottom: 1rem;
+	}
+
+	.result-card {
+		margin-bottom: 1rem;
+	}
+
+	.result-name {
+		font-size: 1.2rem;
+		font-weight: 700;
+	}
+
+	.result-number {
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.9rem;
+	}
+
+	.result-parallel {
+		color: var(--accent-primary, #3b82f6);
+		font-size: 0.85rem;
+		margin-top: 0.25rem;
+	}
+
+	.result-meta {
+		display: flex;
+		justify-content: center;
+		gap: 1.5rem;
+		margin-top: 0.75rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.result-desc {
+		color: var(--text-secondary, #94a3b8);
+		margin-bottom: 1rem;
+	}
+
+	.upload-status {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		margin: 2rem 0;
+		padding: 1rem;
+		border-radius: 12px;
+		background: rgba(59, 130, 246, 0.1);
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		color: var(--text-primary, #f1f5f9);
+	}
+
+	.upload-spinner {
+		width: 18px;
+		height: 18px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: var(--accent-primary, #3b82f6);
+		border-radius: 50%;
+		animation: spin 0.7s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+
+	.action-card.upload:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	@media (max-width: 600px) {

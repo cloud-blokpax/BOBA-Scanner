@@ -11,7 +11,7 @@
 import * as Comlink from 'comlink';
 import { idb } from './idb';
 import { findCard, loadCardDatabase, normalizeCardNum } from './card-db';
-import { supabase } from './supabase';
+import { getSupabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
 import { addToScanHistory } from '$lib/stores/scan-history';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
@@ -171,13 +171,16 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	}
 
 	// Layer 2: Supabase hash_cache (origin, <100ms)
-	const { data: supaEntryRaw } = await supabase
-		.from('hash_cache')
-		.select('card_id, confidence')
-		.eq('phash', hash)
-		.single();
-
-	const supaEntry = supaEntryRaw as Pick<HashCacheEntry, 'card_id' | 'confidence'> | null;
+	const client = getSupabase();
+	let supaEntry: Pick<HashCacheEntry, 'card_id' | 'confidence'> | null = null;
+	if (client) {
+		const { data } = await client
+			.from('hash_cache')
+			.select('card_id, confidence')
+			.eq('phash', hash)
+			.maybeSingle();
+		supaEntry = data as Pick<HashCacheEntry, 'card_id' | 'confidence'> | null;
+	}
 
 	if (supaEntry) {
 		const card = findCard(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
@@ -199,14 +202,30 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 
 // ── Tier 2: OCR + Fuzzy Match ───────────────────────────────
 
+/** Race a promise against a timeout. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+		)
+	]);
+}
+
 async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	for (const region of BOBA_OCR_REGIONS) {
 		try {
 			// Preprocess region in image worker
-			const processedBlob = await imageWorker!.preprocessForOCR(bitmap, region);
+			const processedBlob = await withTimeout(
+				imageWorker!.preprocessForOCR(bitmap, region),
+				5000, 'OCR preprocess'
+			);
 
-			// Run OCR in OCR worker
-			const ocrResult = await ocrWorker!.recognizeText(processedBlob);
+			// Run OCR in OCR worker (timeout at 10s per region)
+			const ocrResult = await withTimeout(
+				ocrWorker!.recognizeText(processedBlob),
+				10000, 'OCR recognition'
+			);
 			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
 			// Extract card number
@@ -308,16 +327,19 @@ async function writeHashToAllLayers(
 
 	// Layer 3: Supabase (via service role on server, but client can insert if allowed)
 	try {
-		await supabase.from('hash_cache').upsert(
-			{
-				phash: hash,
-				card_id: cardId,
-				confidence,
-				scan_count: 1,
-				last_seen: new Date().toISOString()
-			},
-			{ onConflict: 'phash' }
-		);
+		const client = getSupabase();
+		if (client) {
+			await client.from('hash_cache').upsert(
+				{
+					phash: hash,
+					card_id: cardId,
+					confidence,
+					scan_count: 1,
+					last_seen: new Date().toISOString()
+				},
+				{ onConflict: 'phash' }
+			);
+		}
 	} catch {
 		// Non-critical
 	}
@@ -326,6 +348,8 @@ async function writeHashToAllLayers(
 // ── Helpers ─────────────────────────────────────────────────
 
 async function fetchCardById(cardId: string): Promise<Card | null> {
-	const { data } = await supabase.from('cards').select('*').eq('id', cardId).single();
+	const client = getSupabase();
+	if (!client) return null;
+	const { data } = await client.from('cards').select('*').eq('id', cardId).maybeSingle();
 	return data as Card | null;
 }
