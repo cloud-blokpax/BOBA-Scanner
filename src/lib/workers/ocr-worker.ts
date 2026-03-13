@@ -27,7 +27,7 @@ let recognitionCount = 0;
 const ocrService = {
 	async initialize(whitelist?: string): Promise<void> {
 		worker = await Tesseract.createWorker('eng', 1, {
-			langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast'
+			langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_fast'
 		});
 		await worker.setParameters({
 			tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
