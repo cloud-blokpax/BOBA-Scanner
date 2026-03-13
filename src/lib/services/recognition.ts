@@ -43,7 +43,7 @@ let _lastOcrReading: string | null = null;
 export async function initWorkers(): Promise<void> {
 	if (!imageWorker) {
 		const ImageWorker = new Worker(
-			new URL('$lib/workers/image-processor.js', import.meta.url),
+			new URL('$lib/workers/image-processor.ts', import.meta.url),
 			{ type: 'module' }
 		);
 		imageWorker = Comlink.wrap(ImageWorker);
@@ -51,7 +51,7 @@ export async function initWorkers(): Promise<void> {
 
 	if (!ocrWorker) {
 		const OcrWorker = new Worker(
-			new URL('$lib/workers/ocr-worker.js', import.meta.url),
+			new URL('$lib/workers/ocr-worker.ts', import.meta.url),
 			{ type: 'module' }
 		);
 		ocrWorker = Comlink.wrap(OcrWorker);

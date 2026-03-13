@@ -10,44 +10,70 @@
 import Tesseract from 'tesseract.js';
 import * as Comlink from 'comlink';
 
-let worker = null;
+interface OcrWord {
+	text: string;
+	confidence: number;
+}
+
+interface OcrResult {
+	text: string;
+	confidence: number;
+	words: OcrWord[];
+}
+
+let worker: Tesseract.Worker | null = null;
 let recognitionCount = 0;
 
 const ocrService = {
-	async initialize(whitelist) {
+	async initialize(whitelist?: string): Promise<void> {
 		worker = await Tesseract.createWorker('eng', 1, {
 			langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast'
 		});
 		await worker.setParameters({
-			tessedit_pageseg_mode: '7', // Single text line
+			tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
 			tessedit_char_whitelist:
 				whitelist || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- '
 		});
 	},
 
-	async recognizeText(imageBlob) {
+	async recognizeText(imageBlob: Blob): Promise<OcrResult> {
 		if (!worker) await this.initialize();
 
 		// Restart worker every 100 recognitions (WASM memory leak mitigation)
 		if (++recognitionCount > 100) {
-			await worker.terminate();
+			await worker!.terminate();
 			await this.initialize();
 			recognitionCount = 0;
 		}
 
-		const { data } = await worker.recognize(imageBlob);
+		const { data } = await worker!.recognize(imageBlob);
+
+		// Extract words from block→paragraph→line→word hierarchy
+		const words: OcrWord[] = [];
+		if (data.blocks) {
+			for (const block of data.blocks) {
+				for (const para of block.paragraphs) {
+					for (const line of para.lines) {
+						for (const w of line.words) {
+							words.push({ text: w.text, confidence: w.confidence });
+						}
+					}
+				}
+			}
+		}
+
 		return {
 			text: data.text.trim(),
 			confidence: data.confidence,
-			words: data.words?.map((w) => ({ text: w.text, confidence: w.confidence }))
+			words
 		};
 	},
 
 	/**
 	 * Extract card number from OCR text.
-	 * Ported from src/core/ocr/ocr.js extractCardNumber().
+	 * Handles common OCR confusables (0↔O, 1↔I, etc.)
 	 */
-	extractCardNumber(text) {
+	extractCardNumber(text: string): string | null {
 		const upper = text
 			.toUpperCase()
 			.replace(/[|!¡]/g, 'I')
@@ -55,7 +81,7 @@ const ocrService = {
 			.replace(/\s+/g, ' ')
 			.trim();
 
-		const patterns = [
+		const patterns: RegExp[] = [
 			/\b([A-Z]{1,6})[-–—]\s*(\d{1,4})\b/,
 			/\b([A-Z]{1,6})\s+(\d{2,4})\b/,
 			/\b([A-Z]{1,6})(\d{2,4})\b/,
@@ -92,7 +118,7 @@ const ocrService = {
 		return null;
 	},
 
-	async terminate() {
+	async terminate(): Promise<void> {
 		if (worker) {
 			await worker.terminate();
 			worker = null;

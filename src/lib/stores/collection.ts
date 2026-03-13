@@ -2,16 +2,20 @@
  * Collection Store
  *
  * Manages user's card collection with:
- *   - Supabase persistence (RLS enforced)
- *   - IndexedDB offline cache
- *   - Reactive Svelte store
+ *   - Reactive Svelte store for UI state
+ *   - Delegates DB operations to collection-service.ts
+ *   - No direct Supabase calls (breaks circular dependency with sync.ts)
  */
 
 import { writable, derived, get } from 'svelte/store';
-import { supabase } from '$lib/services/supabase';
-import { idb } from '$lib/services/idb';
-import { recordDeletedCard } from '$lib/services/sync';
-import type { CollectionItem, Card } from '$lib/types';
+import {
+	fetchCollection,
+	upsertCollectionItem,
+	updateItemQuantity,
+	deleteCollectionItem,
+	recordDeletion
+} from '$lib/services/collection-service';
+import type { CollectionItem } from '$lib/types';
 
 export const collectionItems = writable<CollectionItem[]>([]);
 export const collectionLoading = writable(false);
@@ -82,37 +86,9 @@ export const collectionWeaponTypes = derived(collectionItems, ($items) => {
  */
 export async function loadCollection(): Promise<void> {
 	collectionLoading.set(true);
-
 	try {
-		const { data, error } = await supabase
-			.from('collections_v2')
-			.select(`
-				*,
-				card:cards(*)
-			`)
-			.order('added_at', { ascending: false });
-
-		if (error) throw error;
-
-		const items = (data || []) as CollectionItem[];
+		const items = await fetchCollection();
 		collectionItems.set(items);
-
-		// Cache in IndexedDB for offline use
-		try {
-			await idb.setCollectionItems(items);
-		} catch {
-			// Non-critical
-		}
-	} catch {
-		// Try IndexedDB fallback
-		try {
-			const cached = await idb.getCollectionItems();
-			if (cached.length > 0) {
-				collectionItems.set(cached as CollectionItem[]);
-			}
-		} catch {
-			// Both sources failed
-		}
 	} finally {
 		collectionLoading.set(false);
 	}
@@ -126,29 +102,7 @@ export async function addToCollection(
 	condition = 'near_mint',
 	notes: string | null = null
 ): Promise<void> {
-	// Get user_id from the current session (required for upsert conflict resolution)
-	const { data: sessionData } = await supabase.auth.getSession();
-	const userId = sessionData?.session?.user?.id;
-	if (!userId) throw new Error('Not authenticated');
-
-	const { data, error } = await supabase
-		.from('collections_v2')
-		.upsert(
-			{
-				user_id: userId,
-				card_id: cardId,
-				condition,
-				notes,
-				quantity: 1
-			},
-			{ onConflict: 'user_id,card_id,condition' }
-		)
-		.select(`*, card:cards(*)`)
-		.single();
-
-	if (error) throw error;
-
-	const item = (data as unknown) as CollectionItem;
+	const item = await upsertCollectionItem(cardId, condition, notes);
 	collectionItems.update((items) => {
 		const existing = items.findIndex(
 			(i) => i.card_id === cardId && i.condition === condition
@@ -171,12 +125,7 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 		return;
 	}
 
-	const { error } = await supabase
-		.from('collections_v2')
-		.update({ quantity })
-		.eq('id', itemId);
-
-	if (error) throw error;
+	await updateItemQuantity(itemId, quantity);
 
 	collectionItems.update((items) =>
 		items.map((i) => (i.id === itemId ? { ...i, quantity } : i))
@@ -191,14 +140,12 @@ export async function removeFromCollection(itemId: string): Promise<void> {
 	const items = get(collectionItems);
 	const cardId = items.find((i) => i.id === itemId)?.card_id ?? null;
 
-	const { error } = await supabase.from('collections_v2').delete().eq('id', itemId);
-
-	if (error) throw error;
+	await deleteCollectionItem(itemId);
 
 	collectionItems.update((items) => items.filter((i) => i.id !== itemId));
 
 	// Record deletion for sync
 	if (cardId) {
-		await recordDeletedCard(cardId);
+		await recordDeletion(cardId);
 	}
 }
