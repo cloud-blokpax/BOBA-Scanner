@@ -66,9 +66,9 @@
 	</main>
 
 	<nav class="bottom-nav">
-		<a href="/scan" class="bottom-nav-item" class:active={currentPath === '/scan'}>
-			<span class="bottom-nav-icon">📷</span>
-			<span class="bottom-nav-label">Scan</span>
+		<a href="/" class="bottom-nav-item" class:active={currentPath === '/'}>
+			<span class="bottom-nav-icon">🏠</span>
+			<span class="bottom-nav-label">Home</span>
 		</a>
 		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
 			<span class="bottom-nav-icon">📚</span>
