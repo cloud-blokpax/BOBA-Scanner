@@ -126,11 +126,21 @@ const imageProcessor = {
 		const sh = imageBitmap.height;
 		const sx = Math.floor(sw * region.x);
 		const sy = Math.floor(sh * region.y);
-		const sw2 = Math.floor(sw * region.w);
-		const sh2 = Math.floor(sh * region.h);
+		let sw2 = Math.floor(sw * region.w);
+		let sh2 = Math.floor(sh * region.h);
 
-		// Scale 4x for crisper character rendering
-		const SCALE = 4;
+		// Clamp crop to image bounds
+		sw2 = Math.min(sw2, sw - sx);
+		sh2 = Math.min(sh2, sh - sy);
+
+		// Tesseract needs at least 3px in each dimension to process lines
+		const MIN_CROP = 3;
+		if (sw2 < MIN_CROP || sh2 < MIN_CROP) {
+			throw new Error(`OCR region too small: ${sw2}x${sh2} (min ${MIN_CROP}x${MIN_CROP})`);
+		}
+
+		// Scale up for crisper character rendering, ensure at least 30px in each dimension
+		const SCALE = Math.max(4, Math.ceil(30 / Math.min(sw2, sh2)));
 		const canvas = new OffscreenCanvas(sw2 * SCALE, sh2 * SCALE);
 		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, sx, sy, sw2, sh2, 0, 0, canvas.width, canvas.height);
