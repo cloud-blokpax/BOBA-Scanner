@@ -8,40 +8,15 @@
  */
 
 import { json, error } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
 import type { RequestHandler } from './$types';
-
-let _ebayToken: string | null = null;
-let _ebayTokenExp = 0;
-
-async function getEbayToken(): Promise<string> {
-	if (_ebayToken && Date.now() < _ebayTokenExp) return _ebayToken;
-
-	const clientId = env.EBAY_CLIENT_ID;
-	const clientSecret = env.EBAY_CLIENT_SECRET;
-	if (!clientId || !clientSecret) {
-		throw new Error('eBay credentials not configured');
-	}
-
-	const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-	const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
-		method: 'POST',
-		headers: {
-			Authorization: `Basic ${creds}`,
-			'Content-Type': 'application/x-www-form-urlencoded'
-		},
-		body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
-	});
-
-	if (!response.ok) throw new Error(`eBay auth failed: ${response.status}`);
-	const data = await response.json();
-	_ebayToken = data.access_token;
-	_ebayTokenExp = Date.now() + (data.expires_in - 60) * 1000;
-	return _ebayToken!;
-}
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const { cardId } = params;
+
+	if (!isEbayConfigured()) {
+		return json({ error: 'eBay pricing not available' }, { status: 503 });
+	}
 
 	// Check auth (optional — prices can be public)
 	const { user } = await locals.safeGetSession();

@@ -10,6 +10,7 @@
 import { writable, derived } from 'svelte/store';
 import { supabase } from '$lib/services/supabase';
 import { idb } from '$lib/services/idb';
+import { recordDeletedCard } from '$lib/services/sync';
 import type { CollectionItem, Card } from '$lib/types';
 
 export const collectionItems = writable<CollectionItem[]>([]);
@@ -184,9 +185,22 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
  * Remove a card from the collection.
  */
 export async function removeFromCollection(itemId: string): Promise<void> {
+	// Capture card_id before removing from store
+	let cardId: string | null = null;
+	const unsub = collectionItems.subscribe(($items) => {
+		const item = $items.find((i) => i.id === itemId);
+		if (item) cardId = item.card_id;
+	});
+	unsub();
+
 	const { error } = await supabase.from('collections_v2').delete().eq('id' as never, itemId);
 
 	if (error) throw error;
 
 	collectionItems.update((items) => items.filter((i) => i.id !== itemId));
+
+	// Record deletion for sync
+	if (cardId) {
+		await recordDeletedCard(cardId);
+	}
 }

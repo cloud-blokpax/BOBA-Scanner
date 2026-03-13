@@ -9,5 +9,8 @@ export default defineConfig({
 	},
 	worker: {
 		format: 'es'
+	},
+	json: {
+		stringify: true
 	}
 });
