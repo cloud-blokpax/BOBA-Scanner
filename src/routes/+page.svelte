@@ -78,7 +78,10 @@
 			{:else if uploadResult && !uploadResult.card}
 				<div class="upload-result">
 					<h2 class="result-title">Card Not Recognized</h2>
-					<p class="result-desc">Try a clearer photo or use the camera scanner.</p>
+					<p class="result-desc">{uploadResult.failReason || 'Try a clearer photo or use the camera scanner.'}</p>
+					{#if uploadResult.failReason}
+						<p class="result-hint">Check browser console (F12) for detailed scan logs.</p>
+					{/if}
 					<button class="btn-primary" onclick={dismissResult}>Try Again</button>
 				</div>
 			{:else if uploading}
@@ -322,6 +325,12 @@
 
 	.result-desc {
 		color: var(--text-secondary, #94a3b8);
+		margin-bottom: 1rem;
+	}
+
+	.result-hint {
+		font-size: 0.75rem;
+		color: var(--text-tertiary, #64748b);
 		margin-bottom: 1rem;
 	}
 

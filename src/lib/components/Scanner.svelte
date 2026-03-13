@@ -49,6 +49,8 @@
 			case 'processing':
 				return 'Processing...';
 			case 'complete':
+				if (!state.result?.card && state.result?.failReason) return state.result.failReason;
+				if (!state.result?.card) return 'Card not recognized';
 				return 'Card found!';
 			case 'error':
 				return state.error || 'Scan failed — try again';
@@ -59,7 +61,8 @@
 
 	const statusType = $derived.by(() => {
 		const state = $scanState;
-		if (state.status === 'complete') return 'success';
+		if (state.status === 'complete' && state.result?.card) return 'success';
+		if (state.status === 'complete' && !state.result?.card) return 'error';
 		if (state.status === 'error') return 'error';
 		if (['tier1', 'tier2', 'tier3', 'processing', 'capturing'].includes(state.status)) return 'scanning';
 		return 'idle';
@@ -83,10 +86,13 @@
 		resetScanner();
 	});
 
+	let lastFailReason = $state<string | null>(null);
+
 	function handleScanResult(result: ScanResult | null) {
 		if (result?.card) {
 			revealedCard = result.card;
 			scanSuccess = true;
+			lastFailReason = null;
 			const r = result.card.rarity;
 			if (r === 'legendary') triggerHaptic('legendary');
 			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
@@ -96,6 +102,7 @@
 		} else {
 			revealedCard = null;
 			scanFailed = true;
+			lastFailReason = result?.failReason || null;
 			triggerHaptic('error');
 			if (result) onResult?.(result);
 			setTimeout(() => { scanFailed = false; }, 1200);
