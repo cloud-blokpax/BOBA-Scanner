@@ -146,6 +146,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Missing image data');
 		}
 
+		// Validate base64 image data format and enforce size limits
+		const MAX_BASE64_LENGTH = 15_000_000; // ~11MB decoded
+		const base64Pattern = /^[A-Za-z0-9+/\n\r]+=*$/;
+		const images = [imageData, cornerRegionData, centeringImageData].filter(Boolean);
+		for (const img of images) {
+			if (typeof img !== 'string' || img.length > MAX_BASE64_LENGTH || !base64Pattern.test(img)) {
+				throw error(400, 'Invalid image data');
+			}
+		}
+
 		const apiKey = env.ANTHROPIC_API_KEY ?? env.CLAUDE_API_KEY ?? '';
 		if (!apiKey) {
 			throw error(500, 'Server configuration error');
@@ -205,7 +215,39 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		const data = await response.json();
-		return json(data);
+
+		// Extract and validate the grading JSON from the Claude response
+		const text = data?.content?.[0]?.type === 'text' ? data.content[0].text : '';
+		const jsonMatch = text.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) {
+			return json({ error: 'Could not parse grading response', raw: text }, { status: 422 });
+		}
+
+		let gradeResult;
+		try {
+			gradeResult = JSON.parse(jsonMatch[0]);
+		} catch {
+			return json({ error: 'Invalid grading response format', raw: text }, { status: 422 });
+		}
+
+		// Validate expected fields exist
+		if (typeof gradeResult.grade !== 'number' || gradeResult.grade < 1 || gradeResult.grade > 10) {
+			return json({ error: 'Invalid grade value in response', raw: text }, { status: 422 });
+		}
+
+		return json({
+			grade: gradeResult.grade,
+			grade_label: gradeResult.grade_label || null,
+			qualifier: gradeResult.qualifier || null,
+			confidence: gradeResult.confidence || null,
+			front_centering: gradeResult.front_centering || null,
+			back_centering: gradeResult.back_centering || null,
+			corners: gradeResult.corners || null,
+			edges: gradeResult.edges || null,
+			surface: gradeResult.surface || null,
+			summary: gradeResult.summary || null,
+			submit_recommendation: gradeResult.submit_recommendation || null
+		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err;
 		console.error('Grade API handler error:', err);

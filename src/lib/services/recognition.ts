@@ -225,23 +225,35 @@ async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 // ── Tier 3: Claude API ──────────────────────────────────────
 
 async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
-	// Resize for upload
-	const imageBlob = await imageWorker!.resizeForUpload(bitmap, 1024);
+	let response: Response;
+	try {
+		// Resize for upload
+		const imageBlob = await imageWorker!.resizeForUpload(bitmap, 1024);
 
-	const formData = new FormData();
-	formData.append('image', imageBlob, 'scan.jpg');
+		const formData = new FormData();
+		formData.append('image', imageBlob, 'scan.jpg');
 
-	const response = await fetch('/api/scan', {
-		method: 'POST',
-		body: formData
-	});
+		response = await fetch('/api/scan', {
+			method: 'POST',
+			body: formData
+		});
+	} catch (err) {
+		console.error('Claude API scan network error:', err);
+		return null;
+	}
 
 	if (!response.ok) {
 		console.error('Claude API scan failed:', response.status);
 		return null;
 	}
 
-	const result = await response.json();
+	let result;
+	try {
+		result = await response.json();
+	} catch {
+		console.error('Claude API scan: invalid JSON response');
+		return null;
+	}
 	if (!result.success || !result.card) return null;
 
 	// Match Claude response to local card database

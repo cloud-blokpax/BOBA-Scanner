@@ -342,8 +342,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(401, 'Authentication required');
 	}
 
-	const { query, cardNumber, hero, athlete } = await request.json();
-	if (!query?.trim()) {
+	const body = await request.json();
+	const query = typeof body.query === 'string' ? body.query.trim().slice(0, 200) : '';
+	const cardNumber = typeof body.cardNumber === 'string' ? body.cardNumber.slice(0, 20) : undefined;
+	const hero = typeof body.hero === 'string' ? body.hero.slice(0, 100) : undefined;
+	const athlete = typeof body.athlete === 'string' ? body.athlete.slice(0, 100) : undefined;
+
+	if (!query) {
 		throw error(400, 'Missing query');
 	}
 

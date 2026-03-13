@@ -71,7 +71,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 
 	if (uploadError) {
-		throw error(500, uploadError.message);
+		console.error('Upload storage error:', uploadError.message);
+		throw error(500, 'Image upload failed');
 	}
 
 	return json({ path: data.path });

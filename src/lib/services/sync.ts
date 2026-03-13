@@ -15,8 +15,24 @@ const PUSH_DEBOUNCE = 2000;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 let _pushTimer: ReturnType<typeof setTimeout> | null = null;
-let _syncLock = false;
+let _syncLockPromise: Promise<void> | null = null;
 let _autoSyncInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Promise-based lock to prevent concurrent sync operations.
+ * Returns a release function; returns null if lock is already held.
+ */
+function acquireSyncLock(): (() => void) | null {
+	if (_syncLockPromise) return null;
+	let release: () => void;
+	_syncLockPromise = new Promise<void>((resolve) => {
+		release = () => {
+			_syncLockPromise = null;
+			resolve();
+		};
+	});
+	return release!;
+}
 
 /**
  * Record a card deletion for sync purposes.
@@ -43,12 +59,14 @@ export function schedulePush(): void {
  * Push local collection changes to Supabase.
  * Uses batched upsert (single network call) instead of per-item loops.
  */
-async function pushToCloud(): Promise<void> {
+async function pushToCloud(skipLock = false): Promise<void> {
 	const currentUser = get(user);
 	const supabase = getSupabase();
-	if (!currentUser || !supabase || _syncLock) return;
+	if (!currentUser || !supabase) return;
 
-	_syncLock = true;
+	const release = skipLock ? null : acquireSyncLock();
+	if (!skipLock && !release) return; // Already locked
+
 	try {
 		const items = get(collectionItems).filter((i) => i.card_id);
 
@@ -91,7 +109,7 @@ async function pushToCloud(): Promise<void> {
 	} catch (err) {
 		console.error('Sync push error:', err);
 	} finally {
-		_syncLock = false;
+		if (release) release();
 	}
 }
 
@@ -101,18 +119,20 @@ async function pushToCloud(): Promise<void> {
 export async function fullSync(): Promise<void> {
 	const currentUser = get(user);
 	const supabase = getSupabase();
-	if (!currentUser || !supabase || _syncLock) return;
+	if (!currentUser || !supabase) return;
 
-	_syncLock = true;
+	const release = acquireSyncLock();
+	if (!release) return; // Already locked
+
 	try {
-		// Push first so local changes aren't overwritten
-		await pushToCloud();
+		// Push first (skipLock=true since we already hold the lock)
+		await pushToCloud(true);
 		// Then pull remote state
 		await loadCollection();
 	} catch (err) {
 		console.error('Full sync error:', err);
 	} finally {
-		_syncLock = false;
+		release();
 	}
 }
 
