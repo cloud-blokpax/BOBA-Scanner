@@ -14,6 +14,7 @@ import { env } from '$env/dynamic/private';
 // ── Upstash Rate Limiters ───────────────────────────────────
 
 let scanLimiter: Ratelimit | null = null;
+let anonScanLimiter: Ratelimit | null = null;
 let collectionLimiter: Ratelimit | null = null;
 
 function initLimiters() {
@@ -25,11 +26,18 @@ function initLimiters() {
 
 	const redis = new Redis({ url: upstashUrl, token: upstashToken });
 
-	// 20 scans per 60 seconds per user
+	// 20 scans per 60 seconds per authenticated user
 	scanLimiter = new Ratelimit({
 		redis,
 		limiter: Ratelimit.slidingWindow(20, '60 s'),
 		prefix: 'rl:scan'
+	});
+
+	// 5 scans per 60 seconds per anonymous IP (stricter to prevent abuse)
+	anonScanLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(5, '60 s'),
+		prefix: 'rl:anon-scan'
 	});
 
 	// 60 collection updates per 60 seconds per user
@@ -45,6 +53,7 @@ function initLimiters() {
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const WINDOW_MS = 60_000;
 const MAX_SCAN_REQUESTS = 20;
+const MAX_ANON_SCAN_REQUESTS = 5;
 const MAX_COLLECTION_REQUESTS = 60;
 
 function checkInMemory(key: string, maxRequests: number): boolean {
@@ -107,6 +116,38 @@ export async function checkScanRateLimit(userId: string): Promise<RateLimitResul
 		success,
 		limit: MAX_SCAN_REQUESTS,
 		remaining: Math.max(0, MAX_SCAN_REQUESTS - count),
+		reset: Date.now() + WINDOW_MS
+	};
+}
+
+/**
+ * Check scan rate limit for an anonymous IP (stricter than authenticated).
+ */
+export async function checkAnonScanRateLimit(ip: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (anonScanLimiter) {
+		try {
+			const result = await anonScanLimiter.limit(ip);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch {
+			// Fall through to in-memory
+		}
+	}
+
+	// In-memory fallback
+	const key = `anon-scan:${ip}`;
+	const success = checkInMemory(key, MAX_ANON_SCAN_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
+	return {
+		success,
+		limit: MAX_ANON_SCAN_REQUESTS,
+		remaining: Math.max(0, MAX_ANON_SCAN_REQUESTS - count),
 		reset: Date.now() + WINDOW_MS
 	};
 }

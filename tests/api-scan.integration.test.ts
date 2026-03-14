@@ -9,8 +9,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Mocks ────────────────────────────────────────────────────
 
 const mockCheckScanRateLimit = vi.fn();
+const mockCheckAnonScanRateLimit = vi.fn();
 vi.mock('$lib/server/rate-limit', () => ({
-	checkScanRateLimit: (...args: unknown[]) => mockCheckScanRateLimit(...args)
+	checkScanRateLimit: (...args: unknown[]) => mockCheckScanRateLimit(...args),
+	checkAnonScanRateLimit: (...args: unknown[]) => mockCheckAnonScanRateLimit(...args)
 }));
 
 const mockSharp = vi.fn();
@@ -101,15 +103,41 @@ describe('POST /api/scan', () => {
 			remaining: 19,
 			reset: Date.now() + 60000
 		});
+		mockCheckAnonScanRateLimit.mockResolvedValue({
+			success: true,
+			limit: 5,
+			remaining: 4,
+			reset: Date.now() + 60000
+		});
 	});
 
 	describe('authentication', () => {
-		it('rejects unauthenticated requests with 401', async () => {
+		it('allows unauthenticated requests with IP-based rate limiting', async () => {
 			const locals = makeLocals(null);
+			mockAnthropicCreate.mockResolvedValue({
+				content: [{ type: 'text', text: '{"card_number":"BF-001","hero_name":"Bo","confidence":0.9}' }]
+			});
+
 			const request = makeRequest(makeImageFile());
-			await expect(
-				POST({ request, locals } as any)
-			).rejects.toMatchObject({ status: 401 });
+			const getClientAddress = () => '127.0.0.1';
+			const response = await POST({ request, locals, getClientAddress } as any);
+			expect(response.status).toBe(200);
+			expect(mockCheckAnonScanRateLimit).toHaveBeenCalledWith('127.0.0.1');
+		});
+
+		it('rate limits unauthenticated requests by IP', async () => {
+			const locals = makeLocals(null);
+			mockCheckAnonScanRateLimit.mockResolvedValue({
+				success: false,
+				limit: 5,
+				remaining: 0,
+				reset: Date.now() + 30000
+			});
+
+			const request = makeRequest(makeImageFile());
+			const getClientAddress = () => '127.0.0.1';
+			const response = await POST({ request, locals, getClientAddress } as any);
+			expect(response.status).toBe(429);
 		});
 
 		it('allows authenticated requests', async () => {
