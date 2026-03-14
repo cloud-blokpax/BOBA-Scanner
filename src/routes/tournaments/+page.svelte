@@ -48,6 +48,9 @@
 		return code;
 	}
 
+	// Cache the resolved users.id so we don't look it up on every load
+	let resolvedUserId = $state<string | null>(null);
+
 	async function loadTournaments() {
 		loading = true;
 		try {
@@ -58,10 +61,15 @@
 				return;
 			}
 
+			// Resolve users.id (may differ from auth user id for pre-migration users)
+			if (!resolvedUserId) {
+				resolvedUserId = await resolveUserId(currentUser);
+			}
+
 			const { data, error } = await supabase
 				.from('tournaments')
 				.select('*')
-				.or(`creator_id.eq.${currentUser.id},is_active.eq.true`)
+				.or(`creator_id.eq.${resolvedUserId},is_active.eq.true`)
 				.order('created_at', { ascending: false });
 
 			if (error) throw error;
@@ -73,8 +81,55 @@
 		loading = false;
 	}
 
+	/**
+	 * Resolve the `users.id` for the current auth user, creating the record if needed.
+	 * The `tournaments.creator_id` FK points to `users.id`, which may differ from the
+	 * Supabase Auth UUID for pre-migration users.
+	 */
+	async function resolveUserId(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }): Promise<string> {
+		// Look up by auth_user_id first
+		const { data: byAuth } = await supabase
+			.from('users')
+			.select('id')
+			.eq('auth_user_id', authUser.id)
+			.maybeSingle();
+		if (byAuth) return byAuth.id;
+
+		// Fallback: look up by email and link
+		if (authUser.email) {
+			const { data: byEmail } = await supabase
+				.from('users')
+				.select('id')
+				.eq('email', authUser.email)
+				.maybeSingle();
+			if (byEmail) {
+				await supabase
+					.from('users')
+					.update({ auth_user_id: authUser.id })
+					.eq('id', byEmail.id);
+				return byEmail.id;
+			}
+		}
+
+		// No record at all — create one using the auth UUID as the primary key
+		const googleId =
+			(authUser.user_metadata?.provider_id as string) || authUser.id;
+		const { data: created, error } = await supabase
+			.from('users')
+			.insert({
+				id: authUser.id,
+				auth_user_id: authUser.id,
+				google_id: googleId,
+				email: authUser.email ?? '',
+				name: (authUser.user_metadata?.full_name as string) || authUser.email?.split('@')[0] || 'User'
+			})
+			.select('id')
+			.single();
+		if (error) throw error;
+		return created.id;
+	}
+
 	async function createTournament() {
-		console.log('[Tournament] createTournament called', { name: newName, code: newCode, user: $page.data.user });
 		if (!newName.trim() || !newCode.trim()) {
 			showToast('Name and code are required', 'x');
 			return;
@@ -87,8 +142,10 @@
 
 		creating = true;
 		try {
+			const usersTableId = resolvedUserId ?? await resolveUserId(currentUser);
+			resolvedUserId = usersTableId;
 			const { error } = await supabase.from('tournaments').insert({
-				creator_id: currentUser.id,
+				creator_id: usersTableId,
 				code: newCode.toUpperCase(),
 				name: newName.trim(),
 				max_heroes: newMaxHeroes,
@@ -173,11 +230,11 @@
 	}
 
 	const myTournaments = $derived(
-		tournaments.filter((t) => $page.data.user && t.creator_id === $page.data.user.id)
+		tournaments.filter((t) => resolvedUserId && t.creator_id === resolvedUserId)
 	);
 
 	const otherTournaments = $derived(
-		tournaments.filter((t) => !$page.data.user || t.creator_id !== $page.data.user.id)
+		tournaments.filter((t) => !resolvedUserId || t.creator_id !== resolvedUserId)
 	);
 
 	$effect(() => {

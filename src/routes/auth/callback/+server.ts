@@ -20,32 +20,42 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		} = await locals.supabase.auth.getUser();
 
 		if (user?.email) {
-			// Try to link to existing user record by email
-			const { data: existingUser } = await locals.supabase
+			// First check if this auth user is already linked
+			const { data: byAuth } = await locals.supabase
 				.from('users')
 				.select('id')
-				.eq('email', user.email)
+				.eq('auth_user_id', user.id)
 				.maybeSingle();
 
-			if (existingUser) {
-				// Link existing user record to auth
-				await locals.supabase
+			if (!byAuth) {
+				// Not linked yet — try to link to existing user record by email
+				const { data: existingUser } = await locals.supabase
 					.from('users')
-					.update({ auth_user_id: user.id })
+					.select('id, auth_user_id')
 					.eq('email', user.email)
-					.is('auth_user_id', null);
-			} else {
-				// Create user record if none exists
-				const googleId =
-					user.user_metadata?.provider_id ||
-					user.app_metadata?.provider_id ||
-					user.id;
-				await locals.supabase.from('users').insert({
-					id: user.id,
-					google_id: googleId,
-					email: user.email,
-					name: user.user_metadata?.full_name || user.email.split('@')[0]
-				});
+					.maybeSingle();
+
+				if (existingUser && !existingUser.auth_user_id) {
+					// Link existing unlinked user record to this auth user
+					await locals.supabase
+						.from('users')
+						.update({ auth_user_id: user.id })
+						.eq('id', existingUser.id);
+				} else if (!existingUser) {
+					// No user record at all — create one
+					const googleId =
+						user.user_metadata?.provider_id ||
+						user.app_metadata?.provider_id ||
+						user.id;
+					await locals.supabase.from('users').insert({
+						id: user.id,
+						auth_user_id: user.id,
+						google_id: googleId,
+						email: user.email,
+						name: user.user_metadata?.full_name || user.email.split('@')[0]
+					});
+				}
+				// If existingUser has a different auth_user_id, skip — already linked to another auth account
 			}
 		}
 	}
