@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS public.tournaments (
   max_bonus   INT DEFAULT 15,
   usage_count INT DEFAULT 0,
   is_active   BOOLEAN DEFAULT true,
+  require_email   BOOLEAN DEFAULT true,
+  require_name    BOOLEAN DEFAULT false,
+  require_discord BOOLEAN DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 

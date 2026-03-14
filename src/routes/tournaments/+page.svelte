@@ -66,7 +66,8 @@
 
 			if (error) throw error;
 			tournaments = (data || []) as Tournament[];
-		} catch {
+		} catch (err) {
+			console.error('Failed to load tournaments:', err);
 			showToast('Failed to load tournaments', 'x');
 		}
 		loading = false;
@@ -107,8 +108,11 @@
 			newRequireName = false;
 			newRequireDiscord = false;
 			await loadTournaments();
-		} catch (err) {
-			showToast('Failed to create tournament', 'x');
+		} catch (err: unknown) {
+			const errObj = err as Record<string, unknown>;
+			const msg = errObj?.message || (err instanceof Error ? err.message : String(err));
+			console.error('Tournament creation failed:', err);
+			showToast(`Failed to create tournament: ${msg}`, 'x');
 		}
 		creating = false;
 	}
@@ -122,7 +126,8 @@
 			if (error) throw error;
 			tournament.is_active = !tournament.is_active;
 			tournaments = [...tournaments];
-		} catch {
+		} catch (err) {
+			console.error('Failed to toggle tournament active state:', err);
 			showToast('Failed to update', 'x');
 		}
 	}
