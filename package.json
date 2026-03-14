@@ -25,6 +25,7 @@
     "@sveltejs/adapter-vercel": "^6.3.3",
     "@sveltejs/kit": "^2.54.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@tanstack/svelte-virtual": "^3.13.22",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.4",
     "comlink": "^4.4.2",

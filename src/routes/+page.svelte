@@ -189,8 +189,9 @@
 			</div>
 		{:else}
 			<div class="cta-section">
-				<p>Sign in to start scanning and collecting Bo Jackson Battle Arena cards.</p>
-				<a href="/auth/login" class="btn-primary btn-large">Get Started</a>
+				<p>Scan and identify Bo Jackson Battle Arena cards instantly.</p>
+				<a href="/scan" class="btn-primary btn-large">Try Scanning Now</a>
+				<a href="/auth/login" class="btn-secondary btn-large cta-signin">Sign in for Full Features</a>
 			</div>
 		{/if}
 	</section>
@@ -302,6 +303,13 @@
 	.btn-large {
 		padding: 0.75rem 2rem;
 		font-size: 1.1rem;
+		display: inline-block;
+		text-decoration: none;
+	}
+
+	.cta-signin {
+		margin-top: 0.75rem;
+		font-size: 0.95rem;
 	}
 
 	.features-section {

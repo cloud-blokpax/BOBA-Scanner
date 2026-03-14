@@ -26,6 +26,8 @@ let imageWorker: Comlink.Remote<{
 	hammingDistance: (a: string, b: string) => number;
 	resizeForUpload: (bitmap: ImageBitmap, max?: number) => Promise<Blob>;
 	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;
+	checkGlare: (bitmap: ImageBitmap, brightnessThreshold?: number, areaThreshold?: number) => Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }>;
+	analyzeCardPresence: (bitmap: ImageBitmap, blurThreshold?: number) => Promise<{ cardDetected: boolean; isSharp: boolean; variance: number }>;
 	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
 }> | null = null;
 
@@ -34,6 +36,41 @@ let _lastOcrReading: string | null = null;
 
 // Tracks why Tier 3 failed for better error messages
 let _lastTier3FailReason: string | null = null;
+
+/**
+ * Analyze a video frame for card presence and sharpness (for auto-capture).
+ */
+export async function analyzeFrame(bitmap: ImageBitmap): Promise<{
+	cardDetected: boolean;
+	isSharp: boolean;
+}> {
+	await initWorkers();
+	const result = await imageWorker!.analyzeCardPresence(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
+	return { cardDetected: result.cardDetected, isSharp: result.isSharp };
+}
+
+/**
+ * Check image quality (blur + glare) before capture.
+ * Returns null if quality is acceptable, or a reason string if not.
+ */
+export async function checkImageQuality(bitmap: ImageBitmap): Promise<{
+	isBlurry: boolean;
+	variance: number;
+	hasGlare: boolean;
+	glareRegions: Array<{ x: number; y: number; w: number; h: number }>;
+}> {
+	await initWorkers();
+	const [blur, glare] = await Promise.all([
+		imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold),
+		imageWorker!.checkGlare(bitmap)
+	]);
+	return {
+		isBlurry: blur.isBlurry,
+		variance: blur.variance,
+		hasGlare: glare.hasGlare,
+		glareRegions: glare.regions
+	};
+}
 
 /**
  * Initialize the Web Workers. Call once on app start.
@@ -60,7 +97,8 @@ export async function initWorkers(): Promise<void> {
  */
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
-	onTierChange?: (tier: 1 | 2 | 3) => void
+	onTierChange?: (tier: 1 | 2 | 3) => void,
+	options?: { isAuthenticated?: boolean }
 ): Promise<ScanResult> {
 	const startTime = performance.now();
 	await initWorkers();
@@ -135,6 +173,17 @@ export async function recognizeCard(
 	// }
 
 	// ── TIER 3: Claude API ──────────────────────────────────
+	if (options?.isAuthenticated === false) {
+		console.debug('[scan] Skipping Tier 3: user not authenticated');
+		return finalize({
+			card_id: null,
+			card: null,
+			scan_method: 'claude' as ScanMethod,
+			confidence: 0,
+			processing_ms: 0,
+			failReason: 'Sign in for AI-powered card identification'
+		});
+	}
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
 	const tier3Result = await runTier3(bitmap);

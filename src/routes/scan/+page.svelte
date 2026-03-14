@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { initScanner } from '$lib/stores/scanner';
@@ -7,6 +8,7 @@
 
 	let scanResult = $state<ScanResult | null>(null);
 	let capturedImageUrl = $state<string | null>(null);
+	const isAuthenticated = $derived(!!$page.data.user);
 
 	onMount(() => {
 		initScanner();
@@ -41,15 +43,15 @@
 </svelte:head>
 
 <div class="scan-page">
+	<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} />
 	{#if scanResult}
 		<ScanConfirmation
 			result={scanResult}
 			{capturedImageUrl}
+			{isAuthenticated}
 			onScanAnother={handleScanAnother}
 			onClose={handleClose}
 		/>
-	{:else}
-		<Scanner onResult={handleResult} />
 	{/if}
 </div>
 
@@ -58,5 +60,6 @@
 		height: calc(100vh - 120px); /* Subtract header + nav */
 		display: flex;
 		flex-direction: column;
+		position: relative;
 	}
 </style>

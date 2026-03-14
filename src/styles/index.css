@@ -141,20 +141,6 @@
   border-width: 0;
 }
 
-/* ── Accessibility ──────────────────────────────────────── */
-/* Visually hides elements while keeping them accessible to screen readers */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
 /* ── Reset ─────────────────────────────────────────────── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -2280,6 +2266,38 @@ a.listing-badge:hover { opacity: .85; }
     display: flex;
 }
 
+/* ── Scan FAB (center raised button) ──────────────────────── */
+.scan-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-primary, #3b82f6), var(--gold, #f59e0b));
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35), 0 2px 6px rgba(0, 0, 0, 0.3);
+    transform: translateY(-12px);
+    text-decoration: none;
+    position: relative;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.scan-fab:active {
+    transform: translateY(-12px) scale(0.93);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.scan-fab.active {
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.scan-fab-icon {
+    font-size: 26px;
+    line-height: 1;
+}
+
 /* Push content above the fixed nav bar */
 .app-main {
     padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px) !important;
@@ -2647,6 +2665,16 @@ body.tab-scan .stats-strip {
 @keyframes cardReveal {
     0%   { opacity: 0; transform: scale(0.85) translateY(16px); }
     100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes badge-appear {
+    0% { opacity: 0; transform: scale(0.5); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-up-fade {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Continuous Scanner styles ──────────────────────────────── */
