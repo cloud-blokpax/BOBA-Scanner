@@ -57,9 +57,11 @@
 
 <style>
 	.scan-page {
-		/* Use dvh for iOS which accounts for browser chrome; vh as fallback */
-		height: calc(100vh - 120px);
+		/* Fill available space between header and bottom nav */
+		height: calc(100svh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
+		/* Fallback for browsers that don't support svh */
 		height: calc(100dvh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
+		max-height: calc(100dvh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
 		display: flex;
 		flex-direction: column;
 		position: relative;
@@ -70,5 +72,6 @@
 	:global(.app-main:has(.scan-page)) {
 		padding: 0 !important;
 		max-width: 100% !important;
+		overflow: hidden !important;
 	}
 </style>
