@@ -2171,6 +2171,7 @@ a.listing-badge:hover { opacity: .85; }
     border-top: 1px solid rgba(148, 163, 184, 0.12);
     display: flex;
     align-items: center;
+    justify-content: space-around;
     /* z-index above more-sheet-backdrop so nav taps always reach the nav bar,
        even when the More sheet is open. switchTab() closes the sheet first. */
     z-index: calc(var(--z-sticky) + 25);
@@ -2197,8 +2198,11 @@ a.listing-badge:hover { opacity: .85; }
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     min-height: 52px;
+    min-width: 64px;
+    max-width: 120px;
     -webkit-user-select: none;
     user-select: none;
+    text-decoration: none;
 }
 
 .bottom-nav-item:active,
