@@ -8,19 +8,19 @@
 
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { checkScanRateLimit } from '$lib/server/rate-limit';
+import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	// Auth check
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
+	// Auth check (optional — anonymous users get stricter rate limits)
 	const { user } = await locals.safeGetSession();
-	if (!user) {
-		throw error(401, 'Authentication required');
-	}
 
 	// Rate limiting (reuse scan limiter — grading is scan-like)
-	const rateLimit = await checkScanRateLimit(user.id);
+	const rateLimitKey = user?.id ?? getClientAddress();
+	const rateLimit = user
+		? await checkScanRateLimit(rateLimitKey)
+		: await checkAnonScanRateLimit(rateLimitKey);
 	if (!rateLimit.success) {
 		return json(
 			{ error: 'Too many grading requests. Please wait a moment.' },

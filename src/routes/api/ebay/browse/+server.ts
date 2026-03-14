@@ -10,12 +10,28 @@
 
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const { user } = await locals.safeGetSession();
+
+	// Rate limit anonymous users by IP
 	if (!user) {
-		throw error(401, 'Authentication required');
+		const rateLimit = await checkAnonScanRateLimit(getClientAddress());
+		if (!rateLimit.success) {
+			return json(
+				{ error: 'Rate limited. Please wait before trying again.' },
+				{
+					status: 429,
+					headers: {
+						'X-RateLimit-Limit': String(rateLimit.limit),
+						'X-RateLimit-Remaining': String(rateLimit.remaining),
+						'X-RateLimit-Reset': String(rateLimit.reset)
+					}
+				}
+			);
+		}
 	}
 
 	if (!isEbayConfigured()) {

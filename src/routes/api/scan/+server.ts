@@ -9,7 +9,7 @@ import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
-import { checkScanRateLimit } from '$lib/server/rate-limit';
+import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { RequestHandler } from './$types';
 
@@ -28,15 +28,15 @@ function getAnthropicClient(): Anthropic {
 	return _anthropic;
 }
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	// ── Auth check ──────────────────────────────────────────
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
+	// ── Auth check (optional — anonymous users get stricter rate limits) ──
 	const { user } = await locals.safeGetSession();
-	if (!user) {
-		throw error(401, 'Authentication required');
-	}
 
 	// ── Rate limiting ───────────────────────────────────────
-	const rateLimit = await checkScanRateLimit(user.id);
+	const rateLimitKey = user?.id ?? getClientAddress();
+	const rateLimit = user
+		? await checkScanRateLimit(rateLimitKey)
+		: await checkAnonScanRateLimit(rateLimitKey);
 	if (!rateLimit.success) {
 		return json(
 			{ error: 'Rate limited. Please wait before scanning again.' },
@@ -93,7 +93,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const base64 = cleanBuffer.toString('base64');
 
 	// ── Claude API call ─────────────────────────────────────
-	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user.id}`);
+	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user?.id ?? 'anonymous'}`);
 	try {
 		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
@@ -151,16 +151,18 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 
 		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
 
-		// Track scan in database
-		try {
-			await locals.supabase.from('scans').insert({
-				user_id: user.id,
-				scan_method: 'claude',
-				confidence: cardData.confidence || null,
-				processing_ms: null
-			});
-		} catch {
-			// Non-critical logging failure
+		// Track scan in database (only for authenticated users)
+		if (user && locals.supabase) {
+			try {
+				await locals.supabase.from('scans').insert({
+					user_id: user.id,
+					scan_method: 'claude',
+					confidence: cardData.confidence || null,
+					processing_ms: null
+				});
+			} catch {
+				// Non-critical logging failure
+			}
 		}
 
 		return json({ success: true, card: cardData, method: 'claude' });
