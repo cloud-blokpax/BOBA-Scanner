@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 
 	let { onComplete }: { onComplete?: (scanNow: boolean) => void } = $props();
 
@@ -16,6 +17,7 @@
 		if (browser) localStorage.setItem(STORAGE_KEY, 'true');
 		visible = false;
 		onComplete?.(scanNow);
+		if (scanNow) goto('/scan');
 	}
 
 	if (shouldShow()) {

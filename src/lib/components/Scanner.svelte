@@ -2,14 +2,19 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
+	import { checkImageQuality, analyzeFrame } from '$lib/services/recognition';
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
 	let {
-		onResult
+		onResult,
+		isAuthenticated = true,
+		paused = false
 	}: {
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
+		isAuthenticated?: boolean;
+		paused?: boolean;
 	} = $props();
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
@@ -19,6 +24,12 @@
 	let scanSuccess = $state(false);
 	let scanFailed = $state(false);
 	let revealedCard = $state<Card | null>(null);
+	let blurWarning = $state(false);
+	let glareRegions = $state<Array<{ x: number; y: number; w: number; h: number }>>([]);
+	let bracketState = $state<'idle' | 'detected' | 'locked'>('idle');
+	let showFlash = $state(false);
+	let autoAnalyzeInterval: ReturnType<typeof setInterval> | null = null;
+	let cardDetectedSince = $state<number | null>(null);
 
 	// Rarity → color mapping for bracket effects
 	const RARITY_COLORS: Record<string, { color: string; glow: number; pulses: number }> = {
@@ -75,6 +86,7 @@
 				videoEl.srcObject = stream;
 				await videoEl.play();
 				cameraReady = true;
+				startAutoAnalyze();
 			}
 		} catch (err) {
 			console.error('Camera error:', err);
@@ -82,9 +94,62 @@
 	});
 
 	onDestroy(() => {
+		stopAutoAnalyze();
 		stopCamera();
 		resetScanner();
 	});
+
+	function startAutoAnalyze() {
+		if (autoAnalyzeInterval) return;
+		autoAnalyzeInterval = setInterval(runAutoAnalyze, 250);
+	}
+
+	function stopAutoAnalyze() {
+		if (autoAnalyzeInterval) {
+			clearInterval(autoAnalyzeInterval);
+			autoAnalyzeInterval = null;
+		}
+	}
+
+	async function runAutoAnalyze() {
+		if (!videoEl || !cameraReady || scanning || paused) {
+			bracketState = 'idle';
+			cardDetectedSince = null;
+			return;
+		}
+
+		try {
+			const bitmap = await captureFrame(videoEl);
+			const result = await analyzeFrame(bitmap);
+
+			if (result.cardDetected && result.isSharp) {
+				if (!cardDetectedSince) {
+					cardDetectedSince = Date.now();
+					bracketState = 'detected';
+				} else if (Date.now() - cardDetectedSince >= 500) {
+					// Card held steady for 500ms — auto-capture
+					bracketState = 'locked';
+					cardDetectedSince = null;
+					triggerAutoCapture();
+				}
+			} else {
+				cardDetectedSince = null;
+				bracketState = 'idle';
+			}
+		} catch {
+			// Frame analysis error — ignore silently
+		}
+	}
+
+	async function triggerAutoCapture() {
+		if (scanning || paused) return;
+		// Flash overlay
+		showFlash = true;
+		setTimeout(() => { showFlash = false; }, 150);
+		triggerHaptic('tap');
+		await handleCapture();
+		bracketState = 'idle';
+	}
 
 	let lastFailReason = $state<string | null>(null);
 
@@ -119,16 +184,33 @@
 	}
 
 	async function handleCapture() {
-		if (!videoEl || scanning) return;
+		if (!videoEl || scanning || paused) return;
 		scanning = true;
 		scanSuccess = false;
 		scanFailed = false;
+		blurWarning = false;
+		glareRegions = [];
 		triggerHaptic('tap');
 
 		try {
 			const bitmap = await captureFrame(videoEl);
+
+			// Pre-scan quality check
+			const quality = await checkImageQuality(bitmap);
+			if (quality.isBlurry) {
+				blurWarning = true;
+				triggerHaptic('error');
+				setTimeout(() => { blurWarning = false; }, 2000);
+				scanning = false;
+				return;
+			}
+			if (quality.hasGlare) {
+				glareRegions = quality.glareRegions;
+				setTimeout(() => { glareRegions = []; }, 2000);
+			}
+
 			const imageUrl = bitmapToDataUrl(bitmap);
-			handleScanResult(await scanImage(bitmap), imageUrl);
+			handleScanResult(await scanImage(bitmap, { isAuthenticated }), imageUrl);
 		} finally {
 			scanning = false;
 		}
@@ -151,7 +233,7 @@
 
 		try {
 			const imageUrl = URL.createObjectURL(file);
-			handleScanResult(await scanImage(file), imageUrl);
+			handleScanResult(await scanImage(file, { isAuthenticated }), imageUrl);
 		} finally {
 			scanning = false;
 			input.value = '';
@@ -170,28 +252,41 @@
 			class="camera-feed"
 		></video>
 
-		<!-- Corner brackets — rarity-colored on success, red on fail -->
+		<!-- Auto-capture flash overlay -->
+		{#if showFlash}
+			<div class="flash-overlay"></div>
+		{/if}
+
+		<!-- Corner brackets — rarity-colored on success, red on fail, green on card detected -->
 		<div
 			class="bracket top-left {bracketAnimClass}"
 			class:bracket-fail={scanFailed}
+			class:bracket-detected={bracketState === 'detected'}
+			class:bracket-locked={bracketState === 'locked'}
 			style:--reveal-color={revealColor?.color ?? ''}
 			style:--reveal-glow="{revealColor?.glow ?? 0}px"
 		></div>
 		<div
 			class="bracket top-right {bracketAnimClass}"
 			class:bracket-fail={scanFailed}
+			class:bracket-detected={bracketState === 'detected'}
+			class:bracket-locked={bracketState === 'locked'}
 			style:--reveal-color={revealColor?.color ?? ''}
 			style:--reveal-glow="{revealColor?.glow ?? 0}px"
 		></div>
 		<div
 			class="bracket bottom-left {bracketAnimClass}"
 			class:bracket-fail={scanFailed}
+			class:bracket-detected={bracketState === 'detected'}
+			class:bracket-locked={bracketState === 'locked'}
 			style:--reveal-color={revealColor?.color ?? ''}
 			style:--reveal-glow="{revealColor?.glow ?? 0}px"
 		></div>
 		<div
 			class="bracket bottom-right {bracketAnimClass}"
 			class:bracket-fail={scanFailed}
+			class:bracket-detected={bracketState === 'detected'}
+			class:bracket-locked={bracketState === 'locked'}
 			style:--reveal-color={revealColor?.color ?? ''}
 			style:--reveal-glow="{revealColor?.glow ?? 0}px"
 		></div>
@@ -203,6 +298,21 @@
 			rarity={revealedCard?.rarity ?? null}
 			weaponType={revealedCard?.weapon_type ?? null}
 		/>
+
+		<!-- Blur warning overlay -->
+		{#if blurWarning}
+			<div class="blur-warning">
+				<span>Hold steady — image is blurry</span>
+			</div>
+		{/if}
+
+		<!-- Glare region overlays -->
+		{#each glareRegions as region}
+			<div
+				class="glare-region"
+				style="left: {region.x * 100}%; top: {region.y * 100}%; width: {region.w * 100}%; height: {region.h * 100}%"
+			></div>
+		{/each}
 
 		<!-- Status overlay -->
 		<div class="status-overlay" class:status-success={statusType === 'success'} class:status-error={statusType === 'error'} class:status-scanning={statusType === 'scanning'}>
@@ -227,7 +337,7 @@
 		<button
 			class="capture-btn"
 			onclick={handleCapture}
-			disabled={!cameraReady || scanning}
+			disabled={!cameraReady || scanning || paused}
 			aria-label="Capture"
 		>
 			<div class="capture-ring">
@@ -329,8 +439,35 @@
 	.bracket-reveal-triple.bottom-left { border-bottom-width: 3px; border-left-width: 3px; }
 	.bracket-reveal-triple.bottom-right { border-bottom-width: 3px; border-right-width: 3px; }
 
+	.bracket-detected {
+		border-color: #22C55E !important;
+		box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+		transition: border-color 0.2s, box-shadow 0.2s;
+	}
+
+	.bracket-locked {
+		border-color: #22C55E !important;
+		box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+		transition: border-color 0.1s, box-shadow 0.1s;
+	}
+
 	.bracket-fail {
 		animation: bracket-flash-fail 0.8s ease-out;
+	}
+
+	/* Auto-capture flash */
+	.flash-overlay {
+		position: absolute;
+		inset: 0;
+		background: white;
+		z-index: 20;
+		animation: flash-burst 0.15s ease-out forwards;
+		pointer-events: none;
+	}
+
+	@keyframes flash-burst {
+		0% { opacity: 0.8; }
+		100% { opacity: 0; }
 	}
 
 	@keyframes bracket-flash-reveal {
@@ -473,5 +610,43 @@
 		to {
 			transform: rotate(360deg);
 		}
+	}
+
+	/* Blur warning overlay */
+	.blur-warning {
+		position: absolute;
+		inset: 0;
+		background: rgba(239, 68, 68, 0.15);
+		border: 2px solid rgba(239, 68, 68, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10;
+		animation: fade-in 0.2s ease-out;
+	}
+
+	.blur-warning span {
+		background: rgba(0, 0, 0, 0.8);
+		color: #ef4444;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+
+	/* Glare region highlights */
+	.glare-region {
+		position: absolute;
+		background: rgba(239, 68, 68, 0.2);
+		border: 1px solid rgba(239, 68, 68, 0.5);
+		border-radius: 4px;
+		z-index: 9;
+		pointer-events: none;
+		animation: fade-in 0.2s ease-out;
+	}
+
+	@keyframes fade-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 </style>

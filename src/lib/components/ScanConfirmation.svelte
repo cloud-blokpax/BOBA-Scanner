@@ -1,18 +1,21 @@
 <script lang="ts">
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let {
 		result,
 		capturedImageUrl,
 		onScanAnother,
-		onClose
+		onClose,
+		isAuthenticated = true
 	}: {
 		result: ScanResult;
 		capturedImageUrl: string | null;
 		onScanAnother: () => void;
 		onClose: () => void;
+		isAuthenticated?: boolean;
 	} = $props();
 
 	let adding = $state(false);
@@ -54,19 +57,17 @@
 </script>
 
 <div class="confirmation-overlay">
+	<div class="confirmation-backdrop"></div>
 	<div class="confirmation-container">
+		<div class="sheet-handle"></div>
 		{#if card}
-			<!-- Card image -->
+			<!-- Card image with flip reveal -->
 			<div class="card-image-section">
-				{#if capturedImageUrl}
-					<div class="card-image-wrapper rarity-{card.rarity ?? 'common'}">
-						<img src={capturedImageUrl} alt={card.name} class="card-image" />
-					</div>
-				{:else if card.image_url}
-					<div class="card-image-wrapper rarity-{card.rarity ?? 'common'}">
-						<img src={card.image_url} alt={card.name} class="card-image" />
-					</div>
-				{/if}
+				<CardFlipReveal
+					imageUrl={capturedImageUrl ?? card.image_url ?? null}
+					cardName={card.name}
+					rarity={card.rarity ?? 'common'}
+				/>
 			</div>
 
 			<!-- Card details -->
@@ -140,17 +141,23 @@
 				<!-- Actions -->
 				<div class="actions">
 					<div class="add-btn-wrapper">
-						<button class="btn btn-add" class:btn-added={addSuccess} onclick={handleAdd} disabled={adding || addSuccess}>
-							{#if adding}
-								Adding...
-							{:else if addSuccess}
-								Added!
-							{:else if isOwned}
-								Add Another Copy
-							{:else}
-								Add to Collection
-							{/if}
-						</button>
+						{#if isAuthenticated}
+							<button class="btn btn-add" class:btn-added={addSuccess} onclick={handleAdd} disabled={adding || addSuccess}>
+								{#if adding}
+									Adding...
+								{:else if addSuccess}
+									Added!
+								{:else if isOwned}
+									Add Another Copy
+								{:else}
+									Add to Collection
+								{/if}
+							</button>
+						{:else}
+							<a href="/auth/login?redirectTo=/scan" class="btn btn-add" style="text-align:center;text-decoration:none;">
+								Sign in to Save
+							</a>
+						{/if}
 						{#if showConfetti}
 							<div class="confetti-burst">
 								{#each [0, 60, 120, 180, 240, 300] as angle}
@@ -196,16 +203,28 @@
 		position: fixed;
 		inset: 0;
 		z-index: 500;
-		background: var(--bg-base, #070b14);
-		overflow-y: auto;
-		animation: fade-in 0.25s ease-out;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+	}
+
+	.confirmation-backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.4);
+		animation: fade-in 0.2s ease-out;
 	}
 
 	.confirmation-container {
-		min-height: 100%;
+		position: relative;
+		max-height: 70vh;
+		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		padding-bottom: env(safe-area-inset-bottom, 0);
+		background: var(--bg-base, #070b14);
+		border-radius: 20px 20px 0 0;
+		animation: sheet-slide-up 0.3s ease-out;
 	}
 
 	/* ── Card Image ── */
@@ -541,10 +560,25 @@
 		margin-top: 1rem;
 	}
 
+	/* ── Sheet handle ── */
+	.sheet-handle {
+		width: 40px;
+		height: 4px;
+		background: rgba(148, 163, 184, 0.3);
+		border-radius: 2px;
+		margin: 8px auto 0;
+		flex-shrink: 0;
+	}
+
 	/* ── Animations ── */
 	@keyframes fade-in {
 		from { opacity: 0; }
 		to { opacity: 1; }
+	}
+
+	@keyframes sheet-slide-up {
+		from { transform: translateY(100%); }
+		to { transform: translateY(0); }
 	}
 
 	@keyframes badge-pop {

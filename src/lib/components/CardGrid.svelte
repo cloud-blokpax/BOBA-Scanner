@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { CollectionItem, CardRarity } from '$lib/types';
 	import { collectionSets, collectionRarities, collectionWeaponTypes } from '$lib/stores/collection';
+	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 
 	let {
 		items = [],
@@ -9,6 +12,25 @@
 		items: CollectionItem[];
 		onCardClick?: (item: CollectionItem) => void;
 	} = $props();
+
+	let gridContainerEl = $state<HTMLDivElement | null>(null);
+	let scrollContainerEl = $state<HTMLDivElement | null>(null);
+	let columnCount = $state(3);
+
+	const VIRTUAL_THRESHOLD = 100;
+	const ROW_HEIGHT = 248; // card (5:7 at ~140px) + info + gap
+
+	// Calculate columns based on container width
+	onMount(() => {
+		if (!gridContainerEl) return;
+		const observer = new ResizeObserver((entries) => {
+			const width = entries[0].contentRect.width;
+			const minWidth = width <= 480 ? 100 : 140;
+			columnCount = Math.max(1, Math.floor((width + 12) / (minWidth + 12)));
+		});
+		observer.observe(gridContainerEl);
+		return () => observer.disconnect();
+	});
 
 	let searchQuery = $state('');
 	let sortBy = $state<'name' | 'added' | 'power'>('added');
@@ -64,6 +86,27 @@
 		});
 	});
 
+	const useVirtual = $derived(filteredItems.length > VIRTUAL_THRESHOLD);
+
+	const virtualRows = $derived.by(() => {
+		const rows: CollectionItem[][] = [];
+		for (let i = 0; i < filteredItems.length; i += columnCount) {
+			rows.push(filteredItems.slice(i, i + columnCount));
+		}
+		return rows;
+	});
+
+	const virtualizer = $derived(
+		useVirtual && scrollContainerEl
+			? createVirtualizer({
+				count: virtualRows.length,
+				getScrollElement: () => scrollContainerEl,
+				estimateSize: () => ROW_HEIGHT,
+				overscan: 3
+			})
+			: null
+	);
+
 	function clearFilters() {
 		filterSet = null;
 		filterRarity = null;
@@ -76,7 +119,7 @@
 	}
 </script>
 
-<div class="card-grid-container">
+<div class="card-grid-container" bind:this={gridContainerEl}>
 	<div class="grid-controls">
 		<input
 			type="search"
@@ -179,41 +222,71 @@
 		{/if}
 	</div>
 
-	<div class="card-grid">
-		{#each filteredItems as item (item.id)}
-			<button
-				class="card-tile"
-				onclick={() => onCardClick?.(item)}
-			>
-				{#if item.card?.image_url}
-					<img src={item.card.image_url} alt={item.card.name} class="card-image" loading="lazy" />
-				{:else}
-					<div class="card-placeholder">
-						<span class="card-emoji">🎴</span>
+	{#if filteredItems.length === 0}
+		<div class="empty-state">
+			{#if searchQuery || activeFilterCount > 0}
+				<p>No cards match your search</p>
+				<button class="clear-search-btn" onclick={() => { searchQuery = ''; clearFilters(); }}>
+					Clear search & filters
+				</button>
+			{:else}
+				<p>Your collection is empty</p>
+				<a href="/scan" class="scan-cta-btn">Scan your first card</a>
+			{/if}
+		</div>
+	{:else if useVirtual && virtualizer}
+		<!-- Virtual scrolling for large collections -->
+		{@const virt = $virtualizer!}
+		<div class="virtual-scroll-container" bind:this={scrollContainerEl}>
+			<div style="height: {virt.getTotalSize()}px; width: 100%; position: relative;">
+				{#each virt.getVirtualItems() as virtualRow (virtualRow.index)}
+					<div
+						class="virtual-row"
+						style="position: absolute; top: 0; left: 0; width: 100%; height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
+					>
+						<div class="card-grid">
+							{#each virtualRows[virtualRow.index] as item (item.id)}
+								<button class="card-tile" onclick={() => onCardClick?.(item)}>
+									{#if item.card?.image_url}
+										<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="card-image" size="thumb" />
+									{:else}
+										<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
+									{/if}
+									<div class="card-info">
+										<span class="card-name">{item.card?.name || 'Unknown'}</span>
+										<span class="card-number">{item.card?.card_number || ''}</span>
+										{#if item.quantity > 1}
+											<span class="card-qty">x{item.quantity}</span>
+										{/if}
+									</div>
+								</button>
+							{/each}
+						</div>
 					</div>
-				{/if}
-				<div class="card-info">
-					<span class="card-name">{item.card?.name || 'Unknown'}</span>
-					<span class="card-number">{item.card?.card_number || ''}</span>
-					{#if item.quantity > 1}
-						<span class="card-qty">x{item.quantity}</span>
-					{/if}
-				</div>
-			</button>
-		{:else}
-			<div class="empty-state">
-				{#if searchQuery || activeFilterCount > 0}
-					<p>No cards match your search</p>
-					<button class="clear-search-btn" onclick={() => { searchQuery = ''; clearFilters(); }}>
-						Clear search & filters
-					</button>
-				{:else}
-					<p>Your collection is empty</p>
-					<a href="/scan" class="scan-cta-btn">Scan your first card</a>
-				{/if}
+				{/each}
 			</div>
-		{/each}
-	</div>
+		</div>
+	{:else}
+		<!-- Standard grid for small collections -->
+		<div class="card-grid">
+			{#each filteredItems as item (item.id)}
+				<button class="card-tile" onclick={() => onCardClick?.(item)}>
+					{#if item.card?.image_url}
+						<img src={item.card.image_url} alt={item.card.name} class="card-image" loading="lazy" />
+					{:else}
+						<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
+					{/if}
+					<div class="card-info">
+						<span class="card-name">{item.card?.name || 'Unknown'}</span>
+						<span class="card-number">{item.card?.card_number || ''}</span>
+						{#if item.quantity > 1}
+							<span class="card-qty">x{item.quantity}</span>
+						{/if}
+					</div>
+				</button>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -380,6 +453,12 @@
 
 	.filter-note {
 		color: var(--accent-primary, #3b82f6);
+	}
+
+	.virtual-scroll-container {
+		height: 70vh;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.card-grid {

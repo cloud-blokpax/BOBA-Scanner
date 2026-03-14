@@ -30,6 +30,11 @@
 			});
 		}
 
+		// Request persistent storage to prevent browser from evicting cached data
+		if (navigator.storage?.persist) {
+			navigator.storage.persist().catch(() => {});
+		}
+
 		return () => {
 			authSubscription?.data.subscription.unsubscribe();
 			cleanupErrors();
@@ -66,20 +71,15 @@
 	</main>
 
 	<nav class="bottom-nav">
-		<a href="/" class="bottom-nav-item" class:active={currentPath === '/'}>
-			<span class="bottom-nav-icon">🏠</span>
-			<span class="bottom-nav-label">Home</span>
-		</a>
 		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
 			<span class="bottom-nav-icon">📚</span>
 			<span class="bottom-nav-label">Collection</span>
 		</a>
-		<a href="/deck" class="bottom-nav-item" class:active={currentPath === '/deck'}>
-			<span class="bottom-nav-icon">🃏</span>
-			<span class="bottom-nav-label">Deck</span>
+		<a href="/scan" class="scan-fab" class:active={currentPath === '/scan'} aria-label="Scan Card">
+			<span class="scan-fab-icon">📷</span>
 		</a>
 		<button class="bottom-nav-item" class:active={showMore} onclick={() => (showMore = !showMore)}>
-			<span class="bottom-nav-icon">···</span>
+			<span class="bottom-nav-icon">👤</span>
 			<span class="bottom-nav-label">More</span>
 		</button>
 	</nav>
@@ -87,6 +87,8 @@
 	{#if showMore}
 		<div class="more-menu" role="presentation" onclick={() => (showMore = false)}>
 			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
+				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
+				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>Deck Builder</a>
 				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
 				<a href="/set-completion" class="more-item" onclick={() => (showMore = false)}>Set Completion</a>
 				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>

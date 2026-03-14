@@ -34,7 +34,10 @@ export async function initScanner(): Promise<void> {
 /**
  * Scan an image through the 3-tier pipeline.
  */
-export async function scanImage(imageSource: File | Blob | ImageBitmap): Promise<ScanResult | null> {
+export async function scanImage(
+	imageSource: File | Blob | ImageBitmap,
+	options?: { isAuthenticated?: boolean }
+): Promise<ScanResult | null> {
 	scanState.set({
 		status: 'processing',
 		currentTier: null,
@@ -49,7 +52,7 @@ export async function scanImage(imageSource: File | Blob | ImageBitmap): Promise
 				status: `tier${tier}` as ScanPipelineState['status'],
 				currentTier: tier
 			}));
-		});
+		}, options);
 
 		scanState.set({
 			status: 'complete',

@@ -121,6 +121,124 @@ const imageProcessor = {
 		return { isBlurry: variance < threshold, variance };
 	},
 
+	/**
+	 * Analyze whether a card is present and sharp in the bracket region.
+	 * Uses contrast variance to determine if content (vs blank wall/table) is visible.
+	 */
+	async analyzeCardPresence(imageBitmap: ImageBitmap, blurThreshold = 100): Promise<{
+		cardDetected: boolean;
+		isSharp: boolean;
+		variance: number;
+	}> {
+		// Analyze the center 70% of the image (bracket region)
+		const analyzeW = 200;
+		const analyzeH = 150;
+		const canvas = new OffscreenCanvas(analyzeW, analyzeH);
+		const ctx = canvas.getContext('2d')!;
+
+		// Crop to center 70%
+		const cropX = imageBitmap.width * 0.15;
+		const cropY = imageBitmap.height * 0.15;
+		const cropW = imageBitmap.width * 0.7;
+		const cropH = imageBitmap.height * 0.7;
+		ctx.drawImage(imageBitmap, cropX, cropY, cropW, cropH, 0, 0, analyzeW, analyzeH);
+
+		const { data } = ctx.getImageData(0, 0, analyzeW, analyzeH);
+		const totalPx = analyzeW * analyzeH;
+
+		// Calculate variance of pixel luminance (high variance = content present)
+		let sum = 0;
+		let sumSq = 0;
+		for (let i = 0; i < totalPx; i++) {
+			const idx = i * 4;
+			const lum = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+			sum += lum;
+			sumSq += lum * lum;
+		}
+		const mean = sum / totalPx;
+		const contentVariance = sumSq / totalPx - mean * mean;
+
+		// Card presence: needs sufficient visual content (variance > 500)
+		const cardDetected = contentVariance > 500;
+
+		// Blur check (Laplacian variance on the same region)
+		let lapSum = 0;
+		let lapSumSq = 0;
+		let lapCount = 0;
+		for (let y = 1; y < analyzeH - 1; y++) {
+			for (let x = 1; x < analyzeW - 1; x++) {
+				const idx = (y * analyzeW + x) * 4;
+				const gray = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+				const up = data[((y - 1) * analyzeW + x) * 4] * 0.299 + data[((y - 1) * analyzeW + x) * 4 + 1] * 0.587 + data[((y - 1) * analyzeW + x) * 4 + 2] * 0.114;
+				const down = data[((y + 1) * analyzeW + x) * 4] * 0.299 + data[((y + 1) * analyzeW + x) * 4 + 1] * 0.587 + data[((y + 1) * analyzeW + x) * 4 + 2] * 0.114;
+				const left = data[(y * analyzeW + x - 1) * 4] * 0.299 + data[(y * analyzeW + x - 1) * 4 + 1] * 0.587 + data[(y * analyzeW + x - 1) * 4 + 2] * 0.114;
+				const right = data[(y * analyzeW + x + 1) * 4] * 0.299 + data[(y * analyzeW + x + 1) * 4 + 1] * 0.587 + data[(y * analyzeW + x + 1) * 4 + 2] * 0.114;
+				const lap = up + down + left + right - 4 * gray;
+				lapSum += lap;
+				lapSumSq += lap * lap;
+				lapCount++;
+			}
+		}
+		const lapMean = lapSum / lapCount;
+		const variance = lapSumSq / lapCount - lapMean * lapMean;
+		const isSharp = variance >= blurThreshold;
+
+		return { cardDetected, isSharp, variance };
+	},
+
+	async checkGlare(imageBitmap: ImageBitmap, brightnessThreshold = 240, areaThreshold = 0.03): Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }> {
+		const analyzeW = 200;
+		const analyzeH = 150;
+		const canvas = new OffscreenCanvas(analyzeW, analyzeH);
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(imageBitmap, 0, 0, analyzeW, analyzeH);
+		const { data } = ctx.getImageData(0, 0, analyzeW, analyzeH);
+
+		// Find bright pixels (potential glare)
+		const bright = new Uint8Array(analyzeW * analyzeH);
+		let brightCount = 0;
+		for (let i = 0; i < analyzeW * analyzeH; i++) {
+			const idx = i * 4;
+			const lum = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+			if (lum > brightnessThreshold) {
+				bright[i] = 1;
+				brightCount++;
+			}
+		}
+
+		const totalPixels = analyzeW * analyzeH;
+		const hasGlare = brightCount / totalPixels > areaThreshold;
+
+		// Simple region detection: find bounding boxes of bright clusters using grid cells
+		const regions: Array<{ x: number; y: number; w: number; h: number }> = [];
+		if (hasGlare) {
+			const cellW = 40;
+			const cellH = 30;
+			for (let cy = 0; cy < analyzeH; cy += cellH) {
+				for (let cx = 0; cx < analyzeW; cx += cellW) {
+					let cellBright = 0;
+					const cw = Math.min(cellW, analyzeW - cx);
+					const ch = Math.min(cellH, analyzeH - cy);
+					for (let y = cy; y < cy + ch; y++) {
+						for (let x = cx; x < cx + cw; x++) {
+							if (bright[y * analyzeW + x]) cellBright++;
+						}
+					}
+					if (cellBright / (cw * ch) > 0.3) {
+						regions.push({
+							x: cx / analyzeW,
+							y: cy / analyzeH,
+							w: cw / analyzeW,
+							h: ch / analyzeH
+						});
+					}
+				}
+			}
+		}
+
+		return { hasGlare, regions };
+	},
+
 	async preprocessForOCR(imageBitmap: ImageBitmap, region: OcrRegion): Promise<Blob> {
 		const sw = imageBitmap.width;
 		const sh = imageBitmap.height;

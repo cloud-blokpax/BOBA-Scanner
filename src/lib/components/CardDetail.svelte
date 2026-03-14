@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PriceDisplay from './PriceDisplay.svelte';
+	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import { updateQuantity, removeFromCollection } from '$lib/stores/collection';
 	import type { CollectionItem } from '$lib/types';
 
@@ -43,7 +44,7 @@
 			<div class="detail-content">
 				<div class="detail-header">
 					{#if item.card?.image_url}
-						<img src={item.card.image_url} alt={item.card.name} class="detail-image" />
+						<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="detail-image" size="large" />
 					{:else}
 						<div class="detail-placeholder">🎴</div>
 					{/if}
