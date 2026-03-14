@@ -14,9 +14,28 @@
 
 	onMount(() => {
 		const client = getSupabase();
-		const authSubscription = client?.auth.onAuthStateChange((_, session) => {
-			// Re-run server load when auth state changes
-			invalidate('supabase:auth');
+
+		// Immediately check client-side session to catch auth state SSR may have missed.
+		// This avoids waiting for onAuthStateChange's async INITIAL_SESSION event,
+		// which can be delayed 30-60s while the Supabase client refreshes tokens internally.
+		client?.auth.getSession().then(async ({ data: { session: clientSession } }) => {
+			const serverHasUser = !!data.session;
+			const clientHasSession = !!clientSession;
+			if (clientHasSession && !serverHasUser) {
+				// Client has a session but server didn't see it (e.g. stale/expired access token).
+				// Refresh the session so cookies get updated, then re-run server load.
+				await client.auth.refreshSession();
+				invalidate('supabase:auth');
+			} else if (serverHasUser !== clientHasSession) {
+				invalidate('supabase:auth');
+			}
+		});
+
+		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {
+			// Only invalidate when the session actually changes to avoid redundant server re-fetches
+			if (newSession?.expires_at !== data.session?.expires_at) {
+				invalidate('supabase:auth');
+			}
 		});
 
 		// Initialize error tracking (sends client errors to /api/log)
