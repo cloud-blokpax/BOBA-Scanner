@@ -202,7 +202,7 @@
 	.confirmation-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 500;
+		z-index: calc(var(--z-sticky, 1020) + 30);
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
@@ -221,7 +221,7 @@
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
-		padding-bottom: env(safe-area-inset-bottom, 0);
+		padding-bottom: calc(var(--bottom-nav-height, 68px) + var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
 		background: var(--bg-base, #070b14);
 		border-radius: 20px 20px 0 0;
 		animation: sheet-slide-up 0.3s ease-out;
