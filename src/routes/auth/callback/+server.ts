@@ -21,11 +21,32 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 		if (user?.email) {
 			// Try to link to existing user record by email
-			await locals.supabase
+			const { data: existingUser } = await locals.supabase
 				.from('users')
-				.update({ auth_user_id: user.id })
+				.select('id')
 				.eq('email', user.email)
-				.is('auth_user_id', null);
+				.maybeSingle();
+
+			if (existingUser) {
+				// Link existing user record to auth
+				await locals.supabase
+					.from('users')
+					.update({ auth_user_id: user.id })
+					.eq('email', user.email)
+					.is('auth_user_id', null);
+			} else {
+				// Create user record if none exists
+				const googleId =
+					user.user_metadata?.provider_id ||
+					user.app_metadata?.provider_id ||
+					user.id;
+				await locals.supabase.from('users').insert({
+					id: user.id,
+					google_id: googleId,
+					email: user.email,
+					name: user.user_metadata?.full_name || user.email.split('@')[0]
+				});
+			}
 		}
 	}
 
