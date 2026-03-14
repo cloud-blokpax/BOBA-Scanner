@@ -2,7 +2,6 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/services/supabase';
-	import { user } from '$lib/stores/auth';
 	import { collectionItems, loadCollection } from '$lib/stores/collection';
 	import { showToast } from '$lib/stores/toast';
 	import type { CollectionItem } from '$lib/types';
@@ -58,7 +57,7 @@
 		}
 
 		// Pre-fill from user profile if logged in
-		const currentUser = $user;
+		const currentUser = $page.data.user;
 		if (currentUser) {
 			regEmail = currentUser.email || '';
 			const { data: profile } = await supabase
