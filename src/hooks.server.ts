@@ -70,7 +70,7 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
  * API routes handle their own auth via getUser() checks.
  */
 const authGuard: Handle = async ({ event, resolve }) => {
-	const protectedRoutes = ['/collection', '/deck', '/admin', '/grader', '/export', '/marketplace', '/set-completion', '/tournaments'];
+	const protectedRoutes = ['/collection', '/deck', '/admin', '/grader', '/export', '/marketplace', '/set-completion', '/tournaments', '/settings'];
 	const isProtected = protectedRoutes.some((route) => event.url.pathname.startsWith(route));
 
 	if (isProtected && !event.locals.user) {
