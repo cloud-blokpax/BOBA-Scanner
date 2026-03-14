@@ -12,6 +12,16 @@
 	let adding = $state(false);
 	let addSuccess = $state(false);
 	let addError = $state<string | null>(null);
+	let tournamentCode = $state('');
+	let tournamentLoading = $state(false);
+	let tournamentResult = $state<{
+		code: string;
+		name: string;
+		max_heroes: number;
+		max_plays: number;
+		max_bonus: number;
+	} | null>(null);
+	let tournamentError = $state<string | null>(null);
 
 	const ownedCount = $derived(
 		uploadResult?.card ? ($ownedCardCounts.get(uploadResult.card.id) || 0) : 0
@@ -64,6 +74,29 @@
 			addError = err instanceof Error ? err.message : 'Failed to add card';
 		} finally {
 			adding = false;
+		}
+	}
+
+	async function lookupTournament() {
+		const code = tournamentCode.trim().toUpperCase();
+		if (code.length !== 8) {
+			tournamentError = 'Code must be 8 characters';
+			return;
+		}
+		tournamentLoading = true;
+		tournamentError = null;
+		tournamentResult = null;
+		try {
+			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
+			if (!res.ok) {
+				tournamentError = res.status === 404 ? 'Tournament not found' : 'Failed to look up tournament';
+				return;
+			}
+			tournamentResult = await res.json();
+		} catch {
+			tournamentError = 'Network error';
+		} finally {
+			tournamentLoading = false;
 		}
 	}
 
@@ -197,25 +230,59 @@
 	</section>
 
 	{#if !data.user}
-		<section class="features-section">
-			<h2>Three-Tier Recognition</h2>
-			<div class="feature-grid">
-				<div class="feature-card">
-					<span class="feature-icon">⚡</span>
-					<h3>Hash Cache</h3>
-					<p>Instant recognition for previously scanned cards. Free.</p>
+		<section class="synopsis-section">
+			<div class="synopsis-grid">
+				<div class="synopsis-card">
+					<span class="synopsis-icon">📷</span>
+					<h3>Scan</h3>
+					<p>Scan cards with your camera</p>
 				</div>
-				<div class="feature-card">
-					<span class="feature-icon">🔍</span>
-					<h3>OCR Engine</h3>
-					<p>Client-side text recognition with fuzzy matching. Free.</p>
+				<div class="synopsis-card">
+					<span class="synopsis-icon">📚</span>
+					<h3>Collect</h3>
+					<p>Build and manage your collection</p>
 				</div>
-				<div class="feature-card">
-					<span class="feature-icon">🤖</span>
-					<h3>Claude AI</h3>
-					<p>Advanced AI identification for ambiguous cards.</p>
+				<div class="synopsis-card">
+					<span class="synopsis-icon">🏆</span>
+					<h3>Compete</h3>
+					<p>Enter tournaments and build decks</p>
 				</div>
 			</div>
+		</section>
+
+		<section class="tournament-lookup-section">
+			<h2>Enter Tournament Code</h2>
+			<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
+				<input
+					type="text"
+					class="tournament-code-input"
+					bind:value={tournamentCode}
+					placeholder="ABCD1234"
+					maxlength="8"
+					autocapitalize="characters"
+					spellcheck="false"
+				/>
+				<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+					{tournamentLoading ? 'Looking up...' : 'Look Up'}
+				</button>
+			</form>
+
+			{#if tournamentError}
+				<p class="tournament-error">{tournamentError}</p>
+			{/if}
+
+			{#if tournamentResult}
+				<div class="tournament-result">
+					<div class="tournament-result-name">{tournamentResult.name}</div>
+					<div class="tournament-result-code">{tournamentResult.code}</div>
+					<div class="tournament-result-params">
+						<span>Heroes: {tournamentResult.max_heroes}</span>
+						<span>Plays: {tournamentResult.max_plays}</span>
+						<span>Bonus: {tournamentResult.max_bonus}</span>
+					</div>
+					<a href="/auth/login" class="btn-primary btn-small-cta">Sign in to Enter</a>
+				</div>
+			{/if}
 		</section>
 	{/if}
 </div>
@@ -312,23 +379,17 @@
 		font-size: 0.95rem;
 	}
 
-	.features-section {
+	.synopsis-section {
 		margin-top: 3rem;
 	}
 
-	.features-section h2 {
-		font-family: 'Syne', sans-serif;
-		text-align: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.feature-grid {
+	.synopsis-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		gap: 1rem;
 	}
 
-	.feature-card {
+	.synopsis-card {
 		text-align: center;
 		padding: 1.25rem;
 		border-radius: 12px;
@@ -336,22 +397,109 @@
 		border: 1px solid var(--border-color, #1e293b);
 	}
 
-	.feature-icon {
+	.synopsis-icon {
 		font-size: 1.5rem;
 		display: block;
 		margin-bottom: 0.5rem;
 	}
 
-	.feature-card h3 {
-		font-size: 0.95rem;
-		font-weight: 600;
+	.synopsis-card h3 {
+		font-size: 1rem;
+		font-weight: 700;
 		margin-bottom: 0.25rem;
 	}
 
-	.feature-card p {
-		font-size: 0.8rem;
+	.synopsis-card p {
+		font-size: 0.85rem;
 		color: var(--text-secondary, #94a3b8);
 		line-height: 1.4;
+	}
+
+	.tournament-lookup-section {
+		margin-top: 2.5rem;
+		text-align: center;
+	}
+
+	.tournament-lookup-section h2 {
+		font-family: 'Syne', sans-serif;
+		margin-bottom: 1rem;
+	}
+
+	.tournament-lookup-form {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: center;
+		max-width: 400px;
+		margin: 0 auto;
+	}
+
+	.tournament-code-input {
+		flex: 1;
+		padding: 0.625rem 0.875rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--surface-secondary, #0d1524);
+		color: var(--text-primary, #f1f5f9);
+		font-family: monospace;
+		font-size: 1.1rem;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		text-align: center;
+	}
+
+	.tournament-code-input::placeholder {
+		text-transform: none;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary, #94a3b8);
+		opacity: 0.5;
+	}
+
+	.tournament-error {
+		color: #ef4444;
+		font-size: 0.85rem;
+		margin-top: 0.75rem;
+	}
+
+	.tournament-result {
+		margin-top: 1rem;
+		padding: 1.25rem;
+		border-radius: 12px;
+		background: var(--surface-secondary, #0d1524);
+		border: 1px solid var(--border-color, #1e293b);
+		max-width: 400px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	.tournament-result-name {
+		font-weight: 700;
+		font-size: 1.1rem;
+		margin-bottom: 0.25rem;
+	}
+
+	.tournament-result-code {
+		font-family: monospace;
+		font-size: 0.85rem;
+		color: var(--accent-primary, #3b82f6);
+		letter-spacing: 0.1em;
+		margin-bottom: 0.75rem;
+	}
+
+	.tournament-result-params {
+		display: flex;
+		justify-content: center;
+		gap: 1rem;
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin-bottom: 1rem;
+	}
+
+	.btn-small-cta {
+		display: inline-block;
+		padding: 0.5rem 1.25rem;
+		font-size: 0.9rem;
+		text-decoration: none;
+		border-radius: 8px;
 	}
 
 	.upload-result {
@@ -549,7 +697,7 @@
 	}
 
 	@media (max-width: 600px) {
-		.feature-grid {
+		.synopsis-grid {
 			grid-template-columns: 1fr;
 		}
 
