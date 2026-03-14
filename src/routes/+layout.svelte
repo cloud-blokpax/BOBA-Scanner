@@ -6,6 +6,7 @@
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
+	import Toast from '$lib/components/Toast.svelte';
 	import '../styles/index.css';
 
 	let { children, data } = $props();
@@ -103,6 +104,8 @@
 		</div>
 	{/if}
 </div>
+
+<Toast />
 
 {#if data.user}
 	<ProfilePrompt />

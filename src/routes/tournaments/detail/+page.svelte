@@ -2,7 +2,6 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/services/supabase';
-	import { user } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores/toast';
 
 	interface Registration {
@@ -43,7 +42,7 @@
 			return;
 		}
 
-		const currentUser = $user;
+		const currentUser = $page.data.user;
 		if (!currentUser) {
 			errorMsg = 'Sign in required';
 			loading = false;

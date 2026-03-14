@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { supabase } from '$lib/services/supabase';
-	import { user } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores/toast';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 
 	interface Tournament {
 		id: string;
@@ -51,7 +51,7 @@
 	async function loadTournaments() {
 		loading = true;
 		try {
-			const currentUser = $user;
+			const currentUser = $page.data.user;
 			if (!currentUser) {
 				tournaments = [];
 				loading = false;
@@ -74,11 +74,12 @@
 	}
 
 	async function createTournament() {
+		console.log('[Tournament] createTournament called', { name: newName, code: newCode, user: $page.data.user });
 		if (!newName.trim() || !newCode.trim()) {
 			showToast('Name and code are required', 'x');
 			return;
 		}
-		const currentUser = $user;
+		const currentUser = $page.data.user;
 		if (!currentUser) {
 			showToast('Sign in required', 'x');
 			return;
@@ -172,11 +173,11 @@
 	}
 
 	const myTournaments = $derived(
-		tournaments.filter((t) => $user && t.creator_id === $user.id)
+		tournaments.filter((t) => $page.data.user && t.creator_id === $page.data.user.id)
 	);
 
 	const otherTournaments = $derived(
-		tournaments.filter((t) => !$user || t.creator_id !== $user.id)
+		tournaments.filter((t) => !$page.data.user || t.creator_id !== $page.data.user.id)
 	);
 
 	$effect(() => {
