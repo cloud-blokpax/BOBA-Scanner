@@ -119,8 +119,29 @@ CREATE TABLE IF NOT EXISTS tournaments (
   max_bonus   INT DEFAULT 15,
   usage_count INT DEFAULT 0,
   is_active   BOOLEAN DEFAULT true,
+  require_email   BOOLEAN DEFAULT true,
+  require_name    BOOLEAN DEFAULT false,
+  require_discord BOOLEAN DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- ── 8b. tournament_registrations ────────────────────────────────
+-- Participant registrations with contact info and deck CSV.
+CREATE TABLE IF NOT EXISTS tournament_registrations (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id   UUID REFERENCES tournaments(id) ON DELETE CASCADE NOT NULL,
+  user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
+  email           TEXT NOT NULL,
+  name            TEXT,
+  discord_id      TEXT,
+  deck_csv        TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tournament_reg_tournament ON tournament_registrations(tournament_id);
+CREATE INDEX IF NOT EXISTS idx_tournament_reg_user       ON tournament_registrations(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tournament_reg_unique
+  ON tournament_registrations(tournament_id, email);
 
 -- ── 9. admin_templates ───────────────────────────────────────
 -- Export templates created by admins and assignable to users.
@@ -219,6 +240,7 @@ ALTER TABLE user_feature_overrides         DISABLE ROW LEVEL SECURITY;
 ALTER TABLE themes                         DISABLE ROW LEVEL SECURITY;
 ALTER TABLE collections                    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE tournaments                    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE tournament_registrations       DISABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_templates                DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_admin_template_assignments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE system_stats                   DISABLE ROW LEVEL SECURITY;

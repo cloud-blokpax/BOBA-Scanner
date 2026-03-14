@@ -5,6 +5,7 @@
 	import { getSupabase } from '$lib/services/supabase';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
+	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import '../styles/index.css';
 
 	let { children, data } = $props();
@@ -95,12 +96,17 @@
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
 				{#if data.user}
+					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>Settings</a>
 					<a href="/admin" class="more-item" onclick={() => (showMore = false)}>Admin</a>
 				{/if}
 			</div>
 		</div>
 	{/if}
 </div>
+
+{#if data.user}
+	<ProfilePrompt />
+{/if}
 
 <style>
 	.more-menu {

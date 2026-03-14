@@ -148,6 +148,7 @@ export interface Database {
 					is_admin: boolean;
 					is_member: boolean;
 					member_until: string | null;
+					discord_id: string | null;
 					created_at: string;
 				};
 				Insert: {
@@ -156,6 +157,7 @@ export interface Database {
 					name?: string | null;
 					picture?: string | null;
 					auth_user_id?: string | null;
+					discord_id?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['users']['Insert']>;
 				Relationships: [];
@@ -209,6 +211,9 @@ export interface Database {
 					max_bonus: number;
 					usage_count: number;
 					is_active: boolean;
+					require_email: boolean;
+					require_name: boolean;
+					require_discord: boolean;
 					created_at: string;
 				};
 				Insert: {
@@ -220,9 +225,42 @@ export interface Database {
 					max_bonus?: number;
 					is_active?: boolean;
 					usage_count?: number;
+					require_email?: boolean;
+					require_name?: boolean;
+					require_discord?: boolean;
 				};
 				Update: Partial<Database['public']['Tables']['tournaments']['Insert']>;
 				Relationships: [];
+			};
+			tournament_registrations: {
+				Row: {
+					id: string;
+					tournament_id: string;
+					user_id: string | null;
+					email: string;
+					name: string | null;
+					discord_id: string | null;
+					deck_csv: string | null;
+					created_at: string;
+				};
+				Insert: {
+					tournament_id: string;
+					user_id?: string | null;
+					email: string;
+					name?: string | null;
+					discord_id?: string | null;
+					deck_csv?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['tournament_registrations']['Insert']>;
+				Relationships: [
+					{
+						foreignKeyName: 'tournament_registrations_tournament_id_fkey';
+						columns: ['tournament_id'];
+						isOneToOne: false;
+						referencedRelation: 'tournaments';
+						referencedColumns: ['id'];
+					}
+				];
 			};
 			themes: {
 				Row: {

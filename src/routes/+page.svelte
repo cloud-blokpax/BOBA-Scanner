@@ -280,7 +280,7 @@
 						<span>Plays: {tournamentResult.max_plays}</span>
 						<span>Bonus: {tournamentResult.max_bonus}</span>
 					</div>
-					<a href="/auth/login" class="btn-primary btn-small-cta">Sign in to Enter</a>
+					<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Sign in to Enter</a>
 				</div>
 			{/if}
 		</section>
