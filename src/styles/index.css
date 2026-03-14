@@ -2152,6 +2152,7 @@ a.listing-badge:hover { opacity: .85; }
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
+    --header-height: 56px;
     --bottom-nav-height: 68px;
     --safe-bottom: env(safe-area-inset-bottom, 20px);
 }

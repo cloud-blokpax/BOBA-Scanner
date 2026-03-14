@@ -551,8 +551,9 @@
 		justify-content: center;
 		align-items: center;
 		gap: 2rem;
-		padding: 1.5rem;
+		padding: 0.75rem 1.5rem;
 		background: var(--surface-primary, #070b14);
+		flex-shrink: 0;
 	}
 
 	.control-btn {
