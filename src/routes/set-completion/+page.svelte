@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { collectionItems } from '$lib/stores/collection';
 	import { searchCards } from '$lib/services/card-db';
 	import { showToast } from '$lib/stores/toast';
@@ -77,8 +78,15 @@
 		return '#6b7280';
 	}
 
+	// Run once on mount; re-run when collectionItems changes
+	let _prevItemCount = -1;
+	onMount(() => { analyzeCompletion(); });
 	$effect(() => {
-		analyzeCompletion();
+		const count = $collectionItems.length;
+		if (count !== _prevItemCount && _prevItemCount !== -1) {
+			analyzeCompletion();
+		}
+		_prevItemCount = count;
 	});
 </script>
 

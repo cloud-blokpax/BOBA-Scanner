@@ -52,13 +52,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 						user.user_metadata?.provider_id ||
 						user.app_metadata?.provider_id ||
 						user.id;
-					await locals.supabase.from('users').insert({
+					await locals.supabase.from('users').upsert({
 						id: user.id,
 						auth_user_id: user.id,
 						google_id: googleId,
 						email: user.email,
 						name: user.user_metadata?.full_name || user.email.split('@')[0]
-					});
+					}, { onConflict: 'id' });
 				}
 				// If existingUser has a different auth_user_id, skip — already linked to another auth account
 			}

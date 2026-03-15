@@ -48,6 +48,7 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 		} = await event.locals.supabase.auth.getUser();
 
 		if (error) {
+			console.warn('[auth] getUser() failed:', error.message);
 			return { session: null, user: null };
 		}
 

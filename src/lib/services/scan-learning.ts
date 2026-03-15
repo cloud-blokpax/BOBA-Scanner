@@ -92,6 +92,10 @@ export function recordCorrection(
 	const key = normalize(ocrText);
 	if (!key || key === normalize(confirmedCardNumber)) return;
 
+	// Validate the confirmed card actually exists in the database
+	const card = findCard(confirmedCardNumber);
+	if (!card) return;
+
 	corrections.set(key, {
 		confirmed: confirmedCardNumber.toUpperCase(),
 		source,

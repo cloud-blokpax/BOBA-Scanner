@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { supabase } from '$lib/services/supabase';
+	import { onMount } from 'svelte';
+	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -55,7 +56,8 @@
 		loading = true;
 		try {
 			const currentUser = $page.data.user;
-			if (!currentUser) {
+			const sb = getSupabase();
+			if (!currentUser || !sb) {
 				tournaments = [];
 				loading = false;
 				return;
@@ -63,10 +65,10 @@
 
 			// Resolve users.id (may differ from auth user id for pre-migration users)
 			if (!resolvedUserId) {
-				resolvedUserId = await resolveUserId(currentUser);
+				resolvedUserId = await resolveUserId(currentUser, sb);
 			}
 
-			const { data, error } = await supabase
+			const { data, error } = await sb
 				.from('tournaments')
 				.select('*')
 				.or(`creator_id.eq.${resolvedUserId},is_active.eq.true`)
@@ -86,9 +88,9 @@
 	 * The `tournaments.creator_id` FK points to `users.id`, which may differ from the
 	 * Supabase Auth UUID for pre-migration users.
 	 */
-	async function resolveUserId(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }): Promise<string> {
+	async function resolveUserId(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }, sb: NonNullable<ReturnType<typeof getSupabase>>): Promise<string> {
 		// Look up by auth_user_id first
-		const { data: byAuth } = await supabase
+		const { data: byAuth } = await sb
 			.from('users')
 			.select('id')
 			.eq('auth_user_id', authUser.id)
@@ -97,13 +99,13 @@
 
 		// Fallback: look up by email and link
 		if (authUser.email) {
-			const { data: byEmail } = await supabase
+			const { data: byEmail } = await sb
 				.from('users')
 				.select('id')
 				.eq('email', authUser.email)
 				.maybeSingle();
 			if (byEmail) {
-				await supabase
+				await sb
 					.from('users')
 					.update({ auth_user_id: authUser.id })
 					.eq('id', byEmail.id);
@@ -114,7 +116,7 @@
 		// No record at all — create one using the auth UUID as the primary key
 		const googleId =
 			(authUser.user_metadata?.provider_id as string) || authUser.id;
-		const { data: created, error } = await supabase
+		const { data: created, error } = await sb
 			.from('users')
 			.insert({
 				id: authUser.id,
@@ -142,9 +144,11 @@
 
 		creating = true;
 		try {
-			const usersTableId = resolvedUserId ?? await resolveUserId(currentUser);
+			const sb = getSupabase();
+			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
+			const usersTableId = resolvedUserId ?? await resolveUserId(currentUser, sb);
 			resolvedUserId = usersTableId;
-			const { error } = await supabase.from('tournaments').insert({
+			const { error } = await sb.from('tournaments').insert({
 				creator_id: usersTableId,
 				code: newCode.toUpperCase(),
 				name: newName.trim(),
@@ -177,7 +181,9 @@
 
 	async function toggleActive(tournament: Tournament) {
 		try {
-			const { error } = await supabase
+			const sb = getSupabase();
+			if (!sb) return;
+			const { error } = await sb
 				.from('tournaments')
 				.update({ is_active: !tournament.is_active })
 				.eq('id', tournament.id);
@@ -237,7 +243,7 @@
 		tournaments.filter((t) => !resolvedUserId || t.creator_id !== resolvedUserId)
 	);
 
-	$effect(() => {
+	onMount(() => {
 		loadTournaments();
 	});
 

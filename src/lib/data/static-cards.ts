@@ -72,5 +72,5 @@ export function mapParallelToRarity(parallel: string | null): Card['rarity'] {
  * Junk records (Card ID 0 and 777777777) are excluded.
  */
 export const STATIC_CARDS: Card[] = (rawCards as unknown as RawCard[])
-	.filter((r) => r['Card ID'] > 0 && r['Card ID'] < 777777777 && r.Name != null)
+	.filter((r) => r['Card ID'] > 0 && r['Card ID'] !== 777777777 && r.Name != null)
 	.map(mapCard);
