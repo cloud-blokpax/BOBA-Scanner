@@ -210,15 +210,17 @@ describe('Recognition Pipeline E2E', () => {
 			expect(mockFetch).toHaveBeenCalledWith('/api/scan', expect.any(Object));
 		});
 
-		it('skips Tier 3 when user is not authenticated', async () => {
+		it('allows unauthenticated users to proceed to Tier 3', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
+			mockFetch.mockResolvedValue(
+				new Response(JSON.stringify({ success: true, card: { card_number: 'BF-108', hero_name: 'Bo Jackson', confidence: 0.9 } }), { status: 200 })
+			);
 
 			const blob = new Blob(['test'], { type: 'image/jpeg' });
 			const result = await recognizeCard(blob, undefined, { isAuthenticated: false });
 
-			expect(result.card_id).toBeNull();
-			expect(result.failReason).toContain('Sign in');
-			expect(mockFetch).not.toHaveBeenCalled();
+			// Unauthenticated users should reach Tier 3 (server-side rate limiting protects against abuse)
+			expect(mockFetch).toHaveBeenCalledWith('/api/scan', expect.any(Object));
 		});
 
 		it('handles network errors in Tier 3 gracefully', async () => {

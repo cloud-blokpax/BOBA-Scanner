@@ -76,20 +76,40 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		const supabase = getSupabase();
 		if (!supabase) return;
 
+		// Check cached version age — skip refresh if data was fetched recently (within 1 hour)
+		const cachedVersion = await idb.getCardsVersion();
+		if (cachedVersion?.startsWith('supabase-')) {
+			const cachedTime = new Date(cachedVersion.replace('supabase-', '')).getTime();
+			if (!isNaN(cachedTime) && Date.now() - cachedTime < 3600_000) return;
+		}
+
 		const { data, error } = await supabase.from('cards').select('*');
 		if (error || !data || data.length === 0) return;
 
-		// Update if Supabase has a different card count (additions or deletions)
-		if (data.length !== cards.length) {
-			cards = data as unknown as Card[];
-			buildIndexes();
-			await applyParallelConfig();
-			try {
-				await idb.setCards(cards);
-				await idb.setCardsVersion('supabase-' + new Date().toISOString());
-			} catch {
-				// Non-critical
-			}
+		// Compute a simple content hash to detect modifications (not just count changes)
+		const contentHash = data.length + '-' + data.reduce((acc: number, c: Record<string, unknown>) => {
+			const str = (c.card_number || '') + '|' + (c.rarity || '') + '|' + (c.hero_name || '');
+			let hash = 0;
+			for (let i = 0; i < (str as string).length; i++) hash = ((hash << 5) - hash + (str as string).charCodeAt(i)) | 0;
+			return acc ^ hash;
+		}, 0);
+
+		const lastHash = await idb.getMeta<string>('cards-content-hash');
+		if (lastHash === contentHash.toString()) {
+			// Content unchanged — update timestamp to avoid re-fetching
+			await idb.setCardsVersion('supabase-' + new Date().toISOString());
+			return;
+		}
+
+		cards = data as unknown as Card[];
+		buildIndexes();
+		await applyParallelConfig();
+		try {
+			await idb.setCards(cards);
+			await idb.setCardsVersion('supabase-' + new Date().toISOString());
+			await idb.setMeta('cards-content-hash', contentHash.toString());
+		} catch {
+			// Non-critical
 		}
 	} catch {
 		// Supabase unavailable — static data is sufficient

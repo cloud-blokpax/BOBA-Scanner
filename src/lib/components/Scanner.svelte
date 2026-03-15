@@ -30,6 +30,19 @@
 	let showFlash = $state(false);
 	let autoAnalyzeInterval: ReturnType<typeof setInterval> | null = null;
 	let cardDetectedSince = $state<number | null>(null);
+	let cameraError = $state<string | null>(null);
+	let guidanceText = $state<string | null>(null);
+	let guidanceLastChanged = $state(0);
+	const GUIDANCE_COOLDOWN = 1500;
+	let foilMode = $state(false);
+	let foilCaptures = $state<ImageBitmap[]>([]);
+	let foilStep = $state(0);
+	const FOIL_CAPTURES_NEEDED = 3;
+	const FOIL_GUIDANCE = [
+		'Capture 1/3 — hold card at current angle',
+		'Capture 2/3 — tilt card slightly right',
+		'Capture 3/3 — tilt card slightly left'
+	];
 
 	// Rarity → color mapping for bracket effects
 	const RARITY_COLORS: Record<string, { color: string; glow: number; pulses: number }> = {
@@ -90,6 +103,19 @@
 			}
 		} catch (err) {
 			console.error('Camera error:', err);
+			if (err instanceof DOMException) {
+				if (err.name === 'NotAllowedError') {
+					cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
+				} else if (err.name === 'NotFoundError') {
+					cameraError = 'No camera found on this device. Try uploading a photo instead.';
+				} else if (err.name === 'NotReadableError') {
+					cameraError = 'Camera is in use by another app. Close other apps and try again.';
+				} else {
+					cameraError = 'Could not access camera. Make sure you are using HTTPS.';
+				}
+			} else {
+				cameraError = 'Camera failed to start. Please reload the page.';
+			}
 		}
 	});
 
@@ -111,6 +137,13 @@
 		}
 	}
 
+	function updateGuidance(text: string | null) {
+		const now = Date.now();
+		if (now - guidanceLastChanged < GUIDANCE_COOLDOWN && guidanceText !== null) return;
+		guidanceText = text;
+		guidanceLastChanged = now;
+	}
+
 	async function runAutoAnalyze() {
 		if (!videoEl || !cameraReady || scanning || paused) {
 			bracketState = 'idle';
@@ -127,15 +160,22 @@
 				if (!cardDetectedSince) {
 					cardDetectedSince = Date.now();
 					bracketState = 'detected';
+					updateGuidance('Hold still to capture');
 				} else if (Date.now() - cardDetectedSince >= 500) {
 					// Card held steady for 500ms — auto-capture
 					bracketState = 'locked';
 					cardDetectedSince = null;
+					updateGuidance(null);
 					triggerAutoCapture();
 				}
+			} else if (result.cardDetected && !result.isSharp) {
+				cardDetectedSince = null;
+				bracketState = 'idle';
+				updateGuidance('Hold steady...');
 			} else {
 				cardDetectedSince = null;
 				bracketState = 'idle';
+				updateGuidance('Position card within the frame');
 			}
 		} catch {
 			// Frame analysis error — ignore silently
@@ -143,7 +183,7 @@
 	}
 
 	async function triggerAutoCapture() {
-		if (scanning || paused) return;
+		if (scanning || paused || foilMode) return;
 		// Flash overlay
 		showFlash = true;
 		setTimeout(() => { showFlash = false; }, 150);
@@ -213,11 +253,80 @@
 
 			const imageUrl = bitmapToDataUrl(bitmap);
 			// scanImage transfers or consumes the bitmap; close it after
-			const scanResult = await scanImage(bitmap, { isAuthenticated });
+			// skipBlurCheck: true because we already ran checkImageQuality above
+			const scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
 			bitmap.close();
 			handleScanResult(scanResult, imageUrl);
 		} finally {
 			scanning = false;
+		}
+	}
+
+	/** Darkest-pixel composite for foil mode. Eliminates specular highlights. */
+	async function compositeMinPixel(bitmaps: ImageBitmap[]): Promise<ImageBitmap> {
+		const w = bitmaps[0].width;
+		const h = bitmaps[0].height;
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d')!;
+
+		const allData: Uint8ClampedArray[] = [];
+		for (const bmp of bitmaps) {
+			const tmp = document.createElement('canvas');
+			tmp.width = w;
+			tmp.height = h;
+			const tmpCtx = tmp.getContext('2d')!;
+			tmpCtx.drawImage(bmp, 0, 0, w, h);
+			allData.push(tmpCtx.getImageData(0, 0, w, h).data);
+		}
+
+		const output = ctx.createImageData(w, h);
+		const outData = output.data;
+		const totalPixels = w * h * 4;
+		for (let i = 0; i < totalPixels; i += 4) {
+			let minLum = Infinity;
+			let minIdx = 0;
+			for (let j = 0; j < allData.length; j++) {
+				const lum = allData[j][i] * 0.299 + allData[j][i + 1] * 0.587 + allData[j][i + 2] * 0.114;
+				if (lum < minLum) { minLum = lum; minIdx = j; }
+			}
+			outData[i] = allData[minIdx][i];
+			outData[i + 1] = allData[minIdx][i + 1];
+			outData[i + 2] = allData[minIdx][i + 2];
+			outData[i + 3] = 255;
+		}
+		ctx.putImageData(output, 0, 0);
+		return createImageBitmap(canvas);
+	}
+
+	async function handleFoilCapture() {
+		if (!videoEl || scanning) return;
+		const bitmap = await captureFrame(videoEl);
+		foilCaptures = [...foilCaptures, bitmap];
+		foilStep = foilCaptures.length;
+		triggerHaptic('tap');
+
+		// Flash effect
+		showFlash = true;
+		setTimeout(() => { showFlash = false; }, 150);
+
+		if (foilCaptures.length >= FOIL_CAPTURES_NEEDED) {
+			scanning = true;
+			try {
+				const composite = await compositeMinPixel(foilCaptures);
+				// Clean up captures
+				foilCaptures.forEach(b => b.close());
+				foilCaptures = [];
+				foilStep = 0;
+
+				const imageUrl = bitmapToDataUrl(composite);
+				const scanResult = await scanImage(composite, { isAuthenticated, skipBlurCheck: true });
+				composite.close();
+				handleScanResult(scanResult, imageUrl);
+			} finally {
+				scanning = false;
+			}
 		}
 	}
 
@@ -262,6 +371,9 @@
 			<div class="flash-overlay"></div>
 		{/if}
 
+		<!-- Dark overlay outside scanning zone -->
+		<div class="viewfinder-overlay"></div>
+
 		<!-- Corner brackets — rarity-colored on success, red on fail, green on card detected -->
 		<div
 			class="bracket top-left {bracketAnimClass}"
@@ -296,6 +408,11 @@
 			style:--reveal-glow="{revealColor?.glow ?? 0}px"
 		></div>
 
+		<!-- Scan line animation -->
+		{#if cameraReady && !scanSuccess && !scanFailed}
+			<div class="scan-line"></div>
+		{/if}
+
 		<!-- Scan effects overlay (particles, scan line, vignette) -->
 		<ScanEffects
 			scanning={statusType === 'scanning'}
@@ -319,6 +436,36 @@
 			></div>
 		{/each}
 
+		<!-- Guidance text -->
+		{#if foilMode && foilStep < FOIL_CAPTURES_NEEDED && !scanning}
+			<div class="guidance-text foil-guidance">
+				{FOIL_GUIDANCE[foilStep]}
+			</div>
+		{:else if guidanceText && !scanning && !foilMode}
+			<div class="guidance-text">
+				{guidanceText}
+			</div>
+		{/if}
+
+		<!-- Foil capture progress -->
+		{#if foilMode && foilStep > 0 && foilStep < FOIL_CAPTURES_NEEDED}
+			<div class="foil-progress">
+				{#each Array(FOIL_CAPTURES_NEEDED) as _, i}
+					<div class="foil-dot" class:foil-dot-filled={i < foilStep}></div>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Camera error state -->
+		{#if cameraError && !cameraReady}
+			<div class="camera-error">
+				<p class="camera-error-text">{cameraError}</p>
+				<button class="camera-error-retry" onclick={() => location.reload()}>
+					Retry
+				</button>
+			</div>
+		{/if}
+
 		<!-- Status overlay -->
 		<div class="status-overlay" class:status-success={statusType === 'success'} class:status-error={statusType === 'error'} class:status-scanning={statusType === 'scanning'}>
 			{#if statusType === 'scanning'}
@@ -341,7 +488,7 @@
 
 		<button
 			class="capture-btn"
-			onclick={handleCapture}
+			onclick={foilMode ? handleFoilCapture : handleCapture}
 			disabled={!cameraReady || scanning || paused}
 			aria-label="Capture"
 		>
@@ -354,10 +501,11 @@
 
 		<button
 			class="control-btn"
-			onclick={handleTorchToggle}
-			aria-label="Toggle flash"
+			class:foil-active={foilMode}
+			onclick={() => { foilMode = !foilMode; foilCaptures.forEach(b => b.close()); foilCaptures = []; foilStep = 0; }}
+			aria-label="Toggle foil mode"
 		>
-			<span>{torchOn ? '🔦' : '💡'}</span>
+			<span>✨</span>
 		</button>
 	</div>
 </div>
@@ -383,6 +531,19 @@
 		object-fit: cover;
 	}
 
+	/* Dark overlay outside scanning zone */
+	.viewfinder-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		clip-path: polygon(evenodd,
+			0% 0%, 100% 0%, 100% 100%, 0% 100%,
+			10% 15%, 90% 15%, 90% 85%, 10% 85%
+		);
+		z-index: 1;
+		pointer-events: none;
+	}
+
 	/* L-shaped corner brackets */
 	.bracket {
 		position: absolute;
@@ -391,6 +552,7 @@
 		border-color: var(--accent-primary, #3b82f6);
 		border-style: solid;
 		border-width: 0;
+		z-index: 2;
 	}
 
 	.bracket.top-left {
@@ -655,5 +817,117 @@
 	@keyframes fade-in {
 		from { opacity: 0; }
 		to { opacity: 1; }
+	}
+
+	/* Guidance text */
+	.guidance-text {
+		position: absolute;
+		bottom: 4.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.375rem 0.875rem;
+		background: rgba(0, 0, 0, 0.6);
+		border-radius: 16px;
+		font-size: 0.8rem;
+		color: rgba(255, 255, 255, 0.85);
+		pointer-events: none;
+		z-index: 5;
+		white-space: nowrap;
+	}
+
+	/* Scan line animation */
+	.scan-line {
+		position: absolute;
+		left: 10%;
+		right: 10%;
+		height: 2px;
+		background: rgba(34, 211, 238, 0.54);
+		box-shadow: 0 0 12px rgba(34, 211, 238, 0.4), 0 0 4px rgba(34, 211, 238, 0.6);
+		z-index: 3;
+		pointer-events: none;
+		animation: scan-sweep 2s ease-in-out infinite;
+	}
+
+	@keyframes scan-sweep {
+		0%, 100% { top: 15%; }
+		50% { top: 85%; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.scan-line {
+			animation: none;
+			top: 50%;
+			opacity: 0.3;
+		}
+	}
+
+	/* Camera error state */
+	.camera-error {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		padding: 2rem;
+		z-index: 10;
+	}
+
+	.camera-error-text {
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.95rem;
+		text-align: center;
+		max-width: 300px;
+		margin: 0;
+		line-height: 1.5;
+	}
+
+	.camera-error-retry {
+		padding: 0.5rem 1.5rem;
+		background: var(--primary, #3b82f6);
+		color: white;
+		border: none;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	/* Foil mode */
+	.foil-active {
+		background: rgba(245, 158, 11, 0.15) !important;
+		border-color: rgba(245, 158, 11, 0.4) !important;
+		color: #f59e0b;
+	}
+
+	.foil-guidance {
+		background: rgba(245, 158, 11, 0.15);
+		border: 1px solid rgba(245, 158, 11, 0.3);
+		color: #fbbf24;
+	}
+
+	.foil-progress {
+		position: absolute;
+		top: 10%;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 6px;
+		z-index: 5;
+		pointer-events: none;
+	}
+
+	.foil-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.3);
+		border: 1px solid rgba(255, 255, 255, 0.5);
+	}
+
+	.foil-dot-filled {
+		background: #f59e0b;
+		border-color: #f59e0b;
 	}
 </style>
