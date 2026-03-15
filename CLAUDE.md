@@ -171,6 +171,47 @@ The card database has a layered loading strategy (see `card-db.ts`):
 - **Server state**: Supabase PostgreSQL (collections synced via `sync.ts`)
 - **Offline support**: Service Worker caches app shell, card database served stale-while-revalidate, API calls always go to network
 
+## BoBA Game Domain Knowledge
+
+Bo Jackson Battle Arena (BoBA) is a collectible trading card game where professional athletes become radioactive superheroes. Key terminology and rules for development:
+
+### Card Types
+- **Hero Cards**: Battle cards with a Power value and weapon type. Standard deck = 60 Heroes.
+- **Hot Dog Cards**: Resource cards that fuel Plays. Standard = 10 per deck. Duplicates allowed.
+- **Play Cards**: Strategic action cards. Standard = 30 unique Plays per deck. No duplicates. 25 Bonus Plays (ultra-rares) may be added beyond the 30.
+
+### Power Systems
+- **SPEC Power**: Cap on the maximum Power of any INDIVIDUAL Hero card (e.g., SPEC 160 = no card above 160 Power).
+- **Combined Power (CP)**: Cap on the SUM of all Hero Power values in the deck (e.g., 8,250 CP across 60 cards).
+- **DBS (Deck Balancing Score)**: Point budget for the Playbook. Each Play has a DBS value. Total must not exceed 1,000.
+
+### Weapon Types (rarity order, most rare first)
+Super (1/1) → Gum (secret) → Hex (/10) → Glow (/25) → Fire (/50) → Ice (/50) → Steel (common) → Brawl (common, 2026+)
+
+### Deck Building Rules (apply to ALL formats)
+- Max 6 Hero cards at the same Power level
+- Max 1 copy of each unique variation (hero + weapon + parallel combination)
+- All 30 Plays must be unique
+- No limit on copies of the same hero character across different variations
+
+### Tournament Formats
+Format rules are defined in `src/lib/data/tournament-formats.ts`. Key formats:
+- **Apex Playmaker**: No power cap, premier solo format
+- **SPEC Playmaker**: Individual cards capped at 160 Power (standard competitive)
+- **Elite Playmaker**: Total deck power capped at 8,250 CP
+- **Apex Madness**: Team Rookie Mode, Core Deck at SPEC 160, expanded via insert unlocks
+
+### Card Parallels/Treatments
+Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types include Battlefoils (Silver, Blue, Orange, etc.), named inserts (Blizzard, 80s Rad, Headlines, etc.), and Inspired Ink (autographs). In Apex Madness, having 10+ of a single insert type in the Core Deck unlocks 1 Apex card (165+ Power) of that type.
+
+### Data Files
+- `src/lib/data/boba-weapons.ts` — Weapon hierarchy with rarity and tier rankings
+- `src/lib/data/boba-parallels.ts` — All parallel/treatment types with Madness unlock eligibility
+- `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
+- `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (placeholder, to be populated)
+- `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
+- `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions
+
 ## Key Conventions
 
 ### Code Style

@@ -26,8 +26,11 @@ export const BOBA_SCAN_CONFIG = {
 } as const;
 
 export const BOBA_RARITIES = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] as const;
-export const BOBA_WEAPONS = ['Fire', 'Ice', 'Steel', 'Hex', 'Glow'] as const;
-export const BOBA_VARIANTS = ['base', 'foil', 'holographic', 'battlefoil', 'paper'] as const;
+
+import { WEAPON_HIERARCHY } from './boba-weapons';
+export const BOBA_WEAPONS = WEAPON_HIERARCHY.map(w => w.name) as readonly string[];
+
+export const BOBA_VARIANTS = ['base', 'foil', 'holographic', 'battlefoil', 'paper', 'inspired_ink'] as const;
 
 export const BOBA_FIELD_DEFINITIONS = [
 	{ key: 'card_number', label: 'Card Number', type: 'text' as const },
@@ -38,5 +41,6 @@ export const BOBA_FIELD_DEFINITIONS = [
 	{ key: 'rarity', label: 'Rarity', type: 'select' as const, options: [...BOBA_RARITIES] },
 	{ key: 'weapon_type', label: 'Weapon', type: 'select' as const, options: [...BOBA_WEAPONS] },
 	{ key: 'battle_zone', label: 'Battle Zone', type: 'text' as const },
-	{ key: 'variant', label: 'Variant', type: 'select' as const, options: [...BOBA_VARIANTS] }
+	{ key: 'variant', label: 'Variant', type: 'select' as const, options: [...BOBA_VARIANTS] },
+	{ key: 'parallel', label: 'Parallel', type: 'text' as const }
 ];

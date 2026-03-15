@@ -109,21 +109,44 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 						{
 							type: 'text',
 							text: `Identify this Bo Jackson Battle Arena (BoBA) trading card.
+
+CARD LAYOUT GUIDE:
+- Hero name: Large text centered at the top of the card
+- Power value: Number displayed in the TOP-RIGHT corner area (NOT the card number)
+- Card number: Small text in the BOTTOM-LEFT corner (formats: BF-108, BLBF-84, PL-46, BBF-56, BPL-7, or plain numbers like 76)
+- Set identifier: Text on the card border or bottom area (e.g., "Alpha Edition", "2026 Edition")
+
+WEAPON TYPE IDENTIFICATION (by icon color/style):
+- Fire: Red flame icon (rare)
+- Ice: Blue crystal/snowflake icon (rare)
+- Steel: Gray shield icon (common, most frequent)
+- Hex: Purple skull/dark magic icon (ultra rare)
+- Glow: Yellow/green radioactive glow icon (ultra rare)
+- Brawl: Orange fist icon (common, 2026 Edition)
+- Gum: Pink bubblegum themed (secret rare)
+- Super: Gold-on-black finish, 1/1 superfoil (legendary)
+
+PARALLEL/TREATMENT IDENTIFICATION:
+- Base Paper: Matte, non-reflective surface
+- Battlefoil: Holographic foil surface (Silver, Blue, Orange, Green, Pink, Red)
+- Named Inserts: Special foil patterns (Blizzard=ice pattern, 80s Rad=neon retro, Headlines=newspaper style, etc.)
+- Inspired Ink: On-card autograph (not a sticker), visible signature on the card face
+
 Return ONLY valid JSON with these fields:
 {
-  "card_name": "full card name",
-  "hero_name": "BoBA hero name",
-  "athlete_name": "real athlete name if known",
-  "set_code": "set identifier (e.g. Alpha Edition, Alpha Blast)",
-  "card_number": "number on card (e.g. BF-108, PL-46, 76)",
-  "power": null or number,
+  "card_name": "full card name as printed",
+  "hero_name": "BoBA hero name (e.g., BoJax, Air Jordan, The Kid)",
+  "athlete_name": "real athlete name if known (e.g., Bo Jackson, Michael Jordan)",
+  "set_code": "set identifier (e.g., Alpha Edition, 2026 Edition)",
+  "card_number": "number from BOTTOM-LEFT of card (e.g., BF-108, PL-46)",
+  "power": null or number from TOP-RIGHT of card,
   "rarity": "common/uncommon/rare/ultra_rare/legendary",
-  "variant": "base/foil/holographic/battlefoil/paper",
-  "weapon_type": "weapon if visible (Fire/Ice/Steel/Hex/Glow)",
+  "variant": "base/foil/battlefoil/paper/inspired_ink",
+  "parallel": "specific parallel name if identifiable (e.g., Blizzard, Silver, Headlines, 80s Rad)",
+  "weapon_type": "Fire/Ice/Steel/Hex/Glow/Brawl/Gum/Super",
   "confidence": 0.0 to 1.0
 }
 
-Common card number formats: "BF-108", "BLBF-84", "PL-46", "BBF-56", "BPL-7", or plain numbers like "76".
 Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 						}
 					]
