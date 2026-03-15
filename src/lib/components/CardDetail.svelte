@@ -154,7 +154,8 @@
 		text-align: center;
 	}
 
-	.detail-image {
+	/* Class passed to child component via className prop */
+	:global(.detail-image) {
 		max-width: 200px;
 		border-radius: 8px;
 	}

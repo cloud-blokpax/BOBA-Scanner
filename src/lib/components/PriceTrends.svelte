@@ -34,7 +34,12 @@
 
 	let showAlertModal = $state(false);
 	let alertDirection = $state<'below' | 'above'>('below');
-	let alertTarget = $state(currentPrice ?? 0);
+	let alertTarget = $state(0);
+
+	// Update alert target when currentPrice changes
+	$effect(() => {
+		if (currentPrice != null) alertTarget = currentPrice;
+	});
 	let alerts = $state<PriceAlert[]>(loadAlerts());
 	let history = $state<PricePoint[]>(loadHistory());
 
@@ -165,8 +170,9 @@
 	</div>
 
 	{#if showAlertModal}
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="alert-modal-backdrop" role="presentation" onclick={() => (showAlertModal = false)}>
-			<div class="alert-modal" role="dialog" onclick={(e) => e.stopPropagation()}>
+			<div class="alert-modal" role="dialog" tabindex="-1" aria-label="Set Price Alert" onclick={(e) => e.stopPropagation()}>
 				<h4>Set Price Alert</h4>
 				<p class="alert-card-name">{heroName || cardNumber}</p>
 

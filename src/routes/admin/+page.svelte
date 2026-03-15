@@ -505,6 +505,7 @@
 												class:toggle-on={flag[tier.key as keyof FeatureFlag]}
 												onclick={() => toggleFlagRole(flag.feature_key, tier.key as 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_member' | 'enabled_for_admin', !!flag[tier.key as keyof FeatureFlag])}
 												disabled={savingFlag === flag.feature_key}
+												aria-label="Toggle {tier.label} for {flag.feature_key}"
 											></button>
 										</label>
 									{/each}
