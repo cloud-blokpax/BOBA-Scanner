@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase } from '$lib/services/supabase';
+import { getSupabase } from '$lib/services/supabase';
 
 export const user = writable<User | null>(null);
 export const session = writable<Session | null>(null);
@@ -12,10 +12,14 @@ export const userEmail = derived(user, ($user) => $user?.email ?? null);
 /**
  * Initialize auth state from Supabase and listen for changes.
  * Call this once in the root layout's onMount.
+ * Returns a no-op cleanup if Supabase is not configured (offline mode).
  */
 export function initAuth() {
+	const client = getSupabase();
+	if (!client) return () => {};
+
 	// Get initial session
-	supabase.auth.getSession().then(({ data }) => {
+	client.auth.getSession().then(({ data }) => {
 		session.set(data.session);
 		user.set(data.session?.user ?? null);
 	}).catch((err) => {
@@ -25,7 +29,7 @@ export function initAuth() {
 	// Listen for auth changes
 	const {
 		data: { subscription }
-	} = supabase.auth.onAuthStateChange((_event, newSession) => {
+	} = client.auth.onAuthStateChange((_event, newSession) => {
 		session.set(newSession);
 		user.set(newSession?.user ?? null);
 	});
@@ -37,7 +41,10 @@ export function initAuth() {
  * Sign in with Google OAuth via Supabase Auth (PKCE flow).
  */
 export async function signInWithGoogle(redirectTo?: string) {
-	const { error } = await supabase.auth.signInWithOAuth({
+	const client = getSupabase();
+	if (!client) throw new Error('Supabase is not configured');
+
+	const { error } = await client.auth.signInWithOAuth({
 		provider: 'google',
 		options: {
 			redirectTo: redirectTo
@@ -56,7 +63,10 @@ export async function signInWithGoogle(redirectTo?: string) {
  * Sign out the current user.
  */
 export async function signOut() {
-	const { error } = await supabase.auth.signOut();
+	const client = getSupabase();
+	if (!client) return;
+
+	const { error } = await client.auth.signOut();
 	if (error) {
 		console.error('Sign out error:', error.message);
 		throw error;

@@ -65,8 +65,9 @@
 
 	function toggleCell(index: number) {
 		if (processing) return;
-		grid[index].skipped = !grid[index].skipped;
-		grid = grid;
+		grid = grid.map((c, i) =>
+			i === index ? { ...c, skipped: !c.skipped } : c
+		);
 	}
 
 	async function processAllCells() {
@@ -81,12 +82,18 @@
 		const pending = grid.filter((c) => !c.skipped && c.status === 'pending');
 		const concurrency = 2;
 
+		// Helper: immutably update a cell in the grid by row+col identity
+		function updateCell(cell: Cell, patch: Partial<Cell>) {
+			grid = grid.map((c) =>
+				c.row === cell.row && c.col === cell.col ? { ...c, ...patch } : c
+			);
+		}
+
 		for (let i = 0; i < pending.length; i += concurrency) {
 			const batch = pending.slice(i, i + concurrency);
 			await Promise.all(
 				batch.map(async (cell) => {
-					cell.status = 'processing';
-					grid = grid;
+					updateCell(cell, { status: 'processing' });
 
 					try {
 						// Crop cell from image
@@ -108,16 +115,16 @@
 						const result = await recognizeCard(cellBitmap);
 						cellBitmap.close(); // Free GPU memory
 						if (result.card_id) {
-							cell.result = result;
-							cell.status = 'done';
+							updateCell(cell, { result, status: 'done' });
 						} else {
-							cell.status = 'empty';
+							updateCell(cell, { status: 'empty' });
 						}
 					} catch (err) {
-						cell.error = err instanceof Error ? err.message : 'Failed';
-						cell.status = 'error';
+						updateCell(cell, {
+							error: err instanceof Error ? err.message : 'Failed',
+							status: 'error'
+						});
 					}
-					grid = grid;
 				})
 			);
 		}

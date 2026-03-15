@@ -20,12 +20,27 @@ const cardIndex = new Map<string, Card[]>();
 const prefixIndex = new Map<string, Card[]>();
 const idIndex = new Map<string, Card>();
 let isLoaded = false;
+let _loadPromise: Promise<Card[]> | null = null;
 
 /**
  * Load the card database. Guarantees a usable card index is available.
  * Never throws — falls back to static data if all else fails.
+ * Uses a shared promise to prevent concurrent duplicate loads.
  */
 export async function loadCardDatabase(): Promise<Card[]> {
+	if (isLoaded && cards.length > 0) return cards;
+
+	// Prevent concurrent loads: if a load is already in progress, share its promise
+	if (_loadPromise) return _loadPromise;
+	_loadPromise = _loadCardDatabaseImpl();
+	try {
+		return await _loadPromise;
+	} finally {
+		_loadPromise = null;
+	}
+}
+
+async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	if (isLoaded && cards.length > 0) return cards;
 
 	// Layer 1: IndexedDB cache (may have fresher Supabase data)

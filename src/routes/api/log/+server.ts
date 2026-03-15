@@ -19,12 +19,17 @@ function checkLogRateLimit(ip: string): boolean {
 	const entry = logRateMap.get(ip) || { count: 0, windowStart: now };
 
 	if (now - entry.windowStart > LOG_WINDOW_MS) {
-		entry.count = 1;
+		entry.count = 0;
 		entry.windowStart = now;
-	} else {
-		entry.count++;
 	}
 
+	// Check limit BEFORE incrementing to avoid off-by-one
+	if (entry.count >= MAX_LOG_REQUESTS) {
+		logRateMap.set(ip, entry);
+		return false;
+	}
+
+	entry.count++;
 	logRateMap.set(ip, entry);
 
 	// Periodic cleanup
@@ -34,7 +39,7 @@ function checkLogRateLimit(ip: string): boolean {
 		}
 	}
 
-	return entry.count <= MAX_LOG_REQUESTS;
+	return true;
 }
 
 interface ClientError {

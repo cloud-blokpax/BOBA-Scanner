@@ -61,12 +61,18 @@ function checkInMemory(key: string, maxRequests: number): boolean {
 	const userData = rateLimitMap.get(key) || { count: 0, windowStart: now };
 
 	if (now - userData.windowStart > WINDOW_MS) {
-		userData.count = 1;
+		userData.count = 0;
 		userData.windowStart = now;
-	} else {
-		userData.count++;
 	}
 
+	// Check limit BEFORE incrementing to avoid off-by-one
+	// (otherwise request maxRequests+1 gets through before being blocked)
+	if (userData.count >= maxRequests) {
+		rateLimitMap.set(key, userData);
+		return false;
+	}
+
+	userData.count++;
 	rateLimitMap.set(key, userData);
 
 	// Cleanup old entries periodically
@@ -76,7 +82,7 @@ function checkInMemory(key: string, maxRequests: number): boolean {
 		}
 	}
 
-	return userData.count <= maxRequests;
+	return true;
 }
 
 // ── Public API ──────────────────────────────────────────────

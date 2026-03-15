@@ -96,24 +96,46 @@ export async function loadCollection(): Promise<void> {
 
 /**
  * Add a card to the collection.
+ * Uses a per-key lock to prevent duplicate entries from rapid concurrent adds
+ * of the same card+condition pair.
  */
+const _addLocks = new Map<string, Promise<void>>();
+
 export async function addToCollection(
 	cardId: string,
 	condition = 'near_mint',
 	notes: string | null = null
 ): Promise<void> {
-	const item = await upsertCollectionItem(cardId, condition, notes);
-	collectionItems.update((items) => {
-		const existing = items.findIndex(
-			(i) => i.card_id === cardId && i.condition === condition
-		);
-		if (existing >= 0) {
-			items[existing] = item;
-		} else {
-			items.unshift(item);
+	const lockKey = `${cardId}:${condition}`;
+
+	// Wait for any in-flight add for the same card+condition to finish
+	const existing = _addLocks.get(lockKey);
+	if (existing) await existing;
+
+	const promise = (async () => {
+		const item = await upsertCollectionItem(cardId, condition, notes);
+		collectionItems.update((items) => {
+			const idx = items.findIndex(
+				(i) => i.card_id === cardId && i.condition === condition
+			);
+			if (idx >= 0) {
+				items[idx] = item;
+			} else {
+				items.unshift(item);
+			}
+			return items;
+		});
+	})();
+
+	_addLocks.set(lockKey, promise);
+	try {
+		await promise;
+	} finally {
+		// Only clear if this is still our promise (not a newer one)
+		if (_addLocks.get(lockKey) === promise) {
+			_addLocks.delete(lockKey);
 		}
-		return items;
-	});
+	}
 }
 
 /**
