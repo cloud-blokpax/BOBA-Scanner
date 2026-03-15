@@ -88,18 +88,31 @@ export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<Imag
 
 /**
  * Initialize the Web Workers. Call once on app start.
+ * Uses a shared promise to prevent duplicate Worker creation from concurrent calls.
  */
-export async function initWorkers(): Promise<void> {
-	if (!imageWorker) {
-		const ImageWorker = new Worker(
-			new URL('$lib/workers/image-processor.ts', import.meta.url),
-			{ type: 'module' }
-		);
-		imageWorker = Comlink.wrap(ImageWorker);
-	}
+let _workerInitPromise: Promise<void> | null = null;
 
-	// TODO: Tesseract is currently disabled — skip initialization
-	// await initOcr();
+export async function initWorkers(): Promise<void> {
+	if (imageWorker) return;
+	if (_workerInitPromise) return _workerInitPromise;
+
+	_workerInitPromise = (async () => {
+		if (!imageWorker) {
+			const ImageWorker = new Worker(
+				new URL('$lib/workers/image-processor.ts', import.meta.url),
+				{ type: 'module' }
+			);
+			imageWorker = Comlink.wrap(ImageWorker);
+		}
+		// TODO: Tesseract is currently disabled — skip initialization
+		// await initOcr();
+	})();
+
+	try {
+		await _workerInitPromise;
+	} finally {
+		_workerInitPromise = null;
+	}
 }
 
 /**
