@@ -203,7 +203,7 @@ export async function recognizeCard(
 	}
 	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
 	return finalize(
-		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: 0, failReason: _lastTier3FailReason || 'AI could not identify this card' }
+		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: _lastTier3FailReason || 'AI could not identify this card' }
 	);
 }
 

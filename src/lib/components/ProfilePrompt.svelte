@@ -7,12 +7,14 @@
 	let profileName = $state('');
 	let discordId = $state('');
 	let saving = $state(false);
-	let checked = $state(false);
+	let checkedForUserId = $state<string | null>(null);
 
 	$effect(() => {
 		const currentUser = $user;
-		if (!currentUser || checked) return;
-		checked = true;
+		if (!currentUser) return;
+		// Re-check when user changes (e.g., sign out and sign in as different user)
+		if (checkedForUserId === currentUser.id) return;
+		checkedForUserId = currentUser.id;
 		checkProfile(currentUser.id);
 	});
 

@@ -130,10 +130,12 @@ self.addEventListener('sync', (event) => {
 // (protects against iOS Safari's aggressive 7-day cache eviction)
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'RECACHE_SHELL') {
-    caches.open(CACHE_NAME).then(cache => {
-      Promise.allSettled(
-        APP_SHELL.map(url => cache.add(url).catch(() => {}))
-      );
-    });
+    event.waitUntil(
+      caches.open(CACHE_NAME).then(cache =>
+        Promise.allSettled(
+          APP_SHELL.map(url => cache.add(url).catch(() => {}))
+        )
+      )
+    );
   }
 });

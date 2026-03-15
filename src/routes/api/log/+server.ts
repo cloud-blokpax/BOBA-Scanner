@@ -83,7 +83,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				created_at: new Date().toISOString()
 			}));
 
-			await fetch(`${supabaseUrl}/rest/v1/error_logs`, {
+			const logRes = await fetch(`${supabaseUrl}/rest/v1/error_logs`, {
 				method: 'POST',
 				headers: {
 					apikey: serviceRoleKey,
@@ -93,6 +93,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				},
 				body: JSON.stringify(rows)
 			});
+			if (!logRes.ok) {
+				console.warn(`[api/log] Supabase insert failed: ${logRes.status}`);
+			}
 		} else {
 			for (const err of batch) {
 				console.error(`[CLIENT ${err.type}] ${err.message} @ ${err.file}:${err.line}`);

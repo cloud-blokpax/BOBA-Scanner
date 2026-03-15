@@ -18,11 +18,15 @@
 		reader.onload = () => {
 			imagePreview = reader.result as string;
 		};
+		reader.onerror = () => {
+			showToast('Failed to read image file', 'x');
+			imageFile = null;
+		};
 		reader.readAsDataURL(file);
 	}
 
 	async function compressImage(file: File): Promise<string> {
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			const img = new Image();
 			const objectUrl = URL.createObjectURL(file);
 			img.onload = () => {
@@ -40,7 +44,13 @@
 				canvas.height = h;
 				const ctx = canvas.getContext('2d')!;
 				ctx.drawImage(img, 0, 0, w, h);
-				resolve(canvas.toDataURL('image/jpeg', 0.92));
+				// Strip data URL prefix — API expects raw base64
+				const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+				resolve(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
+			};
+			img.onerror = () => {
+				URL.revokeObjectURL(objectUrl);
+				reject(new Error('Failed to load image'));
 			};
 			img.src = objectUrl;
 		});
