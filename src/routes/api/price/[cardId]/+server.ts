@@ -106,11 +106,20 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			.filter((p: number) => p > 0)
 			.sort((a: number, b: number) => a - b);
 
+		// Calculate proper median: average two middle values for even-length arrays
+		let median: number | null = null;
+		if (prices.length > 0) {
+			const mid = Math.floor(prices.length / 2);
+			median = prices.length % 2 !== 0
+				? prices[mid]
+				: (prices[mid - 1] + prices[mid]) / 2;
+		}
+
 		const priceData = {
 			card_id: cardId,
 			source: 'ebay',
 			price_low: prices.length > 0 ? prices[0] : null,
-			price_mid: prices.length > 0 ? prices[Math.floor(prices.length / 2)] : null,
+			price_mid: median,
 			price_high: prices.length > 0 ? prices[prices.length - 1] : null,
 			listings_count: prices.length,
 			fetched_at: new Date().toISOString()

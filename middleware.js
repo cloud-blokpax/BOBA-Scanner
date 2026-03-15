@@ -67,7 +67,16 @@ export default function middleware(request) {
   const suspiciousHeaders = [
     'x-forwarded-for-original',  // proxy chains
   ];
-  // Check for missing Accept header (browsers always send it)
+  for (const header of suspiciousHeaders) {
+    if (request.headers.has(header)) {
+      return new Response(forbidden403Page(), {
+        status: 403,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
+  }
+
+  // Check for missing Accept header on navigation requests (browsers always send it)
   const acceptHeader = request.headers.get('accept');
   if (!acceptHeader && pathname === '/') {
     return new Response(forbidden403Page(), {

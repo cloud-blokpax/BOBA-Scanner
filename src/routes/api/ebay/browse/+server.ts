@@ -75,7 +75,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			// Filter to exact matches
 			const cardNum = (cardNumber || '').toUpperCase();
 			const heroStr = (hero || '').toUpperCase();
-			const exact = all.filter((item: { title: string }) => {
+			const exact = all.filter((item: { title?: string }) => {
+				if (!item.title) return false;
 				const t = item.title.toUpperCase();
 				if (cardNum && t.includes(cardNum)) return true;
 				if (heroStr && heroStr.length > 2 && t.includes(heroStr)) return true;

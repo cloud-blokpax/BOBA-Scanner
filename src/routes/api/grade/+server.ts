@@ -123,7 +123,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			throw error(status, `AI service error: ${response?.status ?? 'unknown'}`);
 		}
 
-		const data = await response.json();
+		let data;
+		try {
+			data = await response.json();
+		} catch {
+			throw error(502, 'Invalid response from AI service');
+		}
 
 		// Extract and validate the grading JSON from the Claude response
 		const text = data?.content?.[0]?.type === 'text' ? data.content[0].text : '';

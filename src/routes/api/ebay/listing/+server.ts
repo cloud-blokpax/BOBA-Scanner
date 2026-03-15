@@ -152,7 +152,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw new Error(errMsg);
 		}
 
-		const offerData = await offerRes.json();
+		let offerData;
+		try {
+			offerData = await offerRes.json();
+		} catch {
+			throw new Error('Invalid response from eBay offer API');
+		}
 		const offerId = offerData.offerId;
 
 		// Step 3: Publish offer
@@ -170,7 +175,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw new Error(errMsg);
 		}
 
-		const publishData = await publishRes.json();
+		let publishData;
+		try {
+			publishData = await publishRes.json();
+		} catch {
+			throw new Error('Invalid response from eBay publish API');
+		}
 		const listingId = publishData.listingId;
 		const listingUrl = `https://www.ebay.com/itm/${listingId}`;
 

@@ -114,7 +114,7 @@ describe('GET /api/price/[cardId]', () => {
 			const body = await response.json();
 
 			expect(body.price_low).toBe(5);
-			expect(body.price_mid).toBe(15); // Math.floor(4/2) = index 2 = 15
+			expect(body.price_mid).toBe(12.5); // proper median of [5, 10, 15, 20] = (10+15)/2
 			expect(body.price_high).toBe(20);
 			expect(body.listings_count).toBe(4);
 		});

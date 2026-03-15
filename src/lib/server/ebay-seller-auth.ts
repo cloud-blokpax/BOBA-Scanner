@@ -105,7 +105,7 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 		console.error('[ebay-seller-auth] Token storage failed:', upsertError);
 		throw new Error('Failed to store eBay tokens');
 	}
-	return null;
+	return userId;
 }
 
 export async function getSellerToken(userId: string): Promise<string | null> {
