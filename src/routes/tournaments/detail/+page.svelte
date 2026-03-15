@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/services/supabase';
+	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast';
 
 	interface Registration {
@@ -49,13 +49,20 @@
 			return;
 		}
 
+		const client = getSupabase();
+		if (!client) {
+			errorMsg = 'Database not configured';
+			loading = false;
+			return;
+		}
+
 		try {
 			// Load tournament
-			const { data: tData, error: tError } = await supabase
+			const { data: tData, error: tError } = await client
 				.from('tournaments')
 				.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord, is_active, usage_count, created_at, creator_id')
 				.eq('id', id)
-				.single();
+				.maybeSingle();
 
 			if (tError || !tData) {
 				errorMsg = 'Tournament not found';
@@ -73,7 +80,7 @@
 			tournament = tData as TournamentDetail;
 
 			// Load registrations
-			const { data: regData, error: regError } = await supabase
+			const { data: regData, error: regError } = await client
 				.from('tournament_registrations')
 				.select('id, email, name, discord_id, deck_csv, created_at')
 				.eq('tournament_id', id)

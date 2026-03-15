@@ -121,11 +121,13 @@ export async function addToCollection(
 				(i) => i.card_id === cardId && i.condition === condition
 			);
 			if (idx >= 0) {
-				items[idx] = item;
+				// Return a new array to ensure Svelte detects the change
+				const next = [...items];
+				next[idx] = item;
+				return next;
 			} else {
-				items.unshift(item);
+				return [item, ...items];
 			}
-			return items;
 		});
 	})();
 

@@ -6,7 +6,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(503, 'Service unavailable');
 	}
 
-	const body = await request.json();
+	let body;
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'Invalid JSON body');
+	}
 	const { tournament_id, email, name, discord_id, deck_csv } = body;
 
 	if (!tournament_id || !email) {
@@ -21,7 +26,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Get tournament to validate requirements
 	const { data: tournament, error: tError } = await locals.supabase
 		.from('tournaments')
-		.select('id, require_email, require_name, require_discord, is_active')
+		.select('id, require_email, require_name, require_discord, is_active, usage_count')
 		.eq('id', tournament_id)
 		.single();
 
@@ -68,22 +73,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Atomically increment usage_count using RPC to avoid read-modify-write race condition.
-	// Falls back to non-atomic increment if the RPC function hasn't been created yet.
+	// Falls back to direct update using the value we already fetched (still racy under
+	// high concurrency but avoids the separate read that doubles the race window).
 	const { error: rpcError } = await locals.supabase
 		.rpc('increment_tournament_usage' as never, { tid: tournament_id } as never);
 	if (rpcError) {
-		// RPC not available — fall back to non-atomic increment (racy but functional)
-		const { data: current } = await locals.supabase
+		await locals.supabase
 			.from('tournaments')
-			.select('usage_count')
-			.eq('id', tournament_id)
-			.single();
-		if (current) {
-			await locals.supabase
-				.from('tournaments')
-				.update({ usage_count: (current.usage_count || 0) + 1 })
-				.eq('id', tournament_id);
-		}
+			.update({ usage_count: ((tournament.usage_count as number) || 0) + 1 } as never)
+			.eq('id', tournament_id);
 	}
 
 	return json({ success: true, registration });

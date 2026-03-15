@@ -257,7 +257,7 @@
 		try {
 			let userId = overrideUserId.trim();
 			if (!userId.match(/^[0-9a-f-]{36}$/i)) {
-				const { data: userRow } = await client.from('users').select('id').eq('email', userId).single();
+				const { data: userRow } = await client.from('users').select('id').eq('email', userId).maybeSingle();
 				if (!userRow) { showToast('User not found', 'x'); overrideSaving = false; return; }
 				userId = userRow.id;
 			}

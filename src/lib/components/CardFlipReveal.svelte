@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	let {
 		imageUrl,
@@ -30,13 +30,19 @@
 		uncommon: 300
 	};
 
+	let flipTimer: ReturnType<typeof setTimeout> | null = null;
+
 	onMount(() => {
 		if (shouldFlip) {
 			const delay = flipDelay[rarity] ?? 300;
-			setTimeout(() => { flipped = true; }, delay);
+			flipTimer = setTimeout(() => { flipped = true; }, delay);
 		} else {
 			flipped = true;
 		}
+	});
+
+	onDestroy(() => {
+		if (flipTimer) clearTimeout(flipTimer);
 	});
 </script>
 

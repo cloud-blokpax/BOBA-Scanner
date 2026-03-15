@@ -37,14 +37,21 @@
 
 	<div class="score-display" class:over-cap={isOverCap}>
 		<div class="score-label">Total DBS</div>
-		<div class="score-value">{dbsResult?.total ?? 0}</div>
-		<div class="score-cap">
-			{#if isOverCap}
-				<span class="over">Over cap by {Math.abs(remaining)}</span>
-			{:else}
-				<span class="under">{remaining} remaining of {DBS_CAP}</span>
-			{/if}
-		</div>
+		{#if dbsResult === null && playNumbers.length > 0}
+			<div class="score-value score-unavailable">—</div>
+			<div class="score-cap">
+				<span class="missing-data">DBS score data not yet available</span>
+			</div>
+		{:else}
+			<div class="score-value">{dbsResult?.total ?? 0}</div>
+			<div class="score-cap">
+				{#if isOverCap}
+					<span class="over">Over cap by {Math.abs(remaining)}</span>
+				{:else}
+					<span class="under">{remaining} remaining of {DBS_CAP}</span>
+				{/if}
+			</div>
+		{/if}
 		<div class="score-bar-track">
 			<div
 				class="score-bar-fill"
@@ -112,6 +119,8 @@
 	.score-cap { font-size: 0.8rem; margin-top: 0.25rem; }
 	.over { color: #ef4444; font-weight: 600; }
 	.under { color: var(--text-secondary); }
+	.score-unavailable { color: var(--text-tertiary); }
+	.missing-data { color: #f59e0b; font-size: 0.8rem; }
 
 	.score-bar-track {
 		height: 6px;

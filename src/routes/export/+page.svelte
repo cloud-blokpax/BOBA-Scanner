@@ -95,9 +95,17 @@
 			if (slot > 45) break;
 		}
 
-		const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+		const csv = [headers.join(','), ...rows.map((r) => r.map(escapeCsvField).join(','))].join('\n');
 		downloadFile(csv, 'boba-deck-export.csv');
 		showToast('Deck exported', 'check');
+	}
+
+	/** Escape a CSV field: wrap in quotes if it contains commas, quotes, or newlines. */
+	function escapeCsvField(value: string): string {
+		if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+			return '"' + value.replace(/"/g, '""') + '"';
+		}
+		return value;
 	}
 
 	function runEbayExport() {
@@ -114,11 +122,11 @@
 			return [
 				'Add',
 				'183050',
-				`BOBA ${c.hero || ''} ${c.cardNumber || ''} ${c.set || ''}`.trim(),
+				escapeCsvField(`BOBA ${c.hero || ''} ${c.cardNumber || ''} ${c.set || ''}`.trim()),
 				condition,
 				'0.99',
 				'1',
-				`BOBA Trading Card - ${c.hero || 'Unknown Hero'}`
+				escapeCsvField(`BOBA Trading Card - ${c.hero || 'Unknown Hero'}`)
 			].join(',');
 		});
 

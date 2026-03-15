@@ -252,8 +252,9 @@ export function validateDeck(
 	let madnessTotalApexAllowed = 0;
 
 	if (format.id === 'apex_madness' && format.madnessInsertUnlockThreshold) {
-		// Count inserts in the Core Deck (first 60 cards) that are at or below SPEC cap
-		const coreDeck = heroCards.filter(c => (c.power || 0) <= (format.specPowerCap || 999));
+		// Core Deck = first 60 Hero cards (by deck position, not by power level)
+		const coreDeckSize = format.heroDeckMin; // 60
+		const coreDeck = heroCards.slice(0, coreDeckSize);
 
 		// Count each insert type (including wild Supers)
 		const insertCounts = new Map<string, number>();
@@ -303,9 +304,9 @@ export function validateDeck(
 		madnessTotalApexAllowed = madnessUnlockedInserts.length + foilHotDogBonus;
 
 		// Check if the deck has more Apex cards than allowed
-		const apexCards = heroCards.filter(c => (c.power || 0) >= (format.madnessApexMinPower || 165));
-		const coreApex = apexCards.filter(c => coreDeck.includes(c));
-		const expandedApex = apexCards.length - coreApex.length;
+		// Expanded deck = cards beyond the core deck (positions 61+)
+		const expandedDeck = heroCards.slice(coreDeckSize);
+		const expandedApex = expandedDeck.filter(c => (c.power || 0) >= (format.madnessApexMinPower || 165)).length;
 
 		if (expandedApex > madnessTotalApexAllowed) {
 			violations.push({
