@@ -56,6 +56,9 @@
 	let sheenProgress = 0;
 	let glowProgress = 0;
 
+	// Track pending timeouts for cleanup on destroy
+	const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+
 	// Track previous revealed state to detect edges
 	let prevRevealed = false;
 	let prevScanning = false;
@@ -85,6 +88,8 @@
 		if (animFrame) cancelAnimationFrame(animFrame);
 		resizeObserver?.disconnect();
 		running = false;
+		for (const t of pendingTimeouts) clearTimeout(t);
+		pendingTimeouts.length = 0;
 	});
 
 	function startLoop() {
@@ -317,11 +322,11 @@
 				});
 			}
 			// Delayed activation for ring particles
-			setTimeout(() => {
+			pendingTimeouts.push(setTimeout(() => {
 				for (const p of particles) {
 					if (p.type === 'ring') p.alpha = 1;
 				}
-			}, 300);
+			}, 300));
 		}
 
 		// Legendary: radial lines
@@ -420,7 +425,7 @@
 			// Legendary vignette
 			showVignette = r === 'legendary';
 			if (showVignette) {
-				setTimeout(() => { showVignette = false; }, 1500);
+				pendingTimeouts.push(setTimeout(() => { showVignette = false; }, 1500));
 			}
 
 			// Schedule weapon accent

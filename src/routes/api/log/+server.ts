@@ -32,10 +32,16 @@ function checkLogRateLimit(ip: string): boolean {
 	entry.count++;
 	logRateMap.set(ip, entry);
 
-	// Periodic cleanup
+	// Periodic cleanup — evict expired entries and hard-cap to prevent unbounded growth
 	if (logRateMap.size > 500) {
 		for (const [k, v] of logRateMap) {
 			if (now - v.windowStart > LOG_WINDOW_MS * 2) logRateMap.delete(k);
+		}
+		// Hard cap: if still too large after expiry cleanup, remove oldest entries
+		if (logRateMap.size > 1000) {
+			const entries = [...logRateMap.entries()].sort((a, b) => a[1].windowStart - b[1].windowStart);
+			const toRemove = entries.slice(0, entries.length - 500);
+			for (const [k] of toRemove) logRateMap.delete(k);
 		}
 	}
 

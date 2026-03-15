@@ -139,10 +139,14 @@ export function isFeatureEnabled(featureKey: string): boolean {
  * Reactive derived store for a specific feature flag.
  */
 export function featureEnabled(featureKey: string) {
-	return derived([featureFlags, userOverrides, user], ([$flags, $overrides]) => {
+	return derived([featureFlags, userOverrides, user], ([$flags, $overrides, $user]) => {
 		if ($overrides.has(featureKey)) return $overrides.get(featureKey)!;
 		const flag = $flags.get(featureKey);
 		if (!flag) return false;
+		// $user is accessed here to ensure the derived store re-evaluates when user changes.
+		// roleCheck() uses get(user) internally for profile data, but reactive tracking
+		// requires the dependency to be read in this callback.
+		void $user;
 		return roleCheck(flag);
 	});
 }

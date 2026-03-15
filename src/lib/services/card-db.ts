@@ -253,10 +253,20 @@ function heroMatches(card: Card, normalizedHero: string): boolean {
 	if (cardName === normalizedHero || cardHero === normalizedHero) return true;
 
 	// Contains match (handles cases like "Air Jordan" vs "AIR JORDAN III")
-	if (cardName && normalizedHero.length >= 3 &&
-		(cardName.includes(normalizedHero) || normalizedHero.includes(cardName))) return true;
-	if (cardHero && normalizedHero.length >= 3 &&
-		(cardHero.includes(normalizedHero) || normalizedHero.includes(cardHero))) return true;
+	// Both strings must be at least 3 chars to avoid false positives like
+	// "MICHAEL" matching "MICHAEL JORDAN" via substring.
+	if (cardName && cardName.length >= 3 && normalizedHero.length >= 3 &&
+		(cardName.includes(normalizedHero) || normalizedHero.includes(cardName))) {
+		// Require the shorter string to be at least 60% the length of the longer
+		// to avoid partial name false positives
+		const ratio = Math.min(cardName.length, normalizedHero.length) / Math.max(cardName.length, normalizedHero.length);
+		if (ratio >= 0.6) return true;
+	}
+	if (cardHero && cardHero.length >= 3 && normalizedHero.length >= 3 &&
+		(cardHero.includes(normalizedHero) || normalizedHero.includes(cardHero))) {
+		const ratio = Math.min(cardHero.length, normalizedHero.length) / Math.max(cardHero.length, normalizedHero.length);
+		if (ratio >= 0.6) return true;
+	}
 
 	return false;
 }
