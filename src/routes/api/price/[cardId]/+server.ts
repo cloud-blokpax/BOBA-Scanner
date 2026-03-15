@@ -127,6 +127,22 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			console.warn('[api/price] Cache write failed (possible RLS issue)');
 		}
 
+		// Log price data point to history (always-on, not gated by feature flag)
+		try {
+			const historyClient = getServiceClient() || locals.supabase;
+			await historyClient.from('price_history').insert({
+				card_id: cardId,
+				source: 'ebay',
+				price_low: priceData.price_low,
+				price_mid: priceData.price_mid,
+				price_high: priceData.price_high,
+				listings_count: priceData.listings_count,
+				recorded_at: new Date().toISOString()
+			});
+		} catch {
+			// Non-critical — don't fail the request if history logging fails
+		}
+
 		return json(priceData, {
 			headers: {
 				'Cache-Control': 's-maxage=3600, stale-while-revalidate=7200'

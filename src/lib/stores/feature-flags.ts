@@ -44,6 +44,41 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: true,
 		enabled_for_member: true,
 		enabled_for_admin: true
+	},
+
+	// --- Premium Features ---
+	{
+		feature_key: 'price_history',
+		display_name: 'Price History & Alerts',
+		description: '30-day price sparklines, trend badges, and price drop/spike alerts on every card',
+		icon: '📈',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_member: true,
+		enabled_for_admin: true
+	},
+	{
+		feature_key: 'tournament_companion',
+		display_name: 'Tournament Companion',
+		description: 'Live bracket view, deck validation scanner, and tournament management tools',
+		icon: '🏆',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_member: true,
+		enabled_for_admin: true
+	},
+	{
+		feature_key: 'scan_to_list',
+		display_name: 'Scan-to-List for eBay',
+		description: 'Create eBay listings directly from scan results with AI-suggested titles and market pricing',
+		icon: '🏷️',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_member: true,
+		enabled_for_admin: true
 	}
 ];
 

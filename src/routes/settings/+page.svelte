@@ -2,12 +2,23 @@
 	import { supabase } from '$lib/services/supabase';
 	import { user } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores/toast';
+	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { page } from '$app/stores';
+
+	const hasScanToList = featureEnabled('scan_to_list');
 
 	let loading = $state(true);
 	let saving = $state(false);
 	let profileName = $state('');
 	let discordId = $state('');
 	let email = $state('');
+
+	// eBay connection state
+	let ebayConfigured = $state(false);
+	let ebayConnected = $state(false);
+	let ebayLoading = $state(true);
+	let ebayDisconnecting = $state(false);
+	let ebayMessage = $state<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
 	async function loadProfile() {
 		loading = true;
@@ -57,6 +68,46 @@
 	$effect(() => {
 		loadProfile();
 	});
+
+	// Check eBay OAuth callback params
+	$effect(() => {
+		const ebayParam = $page.url.searchParams.get('ebay');
+		if (ebayParam === 'connected') {
+			ebayMessage = { type: 'success', text: 'eBay account connected successfully!' };
+			ebayConnected = true;
+		} else if (ebayParam === 'declined') {
+			ebayMessage = { type: 'info', text: 'eBay authorization was declined.' };
+		} else if (ebayParam === 'error') {
+			const reason = $page.url.searchParams.get('reason') || 'unknown';
+			ebayMessage = { type: 'error', text: `eBay connection failed: ${reason}` };
+		}
+	});
+
+	// Load eBay status
+	$effect(() => {
+		if (!$hasScanToList) { ebayLoading = false; return; }
+		fetch('/api/ebay/status')
+			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(data => {
+				ebayConfigured = data.configured;
+				ebayConnected = data.connected;
+			})
+			.catch(() => {})
+			.finally(() => { ebayLoading = false; });
+	});
+
+	async function disconnectEbay() {
+		ebayDisconnecting = true;
+		try {
+			const res = await fetch('/api/ebay/disconnect', { method: 'POST' });
+			if (!res.ok) throw new Error();
+			ebayConnected = false;
+			showToast('eBay account disconnected', 'check');
+		} catch {
+			showToast('Failed to disconnect eBay', 'x');
+		}
+		ebayDisconnecting = false;
+	}
 </script>
 
 <svelte:head>
@@ -95,6 +146,35 @@
 				{saving ? 'Saving...' : 'Save Changes'}
 			</button>
 		</div>
+
+		{#if $hasScanToList}
+			<div class="settings-card" style="margin-top: 1rem;">
+				<h2>eBay Seller Account</h2>
+
+				{#if ebayMessage}
+					<div class="ebay-message ebay-message-{ebayMessage.type}">
+						{ebayMessage.text}
+					</div>
+				{/if}
+
+				{#if ebayLoading}
+					<p class="field-hint">Checking eBay connection...</p>
+				{:else if ebayConnected}
+					<div class="ebay-status">
+						<span class="ebay-badge ebay-connected">Connected</span>
+						<p class="field-hint">Your eBay seller account is linked. You can create listings directly from scan results.</p>
+					</div>
+					<button class="save-btn ebay-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+						{ebayDisconnecting ? 'Disconnecting...' : 'Disconnect eBay'}
+					</button>
+				{:else if ebayConfigured}
+					<p class="field-hint">Connect your eBay seller account to create listings directly from scanned cards.</p>
+					<a href="/auth/ebay" class="save-btn ebay-connect">Connect eBay Account</a>
+				{:else}
+					<p class="field-hint">eBay seller integration is not yet configured for this app.</p>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -173,4 +253,13 @@
 		margin-top: 0.5rem;
 	}
 	.save-btn:disabled { opacity: 0.6; }
+	.ebay-status { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
+	.ebay-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; width: fit-content; }
+	.ebay-connected { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+	.ebay-disconnect { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); }
+	.ebay-connect { display: block; text-align: center; text-decoration: none; background: var(--success, #10b981); }
+	.ebay-message { padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 0.75rem; }
+	.ebay-message-success { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+	.ebay-message-error { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+	.ebay-message-info { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 </style>

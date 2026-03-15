@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import type { ScanResult } from '$lib/types';
+
+	const hasPriceHistory = featureEnabled('price_history');
+	const hasScanToList = featureEnabled('scan_to_list');
 
 	let {
 		result,
@@ -25,6 +30,17 @@
 	let priceData = $state<{ price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null>(null);
 	let priceLoading = $state(false);
 	let priceError = $state(false);
+
+	// Price history state
+	let historyData = $state<Array<{ date: string; price_mid: number | null }>>([]);
+	let historyLoading = $state(false);
+
+	// eBay listing state
+	let ebayConnected = $state(false);
+	let ebayChecked = $state(false);
+	let listingInProgress = $state(false);
+	let listingUrl = $state<string | null>(null);
+	let listingError = $state<string | null>(null);
 
 	const card = $derived(result.card);
 	const ownedCount = $derived(card ? ($ownedCardCounts.get(card.id) || 0) : 0);
@@ -57,6 +73,58 @@
 
 		return () => controller.abort();
 	});
+
+	// Fetch price history for premium users
+	$effect(() => {
+		if (!$hasPriceHistory || !card?.id) return;
+		const controller = new AbortController();
+		historyLoading = true;
+		fetch(`/api/price/${encodeURIComponent(card.id)}/history`, { signal: controller.signal })
+			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(data => { historyData = data.history || []; })
+			.catch((err) => { if (err.name !== 'AbortError') historyData = []; })
+			.finally(() => { historyLoading = false; });
+		return () => controller.abort();
+	});
+
+	// Check eBay connection status for scan-to-list users
+	$effect(() => {
+		if (!$hasScanToList || ebayChecked) return;
+		fetch('/api/ebay/status')
+			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(data => { ebayConnected = data.connected; })
+			.catch(() => { ebayConnected = false; })
+			.finally(() => { ebayChecked = true; });
+	});
+
+	async function handleListOnEbay() {
+		if (!card || !priceData) return;
+		listingInProgress = true;
+		listingError = null;
+		try {
+			const template = generateListingTemplate(card, priceData);
+			const res = await fetch('/api/ebay/listing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					card_id: card.id,
+					title: template.title,
+					description: template.description,
+					price: template.suggested_price || (priceData.price_mid ?? 1.99),
+					condition: template.condition
+				})
+			});
+			if (!res.ok) {
+				const errData = await res.json().catch(() => ({ message: 'Listing failed' }));
+				throw new Error(errData.message || `Listing failed: ${res.status}`);
+			}
+			const data = await res.json();
+			listingUrl = data.listing_url;
+		} catch (err) {
+			listingError = err instanceof Error ? err.message : 'Failed to create listing';
+		}
+		listingInProgress = false;
+	}
 
 	async function handleAdd() {
 		if (!card) return;
@@ -143,6 +211,31 @@
 					{/if}
 				</div>
 
+				<!-- Price sparkline (premium) -->
+				{#if $hasPriceHistory && historyData.length > 1}
+					{@const prices = historyData.map(d => d.price_mid).filter((p): p is number => p != null)}
+					{@const min = Math.min(...prices)}
+					{@const max = Math.max(...prices)}
+					{@const range = max - min || 1}
+					{@const w = 200}
+					{@const h = 40}
+					{@const points = prices.map((p, i) => `${(i / (prices.length - 1)) * w},${h - ((p - min) / range) * h}`).join(' ')}
+					{@const trend = prices[prices.length - 1] - prices[0]}
+					<div class="price-sparkline">
+						<div class="sparkline-header">
+							<span class="sparkline-label">30-Day Trend</span>
+							<span class="sparkline-trend" class:trend-up={trend > 0} class:trend-down={trend < 0}>
+								{trend > 0 ? '↑' : trend < 0 ? '↓' : '→'} ${Math.abs(trend).toFixed(2)}
+							</span>
+						</div>
+						<svg viewBox="0 0 {w} {h}" class="sparkline-svg">
+							<polyline points={points} fill="none" stroke={trend >= 0 ? '#10b981' : '#ef4444'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						</svg>
+					</div>
+				{:else if $hasPriceHistory && historyLoading}
+					<div class="price-sparkline"><div class="price-shimmer" style="width: 100%; height: 40px;"></div></div>
+				{/if}
+
 				<!-- Metadata pills -->
 				<div class="meta-pills">
 					{#if card.set_code}
@@ -193,6 +286,24 @@
 				{/if}
 
 				<!-- Actions -->
+				<!-- eBay listing (premium) -->
+				{#if $hasScanToList && card}
+					<div class="ebay-action">
+						{#if listingUrl}
+							<a href={listingUrl} target="_blank" rel="noopener noreferrer" class="btn btn-list btn-listed">View on eBay</a>
+						{:else if !ebayConnected && ebayChecked}
+							<a href="/auth/ebay" class="btn btn-list">Connect eBay</a>
+						{:else if ebayConnected}
+							<button class="btn btn-list" onclick={handleListOnEbay} disabled={listingInProgress || !priceData}>
+								{listingInProgress ? 'Creating...' : 'List on eBay'}
+							</button>
+						{/if}
+						{#if listingError}
+							<p class="listing-error">{listingError}</p>
+						{/if}
+					</div>
+				{/if}
+
 				<div class="actions">
 					<div class="add-btn-wrapper">
 						{#if isAuthenticated}
@@ -474,6 +585,22 @@
 		0% { background-position: 200% 0; }
 		100% { background-position: -200% 0; }
 	}
+
+	/* ── Price Sparkline ── */
+	.price-sparkline { padding: 0.5rem 0; }
+	.sparkline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+	.sparkline-label { font-size: 0.7rem; color: var(--text-muted, #475569); text-transform: uppercase; letter-spacing: 0.04em; }
+	.sparkline-trend { font-size: 0.8rem; font-weight: 600; }
+	.trend-up { color: var(--success, #10b981); }
+	.trend-down { color: var(--danger, #ef4444); }
+	.sparkline-svg { width: 100%; height: 40px; }
+
+	/* ── eBay Listing ── */
+	.ebay-action { margin-bottom: 0.5rem; }
+	.btn-list { display: block; width: 100%; padding: 0.75rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem; cursor: pointer; border: 1px solid rgba(16, 185, 129, 0.3); background: var(--bg-elevated, #121d34); color: var(--success, #10b981); text-align: center; text-decoration: none; }
+	.btn-list:disabled { opacity: 0.5; cursor: not-allowed; }
+	.btn-listed { background: var(--success, #10b981); color: white; border-color: transparent; }
+	.listing-error { font-size: 0.8rem; color: var(--danger, #ef4444); margin: 0.25rem 0 0; }
 
 	/* ── Low confidence ── */
 	.confidence-warning {

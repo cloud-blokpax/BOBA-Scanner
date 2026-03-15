@@ -3,6 +3,9 @@
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { getSupabase } from '$lib/services/supabase';
+	import { featureEnabled } from '$lib/stores/feature-flags';
+
+	const hasScanToList = featureEnabled('scan_to_list');
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
@@ -115,6 +118,11 @@
 				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
+				{#if $hasScanToList}
+					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>
+						<span class="premium-badge">PRO</span> eBay Listings
+					</a>
+				{/if}
 				{#if data.user}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>Settings</a>
 					<a href="/admin" class="more-item" onclick={() => (showMore = false)}>Admin</a>
@@ -160,5 +168,11 @@
 	}
 	.more-item:hover {
 		background: var(--bg-hover);
+	}
+	.premium-badge {
+		display: inline-block; padding: 1px 5px; border-radius: 3px;
+		font-size: 0.6rem; font-weight: 700;
+		background: var(--gold, #f59e0b); color: #000;
+		margin-right: 4px; vertical-align: middle;
 	}
 </style>
