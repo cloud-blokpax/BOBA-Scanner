@@ -74,6 +74,15 @@ export async function checkImageQuality(bitmap: ImageBitmap): Promise<{
 }
 
 /**
+ * Composite multiple captures using darkest-pixel selection (for foil mode).
+ * Runs in the web worker off the main thread.
+ */
+export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<ImageBitmap> {
+	await initWorkers();
+	return imageWorker!.compositeMinPixel(bitmaps);
+}
+
+/**
  * Initialize the Web Workers. Call once on app start.
  */
 export async function initWorkers(): Promise<void> {

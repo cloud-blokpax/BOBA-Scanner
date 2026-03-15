@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
-	import { checkImageQuality, analyzeFrame } from '$lib/services/recognition';
+	import { checkImageQuality, analyzeFrame, compositeForFoilMode } from '$lib/services/recognition';
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
@@ -262,44 +262,6 @@
 		}
 	}
 
-	/** Darkest-pixel composite for foil mode. Eliminates specular highlights. */
-	async function compositeMinPixel(bitmaps: ImageBitmap[]): Promise<ImageBitmap> {
-		const w = bitmaps[0].width;
-		const h = bitmaps[0].height;
-		const canvas = document.createElement('canvas');
-		canvas.width = w;
-		canvas.height = h;
-		const ctx = canvas.getContext('2d')!;
-
-		const allData: Uint8ClampedArray[] = [];
-		for (const bmp of bitmaps) {
-			const tmp = document.createElement('canvas');
-			tmp.width = w;
-			tmp.height = h;
-			const tmpCtx = tmp.getContext('2d')!;
-			tmpCtx.drawImage(bmp, 0, 0, w, h);
-			allData.push(tmpCtx.getImageData(0, 0, w, h).data);
-		}
-
-		const output = ctx.createImageData(w, h);
-		const outData = output.data;
-		const totalPixels = w * h * 4;
-		for (let i = 0; i < totalPixels; i += 4) {
-			let minLum = Infinity;
-			let minIdx = 0;
-			for (let j = 0; j < allData.length; j++) {
-				const lum = allData[j][i] * 0.299 + allData[j][i + 1] * 0.587 + allData[j][i + 2] * 0.114;
-				if (lum < minLum) { minLum = lum; minIdx = j; }
-			}
-			outData[i] = allData[minIdx][i];
-			outData[i + 1] = allData[minIdx][i + 1];
-			outData[i + 2] = allData[minIdx][i + 2];
-			outData[i + 3] = 255;
-		}
-		ctx.putImageData(output, 0, 0);
-		return createImageBitmap(canvas);
-	}
-
 	async function handleFoilCapture() {
 		if (!videoEl || scanning) return;
 		const bitmap = await captureFrame(videoEl);
@@ -314,7 +276,7 @@
 		if (foilCaptures.length >= FOIL_CAPTURES_NEEDED) {
 			scanning = true;
 			try {
-				const composite = await compositeMinPixel(foilCaptures);
+				const composite = await compositeForFoilMode(foilCaptures);
 				// Clean up captures
 				foilCaptures.forEach(b => b.close());
 				foilCaptures = [];
@@ -464,6 +426,18 @@
 					Retry
 				</button>
 			</div>
+		{/if}
+
+		<!-- Torch toggle (top-right of viewfinder) -->
+		{#if cameraReady}
+			<button
+				class="torch-btn"
+				class:torch-on={torchOn}
+				onclick={handleTorchToggle}
+				aria-label={torchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+			>
+				⚡
+			</button>
 		{/if}
 
 		<!-- Status overlay -->
@@ -892,6 +866,33 @@
 		font-size: 0.9rem;
 		font-weight: 600;
 		cursor: pointer;
+	}
+
+	/* Torch button */
+	.torch-btn {
+		position: absolute;
+		top: 1rem;
+		right: 1rem;
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		background: rgba(0, 0, 0, 0.5);
+		backdrop-filter: blur(4px);
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 1rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		z-index: 6;
+		transition: background 0.2s, border-color 0.2s;
+	}
+
+	.torch-btn.torch-on {
+		background: rgba(245, 158, 11, 0.2);
+		border-color: rgba(245, 158, 11, 0.5);
+		color: #f59e0b;
 	}
 
 	/* Foil mode */
