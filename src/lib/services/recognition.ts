@@ -398,7 +398,7 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			scan_method: 'claude',
 			confidence,
 			processing_ms: 0,
-			variant: result.card.variant || null
+			variant: result.card.variant || result.card.parallel || null
 		};
 	}
 
