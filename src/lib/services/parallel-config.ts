@@ -7,6 +7,7 @@
 
 import { getSupabase } from './supabase';
 import { mapParallelToRarity } from '$lib/data/static-cards';
+import { PARALLEL_TYPES } from '$lib/data/boba-parallels';
 import type { CardRarity } from '$lib/types';
 
 // In-memory cache of parallel→rarity mappings
@@ -100,19 +101,64 @@ export interface ParallelConfigEntry {
 }
 
 /**
- * Get all config entries grouped by rarity.
+ * Default rarity for a parallel based on boba-parallels metadata.
+ */
+function defaultRarityForParallel(key: string, name: string): CardRarity {
+	if (key === 'base' || key === 'foil') return 'common';
+	if (key === 'super_parallel') return 'legendary';
+	if (key === 'inspired_ink') return 'ultra_rare';
+	// Named inserts and color battlefoils
+	if (key.includes('battlefoil')) return 'rare';
+	// All other named inserts default to uncommon
+	return 'uncommon';
+}
+
+/**
+ * Get all config entries, merging Supabase overrides with the canonical PARALLEL_TYPES list.
+ * Every parallel from boba-parallels.ts always appears.
  */
 export async function getAllParallelConfig(): Promise<ParallelConfigEntry[]> {
 	const supabase = getSupabase();
-	if (!supabase) return [];
 
-	const { data, error } = await supabase
-		.from('parallel_rarity_config')
-		.select('id, parallel_name, rarity, sort_order')
-		.order('sort_order');
+	// Load any existing overrides from Supabase
+	const existingMap = new Map<string, ParallelConfigEntry>();
+	if (supabase) {
+		const { data, error } = await supabase
+			.from('parallel_rarity_config')
+			.select('id, parallel_name, rarity, sort_order')
+			.order('sort_order');
 
-	if (error || !data) return [];
-	return data as ParallelConfigEntry[];
+		if (!error && data) {
+			for (const row of data as ParallelConfigEntry[]) {
+				existingMap.set(row.parallel_name.toLowerCase(), row);
+			}
+		}
+	}
+
+	// Merge: use Supabase entry if it exists, otherwise create a default from PARALLEL_TYPES
+	const entries: ParallelConfigEntry[] = PARALLEL_TYPES.map((pt, i) => {
+		const existing = existingMap.get(pt.key) || existingMap.get(pt.name.toLowerCase());
+		if (existing) {
+			return existing;
+		}
+		return {
+			id: `local-${pt.key}`,
+			parallel_name: pt.name,
+			rarity: defaultRarityForParallel(pt.key, pt.name),
+			sort_order: 1000 + i
+		};
+	});
+
+	// Also include any Supabase entries not in PARALLEL_TYPES (discovered from cards table)
+	const knownKeys = new Set(PARALLEL_TYPES.map(pt => pt.key));
+	const knownNames = new Set(PARALLEL_TYPES.map(pt => pt.name.toLowerCase()));
+	for (const [key, entry] of existingMap) {
+		if (!knownKeys.has(key) && !knownNames.has(key)) {
+			entries.push(entry);
+		}
+	}
+
+	return entries;
 }
 
 /**
@@ -167,29 +213,49 @@ export async function discoverParallels(): Promise<string[]> {
 
 /**
  * Seed missing parallels into the config table.
- * Uses the hardcoded mapping for initial rarity assignment.
+ * Seeds from PARALLEL_TYPES (canonical list) plus any discovered from the cards table.
  */
 export async function seedMissingParallels(): Promise<number> {
 	const supabase = getSupabase();
 	if (!supabase) return 0;
 
-	// Get all discovered parallels
-	const allParallels = await discoverParallels();
-	if (allParallels.length === 0) return 0;
+	// Get already-configured parallels from Supabase
+	const { data: existingData } = await supabase
+		.from('parallel_rarity_config')
+		.select('parallel_name');
+	const existingNames = new Set((existingData || []).map((e: { parallel_name: string }) => e.parallel_name.toLowerCase()));
 
-	// Get already-configured parallels
-	const existing = await getAllParallelConfig();
-	const existingNames = new Set(existing.map((e) => e.parallel_name));
+	// Collect all parallels to seed: from PARALLEL_TYPES + discovered from cards table
+	const toSeed = new Map<string, { name: string; rarity: CardRarity }>();
 
-	// Find missing ones
-	const missing = allParallels.filter((p) => !existingNames.has(p));
-	if (missing.length === 0) return 0;
+	// Add all from PARALLEL_TYPES
+	for (const pt of PARALLEL_TYPES) {
+		if (!existingNames.has(pt.name.toLowerCase()) && !existingNames.has(pt.key)) {
+			toSeed.set(pt.name.toLowerCase(), {
+				name: pt.name,
+				rarity: defaultRarityForParallel(pt.key, pt.name)
+			});
+		}
+	}
 
-	// Insert with hardcoded rarity as default
-	const rows = missing.map((parallelName, i) => ({
-		parallel_name: parallelName,
-		rarity: mapParallelToRarity(parallelName) || 'common',
-		sort_order: existing.length + i
+	// Also discover from cards table
+	const discovered = await discoverParallels();
+	for (const p of discovered) {
+		if (!existingNames.has(p.toLowerCase()) && !toSeed.has(p.toLowerCase())) {
+			toSeed.set(p.toLowerCase(), {
+				name: p,
+				rarity: mapParallelToRarity(p) || 'common'
+			});
+		}
+	}
+
+	if (toSeed.size === 0) return 0;
+
+	const baseOrder = (existingData || []).length;
+	const rows = [...toSeed.values()].map((entry, i) => ({
+		parallel_name: entry.name,
+		rarity: entry.rarity,
+		sort_order: baseOrder + i
 	}));
 
 	const { error } = await supabase
@@ -200,5 +266,5 @@ export async function seedMissingParallels(): Promise<number> {
 
 	// Reload cache
 	await reloadParallelConfig();
-	return missing.length;
+	return rows.length;
 }
