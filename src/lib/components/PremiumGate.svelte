@@ -9,6 +9,8 @@
 		children: Snippet;
 	} = $props();
 
+	// featureKey is always a static string — intentionally capture initial value
+	// svelte-ignore state_referenced_locally
 	const enabled = featureEnabled(featureKey);
 </script>
 

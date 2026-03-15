@@ -31,7 +31,7 @@
 	let imageUrl = $state('');
 	let processing = $state(false);
 	let committed = $state(false);
-	let fileInput: HTMLInputElement;
+	let fileInput = $state<HTMLInputElement>(undefined!);
 
 	const preset = $derived(PRESETS[activePreset]);
 	const totalCells = $derived(preset.rows * preset.cols);

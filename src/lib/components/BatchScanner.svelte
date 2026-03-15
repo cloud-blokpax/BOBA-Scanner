@@ -20,7 +20,7 @@
 	let entries = $state<BatchEntry[]>([]);
 	let processing = $state(false);
 	let committed = $state(false);
-	let fileInput: HTMLInputElement;
+	let fileInput = $state<HTMLInputElement>(undefined!);
 
 	const pendingCount = $derived(entries.filter((e) => e.status === 'pending').length);
 	const doneCount = $derived(entries.filter((e) => e.status === 'done').length);

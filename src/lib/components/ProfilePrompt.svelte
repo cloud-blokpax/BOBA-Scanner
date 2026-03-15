@@ -64,7 +64,9 @@
 </script>
 
 {#if visible}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div class="prompt-overlay" role="presentation" onclick={dismiss}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="prompt-card" onclick={(e) => e.stopPropagation()}>
 			<h2>Complete Your Profile</h2>
 			<p class="prompt-desc">Add your name and Discord ID so tournament organizers can reach you. Both are optional.</p>

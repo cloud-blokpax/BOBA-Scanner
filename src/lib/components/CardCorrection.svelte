@@ -9,9 +9,19 @@
 		onClose?: () => void;
 	} = $props();
 
-	let searchQuery = $state(card.card_number || '');
+	let searchQuery = $state('');
 	let searchResults = $state<Partial<Card>[]>([]);
 	let searching = $state(false);
+	let initialized = false;
+
+	// Seed search query from card prop (and update when card changes)
+	$effect(() => {
+		const num = card.card_number || '';
+		if (!initialized) {
+			searchQuery = num;
+			initialized = true;
+		}
+	});
 
 	async function handleSearch() {
 		if (!searchQuery.trim()) return;

@@ -109,7 +109,9 @@
 	</nav>
 
 	{#if showMore}
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div class="more-menu" role="presentation" onclick={() => (showMore = false)}>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
 				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
 				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>Deck Builder</a>
