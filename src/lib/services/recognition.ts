@@ -91,6 +91,7 @@ export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<Imag
  * Uses a shared promise to prevent duplicate Worker creation from concurrent calls.
  */
 let _workerInitPromise: Promise<void> | null = null;
+let _ocrAvailable = false;
 
 export async function initWorkers(): Promise<void> {
 	if (imageWorker) return;
@@ -104,8 +105,22 @@ export async function initWorkers(): Promise<void> {
 			);
 			imageWorker = Comlink.wrap(ImageWorker);
 		}
-		// TODO: Tesseract is currently disabled — skip initialization
-		// await initOcr();
+
+		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
+		// skipped gracefully and we fall through to Tier 3 (Claude API).
+		try {
+			await Promise.race([
+				initOcr(),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('OCR init timed out')), 15000)
+				)
+			]);
+			_ocrAvailable = true;
+			console.debug('[scan] Tesseract OCR initialized successfully');
+		} catch (err) {
+			_ocrAvailable = false;
+			console.warn('[scan] Tesseract OCR failed to initialize — Tier 2 disabled:', err);
+		}
 	})();
 
 	try {
@@ -190,15 +205,43 @@ export async function recognizeCard(
 	}
 	console.debug('[scan] Tier 1 MISS: no hash match found');
 
-	// ── TIER 2: OCR + Fuzzy Match (DISABLED — Tesseract not working) ──
-	// TODO: Re-enable once Tesseract issues are resolved
-	// onTierChange?.(2);
-	// const tier2Result = await runTier2(bitmap);
-	// if (tier2Result) {
-	// 	const hash = await imageWorker!.computeDHash(bitmap);
-	// 	await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
-	// 	return finalize(tier2Result);
-	// }
+	// ── Offline handling: queue for later if no network ──────
+	if (!navigator.onLine) {
+		const { scanQueue } = await import('./idb');
+		const imageBlob = imageSource instanceof Blob
+			? imageSource
+			: await imageWorker!.resizeForUpload(bitmap, 1024);
+		await scanQueue.add(imageBlob);
+		return finalize({
+			card_id: null,
+			card: null,
+			scan_method: 'hash_cache' as ScanMethod,
+			confidence: 0,
+			processing_ms: Math.round(performance.now() - startTime),
+			failReason: 'Offline — scan queued for when you reconnect'
+		});
+	}
+
+	// ── TIER 2: OCR + Fuzzy Match ────────────────────────────
+	if (_ocrAvailable) {
+		onTierChange?.(2);
+		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
+		try {
+			const tier2Result = await runTier2(bitmap, ctx);
+			if (tier2Result) {
+				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}`);
+				const hash = await imageWorker!.computeDHash(bitmap);
+				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
+				return finalize(tier2Result);
+			}
+			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
+		} catch (err) {
+			// OCR failure is non-fatal — fall through to Tier 3
+			console.warn('[scan] Tier 2 error (falling through to Tier 3):', err);
+		}
+	} else {
+		console.debug('[scan] Tier 2 skipped: OCR not available');
+	}
 
 	// ── TIER 3: Claude API ──────────────────────────────────
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
@@ -211,10 +254,9 @@ export async function recognizeCard(
 		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
-		// TODO: Re-enable when Tesseract is fixed — lastOcrReading is never set while OCR is disabled
-		// if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
-		// 	recordCorrection(ctx.lastOcrReading, tier3Result.card.card_number, 'ai');
-		// }
+		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
+			recordCorrection(ctx.lastOcrReading, tier3Result.card.card_number, 'ai');
+		}
 		return finalize(tier3Result);
 	}
 	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
@@ -228,7 +270,7 @@ export async function recognizeCard(
 async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	const hash = await imageWorker!.computeDHash(bitmap);
 
-	// Layer 1: IndexedDB (instant, free)
+	// Layer 1: IndexedDB exact match (instant, free)
 	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
 	if (idbEntry) {
 		const card = getCardById(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
@@ -243,7 +285,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 		}
 	}
 
-	// Layer 2: Supabase hash_cache (origin, <100ms)
+	// Layer 2: Supabase exact match (origin, <100ms)
 	const client = getSupabase();
 	let supaEntry: Pick<HashCacheEntry, 'card_id' | 'confidence'> | null = null;
 	if (client) {
@@ -258,7 +300,6 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	if (supaEntry) {
 		const card = getCardById(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
 		if (card) {
-			// Write back to IDB for next time
 			await idb.setHash({ phash: hash, card_id: supaEntry.card_id, confidence: supaEntry.confidence });
 			return {
 				card_id: card.id,
@@ -267,6 +308,38 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 				confidence: supaEntry.confidence,
 				processing_ms: 0
 			};
+		}
+	}
+
+	// Layer 3: Supabase fuzzy match via Hamming distance (≤5 bits different)
+	// This catches the same card under different lighting conditions.
+	if (client) {
+		try {
+			const { data: fuzzyMatch } = await (client.rpc as CallableFunction)('find_similar_hash', {
+				query_hash: hash,
+				max_distance: 5
+			}) as { data: Array<{ card_id: string; confidence: number; distance: number }> | null };
+			if (fuzzyMatch && fuzzyMatch.length > 0) {
+				const match = fuzzyMatch[0];
+				const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
+				if (card) {
+					// Reduce confidence slightly based on distance (5 bits = ~8% penalty)
+					const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
+					// Cache the new hash → same card for future exact matches
+					await writeHashToAllLayers(hash, match.card_id, adjustedConfidence);
+					console.debug(`[scan:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
+					return {
+						card_id: card.id,
+						card,
+						scan_method: 'hash_cache' as const,
+						confidence: adjustedConfidence,
+						processing_ms: 0
+					};
+				}
+			}
+		} catch (err) {
+			// Fuzzy match is non-critical — if the RPC doesn't exist yet, skip
+			console.debug('[scan:tier1] Fuzzy hash lookup unavailable:', err);
 		}
 	}
 

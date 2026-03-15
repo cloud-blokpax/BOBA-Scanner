@@ -5,7 +5,7 @@
  * The deck validator reads these rules and checks a submitted deck against them.
  *
  * IMPORTANT: The "max 6 of a single hero character" rule has been removed.
- * Players may include any number of the same hero across different variations.
+ * Coaches may include any number of the same hero across different variations.
  */
 
 export type GameMode = 'playmaker' | 'rookie' | 'substitution';
@@ -139,6 +139,35 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		playersPerRound: null
 	},
 	{
+		id: 'spec_plus',
+		name: 'SPEC+ Playmaker',
+		description: 'Advanced format. Higher power access than SPEC with strategic trade-offs. 175 SPEC cap, 9,500 Combined Power.',
+		gameMode: 'playmaker',
+		isTeamFormat: false,
+		heroDeckMin: 60,
+		heroDeckMax: null,
+		specPowerCap: 175,
+		combinedPowerCap: 9500,
+		maxPerPowerLevel: 6,
+		maxPerVariation: 1,
+		hotDogDeckSize: 10,
+		requiresFoilHotDogs: false,
+		requiredFoilHotDogCount: 0,
+		playDeckSize: 30,
+		bonusPlaysAllowed: true,
+		maxBonusPlays: 25,
+		dbsCap: 1000,
+		allowedParallels: null,
+		allowedWeapons: null,
+		heroOnlyGameplay: false,
+		madnessInsertUnlockThreshold: null,
+		madnessMaxInsertUnlocks: null,
+		madnessFoilHotDogBonusCards: null,
+		madnessApexMinPower: null,
+		teamSize: null,
+		playersPerRound: null
+	},
+	{
 		id: 'elite_playmaker',
 		name: 'Elite Playmaker',
 		description: 'Salary cap format. Total power across all 60 Heroes must not exceed 8,250.',
@@ -170,7 +199,7 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 	{
 		id: 'apex_madness',
 		name: 'Apex Madness',
-		description: 'Team Rookie Mode. 4-6 player squads, Core Deck at 160 SPEC + Expanded Deck via insert unlocks.',
+		description: 'Team Rookie Mode. 4-6 Coach squads, Core Deck at 160 SPEC + Expanded Deck via insert unlocks.',
 		gameMode: 'rookie',
 		isTeamFormat: true,
 		heroDeckMin: 60,

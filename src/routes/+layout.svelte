@@ -18,26 +18,24 @@
 	onMount(() => {
 		const client = getSupabase();
 
-		// Immediately check client-side session to catch auth state SSR may have missed.
-		// This avoids waiting for onAuthStateChange's async INITIAL_SESSION event,
-		// which can be delayed 30-60s while the Supabase client refreshes tokens internally.
-		client?.auth.getSession().then(async ({ data: { session: clientSession } }) => {
+		// Server-verified auth check — uses getUser() instead of getSession()
+		// to prevent reliance on potentially tampered localStorage data.
+		client?.auth.getUser().then(async ({ data: { user: clientUser } }) => {
 			const serverHasUser = !!data.session;
-			const clientHasSession = !!clientSession;
-			if (clientHasSession && !serverHasUser) {
-				// Client has a session but server didn't see it (e.g. stale/expired access token).
-				// Refresh the session so cookies get updated, then re-run server load.
+			const clientHasUser = !!clientUser;
+			if (clientHasUser && !serverHasUser) {
+				// Client auth is valid but server didn't see it — refresh cookies
 				try {
 					await client.auth.refreshSession();
 				} catch (err) {
 					console.warn('Failed to refresh auth session:', err);
 				}
 				invalidate('supabase:auth');
-			} else if (serverHasUser !== clientHasSession) {
+			} else if (serverHasUser !== clientHasUser) {
 				invalidate('supabase:auth');
 			}
 		}).catch((err) => {
-			console.warn('Failed to check client auth session:', err);
+			console.warn('Failed to verify client auth:', err);
 		});
 
 		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {
@@ -65,10 +63,36 @@
 			navigator.storage.persist().catch(() => {});
 		}
 
+		// Process queued offline scans when connectivity returns
+		const handleOnline = async () => {
+			const { scanQueue } = await import('$lib/services/idb');
+			const queued = await scanQueue.getAll();
+			if (queued.length === 0) return;
+
+			const { showToast } = await import('$lib/stores/toast');
+			showToast(`Processing ${queued.length} queued scan(s)...`, 'info');
+
+			const { recognizeCard } = await import('$lib/services/recognition');
+			for (const item of queued) {
+				try {
+					await recognizeCard(item.imageBlob);
+					await scanQueue.remove(item.id);
+				} catch {
+					// Leave failed items in queue for next attempt
+				}
+			}
+			const remaining = await scanQueue.count();
+			if (remaining === 0) {
+				showToast('All queued scans processed!', 'check');
+			}
+		};
+		window.addEventListener('online', handleOnline);
+
 		return () => {
 			authSubscription?.data.subscription.unsubscribe();
 			cleanupErrors();
 			cleanupVersion();
+			window.removeEventListener('online', handleOnline);
 		};
 	});
 
@@ -121,6 +145,7 @@
 			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
 				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
 				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>Deck Builder</a>
+				<a href="/dbs" class="more-item" onclick={() => (showMore = false)}>DBS Calculator</a>
 				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
 				<a href="/set-completion" class="more-item" onclick={() => (showMore = false)}>Set Completion</a>
 				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
@@ -133,6 +158,8 @@
 				{/if}
 				{#if data.user}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>Settings</a>
+				{/if}
+				{#if data.user?.is_admin}
 					<a href="/admin" class="more-item" onclick={() => (showMore = false)}>Admin</a>
 				{/if}
 			</div>

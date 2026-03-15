@@ -11,6 +11,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
+import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
@@ -87,15 +88,15 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 				.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value ?? ''))
 				.filter((p: number) => !isNaN(p) && p > 0);
 
-			const avg = prices.length ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length : null;
-			const low = prices.length ? Math.min(...prices) : null;
-			const high = prices.length ? Math.max(...prices) : null;
+			const stats = calculatePriceStats(prices);
 
 			return json({
-				avgPrice: avg !== null ? parseFloat(avg.toFixed(2)) : null,
-				lowPrice: low !== null ? parseFloat(low.toFixed(2)) : null,
-				highPrice: high !== null ? parseFloat(high.toFixed(2)) : null,
-				count: prices.length,
+				avgPrice: stats?.median ?? null,
+				lowPrice: stats?.low ?? null,
+				highPrice: stats?.high ?? null,
+				count: stats?.count ?? 0,
+				confidence: stats?.confidenceScore ?? 0,
+				meanPrice: stats?.mean ?? null,
 				total: all.length
 			});
 		} catch (err) {

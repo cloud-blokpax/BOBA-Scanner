@@ -59,7 +59,15 @@ vi.mock('comlink', () => ({
 	expose: vi.fn()
 }));
 
-vi.mock('$lib/services/idb', () => ({ idb: mockIdb }));
+vi.mock('$lib/services/idb', () => ({
+	idb: mockIdb,
+	scanQueue: {
+		add: vi.fn().mockResolvedValue('queued-id'),
+		getAll: vi.fn().mockResolvedValue([]),
+		remove: vi.fn().mockResolvedValue(undefined),
+		count: vi.fn().mockResolvedValue(0)
+	}
+}));
 
 vi.mock('$lib/services/supabase', () => ({
 	supabase: null,
@@ -128,6 +136,16 @@ vi.stubGlobal('fetch', mockFetch);
 
 // Mock performance.now
 vi.stubGlobal('performance', { now: vi.fn().mockReturnValue(0) });
+
+// Mock navigator.onLine (default to online for tests)
+Object.defineProperty(globalThis.navigator || (globalThis as Record<string, unknown>).navigator || {}, 'onLine', {
+	value: true,
+	writable: true,
+	configurable: true
+});
+if (!globalThis.navigator) {
+	vi.stubGlobal('navigator', { onLine: true });
+}
 
 import { recognizeCard, analyzeFrame, checkImageQuality } from '$lib/services/recognition';
 import { loadCardDatabase } from '$lib/services/card-db';

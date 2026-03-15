@@ -32,6 +32,64 @@ export const BOBA_WEAPONS = WEAPON_HIERARCHY.map(w => w.name) as readonly string
 
 export const BOBA_VARIANTS = ['base', 'foil', 'holographic', 'battlefoil', 'paper', 'inspired_ink'] as const;
 
+/**
+ * Set Ascension Framework.
+ *
+ * Modern: Cards from the most recent 2 calendar years.
+ * AlphaTrilogy: Cards from BoBA's first year (2024) only.
+ * Hall of Fame: Cards released more than 2 full calendar years ago + all Alpha cards.
+ *
+ * Alpha Battlefoils are legal in all three formats.
+ */
+
+export interface SetRelease {
+	setCode: string;
+	name: string;
+	releaseYear: number;
+	isAlpha: boolean;
+}
+
+export const BOBA_SET_RELEASES: SetRelease[] = [
+	{ setCode: 'alpha', name: 'Alpha Edition', releaseYear: 2024, isAlpha: true },
+	// Add future sets here as they release:
+	// { setCode: '2025_s1', name: '2025 Series 1', releaseYear: 2025, isAlpha: false },
+	// { setCode: '2026_s1', name: '2026 Edition', releaseYear: 2026, isAlpha: false },
+];
+
+export type CompetitiveFormat = 'modern' | 'alpha_trilogy' | 'hall_of_fame';
+
+/**
+ * Determine which competitive formats a card's set is legal in.
+ * Uses the current year to calculate ascension boundaries.
+ */
+export function getFormatLegality(setCode: string, currentYear?: number): CompetitiveFormat[] {
+	const year = currentYear ?? new Date().getFullYear();
+	const set = BOBA_SET_RELEASES.find(s => s.setCode === setCode);
+	if (!set) return ['modern']; // Unknown sets default to Modern
+
+	const formats: CompetitiveFormat[] = [];
+
+	// Modern: released within the last 2 calendar years
+	if (set.releaseYear >= year - 2) {
+		formats.push('modern');
+	}
+
+	// AlphaTrilogy: Alpha-era cards only
+	if (set.isAlpha) {
+		formats.push('alpha_trilogy');
+	}
+
+	// Hall of Fame: released more than 2 full calendar years ago + all Alpha cards
+	if (set.releaseYear < year - 2 || set.isAlpha) {
+		formats.push('hall_of_fame');
+	}
+
+	// Alpha Battlefoils are a special bridge — legal everywhere
+	// (handled at the card level, not set level, via parallel detection)
+
+	return formats;
+}
+
 export const BOBA_FIELD_DEFINITIONS = [
 	{ key: 'card_number', label: 'Card Number', type: 'text' as const },
 	{ key: 'hero_name', label: 'Hero Name', type: 'text' as const },
