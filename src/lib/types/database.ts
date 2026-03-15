@@ -319,6 +319,121 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['parallel_rarity_config']['Insert']>;
 				Relationships: [];
 			};
+			price_history: {
+				Row: {
+					id: string;
+					card_id: string;
+					source: string;
+					price_low: number | null;
+					price_mid: number | null;
+					price_high: number | null;
+					listings_count: number | null;
+					recorded_at: string;
+				};
+				Insert: {
+					card_id: string;
+					source?: string;
+					price_low?: number | null;
+					price_mid?: number | null;
+					price_high?: number | null;
+					listings_count?: number | null;
+					recorded_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['price_history']['Insert']>;
+				Relationships: [];
+			};
+			user_feature_overrides: {
+				Row: {
+					user_id: string;
+					feature_key: string;
+					enabled: boolean;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					user_id: string;
+					feature_key: string;
+					enabled?: boolean;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['user_feature_overrides']['Insert']>;
+				Relationships: [];
+			};
+			ebay_seller_tokens: {
+				Row: {
+					user_id: string;
+					access_token: string;
+					access_token_expires_at: string;
+					refresh_token: string;
+					refresh_token_expires_at: string;
+					scopes: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					user_id: string;
+					access_token: string;
+					access_token_expires_at: string;
+					refresh_token: string;
+					refresh_token_expires_at: string;
+					scopes?: string | null;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['ebay_seller_tokens']['Insert']>;
+				Relationships: [];
+			};
+			listing_templates: {
+				Row: {
+					id: string;
+					user_id: string;
+					card_id: string;
+					title: string;
+					description: string | null;
+					price: number;
+					condition: string | null;
+					sku: string;
+					status: string;
+					ebay_listing_id: string | null;
+					ebay_listing_url: string | null;
+					error_message: string | null;
+					created_at: string;
+					updated_at: string | null;
+				};
+				Insert: {
+					user_id: string;
+					card_id: string;
+					title: string;
+					description?: string | null;
+					price: number;
+					condition?: string | null;
+					sku: string;
+					status?: string;
+					ebay_listing_id?: string | null;
+					ebay_listing_url?: string | null;
+					error_message?: string | null;
+					updated_at?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['listing_templates']['Insert']>;
+				Relationships: [];
+			};
+			api_call_logs: {
+				Row: {
+					id: string;
+					user_id: string | null;
+					call_type: string;
+					error_message: string | null;
+					success: boolean;
+					created_at: string;
+				};
+				Insert: {
+					user_id?: string | null;
+					call_type: string;
+					error_message?: string | null;
+					success?: boolean;
+				};
+				Update: Partial<Database['public']['Tables']['api_call_logs']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: Record<string, never>;
