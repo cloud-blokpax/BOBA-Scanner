@@ -3,7 +3,7 @@
 // network-first for prices. Re-caches critical assets on every launch to protect
 // against iOS 7-day cache eviction.
 
-const CACHE_NAME = 'boba-v4';
+const CACHE_NAME = 'boba-v5';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -72,20 +72,6 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ── Caching strategies ──────────────────────────────────────────────────────
-
-// Cache-first: serve from cache if available, only fetch on miss
-function cacheFirst(request) {
-  return caches.match(request).then(cached => {
-    if (cached) return cached;
-    return fetch(request).then(response => {
-      if (response.ok) {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-      }
-      return response;
-    });
-  });
-}
 
 // Stale-while-revalidate: serve cached immediately, update in background
 function staleWhileRevalidate(request) {

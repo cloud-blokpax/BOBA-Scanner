@@ -33,7 +33,14 @@
 	</div>
 
 	{#if $collectionLoading}
-		<div class="loading-state">Loading collection...</div>
+		<div class="skeleton-grid">
+			{#each Array(8) as _}
+				<div class="skeleton-card">
+					<div class="skeleton-image shimmer"></div>
+					<div class="skeleton-text shimmer"></div>
+				</div>
+			{/each}
+		</div>
 	{:else}
 		<CardGrid
 			items={$collectionItems}
@@ -79,9 +86,44 @@
 		color: var(--border-color, #1e293b);
 	}
 
-	.loading-state {
-		text-align: center;
-		padding: 3rem;
-		color: var(--text-secondary, #94a3b8);
+	.skeleton-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 8px;
+	}
+
+	.skeleton-card {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.skeleton-image {
+		aspect-ratio: 5 / 7;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+	}
+
+	.skeleton-text {
+		height: 12px;
+		width: 70%;
+		border-radius: 4px;
+		background: var(--bg-elevated, #121d34);
+	}
+
+	.shimmer {
+		background: linear-gradient(
+			90deg,
+			var(--bg-elevated, #121d34) 25%,
+			var(--bg-hover, #182540) 50%,
+			var(--bg-elevated, #121d34) 75%
+		);
+		background-size: 200% 100%;
+		animation: shimmer 1.8s linear infinite;
+	}
+
+	@keyframes shimmer {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
 	}
 </style>

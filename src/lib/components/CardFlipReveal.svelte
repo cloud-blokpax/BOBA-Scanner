@@ -23,10 +23,17 @@
 
 	const glowColor = $derived(rarityColor[rarity] ?? '#9CA3AF');
 
+	const flipDelay: Record<string, number> = {
+		legendary: 600,
+		ultra_rare: 450,
+		rare: 350,
+		uncommon: 300
+	};
+
 	onMount(() => {
 		if (shouldFlip) {
-			// Delay flip to let the bottom sheet slide in first
-			setTimeout(() => { flipped = true; }, 300);
+			const delay = flipDelay[rarity] ?? 300;
+			setTimeout(() => { flipped = true; }, delay);
 		} else {
 			flipped = true;
 		}
@@ -96,6 +103,25 @@
 
 	.flip-back {
 		transform: rotateY(180deg);
+		border: 2px solid transparent;
+		transition: border-color 0.3s ease-out 0.45s, box-shadow 0.3s ease-out 0.45s;
+	}
+
+	.flipped .flip-back {
+		border-color: var(--glow-color);
+		box-shadow: 0 8px 32px color-mix(in srgb, var(--glow-color) 25%, transparent);
+	}
+
+	/* Common cards: simple scale-up, no flip */
+	.no-flip .flip-back {
+		border-color: transparent;
+		box-shadow: none;
+		animation: common-reveal 0.3s ease-out;
+	}
+
+	@keyframes common-reveal {
+		from { transform: rotateY(180deg) scale(0.95); opacity: 0.8; }
+		to { transform: rotateY(180deg) scale(1); opacity: 1; }
 	}
 
 	.card-back {

@@ -36,7 +36,7 @@ export async function initScanner(): Promise<void> {
  */
 export async function scanImage(
 	imageSource: File | Blob | ImageBitmap,
-	options?: { isAuthenticated?: boolean }
+	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean }
 ): Promise<ScanResult | null> {
 	scanState.set({
 		status: 'processing',

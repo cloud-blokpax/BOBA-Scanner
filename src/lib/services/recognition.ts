@@ -29,6 +29,7 @@ let imageWorker: Comlink.Remote<{
 	checkGlare: (bitmap: ImageBitmap, brightnessThreshold?: number, areaThreshold?: number) => Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }>;
 	analyzeCardPresence: (bitmap: ImageBitmap, blurThreshold?: number) => Promise<{ cardDetected: boolean; isSharp: boolean; variance: number }>;
 	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
+	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
 }> | null = null;
 
 // Tracks the last OCR reading for correction recording
@@ -98,7 +99,7 @@ export async function initWorkers(): Promise<void> {
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
 	onTierChange?: (tier: 1 | 2 | 3) => void,
-	options?: { isAuthenticated?: boolean }
+	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean }
 ): Promise<ScanResult> {
 	const startTime = performance.now();
 	await initWorkers();
@@ -115,19 +116,21 @@ export async function recognizeCard(
 			? imageSource
 			: await createImageBitmap(imageSource);
 
-	// ── Check blur ──────────────────────────────────────────
-	const blurResult = await imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
-	console.debug(`[scan] Blur check: variance=${blurResult.variance.toFixed(1)}, threshold=${BOBA_SCAN_CONFIG.blurThreshold}, isBlurry=${blurResult.isBlurry}`);
-	if (blurResult.isBlurry) {
-		console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
-		return {
-			card_id: null,
-			card: null,
-			scan_method: 'hash_cache',
-			confidence: 0,
-			processing_ms: Math.round(performance.now() - startTime),
-			failReason: `Image too blurry (sharpness: ${blurResult.variance.toFixed(0)}/${BOBA_SCAN_CONFIG.blurThreshold})`
-		};
+	// ── Check blur (skip if caller already verified quality) ─
+	if (!options?.skipBlurCheck) {
+		const blurResult = await imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
+		console.debug(`[scan] Blur check: variance=${blurResult.variance.toFixed(1)}, threshold=${BOBA_SCAN_CONFIG.blurThreshold}, isBlurry=${blurResult.isBlurry}`);
+		if (blurResult.isBlurry) {
+			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
+			return {
+				card_id: null,
+				card: null,
+				scan_method: 'hash_cache',
+				confidence: 0,
+				processing_ms: Math.round(performance.now() - startTime),
+				failReason: `Image too blurry (sharpness: ${blurResult.variance.toFixed(0)}/${BOBA_SCAN_CONFIG.blurThreshold})`
+			};
+		}
 	}
 
 	// Helper to record scan result to history and auto-tag before returning
@@ -173,17 +176,7 @@ export async function recognizeCard(
 	// }
 
 	// ── TIER 3: Claude API ──────────────────────────────────
-	if (options?.isAuthenticated === false) {
-		console.debug('[scan] Skipping Tier 3: user not authenticated');
-		return finalize({
-			card_id: null,
-			card: null,
-			scan_method: 'claude' as ScanMethod,
-			confidence: 0,
-			processing_ms: 0,
-			failReason: 'Sign in for AI-powered card identification'
-		});
-	}
+	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
 	const tier3Result = await runTier3(bitmap);

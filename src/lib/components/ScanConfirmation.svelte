@@ -22,11 +22,27 @@
 	let addError = $state<string | null>(null);
 	let addSuccess = $state(false);
 	let showConfetti = $state(false);
+	let priceData = $state<{ price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null>(null);
+	let priceLoading = $state(false);
+	let priceError = $state(false);
 
 	const card = $derived(result.card);
 	const ownedCount = $derived(card ? ($ownedCardCounts.get(card.id) || 0) : 0);
 	const isOwned = $derived(ownedCount > 0);
 	const isLowConfidence = $derived(result.confidence < 0.7);
+
+	// Fetch price when card is identified
+	$effect(() => {
+		if (card?.id) {
+			priceLoading = true;
+			priceError = false;
+			fetch(`/api/price/${encodeURIComponent(card.id)}`)
+				.then(res => res.ok ? res.json() : Promise.reject())
+				.then(data => { priceData = data; })
+				.catch(() => { priceError = true; })
+				.finally(() => { priceLoading = false; });
+		}
+	});
 
 	async function handleAdd() {
 		if (!card) return;
@@ -86,6 +102,30 @@
 					{/if}
 					{#if card.card_number}
 						<span class="card-number">#{card.card_number}</span>
+					{/if}
+				</div>
+
+				<!-- Price section -->
+				<div class="price-section">
+					{#if priceLoading}
+						<div class="price-loading">
+							<div class="price-shimmer"></div>
+							<span class="price-loading-text">Checking prices...</span>
+						</div>
+					{:else if priceData?.price_mid}
+						<div class="price-main">${priceData.price_mid.toFixed(2)}</div>
+						{#if priceData.price_low != null && priceData.price_high != null}
+							<div class="price-range">
+								${priceData.price_low.toFixed(2)} &mdash; ${priceData.price_high.toFixed(2)}
+							</div>
+						{/if}
+						{#if priceData.listings_count}
+							<div class="price-source">Based on {priceData.listings_count} listing{priceData.listings_count !== 1 ? 's' : ''}</div>
+						{/if}
+					{:else if priceError}
+						<div class="price-unavailable">Price unavailable</div>
+					{:else}
+						<div class="price-unavailable">No pricing data found</div>
 					{/if}
 				</div>
 
@@ -160,8 +200,15 @@
 						{/if}
 						{#if showConfetti}
 							<div class="confetti-burst">
-								{#each [0, 60, 120, 180, 240, 300] as angle}
-									<span class="confetti-dot" style="--angle: {angle}deg; --dist: {22 + (angle % 3) * 4}px"></span>
+								{#each [
+									{ x: 1, y: 0, dist: 22 },
+									{ x: 0.5, y: 0.866, dist: 22 },
+									{ x: -0.5, y: 0.866, dist: 22 },
+									{ x: -1, y: 0, dist: 26 },
+									{ x: -0.5, y: -0.866, dist: 22 },
+									{ x: 0.5, y: -0.866, dist: 22 }
+								] as dot}
+									<span class="confetti-dot" style="--dx: {dot.x}; --dy: {dot.y}; --dist: {dot.dist}px"></span>
 								{/each}
 							</div>
 						{/if}
@@ -355,6 +402,64 @@
 	.pill-rarity.rarity-rare { color: #3B82F6; }
 	.pill-rarity.rarity-ultra_rare { color: #A855F7; }
 	.pill-rarity.rarity-legendary { color: #F59E0B; }
+
+	/* ── Price ── */
+	.price-section {
+		padding: 0.5rem 0;
+	}
+
+	.price-main {
+		font-size: 1.75rem;
+		font-weight: 800;
+		color: var(--success, #10b981);
+	}
+
+	.price-range {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin-top: 0.125rem;
+	}
+
+	.price-source {
+		font-size: 0.75rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.125rem;
+	}
+
+	.price-unavailable {
+		font-size: 0.85rem;
+		color: var(--text-muted, #475569);
+	}
+
+	.price-loading {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.price-shimmer {
+		width: 80px;
+		height: 24px;
+		border-radius: 4px;
+		background: linear-gradient(
+			90deg,
+			var(--bg-elevated, #121d34) 25%,
+			var(--bg-hover, #182540) 50%,
+			var(--bg-elevated, #121d34) 75%
+		);
+		background-size: 200% 100%;
+		animation: shimmer 1.8s linear infinite;
+	}
+
+	.price-loading-text {
+		font-size: 0.8rem;
+		color: var(--text-muted, #475569);
+	}
+
+	@keyframes shimmer {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
+	}
 
 	/* ── Low confidence ── */
 	.confidence-warning {
@@ -601,15 +706,15 @@
 		50% {
 			opacity: 1;
 			transform: translate(
-				calc(cos(var(--angle)) * var(--dist)),
-				calc(sin(var(--angle)) * var(--dist))
+				calc(var(--dx) * var(--dist)),
+				calc(var(--dy) * var(--dist))
 			) scale(1);
 		}
 		100% {
 			opacity: 0;
 			transform: translate(
-				calc(cos(var(--angle)) * var(--dist) * 1.5),
-				calc(sin(var(--angle)) * var(--dist) * 1.5)
+				calc(var(--dx) * var(--dist) * 1.5),
+				calc(var(--dy) * var(--dist) * 1.5)
 			) scale(0.5);
 		}
 	}

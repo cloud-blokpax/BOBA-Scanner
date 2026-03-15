@@ -378,6 +378,51 @@ const imageProcessor = {
 		}
 
 		return canvas.convertToBlob({ type: 'image/png' });
+	},
+
+	/**
+	 * Composite multiple bitmaps using darkest-pixel selection.
+	 * Eliminates specular highlights from foil/holographic cards by selecting
+	 * the darkest pixel at each position across captures taken at different angles.
+	 */
+	async compositeMinPixel(bitmaps: ImageBitmap[]): Promise<ImageBitmap> {
+		if (bitmaps.length === 0) throw new Error('No bitmaps to composite');
+		if (bitmaps.length === 1) return bitmaps[0];
+
+		const w = bitmaps[0].width;
+		const h = bitmaps[0].height;
+		const canvas = new OffscreenCanvas(w, h);
+		const ctx = canvas.getContext('2d')!;
+
+		// Get pixel data from all bitmaps
+		const allData: Uint8ClampedArray[] = [];
+		for (const bmp of bitmaps) {
+			const tmpCanvas = new OffscreenCanvas(w, h);
+			const tmpCtx = tmpCanvas.getContext('2d')!;
+			tmpCtx.drawImage(bmp, 0, 0, w, h);
+			allData.push(tmpCtx.getImageData(0, 0, w, h).data);
+		}
+
+		// Create composite: take darkest pixel at each position
+		const output = ctx.createImageData(w, h);
+		const outData = output.data;
+		const totalPixels = w * h * 4;
+
+		for (let i = 0; i < totalPixels; i += 4) {
+			let minLum = Infinity;
+			let minIdx = 0;
+			for (let j = 0; j < allData.length; j++) {
+				const lum = allData[j][i] * 0.299 + allData[j][i + 1] * 0.587 + allData[j][i + 2] * 0.114;
+				if (lum < minLum) { minLum = lum; minIdx = j; }
+			}
+			outData[i] = allData[minIdx][i];
+			outData[i + 1] = allData[minIdx][i + 1];
+			outData[i + 2] = allData[minIdx][i + 2];
+			outData[i + 3] = 255;
+		}
+
+		ctx.putImageData(output, 0, 0);
+		return canvas.transferToImageBitmap();
 	}
 };
 
