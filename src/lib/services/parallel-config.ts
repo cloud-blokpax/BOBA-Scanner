@@ -12,6 +12,7 @@ import type { CardRarity } from '$lib/types';
 // In-memory cache of parallel→rarity mappings
 let configMap = new Map<string, CardRarity>();
 let isLoaded = false;
+let _loadPromise: Promise<Map<string, CardRarity>> | null = null;
 
 const VALID_RARITIES: CardRarity[] = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'];
 
@@ -21,7 +22,17 @@ const VALID_RARITIES: CardRarity[] = ['common', 'uncommon', 'rare', 'ultra_rare'
  */
 export async function loadParallelConfig(): Promise<Map<string, CardRarity>> {
 	if (isLoaded) return configMap;
+	if (_loadPromise) return _loadPromise;
 
+	_loadPromise = _loadParallelConfigImpl();
+	try {
+		return await _loadPromise;
+	} finally {
+		_loadPromise = null;
+	}
+}
+
+async function _loadParallelConfigImpl(): Promise<Map<string, CardRarity>> {
 	try {
 		const supabase = getSupabase();
 		if (!supabase) return configMap;

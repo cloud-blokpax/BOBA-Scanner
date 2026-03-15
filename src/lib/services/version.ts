@@ -29,15 +29,13 @@ export async function checkForUpdates(): Promise<void> {
 		if (!res.ok) return;
 		const remote = await res.json();
 
-		const stored = localStorage.getItem('knownAppVersion');
-		if (stored && stored !== remote.version) {
+		if (remote.version && remote.version !== APP_VERSION) {
 			updateAvailable.set({
 				available: true,
 				version: remote.version,
 				notes: remote.notes || ''
 			});
 		}
-		localStorage.setItem('knownAppVersion', remote.version);
 	} catch {
 		// Non-critical — silent fail
 	}

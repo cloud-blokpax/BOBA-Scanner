@@ -18,6 +18,12 @@ interface TiltOptions {
 export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn {
 	const { maxTilt = 8, perspective = 800, scale = 1.02, shimmer = true } = options;
 
+	// Save original styles to restore on destroy
+	const originalTransformStyle = node.style.transformStyle;
+	const originalTransition = node.style.transition;
+	const originalPosition = node.style.position;
+	const originalOverflow = node.style.overflow;
+
 	node.style.transformStyle = 'preserve-3d';
 	node.style.transition = 'transform 0.15s ease';
 
@@ -103,8 +109,13 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 			node.removeEventListener('touchmove', onTouchMove);
 			node.removeEventListener('touchend', handleLeave);
 			node.style.transform = '';
+			node.style.transformStyle = originalTransformStyle;
+			node.style.transition = originalTransition;
+			node.style.position = originalPosition;
+			node.style.overflow = originalOverflow;
 			if (shimmerEl) {
 				shimmerEl.remove();
+				shimmerEl = null;
 			}
 		}
 	};

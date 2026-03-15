@@ -110,7 +110,9 @@ export async function addToCollection(
 
 	// Wait for any in-flight add for the same card+condition to finish
 	const existing = _addLocks.get(lockKey);
-	if (existing) await existing;
+	if (existing) {
+		try { await existing; } catch { /* Previous add failed — proceed with ours */ }
+	}
 
 	const promise = (async () => {
 		const item = await upsertCollectionItem(cardId, condition, notes);

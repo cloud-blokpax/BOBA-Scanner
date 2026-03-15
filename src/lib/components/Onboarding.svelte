@@ -20,9 +20,11 @@
 		if (scanNow) goto('/scan');
 	}
 
-	if (shouldShow()) {
-		visible = true;
-	}
+	$effect(() => {
+		if (shouldShow()) {
+			visible = true;
+		}
+	});
 </script>
 
 {#if visible}

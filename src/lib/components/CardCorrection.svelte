@@ -12,15 +12,11 @@
 	let searchQuery = $state('');
 	let searchResults = $state<Partial<Card>[]>([]);
 	let searching = $state(false);
-	let initialized = false;
 
 	// Seed search query from card prop (and update when card changes)
 	$effect(() => {
 		const num = card.card_number || '';
-		if (!initialized) {
-			searchQuery = num;
-			initialized = true;
-		}
+		searchQuery = num;
 	});
 
 	async function handleSearch() {

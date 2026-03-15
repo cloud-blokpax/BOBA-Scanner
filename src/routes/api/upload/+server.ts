@@ -49,7 +49,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Invalid image file');
 	}
 
-	const pixels = (metadata.width || 0) * (metadata.height || 0);
+	const width = metadata.width || 0;
+	const height = metadata.height || 0;
+	if (width === 0 || height === 0) {
+		throw error(400, 'Image has zero dimensions');
+	}
+	const pixels = width * height;
 	if (pixels > MAX_PIXELS) {
 		throw error(400, 'Image dimensions too large');
 	}

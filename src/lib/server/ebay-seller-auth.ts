@@ -84,6 +84,10 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 	}
 
 	const data = await response.json();
+	if (!data.access_token || !data.refresh_token) {
+		console.error('[ebay-seller-auth] Token response missing required fields:', Object.keys(data));
+		throw new Error('eBay token response missing access_token or refresh_token');
+	}
 	const now = new Date();
 	const accessExpires = new Date(now.getTime() + (data.expires_in || 7200) * 1000);
 	const refreshExpires = new Date(now.getTime() + (data.refresh_token_expires_in || 47304000) * 1000);
@@ -137,6 +141,10 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	}
 
 	const data = await response.json();
+	if (!data.access_token) {
+		console.error('[ebay-seller-auth] Refresh response missing access_token');
+		return null;
+	}
 	await adminClient.from('ebay_seller_tokens').update({
 		access_token: data.access_token,
 		access_token_expires_at: new Date(Date.now() + (data.expires_in || 7200) * 1000).toISOString(),
