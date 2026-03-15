@@ -63,6 +63,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const filename = `${user.id}/${Date.now()}.jpg`;
 
+	if (!locals.supabase) {
+		throw error(503, 'Storage service unavailable');
+	}
+
 	const { data, error: uploadError } = await locals.supabase.storage
 		.from('scans')
 		.upload(filename, clean, {

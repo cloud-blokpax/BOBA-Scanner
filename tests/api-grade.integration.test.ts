@@ -67,39 +67,13 @@ describe('POST /api/grade', () => {
 	});
 
 	describe('authentication', () => {
-		it('allows unauthenticated requests with IP-based rate limiting', async () => {
+		it('rejects unauthenticated requests with 401', async () => {
 			const locals = makeLocals(null);
-			mockFetch.mockResolvedValue({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({
-					content: [{
-						type: 'text',
-						text: '{"grade":7,"grade_label":"NM","confidence":0.8,"corners":"Good","edges":"Clean","surface":"Clean","front_centering":"50/50","back_centering":"50/50","summary":"Near mint","submit_recommendation":"yes"}'
-					}]
-				})
-			});
-
 			const request = makeRequest({ imageData: VALID_BASE64 });
 			const getClientAddress = () => '127.0.0.1';
-			const response = await POST({ request, locals, getClientAddress } as any);
-			expect(response.status).toBe(200);
-			expect(mockCheckAnonScanRateLimit).toHaveBeenCalledWith('127.0.0.1');
-		});
-
-		it('rate limits unauthenticated requests by IP', async () => {
-			const locals = makeLocals(null);
-			mockCheckAnonScanRateLimit.mockResolvedValue({
-				success: false,
-				limit: 5,
-				remaining: 0,
-				reset: Date.now() + 30000
-			});
-
-			const request = makeRequest({ imageData: VALID_BASE64 });
-			const getClientAddress = () => '127.0.0.1';
-			const response = await POST({ request, locals, getClientAddress } as any);
-			expect(response.status).toBe(429);
+			await expect(
+				POST({ request, locals, getClientAddress } as any)
+			).rejects.toMatchObject({ status: 401 });
 		});
 	});
 

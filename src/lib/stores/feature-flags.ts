@@ -61,11 +61,24 @@ interface UserProfile {
 }
 
 let _userProfile: UserProfile | null = null;
+let _userProfileForUserId: string | null = null;
 
 function roleCheck(flag: FeatureFlag): boolean {
 	if (flag.enabled_globally) return true;
 	const currentUser = get(user);
-	if (!currentUser) return flag.enabled_for_guest === true;
+	if (!currentUser) {
+		// User logged out — clear stale profile
+		if (_userProfile) {
+			_userProfile = null;
+			_userProfileForUserId = null;
+		}
+		return flag.enabled_for_guest === true;
+	}
+	// If user changed since last profile fetch, profile is stale — treat as authenticated
+	if (_userProfileForUserId && _userProfileForUserId !== currentUser.id) {
+		_userProfile = null;
+		_userProfileForUserId = null;
+	}
 	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
 	if (_userProfile?.is_member) return flag.enabled_for_member !== false;
 	return flag.enabled_for_authenticated !== false;
@@ -139,6 +152,7 @@ export async function loadFeatureFlags(): Promise<void> {
 				.eq('id', currentUser.id)
 				.single();
 			_userProfile = profile || null;
+			_userProfileForUserId = currentUser.id;
 
 			const { data: overrides } = await supabase
 				.from('user_feature_overrides')

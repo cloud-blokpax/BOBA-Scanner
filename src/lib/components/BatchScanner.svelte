@@ -64,6 +64,7 @@
 			try {
 				const bitmap = await createImageBitmap(entry.file);
 				const result = await recognizeCard(bitmap);
+				bitmap.close(); // Free GPU memory
 				entry.result = result;
 				entry.status = 'done';
 			} catch (err) {

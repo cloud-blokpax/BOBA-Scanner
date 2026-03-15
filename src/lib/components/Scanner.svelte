@@ -121,6 +121,7 @@
 		try {
 			const bitmap = await captureFrame(videoEl);
 			const result = await analyzeFrame(bitmap);
+			bitmap.close(); // Free GPU memory — this runs every 250ms
 
 			if (result.cardDetected && result.isSharp) {
 				if (!cardDetectedSince) {
@@ -198,6 +199,7 @@
 			// Pre-scan quality check
 			const quality = await checkImageQuality(bitmap);
 			if (quality.isBlurry) {
+				bitmap.close();
 				blurWarning = true;
 				triggerHaptic('error');
 				setTimeout(() => { blurWarning = false; }, 2000);
@@ -210,7 +212,10 @@
 			}
 
 			const imageUrl = bitmapToDataUrl(bitmap);
-			handleScanResult(await scanImage(bitmap, { isAuthenticated }), imageUrl);
+			// scanImage transfers or consumes the bitmap; close it after
+			const scanResult = await scanImage(bitmap, { isAuthenticated });
+			bitmap.close();
+			handleScanResult(scanResult, imageUrl);
 		} finally {
 			scanning = false;
 		}

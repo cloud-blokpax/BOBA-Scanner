@@ -67,18 +67,23 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(500, 'Failed to register');
 	}
 
-	// Increment usage_count
-	const { data: currentTournament } = await locals.supabase
-		.from('tournaments')
-		.select('usage_count')
-		.eq('id', tournament_id)
-		.single();
-
-	if (currentTournament) {
-		await locals.supabase
+	// Atomically increment usage_count using RPC to avoid read-modify-write race condition.
+	// Falls back to non-atomic increment if the RPC function hasn't been created yet.
+	const { error: rpcError } = await locals.supabase
+		.rpc('increment_tournament_usage' as never, { tid: tournament_id } as never);
+	if (rpcError) {
+		// RPC not available — fall back to non-atomic increment (racy but functional)
+		const { data: current } = await locals.supabase
 			.from('tournaments')
-			.update({ usage_count: (currentTournament.usage_count || 0) + 1 })
-			.eq('id', tournament_id);
+			.select('usage_count')
+			.eq('id', tournament_id)
+			.single();
+		if (current) {
+			await locals.supabase
+				.from('tournaments')
+				.update({ usage_count: (current.usage_count || 0) + 1 })
+				.eq('id', tournament_id);
+		}
 	}
 
 	return json({ success: true, registration });
