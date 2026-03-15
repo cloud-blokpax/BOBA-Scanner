@@ -55,10 +55,11 @@ function createPayload(
 }
 
 function queueError(payload: ErrorPayload): void {
-	ERROR_QUEUE.push(payload);
+	// Flush BEFORE pushing if at capacity to prevent exceeding MAX_QUEUE
 	if (ERROR_QUEUE.length >= MAX_QUEUE) {
 		flushErrors();
 	}
+	ERROR_QUEUE.push(payload);
 }
 
 function flushErrors(): void {

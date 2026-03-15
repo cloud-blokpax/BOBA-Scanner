@@ -81,9 +81,12 @@
 		historyLoading = true;
 		fetch(`/api/price/${encodeURIComponent(card.id)}/history`, { signal: controller.signal })
 			.then(res => res.ok ? res.json() : Promise.reject())
-			.then(data => { historyData = data.history || []; })
-			.catch((err) => { if (err.name !== 'AbortError') historyData = []; })
-			.finally(() => { historyLoading = false; });
+			.then(data => { historyData = data.history || []; historyLoading = false; })
+			.catch((err) => {
+				if (err instanceof DOMException && err.name === 'AbortError') return;
+				historyData = [];
+				historyLoading = false;
+			});
 		return () => controller.abort();
 	});
 

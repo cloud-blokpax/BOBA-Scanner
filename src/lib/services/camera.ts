@@ -57,11 +57,18 @@ export async function startCamera(config: CameraConfig = {}): Promise<MediaStrea
 
 /**
  * Stop the camera and release resources.
+ * Always nullifies the stream reference even if stopping tracks throws,
+ * to prevent resource leaks from holding a stale stream reference.
  */
 export async function stopCamera(): Promise<void> {
 	if (currentStream) {
-		currentStream.getTracks().forEach((track) => track.stop());
+		const stream = currentStream;
 		currentStream = null;
+		try {
+			stream.getTracks().forEach((track) => track.stop());
+		} catch (err) {
+			console.warn('Error stopping camera tracks:', err);
+		}
 	}
 }
 

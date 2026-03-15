@@ -27,11 +27,17 @@
 			if (clientHasSession && !serverHasUser) {
 				// Client has a session but server didn't see it (e.g. stale/expired access token).
 				// Refresh the session so cookies get updated, then re-run server load.
-				await client.auth.refreshSession();
+				try {
+					await client.auth.refreshSession();
+				} catch (err) {
+					console.warn('Failed to refresh auth session:', err);
+				}
 				invalidate('supabase:auth');
 			} else if (serverHasUser !== clientHasSession) {
 				invalidate('supabase:auth');
 			}
+		}).catch((err) => {
+			console.warn('Failed to check client auth session:', err);
 		});
 
 		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {

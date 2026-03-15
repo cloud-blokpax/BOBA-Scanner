@@ -34,7 +34,9 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 
 	// Restart worker every 100 recognitions (WASM memory leak mitigation)
 	if (++recognitionCount > 100) {
-		await worker!.terminate();
+		const oldWorker = worker;
+		worker = null; // Clear reference before terminating to prevent use-after-terminate
+		await oldWorker!.terminate();
 		await initOcr();
 		recognitionCount = 0;
 	}

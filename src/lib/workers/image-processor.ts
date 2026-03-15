@@ -36,9 +36,11 @@ const imageProcessor = {
 				hash += leftGray < rightGray ? '1' : '0';
 			}
 		}
+		// hashSize*hashSize bits → hashSize*hashSize/4 hex digits
+		const hexDigits = (hashSize * hashSize) / 4;
 		return BigInt('0b' + hash)
 			.toString(16)
-			.padStart(hashSize * 2, '0');
+			.padStart(hexDigits, '0');
 	},
 
 	hammingDistance(hash1: string, hash2: string): number {

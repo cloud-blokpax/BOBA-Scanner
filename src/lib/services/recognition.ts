@@ -32,11 +32,15 @@ let imageWorker: Comlink.Remote<{
 	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
 }> | null = null;
 
-// Tracks the last OCR reading for correction recording
-let _lastOcrReading: string | null = null;
-
-// Tracks why Tier 3 failed for better error messages
-let _lastTier3FailReason: string | null = null;
+/**
+ * Per-scan context to avoid global state pollution when concurrent scans run.
+ * Previously these were module-level variables that would be overwritten
+ * by a second scan starting before the first one finishes.
+ */
+interface ScanContext {
+	lastOcrReading: string | null;
+	lastTier3FailReason: string | null;
+}
 
 /**
  * Analyze a video frame for card presence and sharpness (for auto-capture).
@@ -84,18 +88,31 @@ export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<Imag
 
 /**
  * Initialize the Web Workers. Call once on app start.
+ * Uses a shared promise to prevent duplicate Worker creation from concurrent calls.
  */
-export async function initWorkers(): Promise<void> {
-	if (!imageWorker) {
-		const ImageWorker = new Worker(
-			new URL('$lib/workers/image-processor.ts', import.meta.url),
-			{ type: 'module' }
-		);
-		imageWorker = Comlink.wrap(ImageWorker);
-	}
+let _workerInitPromise: Promise<void> | null = null;
 
-	// TODO: Tesseract is currently disabled — skip initialization
-	// await initOcr();
+export async function initWorkers(): Promise<void> {
+	if (imageWorker) return;
+	if (_workerInitPromise) return _workerInitPromise;
+
+	_workerInitPromise = (async () => {
+		if (!imageWorker) {
+			const ImageWorker = new Worker(
+				new URL('$lib/workers/image-processor.ts', import.meta.url),
+				{ type: 'module' }
+			);
+			imageWorker = Comlink.wrap(ImageWorker);
+		}
+		// TODO: Tesseract is currently disabled — skip initialization
+		// await initOcr();
+	})();
+
+	try {
+		await _workerInitPromise;
+	} finally {
+		_workerInitPromise = null;
+	}
 }
 
 /**
@@ -115,9 +132,8 @@ export async function recognizeCard(
 	const loadedCards = await loadCardDatabase();
 	console.debug(`[scan] Pipeline started. Card database: ${loadedCards.length} cards loaded.`);
 
-	// Reset OCR reading tracker for this scan
-	_lastOcrReading = null;
-	_lastTier3FailReason = null;
+	// Per-scan context to avoid global state pollution across concurrent scans
+	const ctx: ScanContext = { lastOcrReading: null, lastTier3FailReason: null };
 
 	// Convert to ImageBitmap for worker transfer
 	const bitmap =
@@ -188,22 +204,22 @@ export async function recognizeCard(
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	const tier3Result = await runTier3(bitmap);
+	const tier3Result = await runTier3(bitmap, ctx);
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}`);
 		const hash = await imageWorker!.computeDHash(bitmap);
 		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
-		// TODO: Re-enable when Tesseract is fixed — _lastOcrReading is never set while OCR is disabled
-		// if (tier3Result.card_id && tier3Result.card?.card_number && _lastOcrReading) {
-		// 	recordCorrection(_lastOcrReading, tier3Result.card.card_number, 'ai');
+		// TODO: Re-enable when Tesseract is fixed — lastOcrReading is never set while OCR is disabled
+		// if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
+		// 	recordCorrection(ctx.lastOcrReading, tier3Result.card.card_number, 'ai');
 		// }
 		return finalize(tier3Result);
 	}
 	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
 	return finalize(
-		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: _lastTier3FailReason || 'AI could not identify this card' }
+		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: ctx.lastTier3FailReason || 'AI could not identify this card' }
 	);
 }
 
@@ -269,7 +285,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 	]);
 }
 
-async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
+async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
 	for (const region of BOBA_OCR_REGIONS) {
 		try {
 			// Preprocess region in image worker
@@ -290,7 +306,7 @@ async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			if (!resolvedNumber) continue;
 
 			// Track the raw OCR reading for potential correction recording
-			_lastOcrReading = resolvedNumber;
+			ctx.lastOcrReading = resolvedNumber;
 
 			// Check if we have a learned correction for this OCR output
 			const correctedNumber = checkCorrection(resolvedNumber);
@@ -316,8 +332,8 @@ async function runTier2(bitmap: ImageBitmap): Promise<ScanResult | null> {
 
 // ── Tier 3: Claude API ──────────────────────────────────────
 
-async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
-	_lastTier3FailReason = null;
+async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
+	ctx.lastTier3FailReason = null;
 	let response: Response;
 	try {
 		// Resize for upload
@@ -333,7 +349,7 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 		});
 	} catch (err) {
 		console.error('[scan:tier3] Network error calling /api/scan:', err);
-		_lastTier3FailReason = 'Network error reaching scan API';
+		ctx.lastTier3FailReason = 'Network error reaching scan API';
 		return null;
 	}
 
@@ -341,10 +357,10 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 		let errorBody = '';
 		try { errorBody = await response.text(); } catch { /* ignore */ }
 		console.error(`[scan:tier3] API returned ${response.status}: ${errorBody}`);
-		if (response.status === 401) _lastTier3FailReason = 'Not authenticated — please sign in';
-		else if (response.status === 429) _lastTier3FailReason = 'Rate limited — please wait before scanning again';
-		else if (response.status === 503) _lastTier3FailReason = 'AI service overloaded — try again in a moment';
-		else _lastTier3FailReason = `Scan API error (${response.status})`;
+		if (response.status === 401) ctx.lastTier3FailReason = 'Not authenticated — please sign in';
+		else if (response.status === 429) ctx.lastTier3FailReason = 'Rate limited — please wait before scanning again';
+		else if (response.status === 503) ctx.lastTier3FailReason = 'AI service overloaded — try again in a moment';
+		else ctx.lastTier3FailReason = `Scan API error (${response.status})`;
 		return null;
 	}
 
@@ -353,7 +369,7 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 		result = await response.json();
 	} catch {
 		console.error('[scan:tier3] Invalid JSON in API response');
-		_lastTier3FailReason = 'Invalid response from scan API';
+		ctx.lastTier3FailReason = 'Invalid response from scan API';
 		return null;
 	}
 
@@ -361,7 +377,7 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 
 	if (!result.success || !result.card) {
 		console.warn('[scan:tier3] API returned success=false or no card data. Raw:', result.raw || '(none)');
-		_lastTier3FailReason = 'AI could not parse card details from image';
+		ctx.lastTier3FailReason = 'AI could not parse card details from image';
 		return null;
 	}
 
@@ -403,7 +419,7 @@ async function runTier3(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	}
 
 	console.warn(`[scan:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
-	_lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
+	ctx.lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 	return null;
 }
 

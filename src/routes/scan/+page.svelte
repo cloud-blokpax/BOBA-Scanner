@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
@@ -12,6 +12,11 @@
 
 	onMount(() => {
 		initScanner();
+	});
+
+	// Revoke blob URL on unmount to prevent memory leak from orphaned object URLs
+	onDestroy(() => {
+		cleanupImageUrl();
 	});
 
 	function handleResult(result: ScanResult, imageUrl?: string) {
