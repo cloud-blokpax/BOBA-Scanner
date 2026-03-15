@@ -1,25 +1,40 @@
 <script lang="ts">
-	import { calculateTotalDbs, getDbs } from '$lib/data/boba-dbs-scores';
+	import { calculateTotalDbs, getDbs, getPlayCardsBySet, type PlayCardData } from '$lib/data/boba-dbs-scores';
 
-	let playNumbers = $state<string[]>([]);
+	const SETS = [
+		{ code: 'Alpha Edition', label: 'Alpha (A)' },
+		{ code: 'Griffey Edition', label: 'Griffey (G)' },
+		{ code: 'Alpha Update', label: 'Unlimited (U)' },
+		{ code: 'Alpha Blast', label: 'Hot Dog (HTD)' }
+	];
+
+	let selectedSet = $state('Alpha Edition');
+	let playEntries = $state<Array<{ cardNumber: string; setCode: string; name?: string }>>([]);
 	let inputValue = $state('');
-	let dbsResult = $derived(calculateTotalDbs(playNumbers));
+	let dbsResult = $derived(calculateTotalDbs(playEntries));
+
+	/** Available play cards for the selected set (for autocomplete/reference) */
+	let availablePlays = $derived(getPlayCardsBySet(selectedSet));
 
 	function addPlay() {
 		const cleaned = inputValue.trim().toUpperCase();
 		if (!cleaned) return;
-		// Accept multiple comma/space separated entries
 		const entries = cleaned.split(/[,\s]+/).filter(Boolean);
-		playNumbers = [...playNumbers, ...entries];
+		const newEntries = entries.map(num => {
+			const setCode = num.startsWith('HTD-') ? 'Alpha Blast' : selectedSet;
+			const playCard = availablePlays.find(p => p.card_number.toUpperCase() === num);
+			return { cardNumber: num, setCode, name: playCard?.name };
+		});
+		playEntries = [...playEntries, ...newEntries];
 		inputValue = '';
 	}
 
 	function removePlay(index: number) {
-		playNumbers = playNumbers.filter((_, i) => i !== index);
+		playEntries = playEntries.filter((_, i) => i !== index);
 	}
 
 	function clearAll() {
-		playNumbers = [];
+		playEntries = [];
 	}
 
 	const DBS_CAP = 1000;
@@ -35,9 +50,19 @@
 	<h1>DBS Calculator</h1>
 	<p class="subtitle">Check your Playbook's Deck Balancing Score before tournament registration.</p>
 
+	<div class="set-selector">
+		{#each SETS as set}
+			<button
+				class="set-btn"
+				class:active={selectedSet === set.code}
+				onclick={() => selectedSet = set.code}
+			>{set.label}</button>
+		{/each}
+	</div>
+
 	<div class="score-display" class:over-cap={isOverCap}>
 		<div class="score-label">Total DBS</div>
-		{#if dbsResult === null && playNumbers.length > 0}
+		{#if dbsResult === null && playEntries.length > 0}
 			<div class="score-value score-unavailable">—</div>
 			<div class="score-cap">
 				<span class="missing-data">DBS score data not yet available</span>
@@ -71,16 +96,19 @@
 		<button type="submit" class="btn-primary">Add</button>
 	</form>
 
-	{#if playNumbers.length > 0}
+	{#if playEntries.length > 0}
 		<div class="play-list">
 			<div class="play-list-header">
-				<span>Playbook ({playNumbers.length} card{playNumbers.length !== 1 ? 's' : ''})</span>
+				<span>Playbook ({playEntries.length} card{playEntries.length !== 1 ? 's' : ''})</span>
 				<button class="btn-text" onclick={clearAll}>Clear All</button>
 			</div>
-			{#each playNumbers as num, i}
-				{@const score = getDbs(num)}
+			{#each playEntries as entry, i}
+				{@const score = getDbs(entry.cardNumber, entry.setCode)}
 				<div class="play-item">
-					<span class="play-number">{num}</span>
+					<span class="play-number">{entry.cardNumber}</span>
+					{#if entry.name}
+						<span class="play-name">{entry.name}</span>
+					{/if}
 					<span class="play-dbs" class:missing={score === null}>
 						{score !== null ? `${score} DBS` : 'No score found'}
 					</span>
@@ -105,6 +133,28 @@
 	}
 	h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
 	.subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; }
+
+	.set-selector {
+		display: flex;
+		gap: 0.375rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+	.set-btn {
+		padding: 0.375rem 0.75rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-base);
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.set-btn.active {
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		border-color: var(--accent-primary, #3b82f6);
+	}
 
 	.score-display {
 		text-align: center;
@@ -177,8 +227,9 @@
 		background: var(--bg-elevated);
 		margin-bottom: 0.25rem;
 	}
-	.play-number { font-weight: 600; font-size: 0.9rem; flex: 1; }
-	.play-dbs { font-size: 0.8rem; color: var(--text-secondary); }
+	.play-number { font-weight: 600; font-size: 0.9rem; min-width: 4rem; }
+	.play-name { font-size: 0.8rem; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.play-dbs { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
 	.play-dbs.missing { color: #f59e0b; }
 	.play-remove {
 		background: none;

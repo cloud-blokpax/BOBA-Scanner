@@ -327,8 +327,10 @@ export function validateDeck(
 	// ── Rule 9: Playbook DBS cap ───────────────────────────
 	let dbsTotal: number | null = null;
 	if (format.dbsCap && playCards.length > 0) {
-		const playNumbers = playCards.map(c => c.card_number || '').filter(Boolean);
-		const dbsResult = calculateTotalDbs(playNumbers);
+		const playEntries = playCards
+			.filter(c => c.card_number)
+			.map(c => ({ cardNumber: c.card_number!, setCode: c.set_code || undefined }));
+		const dbsResult = calculateTotalDbs(playEntries);
 		if (dbsResult) {
 			dbsTotal = dbsResult.total;
 			if (dbsResult.total > format.dbsCap) {
