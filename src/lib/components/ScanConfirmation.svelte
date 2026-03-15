@@ -33,15 +33,29 @@
 
 	// Fetch price when card is identified
 	$effect(() => {
-		if (card?.id) {
-			priceLoading = true;
-			priceError = false;
-			fetch(`/api/price/${encodeURIComponent(card.id)}`)
-				.then(res => res.ok ? res.json() : Promise.reject())
-				.then(data => { priceData = data; })
-				.catch(() => { priceError = true; })
-				.finally(() => { priceLoading = false; });
-		}
+		if (!card?.id) return;
+
+		const controller = new AbortController();
+		priceLoading = true;
+		priceError = false;
+		priceData = null;
+
+		fetch(`/api/price/${encodeURIComponent(card.id)}`, { signal: controller.signal })
+			.then(res => res.ok ? res.json() : Promise.reject(new Error('Price fetch failed')))
+			.then(data => {
+				priceData = data;
+			})
+			.catch((err) => {
+				if (err instanceof DOMException && err.name === 'AbortError') return;
+				priceError = true;
+			})
+			.finally(() => {
+				if (!controller.signal.aborted) {
+					priceLoading = false;
+				}
+			});
+
+		return () => controller.abort();
 	});
 
 	async function handleAdd() {

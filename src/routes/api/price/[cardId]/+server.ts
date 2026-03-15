@@ -9,7 +9,18 @@
 
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
+import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from './$types';
+
+// Helper: get a service-role client for cache writes (bypasses RLS)
+function getServiceClient() {
+	const url = publicEnv.PUBLIC_SUPABASE_URL ?? '';
+	const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+	if (!url || !serviceKey) return null;
+	return createClient(url, serviceKey);
+}
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const { cardId } = params;
@@ -30,8 +41,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		return json({ error: 'Database not available' }, { status: 503 });
 	}
 
-	// Check price cache (1-hour freshness)
-	const { data: cachedRaw } = await locals.supabase
+	// Check price cache (1-hour freshness) — use service role to bypass RLS
+	const cacheClient = getServiceClient() || locals.supabase;
+	const { data: cachedRaw } = await cacheClient
 		.from('price_cache')
 		.select('*')
 		.eq('card_id', cardId)
@@ -54,7 +66,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	// Get card details for search query
 	const { data: card } = await locals.supabase
 		.from('cards')
-		.select('name, card_number, set_code')
+		.select('name, hero_name, card_number, set_code')
 		.eq('id', cardId)
 		.single();
 
@@ -62,8 +74,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		throw error(404, 'Card not found');
 	}
 
-	// Build eBay search query
-	const query = `BOBA ${card.name} ${card.card_number || ''} ${card.set_code || ''}`.trim();
+	// Build eBay search query — "bo jackson battle arena" is the key phrase sellers use
+	const heroOrName = card.hero_name || card.name || '';
+	const cardNum = card.card_number || '';
+	const query = `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
 
 	try {
 		const token = await getEbayToken();
@@ -102,10 +116,16 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			fetched_at: new Date().toISOString()
 		};
 
-		// Update cache
-		await locals.supabase.from('price_cache').upsert(priceData, {
-			onConflict: 'card_id,source'
-		});
+		// Update cache — use service role to bypass RLS (price_cache is server-managed)
+		try {
+			const adminClient = getServiceClient();
+			const writeCacheClient = adminClient || locals.supabase;
+			await writeCacheClient.from('price_cache').upsert(priceData, {
+				onConflict: 'card_id,source'
+			});
+		} catch {
+			console.warn('[api/price] Cache write failed (possible RLS issue)');
+		}
 
 		return json(priceData, {
 			headers: {
