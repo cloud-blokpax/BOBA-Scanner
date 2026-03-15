@@ -18,6 +18,8 @@ export function initAuth() {
 	supabase.auth.getSession().then(({ data }) => {
 		session.set(data.session);
 		user.set(data.session?.user ?? null);
+	}).catch((err) => {
+		console.warn('Failed to get initial auth session:', err);
 	});
 
 	// Listen for auth changes

@@ -18,6 +18,7 @@ import type { Card } from '$lib/types';
 let cards: Card[] = [];
 const cardIndex = new Map<string, Card[]>();
 const prefixIndex = new Map<string, Card[]>();
+const idIndex = new Map<string, Card>();
 let isLoaded = false;
 
 /**
@@ -116,8 +117,12 @@ async function applyParallelConfig(): Promise<void> {
 function buildIndexes() {
 	cardIndex.clear();
 	prefixIndex.clear();
+	idIndex.clear();
 
 	for (const card of cards) {
+		// ID index for O(1) lookup by id
+		if (card.id) idIndex.set(card.id, card);
+
 		const num = normalizeCardNum(card.card_number || '');
 		if (!num) continue;
 
@@ -286,7 +291,7 @@ export function getAllCards(): Card[] {
  * Get a card by its ID (string).
  */
 export function getCardById(id: string): Card | undefined {
-	return cards.find((c) => c.id === id);
+	return idIndex.get(id);
 }
 
 // ── Levenshtein distance ────────────────────────────────────

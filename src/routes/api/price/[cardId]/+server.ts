@@ -26,6 +26,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	// Check auth (optional — prices can be public)
 	const { user } = await locals.safeGetSession();
 
+	if (!locals.supabase) {
+		return json({ error: 'Database not available' }, { status: 503 });
+	}
+
 	// Check price cache (1-hour freshness)
 	const { data: cachedRaw } = await locals.supabase
 		.from('price_cache')

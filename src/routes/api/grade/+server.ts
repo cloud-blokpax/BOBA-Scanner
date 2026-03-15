@@ -13,14 +13,15 @@ import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
-	// Auth check (optional — anonymous users get stricter rate limits)
+	// Auth required — grading uses Claude Sonnet which is expensive (~$0.03/call)
 	const { user } = await locals.safeGetSession();
+	if (!user) {
+		throw error(401, 'Authentication required for card grading');
+	}
 
 	// Rate limiting (reuse scan limiter — grading is scan-like)
-	const rateLimitKey = user?.id ?? getClientAddress();
-	const rateLimit = user
-		? await checkScanRateLimit(rateLimitKey)
-		: await checkAnonScanRateLimit(rateLimitKey);
+	const rateLimitKey = user.id;
+	const rateLimit = await checkScanRateLimit(rateLimitKey);
 	if (!rateLimit.success) {
 		return json(
 			{ error: 'Too many grading requests. Please wait a moment.' },

@@ -106,6 +106,7 @@
 						const cellBitmap = await createImageBitmap(canvas);
 
 						const result = await recognizeCard(cellBitmap);
+						cellBitmap.close(); // Free GPU memory
 						if (result.card_id) {
 							cell.result = result;
 							cell.status = 'done';
@@ -120,6 +121,7 @@
 				})
 			);
 		}
+		bitmap.close(); // Free GPU memory for the source image
 		processing = false;
 	}
 
