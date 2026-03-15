@@ -10,7 +10,7 @@
  */
 
 const DB_NAME = 'boba-scanner-v2';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORES = {
 	cards: 'cards',
@@ -18,10 +18,17 @@ const STORES = {
 	collections: 'collections',
 	prices: 'prices',
 	meta: 'meta',
-	tombstones: 'tombstones'
+	tombstones: 'tombstones',
+	scanQueue: 'scan_queue'
 } as const;
 
 type StoreName = (typeof STORES)[keyof typeof STORES];
+
+export interface QueuedScan {
+	id: string;
+	imageBlob: Blob;
+	timestamp: number;
+}
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -53,6 +60,9 @@ function openDB(): Promise<IDBDatabase> {
 			if (!db.objectStoreNames.contains(STORES.tombstones)) {
 				const tombstoneStore = db.createObjectStore(STORES.tombstones, { keyPath: 'cardId' });
 				tombstoneStore.createIndex('deletedAt', 'deletedAt');
+			}
+			if (!db.objectStoreNames.contains(STORES.scanQueue)) {
+				db.createObjectStore(STORES.scanQueue, { keyPath: 'id' });
 			}
 		};
 
@@ -190,5 +200,39 @@ export const idb = {
 	},
 	async setMeta(key: string, value: unknown) {
 		await put(STORES.meta, value, key);
+	}
+};
+
+// ── Offline scan queue ──────────────────────────────────────
+
+export const scanQueue = {
+	async add(blob: Blob): Promise<string> {
+		const id = crypto.randomUUID();
+		await put(STORES.scanQueue, { id, imageBlob: blob, timestamp: Date.now() } satisfies QueuedScan);
+		return id;
+	},
+
+	async getAll(): Promise<QueuedScan[]> {
+		return getAll<QueuedScan>(STORES.scanQueue);
+	},
+
+	async remove(id: string): Promise<void> {
+		const db = await openDB();
+		return new Promise((resolve, reject) => {
+			const tx = db.transaction(STORES.scanQueue, 'readwrite');
+			const req = tx.objectStore(STORES.scanQueue).delete(id);
+			req.onsuccess = () => resolve();
+			req.onerror = () => reject(req.error);
+		});
+	},
+
+	async count(): Promise<number> {
+		const db = await openDB();
+		return new Promise((resolve, reject) => {
+			const tx = db.transaction(STORES.scanQueue, 'readonly');
+			const req = tx.objectStore(STORES.scanQueue).count();
+			req.onsuccess = () => resolve(req.result);
+			req.onerror = () => reject(req.error);
+		});
 	}
 };

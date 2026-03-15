@@ -24,13 +24,6 @@ export interface EbayPriceData {
 	count: number;
 }
 
-export interface EbaySoldData {
-	lastSold: { price: number; date: string; title: string; url: string } | null;
-	soldCount: number;
-	avgSoldPrice: number | null;
-	blocked: boolean;
-}
-
 export interface EbayListing {
 	title: string;
 	price: number;
@@ -118,28 +111,6 @@ export async function fetchEbayAvgPrice(card: {
 		})
 	});
 	if (!res.ok) throw new Error(`eBay browse failed: ${res.status}`);
-	return res.json();
-}
-
-/**
- * Fetch sold listing data from eBay.
- */
-export async function fetchEbaySoldData(card: {
-	card_number?: string | null;
-	hero_name?: string | null;
-	athlete_name?: string | null;
-}): Promise<EbaySoldData> {
-	const res = await fetch('/api/ebay/sold', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			query: buildEbayQuery(card),
-			cardNumber: card.card_number,
-			hero: card.hero_name,
-			athlete: card.athlete_name
-		})
-	});
-	if (!res.ok) throw new Error(`eBay sold failed: ${res.status}`);
 	return res.json();
 }
 

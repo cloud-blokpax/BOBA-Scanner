@@ -22,6 +22,12 @@ export function getDbsScore(cardNumber: string): number | null {
 	return DBS_SCORES[cardNumber.toUpperCase()] ?? null;
 }
 
+/** Look up the DBS score for a single Play/Bonus Play card number. */
+export function getDbs(cardNumber: string): number | null {
+	const normalized = cardNumber.trim().toUpperCase();
+	return DBS_SCORES[normalized] ?? null;
+}
+
 /** Check if DBS data is available (enough cards have scores to be useful) */
 export function isDbsDataAvailable(): boolean {
 	return Object.keys(DBS_SCORES).length >= 20;
