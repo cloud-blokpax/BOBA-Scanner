@@ -31,6 +31,7 @@
 	let step = $state<'info' | 'deck' | 'done'>('info');
 	let deckCards = $state<CollectionItem[]>([]);
 	let submitting = $state(false);
+	let collectionLoading = $state(false);
 
 	const maxDeckSize = $derived(tournament ? tournament.max_heroes : 30);
 
@@ -91,6 +92,19 @@
 			return;
 		}
 		step = 'deck';
+	}
+
+	async function reloadCollection() {
+		collectionLoading = true;
+		try {
+			await loadCollection();
+			if ($collectionItems.length === 0) {
+				showToast('No cards found in collection', 'x');
+			}
+		} catch {
+			showToast('Failed to load collection', 'x');
+		}
+		collectionLoading = false;
 	}
 
 	function addToDeck(item: CollectionItem) {
@@ -249,7 +263,13 @@
 							{/if}
 						</button>
 					{:else}
-						<p class="empty-collection">No cards in collection. Scan some cards first!</p>
+						<div class="empty-collection-actions">
+							<p class="empty-collection-text">No cards in your collection yet.</p>
+							<a href="/scan" class="scan-cards-btn">Scan Cards</a>
+							<button class="load-collection-btn" onclick={reloadCollection} disabled={collectionLoading}>
+								{collectionLoading ? 'Loading...' : 'Load from Collection'}
+							</button>
+						</div>
 					{/each}
 				</div>
 
@@ -473,11 +493,45 @@
 		font-size: 0.75rem;
 		color: var(--accent-gold, #f59e0b);
 	}
-	.empty-collection {
+	.empty-collection-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1.5rem 1rem;
+	}
+	.empty-collection-text {
 		text-align: center;
 		color: var(--text-tertiary);
 		font-size: 0.85rem;
-		padding: 1rem;
+	}
+	.scan-cards-btn {
+		display: block;
+		width: 100%;
+		padding: 0.75rem;
+		border-radius: 10px;
+		border: none;
+		background: var(--accent-primary);
+		color: #fff;
+		font-size: 0.95rem;
+		font-weight: 600;
+		cursor: pointer;
+		text-align: center;
+		text-decoration: none;
+	}
+	.load-collection-btn {
+		width: 100%;
+		padding: 0.6rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-color);
+		background: transparent;
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.load-collection-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 	.deck-actions {
 		display: flex;
