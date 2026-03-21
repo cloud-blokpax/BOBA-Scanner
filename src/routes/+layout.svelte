@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invalidate } from '$app/navigation';
+	import { invalidate, onNavigate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { getSupabase } from '$lib/services/supabase';
 	import { featureEnabled } from '$lib/stores/feature-flags';
@@ -15,6 +15,17 @@
 
 	let { children, data } = $props();
 	let showMore = $state(false);
+
+	// View Transitions API for smooth page navigation
+	onNavigate((navigation) => {
+		if (!document.startViewTransition) return;
+		return new Promise((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();
+				await navigation.complete;
+			});
+		});
+	});
 
 	onMount(() => {
 		const client = getSupabase();

@@ -8,6 +8,7 @@ export const HAPTIC_PATTERNS = {
 	tap: [15],
 	success: [30, 60, 30],
 	successAdd: [30, 50, 30],
+	rareReveal: [20, 30, 20, 30, 80],
 	ultraRare: [20, 40, 30, 50],
 	legendary: [20, 40, 20, 40, 60],
 	error: [50, 30, 50]
