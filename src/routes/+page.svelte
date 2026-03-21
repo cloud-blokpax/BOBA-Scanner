@@ -47,7 +47,20 @@
 		addError = null;
 		try {
 			const result = await scanImage(file);
-			uploadResult = result;
+			if (result) {
+				uploadResult = result;
+			} else {
+				// scanImage returns null on internal errors — surface the error to the user
+				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				uploadResult = {
+					card_id: null,
+					card: null,
+					scan_method: 'claude',
+					confidence: 0,
+					processing_ms: 0,
+					failReason: errorMsg
+				};
+			}
 		} finally {
 			uploading = false;
 			input.value = '';
@@ -107,6 +120,7 @@
 			case 'tier2': return 'Running OCR...';
 			case 'tier3': return 'AI identifying...';
 			case 'processing': return 'Processing...';
+			case 'error': return state.error || 'Scan failed';
 			default: return '';
 		}
 	});

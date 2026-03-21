@@ -256,7 +256,19 @@
 			// skipBlurCheck: true because we already ran checkImageQuality above
 			const scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
 			bitmap.close();
-			handleScanResult(scanResult, imageUrl);
+			if (scanResult) {
+				handleScanResult(scanResult, imageUrl);
+			} else {
+				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				handleScanResult({
+					card_id: null,
+					card: null,
+					scan_method: 'claude',
+					confidence: 0,
+					processing_ms: 0,
+					failReason: errorMsg
+				}, imageUrl);
+			}
 		} finally {
 			scanning = false;
 		}
@@ -285,7 +297,19 @@
 				const imageUrl = bitmapToDataUrl(composite);
 				const scanResult = await scanImage(composite, { isAuthenticated, skipBlurCheck: true });
 				composite.close();
-				handleScanResult(scanResult, imageUrl);
+				if (scanResult) {
+					handleScanResult(scanResult, imageUrl);
+				} else {
+					const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+					handleScanResult({
+						card_id: null,
+						card: null,
+						scan_method: 'claude',
+						confidence: 0,
+						processing_ms: 0,
+						failReason: errorMsg
+					}, imageUrl);
+				}
 			} finally {
 				scanning = false;
 			}
@@ -309,7 +333,21 @@
 
 		try {
 			const imageUrl = URL.createObjectURL(file);
-			handleScanResult(await scanImage(file, { isAuthenticated }), imageUrl);
+			const result = await scanImage(file, { isAuthenticated });
+			if (result) {
+				handleScanResult(result, imageUrl);
+			} else {
+				// scanImage returns null on internal errors — create a fail result
+				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				handleScanResult({
+					card_id: null,
+					card: null,
+					scan_method: 'claude',
+					confidence: 0,
+					processing_ms: 0,
+					failReason: errorMsg
+				}, imageUrl);
+			}
 		} finally {
 			scanning = false;
 			input.value = '';
