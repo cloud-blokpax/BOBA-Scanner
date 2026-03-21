@@ -6,17 +6,19 @@ BOBA Scanner is an AI-powered trading card scanner for **Bo Jackson Battle Arena
 
 ## Tech Stack
 
-- **Framework**: SvelteKit 2 with Svelte 5 (runes mode: `$state`, `$derived`, `$props`)
-- **Language**: TypeScript (strict mode)
+- **Framework**: SvelteKit 2 (`@sveltejs/kit ^2.54.0`) with Svelte 5 (`^5.53.10`, runes mode: `$state`, `$derived`, `$props`)
+- **Language**: TypeScript ^5.9.3 (strict mode)
 - **Deployment**: Vercel (adapter-vercel, Node.js 22.x runtime)
-- **Database**: Supabase (PostgreSQL + auth + realtime)
-- **AI**: Anthropic Claude API (Haiku for scanning, Sonnet for grading)
+- **Database**: Supabase (PostgreSQL + auth + realtime) — `@supabase/supabase-js ^2.99.1`, `@supabase/ssr ^0.9.0`
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for scanning, Sonnet for grading
 - **OCR**: Tesseract.js 7 (client-side, runs in Web Worker)
-- **Image Processing**: sharp (server-side CDR), Web Workers with Comlink (client-side)
-- **Rate Limiting**: Upstash Redis with in-memory fallback
-- **Pricing**: eBay Browse API integration
+- **Image Processing**: sharp ^0.34.5 (server-side CDR), Web Workers with Comlink ^4.4.2 (client-side)
+- **Virtualization**: `@tanstack/svelte-virtual ^3.13.22` for long lists
+- **Rate Limiting**: Upstash Redis (`@upstash/redis ^1.36.4`, `@upstash/ratelimit ^2.0.8`) with in-memory fallback
+- **Pricing**: eBay Browse API + Seller API integration
 - **Caching**: IndexedDB (client), Supabase price_cache (server), Vercel edge (CDN)
 - **PWA**: Service Worker with differentiated caching strategies
+- **Testing**: Vitest ^4.0.18
 
 ## Commands
 
@@ -47,59 +49,92 @@ BOBA-Scanner/
 │   │   ├── scan/+page.svelte       # Card scanning interface
 │   │   ├── collection/+page.svelte # Card collection management
 │   │   ├── deck/+page.svelte       # Deck builder
+│   │   ├── dbs/                    # DBS (Deck Balancing Score) calculator
+│   │   │   ├── +page.svelte        # DBS calculator UI
+│   │   │   └── +page.server.ts     # Serves DBS scores map
 │   │   ├── grader/+page.svelte     # AI card condition grading
 │   │   ├── export/+page.svelte     # Collection export (CSV, etc.)
+│   │   ├── settings/+page.svelte   # User settings page
 │   │   ├── set-completion/         # Set completion tracker
 │   │   ├── tournaments/            # Tournament management
+│   │   │   ├── +page.svelte        # Tournament list
+│   │   │   ├── detail/+page.svelte # Tournament detail view
+│   │   │   └── enter/+page.svelte  # Tournament entry form
 │   │   ├── marketplace/monitor/    # eBay seller monitoring
 │   │   ├── admin/+page.svelte      # Admin dashboard
 │   │   ├── auth/
 │   │   │   ├── login/+page.svelte  # Login page
-│   │   │   └── callback/+server.ts # OAuth callback handler
+│   │   │   ├── callback/+server.ts # OAuth callback handler
+│   │   │   ├── ebay/+server.ts     # eBay OAuth entry point
+│   │   │   └── ebay/callback/+server.ts # eBay OAuth callback
 │   │   └── api/
 │   │       ├── scan/+server.ts     # POST: Claude AI card identification (Tier 3)
 │   │       ├── grade/+server.ts    # POST: AI condition grading (Claude Sonnet)
-│   │       ├── price/[cardId]/     # GET: eBay price lookup with caching
+│   │       ├── price/[cardId]/
+│   │       │   ├── +server.ts      # GET: eBay price lookup with caching
+│   │       │   └── history/+server.ts # GET: Price history
 │   │       ├── config/+server.ts   # GET: Public env config endpoint
 │   │       ├── upload/+server.ts   # POST: Image upload
 │   │       ├── log/+server.ts      # POST: Client-side error logging
+│   │       ├── tournament/
+│   │       │   ├── [code]/+server.ts    # GET: Tournament info by code
+│   │       │   └── register/+server.ts  # POST: Register for tournament
 │   │       └── ebay/
-│   │           ├── browse/         # eBay Browse API proxy
-│   │           └── sold/           # eBay sold listings proxy
+│   │           ├── browse/+server.ts    # eBay Browse API proxy
+│   │           ├── listing/+server.ts   # POST: Generate/post eBay listings
+│   │           ├── status/+server.ts    # GET: eBay seller auth status
+│   │           └── disconnect/+server.ts # POST: Disconnect eBay seller auth
 │   ├── lib/
 │   │   ├── actions/tilt.ts         # Svelte action: 3D tilt effect for cards
 │   │   ├── components/
 │   │   │   ├── Scanner.svelte      # Single-card scanner component
 │   │   │   ├── BatchScanner.svelte # Multi-card batch scanning
 │   │   │   ├── BinderScanner.svelte# Binder page scanning
+│   │   │   ├── ScanConfirmation.svelte # Scan result confirmation UI
+│   │   │   ├── ScanEffects.svelte  # Visual effects for scanning
 │   │   │   ├── CardDetail.svelte   # Card detail view
 │   │   │   ├── CardGrid.svelte     # Grid display for card collections
 │   │   │   ├── CardCorrection.svelte # Manual correction UI
+│   │   │   ├── CardFlipReveal.svelte # Card flip/reveal animation
+│   │   │   ├── OptimizedCardImage.svelte # Optimized image display with lazy loading
 │   │   │   ├── PriceDisplay.svelte # Price information display
 │   │   │   ├── PriceTrends.svelte  # Price trend charts
 │   │   │   ├── StatsStrip.svelte   # Collection statistics bar
-│   │   │   ├── BottomSheet.svelte  # Mobile bottom sheet UI
+│   │   │   ├── PremiumGate.svelte  # Premium feature gating component
+│   │   │   ├── ProfilePrompt.svelte# User profile setup prompt
 │   │   │   ├── Toast.svelte        # Toast notification component
 │   │   │   ├── ThemeSwitcher.svelte# Theme toggle
 │   │   │   ├── InstallPrompt.svelte# PWA install prompt
 │   │   │   └── Onboarding.svelte   # New user onboarding flow
 │   │   ├── data/
 │   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards)
+│   │   │   ├── play-cards.json     # Play card master list (~2,100+ cards with DBS values)
 │   │   │   ├── static-cards.ts     # Maps raw JSON to Card type
 │   │   │   ├── boba-config.ts      # OCR regions, scan config, rarities, weapons
-│   │   │   └── boba-heroes.ts      # Hero name → athlete name mappings
+│   │   │   ├── boba-heroes.ts      # Hero name → athlete name mappings
+│   │   │   ├── boba-weapons.ts     # Weapon hierarchy with rarity and tier rankings
+│   │   │   ├── boba-parallels.ts   # All parallel/treatment types with Madness unlock eligibility
+│   │   │   ├── boba-dbs-scores.ts  # DBS point values for Play cards (200+ entries, auto-generated from play-cards.json)
+│   │   │   └── tournament-formats.ts # Machine-readable rules for all 6 competitive formats
 │   │   ├── server/
 │   │   │   ├── rate-limit.ts       # Upstash Redis rate limiting + in-memory fallback
 │   │   │   ├── redis.ts            # Redis client singleton
-│   │   │   └── ebay-auth.ts        # eBay OAuth token management
+│   │   │   ├── ebay-auth.ts        # eBay OAuth token management (Browse API)
+│   │   │   ├── ebay-seller-auth.ts # eBay Seller OAuth Authorization Code Grant (per-user)
+│   │   │   └── grading-prompts.ts  # Card grading prompt construction for Claude Vision
 │   │   ├── services/
 │   │   │   ├── recognition.ts      # Three-tier recognition pipeline (core logic)
 │   │   │   ├── card-db.ts          # Card database: load, index, search, fuzzy match
+│   │   │   ├── ocr.ts              # OCR service layer
 │   │   │   ├── supabase.ts         # Browser Supabase client (optional, null-safe)
 │   │   │   ├── camera.ts           # Camera access and capture
 │   │   │   ├── idb.ts              # IndexedDB wrapper (cards, hashes, collections, prices)
 │   │   │   ├── sync.ts             # Collection sync (IDB ↔ Supabase)
+│   │   │   ├── collection-service.ts # Collection business logic
+│   │   │   ├── deck-validator.ts   # Deck building rules validation
 │   │   │   ├── ebay.ts             # eBay client-side price fetching
+│   │   │   ├── listing-generator.ts# eBay listing template generation (titles, descriptions)
+│   │   │   ├── parallel-config.ts  # Parallel/treatment configuration
 │   │   │   ├── scan-learning.ts    # Correction tracking for scan improvement
 │   │   │   ├── export-templates.ts # Export format definitions
 │   │   │   ├── error-tracking.ts   # Client error reporting
@@ -117,10 +152,24 @@ BOBA-Scanner/
 │   │   ├── types/
 │   │   │   ├── index.ts            # App types (Card, ScanResult, PriceData, etc.)
 │   │   │   └── database.ts         # Supabase database types
-│   │   ├── utils/index.ts          # Shared utilities (escapeHtml, formatPrice, debounce)
+│   │   ├── utils/
+│   │   │   ├── index.ts            # Shared utilities (escapeHtml, formatPrice, debounce)
+│   │   │   ├── extract-card-number.ts # OCR card number extraction logic
+│   │   │   ├── haptics.ts          # Vibration/haptics patterns for mobile
+│   │   │   ├── image-url.ts        # Image URL generation and caching
+│   │   │   └── pricing.ts          # Price calculation and formatting
 │   │   └── workers/
-│   │       ├── image-processor.js  # Web Worker: dHash, resize, blur detection, OCR preprocess
-│   │       └── ocr-worker.js       # Web Worker: Tesseract.js OCR
+│   │       └── image-processor.ts  # Web Worker: dHash, resize, blur detection, OCR preprocess
+├── tests/
+│   ├── card-db.test.ts             # Unit: card database operations (15 cases)
+│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction (12 cases)
+│   ├── rate-limit.test.ts          # Unit: rate limiting logic (7 cases)
+│   ├── api-config.integration.test.ts  # Integration: config API (3 cases)
+│   ├── api-price.integration.test.ts   # Integration: price API (8 cases)
+│   ├── api-scan.integration.test.ts    # Integration: scan API (15 cases)
+│   ├── api-grade.integration.test.ts   # Integration: grade API (12 cases)
+│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes (13 cases)
+│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (16 cases)
 ├── static/
 │   ├── manifest.json               # PWA manifest
 │   ├── sw.js                       # Service Worker (differentiated caching)
@@ -131,10 +180,10 @@ BOBA-Scanner/
 │   └── supabase-full-setup.sql     # Complete setup including functions/triggers
 ├── scripts/
 │   └── generate-card-seed.js       # Generate SQL seed from card-database.json
-├── middleware.js                    # Vercel Edge Middleware: bot/scraper blocking
+├── middleware.js                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
 ├── svelte.config.js                # SvelteKit config (Vercel adapter, path aliases)
-├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers)
-├── tsconfig.json                   # TypeScript config (strict, bundler resolution)
+├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers as ES modules)
+├── tsconfig.json                   # TypeScript config (strict, bundler resolution, excludes tests/)
 ├── vercel.json                     # Vercel headers (CSP, security, caching)
 └── .github/workflows/ci.yml        # CI: type check → test → build → bundle size check
 ```
@@ -147,7 +196,7 @@ The core scanning feature uses a waterfall approach to minimize API costs:
 
 1. **Tier 1 — Hash Cache (Free, instant)**: Computes a perceptual hash (dHash) of the card image using a Web Worker, then checks IndexedDB and Supabase `hash_cache` for a match. Previously scanned cards are recognized in <50ms.
 
-2. **Tier 2 — OCR + Fuzzy Match (Free, ~1-3s)**: Tesseract.js extracts text from configurable card regions (defined in `boba-config.ts`). The extracted card number is fuzzy-matched against the local card database using Levenshtein distance.
+2. **Tier 2 — OCR + Fuzzy Match (Free, ~1-3s)**: Tesseract.js extracts text from configurable card regions (defined in `boba-config.ts`). The extracted card number is fuzzy-matched against the local card database using Levenshtein distance. OCR extraction logic lives in `utils/extract-card-number.ts`.
 
 3. **Tier 3 — Claude AI (~$0.002/scan)**: If Tiers 1-2 fail, the card image is sent to `POST /api/scan` where it's sanitized via sharp (EXIF stripping, pixel bomb protection, re-encoding) and sent to Claude Haiku for identification.
 
@@ -161,8 +210,9 @@ The card database has a layered loading strategy (see `card-db.ts`):
 ### Authentication
 
 - Google OAuth via Supabase Auth
+- eBay Seller OAuth via Authorization Code Grant (per-user, managed by `ebay-seller-auth.ts`)
 - Server-side auth via `hooks.server.ts` using `getUser()` (JWT validation, not just session cookies)
-- Protected routes: `/collection`, `/deck`, `/scan`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`
+- Protected routes: `/collection`, `/deck`, `/scan`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`, `/dbs`
 - API routes handle their own auth checks
 
 ### Data Flow
@@ -170,6 +220,20 @@ The card database has a layered loading strategy (see `card-db.ts`):
 - **Client state**: Svelte stores (`src/lib/stores/`) backed by IndexedDB for offline persistence
 - **Server state**: Supabase PostgreSQL (collections synced via `sync.ts`)
 - **Offline support**: Service Worker caches app shell, card database served stale-while-revalidate, API calls always go to network
+
+## Testing
+
+The test suite (~101 test cases across 9 files) uses Vitest with three tiers:
+
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`
+- **Integration tests**: `api-config`, `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
+- **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
+
+Testing patterns:
+- Mocking via `vi.mock()`, `vi.hoisted()`, `vi.fn()`
+- External dependencies mocked: sharp, Anthropic SDK, Supabase, Redis, IndexedDB
+- Tests live in `/tests/` directory (excluded from `tsconfig.json`)
+- Run with `npm test` (single run) or `npm run test:watch` (watch mode)
 
 ## BoBA Game Domain Knowledge
 
@@ -183,7 +247,7 @@ Bo Jackson Battle Arena (BoBA) is a collectible trading card game where professi
 ### Power Systems
 - **SPEC Power**: Cap on the maximum Power of any INDIVIDUAL Hero card (e.g., SPEC 160 = no card above 160 Power).
 - **Combined Power (CP)**: Cap on the SUM of all Hero Power values in the deck (e.g., 8,250 CP across 60 cards).
-- **DBS (Deck Balancing Score)**: Point budget for the Playbook. Each Play has a DBS value. Total must not exceed 1,000.
+- **DBS (Deck Balancing Score)**: Point budget for the Playbook. Each Play has a DBS value. Total must not exceed 1,000. DBS values are stored in `play-cards.json` and exposed via `boba-dbs-scores.ts`.
 
 ### Weapon Types (rarity order, most rare first)
 Super (1/1) → Gum (secret) → Hex (/10) → Glow (/25) → Fire (/50) → Ice (/50) → Steel (common) → Brawl (common, 2026+)
@@ -193,6 +257,8 @@ Super (1/1) → Gum (secret) → Hex (/10) → Glow (/25) → Fire (/50) → Ice
 - Max 1 copy of each unique variation (hero + weapon + parallel combination)
 - All 30 Plays must be unique
 - No limit on copies of the same hero character across different variations
+
+Deck validation logic is implemented in `src/lib/services/deck-validator.ts`.
 
 ### Tournament Formats
 Format rules are defined in `src/lib/data/tournament-formats.ts`. Key formats:
@@ -208,7 +274,8 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/boba-weapons.ts` — Weapon hierarchy with rarity and tier rankings
 - `src/lib/data/boba-parallels.ts` — All parallel/treatment types with Madness unlock eligibility
 - `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
-- `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (placeholder, to be populated)
+- `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (200+ entries, auto-generated from play-cards.json)
+- `src/lib/data/play-cards.json` — Master Play card database (~2,100+ cards with DBS, hot dog costs, abilities)
 - `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
 - `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions
 
@@ -220,7 +287,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - **TypeScript strict mode**: All new code must be type-safe
 - **Path aliases**: Use `$lib/`, `$components/`, `$services/`, `$stores/`, `$workers/`, `$types/` (defined in `svelte.config.js`)
 - **Server-only code**: Files in `src/lib/server/` — never import these from client code
-- **Workers excluded from type checking**: `src/lib/workers/` is in `tsconfig.json` exclude list (plain JS)
+- **Web Workers**: `src/lib/workers/` contains TypeScript workers bundled as ES modules (`worker: { format: 'es' }` in vite.config.ts)
 
 ### API Route Patterns
 
@@ -239,7 +306,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 ### Security
 
 - Image uploads sanitized via sharp CDR (Content Disarm & Reconstruction): EXIF stripping, pixel bomb protection, re-encoding
-- Bot/scraper protection via Vercel Edge Middleware (`middleware.js`)
+- Bot/scraper protection via Vercel Edge Middleware (`middleware.js`) — blocks bots, missing User-Agent, suspicious headers, and AI training crawlers (GPTBot, ClaudeBot, etc.)
 - CSP headers configured in `vercel.json`
 - No direct RLS — auth enforced at application level (hooks + API checks)
 - Rate limiting on all mutation endpoints
@@ -272,7 +339,9 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`:
 2. `npm run check` — TypeScript + Svelte type checking
 3. `npm test` — Run vitest test suite
 4. `npm run build` — Production build
-5. Bundle size check — JS output must be under 200KB
+5. Bundle size check — Two-tier limits:
+   - **App JS** (excluding card database): must be under 550KB
+   - **Total JS** (including ~2.7MB card database): must be under 4MB
 
 ## Common Tasks
 
@@ -301,4 +370,11 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`:
 - Configuration in `src/lib/data/boba-config.ts` (OCR regions, thresholds)
 - Core pipeline logic in `src/lib/services/recognition.ts`
 - Card matching in `src/lib/services/card-db.ts`
-- Image/OCR workers in `src/lib/workers/`
+- OCR extraction in `src/lib/utils/extract-card-number.ts`
+- Image worker in `src/lib/workers/image-processor.ts`
+
+### Adding tests
+1. Create test file in `tests/` directory
+2. Name convention: `<module>.test.ts` (unit), `<module>.integration.test.ts` (integration), `<module>.e2e.test.ts` (E2E)
+3. Mock external dependencies (sharp, Anthropic, Supabase, Redis) using `vi.mock()`
+4. Run with `npm test` or `npm run test:watch`
