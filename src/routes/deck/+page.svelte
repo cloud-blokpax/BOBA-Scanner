@@ -1,120 +1,482 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import type { CollectionItem } from '$lib/types';
+	import { validateDeck } from '$lib/services/deck-validator';
+	import type { CollectionItem, Card } from '$lib/types';
+	import type { PlayCardData } from '$lib/data/boba-dbs-scores';
 
-	let deckCards = $state<CollectionItem[]>([]);
+	let { data } = $props();
+
+	// ── Deck state ─────────────────────────────────────────
 	let deckName = $state('My Deck');
+	let selectedFormatId = $state('spec_playmaker');
+	let heroCards = $state<CollectionItem[]>([]);
+	let playEntries = $state<Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>>([]);
+	let hotDogCount = $state(10);
 
-	const MAX_DECK_SIZE = 30;
+	// ── UI state ───────────────────────────────────────────
+	let activeTab = $state<'heroes' | 'plays' | 'stats'>('heroes');
+	let heroSearch = $state('');
+	let playSearch = $state('');
+	let selectedPlaySet = $state('all');
+	let showAffordableOnly = $state(false);
+	let savedMessage = $state<string | null>(null);
 
+	// ── Derived: DBS calculations ──────────────────────────
+	const totalDbs = $derived(playEntries.reduce((sum, p) => sum + p.dbs, 0));
+	const dbsBudgetPercent = $derived(Math.min(100, (totalDbs / 1000) * 100));
+	const dbsBudgetColor = $derived(
+		totalDbs <= 700 ? 'var(--color-success, #22C55E)' :
+		totalDbs <= 900 ? 'var(--color-warning, #F59E0B)' :
+		'var(--color-error, #EF4444)'
+	);
+
+	// ── Derived: hero stats ────────────────────────────────
 	const totalPower = $derived(
-		deckCards.reduce((sum, item) => sum + (item.card?.power || 0), 0)
+		heroCards.reduce((sum, item) => sum + (item.card?.power || 0), 0)
 	);
 
 	const weaponCounts = $derived.by(() => {
 		const counts: Record<string, number> = {};
-		for (const item of deckCards) {
+		for (const item of heroCards) {
 			const weapon = item.card?.weapon_type || 'None';
 			counts[weapon] = (counts[weapon] || 0) + 1;
 		}
 		return counts;
 	});
 
-	onMount(() => {
-		loadCollection();
+	const powerLevelCounts = $derived.by(() => {
+		const counts: Record<number, number> = {};
+		for (const item of heroCards) {
+			const p = item.card?.power || 0;
+			counts[p] = (counts[p] || 0) + 1;
+		}
+		return counts;
 	});
 
-	function addToDeck(item: CollectionItem) {
-		if (deckCards.length >= MAX_DECK_SIZE) return;
-		if (deckCards.some((d) => d.id === item.id)) return;
-		deckCards = [...deckCards, item];
+	// ── Derived: validation ────────────────────────────────
+	const validationResult = $derived.by(() => {
+		const cards = heroCards
+			.map(item => item.card)
+			.filter((c): c is Card => c !== null && c !== undefined);
+		const playCards = playEntries.map(p => ({
+			id: `play-${p.cardNumber}`,
+			name: p.name,
+			hero_name: null,
+			athlete_name: null,
+			set_code: p.setCode,
+			card_number: p.cardNumber,
+			parallel: null,
+			power: null,
+			rarity: null,
+			weapon_type: null,
+			battle_zone: null,
+			image_url: null,
+			created_at: ''
+		} satisfies Card));
+		return validateDeck(cards, selectedFormatId, playCards, []);
+	});
+
+	// ── Derived: filtered play cards ───────────────────────
+	const allPlayCards = $derived.by(() => {
+		const cards: PlayCardData[] = [];
+		for (const [setCode, setCards] of Object.entries(data.playCardsBySet)) {
+			for (const card of setCards) {
+				cards.push({ ...card, release: setCode });
+			}
+		}
+		return cards;
+	});
+
+	const filteredPlayCards = $derived.by(() => {
+		let cards = allPlayCards;
+		if (selectedPlaySet !== 'all') {
+			cards = cards.filter(c => c.release === selectedPlaySet);
+		}
+		if (playSearch) {
+			const q = playSearch.toLowerCase();
+			cards = cards.filter(c =>
+				c.name.toLowerCase().includes(q) ||
+				c.card_number.toLowerCase().includes(q)
+			);
+		}
+		if (showAffordableOnly) {
+			const remaining = 1000 - totalDbs;
+			cards = cards.filter(c => c.dbs <= remaining);
+		}
+		// Exclude already-added plays
+		const addedKeys = new Set(playEntries.map(p => `${p.setCode}:${p.cardNumber}`));
+		cards = cards.filter(c => !addedKeys.has(`${c.release}:${c.card_number}`));
+		return cards;
+	});
+
+	// ── Filtered heroes from collection ────────────────────
+	const filteredCollectionHeroes = $derived.by(() => {
+		const items = $collectionItems;
+		if (!heroSearch) return items;
+		const q = heroSearch.toLowerCase();
+		return items.filter(item =>
+			(item.card?.name || '').toLowerCase().includes(q) ||
+			(item.card?.hero_name || '').toLowerCase().includes(q) ||
+			(item.card?.card_number || '').toLowerCase().includes(q)
+		);
+	});
+
+	onMount(() => {
+		loadCollection();
+		loadDeckFromStorage();
+	});
+
+	// ── Hero deck operations ───────────────────────────────
+	function addHeroToDeck(item: CollectionItem) {
+		if (heroCards.length >= 70) return;
+		if (heroCards.some(d => d.id === item.id)) return;
+		heroCards = [...heroCards, item];
+		saveDeckToStorage();
 	}
 
-	function removeFromDeck(itemId: string) {
-		deckCards = deckCards.filter((d) => d.id !== itemId);
+	function removeHero(itemId: string) {
+		heroCards = heroCards.filter(d => d.id !== itemId);
+		saveDeckToStorage();
+	}
+
+	// ── Play deck operations ───────────────────────────────
+	function addPlay(card: PlayCardData) {
+		const key = `${card.release}:${card.card_number}`;
+		if (playEntries.some(p => `${p.setCode}:${p.cardNumber}` === key)) return;
+		if (playEntries.length >= 55) return; // 30 + 25 bonus max
+		playEntries = [...playEntries, {
+			cardNumber: card.card_number,
+			setCode: card.release,
+			name: card.name,
+			dbs: card.dbs
+		}];
+		saveDeckToStorage();
+	}
+
+	function removePlay(index: number) {
+		playEntries = playEntries.filter((_, i) => i !== index);
+		saveDeckToStorage();
+	}
+
+	// ── DBS badge color ────────────────────────────────────
+	function dbsBadgeColor(dbs: number): string {
+		if (dbs <= 20) return '#22C55E';
+		if (dbs <= 40) return '#F59E0B';
+		if (dbs <= 60) return '#F97316';
+		return '#EF4444';
+	}
+
+	// ── Persistence (localStorage) ─────────────────────────
+	function saveDeckToStorage() {
+		try {
+			const deck = {
+				name: deckName,
+				formatId: selectedFormatId,
+				heroCardIds: heroCards.map(h => h.id),
+				playEntries,
+				hotDogCount
+			};
+			localStorage.setItem('boba-deck-draft', JSON.stringify(deck));
+		} catch { /* ignore */ }
+	}
+
+	function loadDeckFromStorage() {
+		try {
+			const raw = localStorage.getItem('boba-deck-draft');
+			if (!raw) return;
+			const deck = JSON.parse(raw);
+			deckName = deck.name || 'My Deck';
+			selectedFormatId = deck.formatId || 'spec_playmaker';
+			hotDogCount = deck.hotDogCount ?? 10;
+			playEntries = deck.playEntries || [];
+			// Hero cards will be resolved after collection loads
+			if (deck.heroCardIds?.length) {
+				const resolveHeroes = () => {
+					const items = $collectionItems;
+					if (items.length === 0) return;
+					const idSet = new Set(deck.heroCardIds as string[]);
+					heroCards = items.filter(item => idSet.has(item.id));
+				};
+				// Try immediately and also after a short delay for collection load
+				resolveHeroes();
+				setTimeout(resolveHeroes, 500);
+			}
+		} catch { /* ignore */ }
+	}
+
+	function clearDeck() {
+		heroCards = [];
+		playEntries = [];
+		hotDogCount = 10;
+		localStorage.removeItem('boba-deck-draft');
 	}
 </script>
 
 <svelte:head>
-	<title>Deck Builder | BOBA Scanner</title>
+	<title>{deckName} | Deck Builder | BOBA Scanner</title>
 </svelte:head>
 
 <div class="deck-page">
+	<!-- Header -->
 	<div class="deck-header">
 		<input
 			type="text"
 			bind:value={deckName}
 			class="deck-name-input"
 			placeholder="Deck name..."
+			oninput={saveDeckToStorage}
 		/>
-		<span class="deck-count">{deckCards.length}/{MAX_DECK_SIZE}</span>
+		<div class="header-actions">
+			<select bind:value={selectedFormatId} class="format-select" onchange={saveDeckToStorage}>
+				{#each data.formats as fmt}
+					<option value={fmt.id}>{fmt.name}</option>
+				{/each}
+			</select>
+			<button class="clear-btn" onclick={clearDeck}>Clear</button>
+		</div>
+	</div>
+
+	<!-- Tab navigation (mobile) -->
+	<div class="tab-nav">
+		<button class="tab-btn" class:active={activeTab === 'heroes'} onclick={() => activeTab = 'heroes'}>
+			Heroes ({heroCards.length})
+		</button>
+		<button class="tab-btn" class:active={activeTab === 'plays'} onclick={() => activeTab = 'plays'}>
+			Plays ({playEntries.length})
+		</button>
+		<button class="tab-btn" class:active={activeTab === 'stats'} onclick={() => activeTab = 'stats'}>
+			Stats
+		</button>
 	</div>
 
 	<div class="deck-layout">
-		<!-- Current deck -->
-		<div class="deck-panel">
-			<h2>Deck ({deckCards.length})</h2>
+		<!-- Hero Deck Panel -->
+		<div class="panel" class:panel-hidden={activeTab !== 'heroes'}>
+			<h2>Hero Deck <span class="panel-count">{heroCards.length}/60{heroCards.length > 60 ? '+' : ''}</span></h2>
 
-			<div class="deck-stats">
-				<span>Total Power: {totalPower}</span>
-				{#each Object.entries(weaponCounts) as [weapon, count]}
-					<span class="weapon-stat">{weapon}: {count}</span>
-				{/each}
-			</div>
+			<!-- Hero search -->
+			<input
+				type="text"
+				bind:value={heroSearch}
+				class="search-input"
+				placeholder="Search collection..."
+			/>
 
-			<div class="deck-list">
-				{#each deckCards as item (item.id)}
-					<div class="deck-card">
-						<span class="deck-card-name">{item.card?.name}</span>
+			<!-- Current heroes in deck -->
+			<div class="card-list">
+				{#each heroCards as item, i (item.id)}
+					<div class="deck-card" class:deck-card-over={i >= 60}>
+						<span class="deck-card-name">{item.card?.hero_name || item.card?.name}</span>
+						<span class="deck-card-number">{item.card?.card_number}</span>
 						{#if item.card?.power}
 							<span class="deck-card-power">PWR {item.card.power}</span>
 						{/if}
-						<button class="remove-btn" onclick={() => removeFromDeck(item.id)}>x</button>
+						{#if item.card?.weapon_type}
+							<span class="deck-card-weapon">{item.card.weapon_type}</span>
+						{/if}
+						<button class="remove-btn" onclick={() => removeHero(item.id)}>x</button>
 					</div>
 				{:else}
-					<p class="empty-deck">Add cards from your collection</p>
+					<p class="empty-msg">Add heroes from your collection below</p>
+				{/each}
+			</div>
+
+			<!-- Available heroes -->
+			<h3 class="sub-heading">Collection</h3>
+			<div class="card-list available-list">
+				{#each filteredCollectionHeroes as item (item.id)}
+					{@const inDeck = heroCards.some(d => d.id === item.id)}
+					<button
+						class="available-card"
+						class:in-deck={inDeck}
+						onclick={() => addHeroToDeck(item)}
+						disabled={inDeck || heroCards.length >= 70}
+					>
+						<span class="avail-name">{item.card?.hero_name || item.card?.name}</span>
+						<span class="avail-number">{item.card?.card_number}</span>
+						{#if item.card?.power}
+							<span class="avail-power">PWR {item.card.power}</span>
+						{/if}
+					</button>
+				{:else}
+					<p class="empty-msg">No cards in collection</p>
 				{/each}
 			</div>
 		</div>
 
-		<!-- Available cards from collection -->
-		<div class="collection-panel">
-			<h2>Collection</h2>
-			<div class="available-list">
-				{#each $collectionItems as item (item.id)}
-					{@const inDeck = deckCards.some((d) => d.id === item.id)}
-					<button
-						class="available-card"
-						class:in-deck={inDeck}
-						onclick={() => addToDeck(item)}
-						disabled={inDeck || deckCards.length >= MAX_DECK_SIZE}
-					>
-						<span>{item.card?.name}</span>
-						{#if item.card?.power}
-							<span class="avail-power">{item.card.power}</span>
-						{/if}
+		<!-- Playbook Panel -->
+		<div class="panel" class:panel-hidden={activeTab !== 'plays'}>
+			<h2>Playbook <span class="panel-count">{playEntries.length}/30{playEntries.length > 30 ? ' (+bonus)' : ''}</span></h2>
+
+			<!-- DBS Budget Bar -->
+			<div class="dbs-bar" role="progressbar" aria-valuenow={totalDbs} aria-valuemax={1000}>
+				<div class="dbs-bar-label">DBS: {totalDbs} / 1,000</div>
+				<div class="dbs-bar-track">
+					<div class="dbs-bar-fill" style:width="{dbsBudgetPercent}%" style:background={dbsBudgetColor}></div>
+				</div>
+				{#if totalDbs > 1000}
+					<div class="dbs-bar-over">Over budget by {totalDbs - 1000}</div>
+				{/if}
+			</div>
+
+			<!-- Current plays -->
+			<div class="card-list">
+				{#each playEntries as play, i}
+					<div class="deck-card play-card">
+						<span class="play-name">{play.name}</span>
+						<span class="play-number">{play.cardNumber}</span>
+						<span class="dbs-badge" style:background={dbsBadgeColor(play.dbs)}>{play.dbs}</span>
+						<button class="remove-btn" onclick={() => removePlay(i)}>x</button>
+					</div>
+				{:else}
+					<p class="empty-msg">Add plays from the catalog below</p>
+				{/each}
+			</div>
+
+			<!-- Play search & filters -->
+			<h3 class="sub-heading">Play Catalog</h3>
+			<div class="play-filters">
+				<input
+					type="text"
+					bind:value={playSearch}
+					class="search-input"
+					placeholder="Search plays..."
+				/>
+				<select bind:value={selectedPlaySet} class="set-filter">
+					<option value="all">All Sets</option>
+					{#each Object.keys(data.playCardsBySet) as setCode}
+						<option value={setCode}>{setCode}</option>
+					{/each}
+				</select>
+				<button
+					class="affordable-toggle"
+					class:active={showAffordableOnly}
+					onclick={() => showAffordableOnly = !showAffordableOnly}
+				>
+					Affordable ({1000 - totalDbs} left)
+				</button>
+			</div>
+
+			<div class="card-list available-list">
+				{#each filteredPlayCards as card}
+					<button class="available-card play-available" onclick={() => addPlay(card)}>
+						<span class="avail-name">{card.name}</span>
+						<span class="avail-number">{card.card_number}</span>
+						<span class="dbs-badge" style:background={dbsBadgeColor(card.dbs)}>{card.dbs}</span>
 					</button>
 				{:else}
-					<p class="empty-collection">No cards in collection</p>
+					<p class="empty-msg">{showAffordableOnly ? 'No affordable plays remaining' : 'No plays match your search'}</p>
 				{/each}
 			</div>
 		</div>
+
+		<!-- Stats & Validation Panel -->
+		<div class="panel" class:panel-hidden={activeTab !== 'stats'}>
+			<h2>Deck Stats</h2>
+
+			<!-- Validation status -->
+			<div class="validation-section">
+				<div class="validation-header" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
+					{validationResult.isValid ? 'Deck is Valid' : `${validationResult.violations.filter(v => v.severity === 'error').length} Violation(s)`}
+				</div>
+
+				{#each validationResult.violations as violation}
+					<div class="violation" class:violation-error={violation.severity === 'error'} class:violation-warning={violation.severity === 'warning'}>
+						<span class="violation-icon">{violation.severity === 'error' ? 'x' : '!'}</span>
+						<span>{violation.message}</span>
+					</div>
+				{/each}
+
+				{#each validationResult.warnings as warning}
+					<div class="violation violation-warning">
+						<span class="violation-icon">!</span>
+						<span>{warning}</span>
+					</div>
+				{/each}
+			</div>
+
+			<!-- Stats -->
+			<div class="stats-grid">
+				<div class="stat-card">
+					<div class="stat-value">{heroCards.length}</div>
+					<div class="stat-label">Heroes</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{totalPower.toLocaleString()}</div>
+					<div class="stat-label">Total Power</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{heroCards.length > 0 ? Math.round(totalPower / heroCards.length) : 0}</div>
+					<div class="stat-label">Avg Power</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{playEntries.length}</div>
+					<div class="stat-label">Plays</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{totalDbs}</div>
+					<div class="stat-label">DBS Total</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{hotDogCount}</div>
+					<div class="stat-label">Hot Dogs</div>
+				</div>
+			</div>
+
+			<!-- Weapon distribution -->
+			{#if Object.keys(weaponCounts).length > 0}
+				<h3 class="sub-heading">Weapon Distribution</h3>
+				<div class="distribution-list">
+					{#each Object.entries(weaponCounts).sort((a, b) => b[1] - a[1]) as [weapon, count]}
+						<div class="dist-item">
+							<span class="dist-label">{weapon}</span>
+							<div class="dist-bar-track">
+								<div class="dist-bar-fill" style:width="{(count / heroCards.length) * 100}%"></div>
+							</div>
+							<span class="dist-count">{count}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Power curve -->
+			{#if Object.keys(powerLevelCounts).length > 0}
+				<h3 class="sub-heading">Power Curve</h3>
+				<div class="distribution-list">
+					{#each Object.entries(powerLevelCounts).sort((a, b) => Number(a[0]) - Number(b[0])) as [power, count]}
+						<div class="dist-item">
+							<span class="dist-label">{power}</span>
+							<div class="dist-bar-track">
+								<div class="dist-bar-fill" style:width="{(count / Math.max(...Object.values(powerLevelCounts))) * 100}%"></div>
+							</div>
+							<span class="dist-count">{count}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
+
+	{#if savedMessage}
+		<div class="save-toast">{savedMessage}</div>
+	{/if}
 </div>
 
 <style>
 	.deck-page {
-		max-width: 1000px;
+		max-width: 1200px;
 		margin: 0 auto;
-		padding: 1.5rem 1rem;
+		padding: 1rem;
 	}
 
 	.deck-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1.5rem;
+		margin-bottom: 1rem;
+		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	.deck-name-input {
@@ -126,6 +488,8 @@
 		color: var(--text-primary, #f1f5f9);
 		padding: 0.25rem 0;
 		border-bottom: 2px solid transparent;
+		min-width: 0;
+		flex: 1;
 	}
 
 	.deck-name-input:focus {
@@ -133,117 +497,370 @@
 		border-bottom-color: var(--accent-primary, #3b82f6);
 	}
 
-	.deck-count {
-		font-size: 0.9rem;
-		color: var(--text-secondary, #94a3b8);
+	.header-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
 	}
 
+	.format-select {
+		padding: 0.375rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-primary, #f1f5f9);
+		font-size: 0.85rem;
+	}
+
+	.clear-btn {
+		padding: 0.375rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.clear-btn:hover { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
+
+	/* Tab navigation */
+	.tab-nav {
+		display: flex;
+		gap: 0;
+		margin-bottom: 1rem;
+		border-bottom: 1px solid var(--border-color, #1e293b);
+	}
+
+	.tab-btn {
+		flex: 1;
+		padding: 0.625rem 0.5rem;
+		border: none;
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		border-bottom: 2px solid transparent;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.tab-btn.active {
+		color: var(--text-primary, #f1f5f9);
+		border-bottom-color: var(--accent-primary, #3b82f6);
+	}
+
+	/* Layout */
 	.deck-layout {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 1fr;
 		gap: 1.5rem;
 	}
 
-	.deck-panel h2,
-	.collection-panel h2 {
+	.panel { display: block; }
+	.panel-hidden { display: none; }
+
+	@media (min-width: 768px) {
+		.tab-nav { display: none; }
+		.deck-layout { grid-template-columns: 1fr 1fr 1fr; }
+		.panel { display: block !important; }
+		.panel-hidden { display: block !important; }
+	}
+
+	.panel h2 {
 		font-size: 1rem;
 		font-weight: 600;
 		margin-bottom: 0.75rem;
 		color: var(--text-secondary, #94a3b8);
 	}
 
-	.deck-stats {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-		font-size: 0.8rem;
+	.panel-count {
+		color: var(--text-tertiary, #64748b);
+		font-weight: 400;
+	}
+
+	.sub-heading {
+		font-size: 0.85rem;
+		font-weight: 600;
+		margin: 1rem 0 0.5rem;
 		color: var(--text-secondary, #94a3b8);
 	}
 
-	.weapon-stat {
-		padding: 0.125rem 0.5rem;
-		border-radius: 4px;
-		background: var(--surface-secondary, #0d1524);
+	/* Search */
+	.search-input {
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-primary, #f1f5f9);
+		font-size: 0.85rem;
+		margin-bottom: 0.75rem;
 	}
 
-	.deck-list,
-	.available-list {
+	.search-input:focus { outline: none; border-color: var(--accent-primary, #3b82f6); }
+
+	/* Card lists */
+	.card-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.375rem;
+		max-height: 300px;
+		overflow-y: auto;
 	}
+
+	.available-list { max-height: 250px; }
 
 	.deck-card {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: var(--surface-secondary, #0d1524);
+		gap: 0.5rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
+		background: var(--bg-surface, #0d1524);
 		border: 1px solid var(--border-color, #1e293b);
+		font-size: 0.85rem;
 	}
 
-	.deck-card-name {
-		flex: 1;
-		font-size: 0.9rem;
+	.deck-card-over {
+		border-color: rgba(168, 85, 247, 0.3);
+		background: rgba(168, 85, 247, 0.05);
 	}
 
-	.deck-card-power {
-		font-size: 0.8rem;
-		color: var(--accent-gold, #f59e0b);
-		font-weight: 600;
-	}
+	.deck-card-name, .play-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.deck-card-number, .play-number { color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
+	.deck-card-power { color: var(--accent-gold, #f59e0b); font-weight: 600; font-size: 0.8rem; }
+	.deck-card-weapon { color: var(--text-secondary, #94a3b8); font-size: 0.75rem; }
 
 	.remove-btn {
 		background: none;
 		border: none;
 		color: var(--text-secondary, #94a3b8);
 		cursor: pointer;
-		padding: 0.25rem 0.5rem;
+		padding: 0.125rem 0.375rem;
+		font-size: 0.8rem;
+		border-radius: 4px;
+		flex-shrink: 0;
 	}
+
+	.remove-btn:hover { color: var(--color-error, #ef4444); background: rgba(239, 68, 68, 0.1); }
 
 	.available-card {
 		display: flex;
-		justify-content: space-between;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
 		border: 1px solid var(--border-color, #1e293b);
-		background: var(--surface-secondary, #0d1524);
+		background: var(--bg-surface, #0d1524);
 		color: var(--text-primary, #f1f5f9);
 		cursor: pointer;
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 		text-align: left;
+		width: 100%;
 	}
 
-	.available-card:hover:not(:disabled) {
-		border-color: var(--accent-primary, #3b82f6);
-	}
+	.available-card:hover:not(:disabled) { border-color: var(--accent-primary, #3b82f6); }
+	.available-card.in-deck { opacity: 0.35; }
+	.available-card:disabled { cursor: not-allowed; }
 
-	.available-card.in-deck {
-		opacity: 0.4;
-	}
+	.avail-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.avail-number { color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
+	.avail-power { color: var(--accent-gold, #f59e0b); font-size: 0.8rem; font-weight: 600; flex-shrink: 0; }
 
-	.available-card:disabled {
-		cursor: not-allowed;
-	}
-
-	.avail-power {
-		font-size: 0.8rem;
-		color: var(--accent-gold, #f59e0b);
-	}
-
-	.empty-deck,
-	.empty-collection {
+	.empty-msg {
 		text-align: center;
 		color: var(--text-secondary, #94a3b8);
-		padding: 2rem;
-		font-size: 0.9rem;
+		padding: 1.5rem;
+		font-size: 0.85rem;
 	}
 
-	@media (max-width: 600px) {
-		.deck-layout {
-			grid-template-columns: 1fr;
-		}
+	/* DBS Budget Bar */
+	.dbs-bar {
+		margin-bottom: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		background: var(--bg-surface, #0d1524);
+		border: 1px solid var(--border-color, #1e293b);
+	}
+
+	.dbs-bar-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-primary, #f1f5f9);
+		margin-bottom: 0.375rem;
+	}
+
+	.dbs-bar-track {
+		height: 6px;
+		border-radius: 3px;
+		background: var(--bg-elevated, #1e293b);
+		overflow: hidden;
+	}
+
+	.dbs-bar-fill {
+		height: 100%;
+		border-radius: 3px;
+		transition: width 0.3s ease, background 0.3s ease;
+	}
+
+	.dbs-bar-over {
+		font-size: 0.75rem;
+		color: var(--color-error, #ef4444);
+		font-weight: 600;
+		margin-top: 0.25rem;
+	}
+
+	/* DBS Badge */
+	.dbs-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		padding: 0.125rem 0.375rem;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: white;
+		flex-shrink: 0;
+	}
+
+	/* Play filters */
+	.play-filters {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.5rem;
+	}
+
+	.play-filters .search-input { flex: 1; min-width: 120px; margin-bottom: 0; }
+
+	.set-filter {
+		padding: 0.375rem 0.5rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-primary, #f1f5f9);
+		font-size: 0.8rem;
+	}
+
+	.affordable-toggle {
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.8rem;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.affordable-toggle.active {
+		background: rgba(34, 197, 94, 0.1);
+		border-color: rgba(34, 197, 94, 0.3);
+		color: #22C55E;
+	}
+
+	/* Validation */
+	.validation-section { margin-bottom: 1rem; }
+
+	.validation-header {
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+	}
+
+	.validation-header.valid {
+		background: rgba(34, 197, 94, 0.1);
+		color: #22C55E;
+		border: 1px solid rgba(34, 197, 94, 0.2);
+	}
+
+	.validation-header.invalid {
+		background: rgba(239, 68, 68, 0.1);
+		color: #EF4444;
+		border: 1px solid rgba(239, 68, 68, 0.2);
+	}
+
+	.violation {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 4px;
+		font-size: 0.8rem;
+		margin-bottom: 0.25rem;
+	}
+
+	.violation-error { background: rgba(239, 68, 68, 0.05); color: #fca5a5; }
+	.violation-warning { background: rgba(245, 158, 11, 0.05); color: #fcd34d; }
+
+	.violation-icon { font-weight: 700; flex-shrink: 0; }
+	.violation-error .violation-icon { color: #EF4444; }
+	.violation-warning .violation-icon { color: #F59E0B; }
+
+	/* Stats grid */
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.stat-card {
+		padding: 0.625rem;
+		border-radius: 8px;
+		background: var(--bg-surface, #0d1524);
+		border: 1px solid var(--border-color, #1e293b);
+		text-align: center;
+	}
+
+	.stat-value { font-size: 1.1rem; font-weight: 700; color: var(--text-primary, #f1f5f9); }
+	.stat-label { font-size: 0.7rem; color: var(--text-secondary, #94a3b8); margin-top: 0.125rem; }
+
+	/* Distribution bars */
+	.distribution-list { display: flex; flex-direction: column; gap: 0.375rem; }
+
+	.dist-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.8rem;
+	}
+
+	.dist-label { width: 60px; color: var(--text-secondary, #94a3b8); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+
+	.dist-bar-track {
+		flex: 1;
+		height: 8px;
+		border-radius: 4px;
+		background: var(--bg-elevated, #1e293b);
+		overflow: hidden;
+	}
+
+	.dist-bar-fill {
+		height: 100%;
+		border-radius: 4px;
+		background: var(--accent-primary, #3b82f6);
+		transition: width 0.3s ease;
+	}
+
+	.dist-count { width: 24px; text-align: right; color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
+
+	/* Save toast */
+	.save-toast {
+		position: fixed;
+		bottom: 5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		background: rgba(34, 197, 94, 0.15);
+		border: 1px solid rgba(34, 197, 94, 0.3);
+		color: #22C55E;
+		font-size: 0.85rem;
+		z-index: 100;
 	}
 </style>
