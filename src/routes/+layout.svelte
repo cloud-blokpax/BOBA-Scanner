@@ -6,6 +6,7 @@
 	import { featureEnabled } from '$lib/stores/feature-flags';
 
 	const hasScanToList = featureEnabled('scan_to_list');
+	import { showToast } from '$lib/stores/toast';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
@@ -69,7 +70,6 @@
 			const queued = await scanQueue.getAll();
 			if (queued.length === 0) return;
 
-			const { showToast } = await import('$lib/stores/toast');
 			showToast(`Processing ${queued.length} queued scan(s)...`, 'info');
 
 			const { recognizeCard } = await import('$lib/services/recognition');
