@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
-	import { checkImageQuality, analyzeFrame, compositeForFoilMode } from '$lib/services/recognition';
+	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance } from '$lib/services/recognition';
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
@@ -34,6 +34,12 @@
 	let guidanceText = $state<string | null>(null);
 	let guidanceLastChanged = $state(0);
 	const GUIDANCE_COOLDOWN = 1500;
+	// Frame stability detection
+	let lastFrameHash = $state<string | null>(null);
+	let stableFrameCount = $state(0);
+	const STABLE_FRAMES_REQUIRED = 4; // 4 stable frames at 250ms = 1s of stability
+	const STABILITY_THRESHOLD = 3;    // Hamming distance — frames within 3 bits are "same"
+
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
 	let foilStep = $state(0);
@@ -52,6 +58,9 @@
 		ultra_rare: { color: '#A855F7', glow: 20, pulses: 2 },
 		legendary:  { color: '#F59E0B', glow: 28, pulses: 3 }
 	};
+
+	// Stability progress for capture ring indicator (0 to 1)
+	const stabilityProgress = $derived(stableFrameCount / STABLE_FRAMES_REQUIRED);
 
 	const revealColor = $derived(RARITY_COLORS[revealedCard?.rarity ?? ''] ?? null);
 	const bracketAnimClass = $derived.by(() => {
@@ -148,34 +157,56 @@
 		if (!videoEl || !cameraReady || scanning || paused) {
 			bracketState = 'idle';
 			cardDetectedSince = null;
+			stableFrameCount = 0;
+			lastFrameHash = null;
 			return;
 		}
 
 		try {
 			const bitmap = await captureFrame(videoEl);
 			const result = await analyzeFrame(bitmap);
-			bitmap.close(); // Free GPU memory — this runs every 250ms
 
 			if (result.cardDetected && result.isSharp) {
-				if (!cardDetectedSince) {
-					cardDetectedSince = Date.now();
-					bracketState = 'detected';
-					updateGuidance('Hold still to capture');
-				} else if (Date.now() - cardDetectedSince >= 500) {
-					// Card held steady for 500ms — auto-capture
+				// Compute frame hash for stability check
+				const frameHash = await computeFrameHash(bitmap);
+				bitmap.close();
+
+				if (lastFrameHash) {
+					const dist = await computeHammingDistance(lastFrameHash, frameHash);
+					if (dist <= STABILITY_THRESHOLD) {
+						stableFrameCount++;
+					} else {
+						stableFrameCount = 1; // Reset — card moved
+					}
+				} else {
+					stableFrameCount = 1;
+				}
+				lastFrameHash = frameHash;
+
+				if (stableFrameCount >= STABLE_FRAMES_REQUIRED) {
+					// Card has been stable for enough frames — capture
 					bracketState = 'locked';
-					cardDetectedSince = null;
+					stableFrameCount = 0;
+					lastFrameHash = null;
 					updateGuidance(null);
 					triggerAutoCapture();
+				} else if (!cardDetectedSince) {
+					cardDetectedSince = Date.now();
+					bracketState = 'detected';
+					updateGuidance('Hold still...');
 				}
-			} else if (result.cardDetected && !result.isSharp) {
-				cardDetectedSince = null;
-				bracketState = 'idle';
-				updateGuidance('Hold steady...');
 			} else {
+				bitmap.close();
+				stableFrameCount = 0;
+				lastFrameHash = null;
 				cardDetectedSince = null;
-				bracketState = 'idle';
-				updateGuidance('Position card within the frame');
+				if (result.cardDetected && !result.isSharp) {
+					bracketState = 'idle';
+					updateGuidance('Hold steady...');
+				} else {
+					bracketState = 'idle';
+					updateGuidance('Position card within the frame');
+				}
 			}
 		} catch {
 			// Frame analysis error — ignore silently
@@ -503,7 +534,11 @@
 			onclick={foilMode ? handleFoilCapture : handleCapture}
 			disabled={!cameraReady || scanning || paused}
 			aria-label="Capture"
+			style:--stability-progress="{stabilityProgress * 100}%"
 		>
+			{#if stabilityProgress > 0 && !scanning}
+				<div class="stability-ring" style:background="conic-gradient(#22C55E {stabilityProgress * 360}deg, transparent {stabilityProgress * 360}deg)"></div>
+			{/if}
 			<div class="capture-ring">
 				{#if scanning}
 					<div class="capture-spinner"></div>
@@ -561,10 +596,11 @@
 		position: absolute;
 		width: 40px;
 		height: 40px;
-		border-color: var(--accent-primary, #3b82f6);
+		border-color: rgba(255,255,255,0.6);
 		border-style: solid;
 		border-width: 0;
 		z-index: 2;
+		transition: border-color 200ms ease-out, filter 200ms ease-out;
 	}
 
 	.bracket.top-left {
@@ -620,15 +656,13 @@
 	.bracket-reveal-triple.bottom-right { border-bottom-width: 3px; border-right-width: 3px; }
 
 	.bracket-detected {
-		border-color: #22C55E !important;
-		box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
-		transition: border-color 0.2s, box-shadow 0.2s;
+		border-color: #F59E0B !important;
+		filter: drop-shadow(0 0 4px rgba(245,158,11,0.4));
 	}
 
 	.bracket-locked {
-		border-color: #22C55E !important;
-		box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
-		transition: border-color 0.1s, box-shadow 0.1s;
+		border-color: #10B981 !important;
+		filter: drop-shadow(0 0 8px rgba(16,185,129,0.5));
 	}
 
 	.bracket-fail {
@@ -761,6 +795,20 @@
 		background: transparent;
 		padding: 4px;
 		cursor: pointer;
+	}
+
+	.stability-ring {
+		position: absolute;
+		inset: -2px;
+		border-radius: 50%;
+		opacity: 0.7;
+		pointer-events: none;
+		mask: radial-gradient(circle, transparent 60%, black 61%);
+		-webkit-mask: radial-gradient(circle, transparent 60%, black 61%);
+	}
+
+	.capture-btn {
+		position: relative;
 	}
 
 	.capture-btn:disabled {
