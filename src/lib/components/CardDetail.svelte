@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PriceDisplay from './PriceDisplay.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import { tilt } from '$lib/actions/tilt';
 	import { updateQuantity, removeFromCollection } from '$lib/stores/collection';
 	import type { CollectionItem } from '$lib/types';
 
@@ -44,7 +45,17 @@
 			<div class="detail-content">
 				<div class="detail-header">
 					{#if item.card?.image_url}
-						<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="detail-image" size="large" />
+						<div
+							class="detail-image-tilt"
+							use:tilt={{
+								gyro: item.card.rarity !== 'common',
+								weaponType: item.card.weapon_type ?? null,
+								shimmer: true,
+								specular: item.card.rarity !== 'common'
+							}}
+						>
+							<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="detail-image" size="large" />
+						</div>
 					{:else}
 						<div class="detail-placeholder">🎴</div>
 					{/if}
@@ -152,6 +163,11 @@
 
 	.detail-header {
 		text-align: center;
+	}
+
+	.detail-image-tilt {
+		display: inline-block;
+		border-radius: 8px;
 	}
 
 	/* Class passed to child component via className prop */

@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { featureEnabled } from '$lib/stores/feature-flags';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
+	import { tilt } from '$lib/actions/tilt';
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import type { ScanResult, Card } from '$lib/types';
@@ -45,6 +48,17 @@
 
 	let showManualSearch = $state(false);
 	let manualCard = $state<Card | null>(null);
+
+	// Gyro hint for iOS
+	let showGyroHint = $state(false);
+	const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+	onMount(() => {
+		if (isIOS && card?.rarity && card.rarity !== 'common') {
+			showGyroHint = true;
+			setTimeout(() => { showGyroHint = false; }, 3000);
+		}
+	});
 
 	function handleManualCorrection(correctedCard: Partial<Card>) {
 		manualCard = correctedCard as Card;
@@ -187,13 +201,28 @@
 	<div class="confirmation-container">
 		<div class="sheet-handle"></div>
 		{#if card}
-			<!-- Card image with flip reveal -->
+			<!-- Card image with flip reveal + holographic tilt -->
 			<div class="card-image-section">
-				<CardFlipReveal
-					imageUrl={capturedImageUrl ?? card.image_url ?? null}
-					cardName={card.name}
-					rarity={card.rarity ?? 'common'}
-				/>
+				<div
+					class="card-tilt-wrapper"
+					use:tilt={{
+						gyro: card.rarity !== 'common',
+						weaponType: card.weapon_type ?? null,
+						shimmer: true,
+						specular: card.rarity !== 'common'
+					}}
+				>
+					<CardFlipReveal
+						imageUrl={capturedImageUrl ?? card.image_url ?? null}
+						cardName={card.name}
+						rarity={card.rarity ?? 'common'}
+					/>
+					{#if showGyroHint}
+						<div class="gyro-hint" transition:fade={{ duration: 300 }}>
+							Tap card for holographic effect
+						</div>
+					{/if}
+				</div>
 			</div>
 
 			<!-- Card details -->
@@ -457,6 +486,28 @@
 		justify-content: center;
 		padding: 1.5rem 1.5rem 0;
 		background: linear-gradient(180deg, var(--bg-elevated, #121d34) 0%, var(--bg-base, #070b14) 100%);
+	}
+
+	.card-tilt-wrapper {
+		position: relative;
+		max-width: 280px;
+		width: 100%;
+		border-radius: 12px;
+	}
+
+	.gyro-hint {
+		position: absolute;
+		bottom: 0.75rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.3rem 0.75rem;
+		border-radius: 6px;
+		background: rgba(0, 0, 0, 0.7);
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 0.75rem;
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 3;
 	}
 
 	.card-image-wrapper {
