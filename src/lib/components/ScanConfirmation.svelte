@@ -4,7 +4,8 @@
 	import { featureEnabled } from '$lib/stores/feature-flags';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
-	import type { ScanResult } from '$lib/types';
+	import CardCorrection from '$lib/components/CardCorrection.svelte';
+	import type { ScanResult, Card } from '$lib/types';
 
 	const hasPriceHistory = featureEnabled('price_history');
 	const hasScanToList = featureEnabled('scan_to_list');
@@ -42,10 +43,26 @@
 	let listingUrl = $state<string | null>(null);
 	let listingError = $state<string | null>(null);
 
-	const card = $derived(result.card);
+	let showManualSearch = $state(false);
+	let manualCard = $state<Card | null>(null);
+
+	function handleManualCorrection(correctedCard: Partial<Card>) {
+		manualCard = correctedCard as Card;
+		showManualSearch = false;
+	}
+
+	const card = $derived(manualCard ?? result.card);
+	const activeResult = $derived(manualCard ? {
+		...result,
+		card: manualCard,
+		card_id: manualCard.id ?? null,
+		scan_method: 'manual' as const,
+		confidence: 1.0,
+		failReason: null
+	} : result);
 	const ownedCount = $derived(card ? ($ownedCardCounts.get(card.id) || 0) : 0);
 	const isOwned = $derived(ownedCount > 0);
-	const isLowConfidence = $derived(result.confidence < 0.7);
+	const isLowConfidence = $derived(activeResult.confidence < 0.7);
 
 	// Fetch price when card is identified
 	$effect(() => {
@@ -152,6 +169,7 @@
 			case 'hash_cache': return 'Instant (cached)';
 			case 'tesseract': return 'OCR Match';
 			case 'claude': return 'AI Identified';
+			case 'manual': return 'Manual Search';
 			default: return method;
 		}
 	}
@@ -264,7 +282,7 @@
 				{#if isLowConfidence}
 					<div class="confidence-warning">
 						<span class="warning-icon">!</span>
-						<span>Low confidence ({Math.round(result.confidence * 100)}%) — please verify this is the correct card</span>
+						<span>Low confidence ({Math.round(activeResult.confidence * 100)}%) — please verify this is the correct card</span>
 					</div>
 				{/if}
 
@@ -272,15 +290,15 @@
 				<div class="scan-stats">
 					<div class="stat">
 						<span class="stat-label">Method</span>
-						<span class="stat-value">{methodLabel(result.scan_method)}</span>
+						<span class="stat-value">{methodLabel(activeResult.scan_method)}</span>
 					</div>
 					<div class="stat">
 						<span class="stat-label">Confidence</span>
-						<span class="stat-value" class:low-conf={isLowConfidence}>{Math.round(result.confidence * 100)}%</span>
+						<span class="stat-value" class:low-conf={isLowConfidence}>{Math.round(activeResult.confidence * 100)}%</span>
 					</div>
 					<div class="stat">
 						<span class="stat-label">Time</span>
-						<span class="stat-value">{result.processing_ms}ms</span>
+						<span class="stat-value">{activeResult.processing_ms}ms</span>
 					</div>
 				</div>
 
@@ -347,7 +365,20 @@
 					<button class="btn btn-scan-another" onclick={onScanAnother}>
 						Scan Another
 					</button>
+					<button class="btn btn-secondary" onclick={() => { showManualSearch = true; }}>
+						Wrong Card? Search Manually
+					</button>
 				</div>
+
+				{#if showManualSearch}
+					<div class="manual-search-container">
+						<CardCorrection
+							card={{ card_number: card?.card_number ?? '' }}
+							onCorrect={handleManualCorrection}
+							onClose={() => { showManualSearch = false; }}
+						/>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<!-- Failed scan -->
@@ -364,10 +395,21 @@
 				{:else}
 					<p class="fail-reason">Try adjusting the angle or lighting and scan again.</p>
 				{/if}
-				<div class="actions">
-					<button class="btn btn-add" onclick={onScanAnother}>Try Again</button>
-					<button class="btn btn-secondary" onclick={onClose}>Close</button>
-				</div>
+				{#if showManualSearch}
+					<div class="manual-search-container">
+						<CardCorrection
+							card={{ card_number: '' }}
+							onCorrect={handleManualCorrection}
+							onClose={() => { showManualSearch = false; }}
+						/>
+					</div>
+				{:else}
+					<div class="actions">
+						<button class="btn btn-add" onclick={() => { showManualSearch = true; }}>Search Manually</button>
+						<button class="btn btn-secondary" onclick={onScanAnother}>Try Again</button>
+						<button class="btn btn-secondary" onclick={onClose}>Close</button>
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -807,6 +849,13 @@
 		width: 100%;
 		max-width: 360px;
 		margin-top: 1rem;
+	}
+
+	.manual-search-container {
+		width: 100%;
+		max-width: 400px;
+		margin-top: 0.5rem;
+		text-align: left;
 	}
 
 	/* ── Sheet handle ── */
