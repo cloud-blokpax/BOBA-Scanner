@@ -35,7 +35,7 @@ export interface CollectionItem {
 
 // ── Scan Types ──────────────────────────────────────────────────
 
-export type ScanMethod = 'hash_cache' | 'tesseract' | 'claude';
+export type ScanMethod = 'hash_cache' | 'tesseract' | 'claude' | 'manual';
 
 export interface ScanResult {
 	id?: string;
