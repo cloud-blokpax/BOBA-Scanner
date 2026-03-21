@@ -1,170 +1,209 @@
 # Test Coverage Analysis — BOBA Scanner
 
-**Date:** 2026-03-14
-**Tests:** 35 passing across 3 test files
-**Estimated module coverage:** ~8% (3 of ~39 library modules)
+**Date:** 2026-03-21
+**Tests:** ~101 cases across 9 test files
+**Estimated module coverage:** ~30% (9 of ~30+ significant modules)
 
 ---
 
 ## Current Test Coverage
 
-| Test File | Module Under Test | Tests | What's Covered |
+| Test File | Module Under Test | Cases | Type |
 |---|---|---|---|
-| `tests/ocr-extract.test.ts` | `src/lib/utils/extract-card-number.ts` | 11 | Card number parsing, OCR confusable correction, dash normalization |
-| `tests/rate-limit.test.ts` | `src/lib/server/rate-limit.ts` | 6 | In-memory fallback rate limiter (per-user buckets, limits, reset times) |
-| `tests/card-db.test.ts` | `src/lib/services/card-db.ts` | 18 | Card loading, exact/fuzzy match, search, case-insensitive lookups |
+| `ocr-extract.test.ts` | `extract-card-number.ts` | 12 | Unit |
+| `rate-limit.test.ts` | `rate-limit.ts` | 7 | Unit |
+| `card-db.test.ts` | `card-db.ts` | 15 | Unit |
+| `api-config.integration.test.ts` | `GET /api/config` | 3 | Integration |
+| `api-price.integration.test.ts` | `GET /api/price/[cardId]` | 8 | Integration |
+| `api-scan.integration.test.ts` | `POST /api/scan` | 15 | Integration |
+| `api-grade.integration.test.ts` | `POST /api/grade` | 12 | Integration |
+| `auth-guard.e2e.test.ts` | `hooks.server.ts` | 13 | E2E |
+| `recognition-pipeline.e2e.test.ts` | `recognition.ts` | 16 | E2E |
 
-**No coverage configuration** — no `--coverage` flag, no coverage packages installed, no CI coverage gates.
+### What's Well Covered
 
----
+- **API endpoints**: 4 of 6 main routes have integration tests (scan, grade, price, config)
+- **Core pipeline**: The 3-tier recognition pipeline has end-to-end tests including tier progression callbacks
+- **Auth**: 8 protected routes verified, graceful degradation when Supabase is unconfigured
+- **Input validation & security**: File size limits, MIME type checks, path traversal rejection, private key leakage prevention
+- **Rate limiting**: In-memory fallback, per-user isolation, remaining count tracking
 
-## Recommended Improvements (Priority Order)
+### What's Not Covered
 
-### 1. Utility Functions (`src/lib/utils/index.ts`) — Easy Win
-
-**Why:** Pure functions, zero dependencies, trivial to test. Currently 0% tested despite being used across the app.
-
-**What to test:**
-- `escapeHtml()` — XSS-relevant: verify all 5 characters are escaped, empty/null input handling
-- `formatPrice()` — null/undefined returns "N/A", numbers formatted with 2 decimals, negative values
-- `truncate()` — strings at/below/above max length, ellipsis character used correctly
-- `debounce()` — calls delayed, last call wins, timer reset behavior (use `vi.useFakeTimers()`)
-
-**Effort:** ~30 min, ~12 tests
-
----
-
-### 2. API Route: `/api/scan` (`src/routes/api/scan/+server.ts`) — High Value
-
-**Why:** This is the most expensive endpoint (Claude API calls cost money). Testing guards against regressions in auth checks, rate limiting, image validation, and response parsing — all of which directly impact cost and security.
-
-**What to test:**
-- Returns 401 when unauthenticated
-- Returns 429 when rate limited (with correct headers)
-- Returns 400 for missing image, oversized image, invalid image type
-- Pixel bomb protection triggers for oversized dimensions
-- Claude response JSON extraction (valid JSON, no JSON, malformed JSON)
-- Handles Claude API errors (529 → 503, generic → 502)
-- Happy path: valid image → success response with card data
-
-**Mocking strategy:** Mock `@anthropic-ai/sdk`, `sharp`, `$lib/server/rate-limit`, and `locals` (Supabase session/user). Use `vi.mock()`.
-
-**Effort:** ~2 hours, ~12-15 tests
+- **No coverage tooling** — no `--coverage` flag, no coverage packages installed, no CI coverage gates
+- **No store tests** — all 9 Svelte stores are untested
+- **No utility tests** — `escapeHtml`, `formatPrice`, `debounce`, `truncate` in `utils/index.ts`
+- **No data integrity tests** — sync, IDB, and collection-service are all untested
+- **No business logic tests** — deck-validator (383 LOC of tournament rules) has zero tests
+- **No edge middleware tests** — bot-blocking regex logic untested
 
 ---
 
-### 3. Recognition Pipeline Logic (`src/lib/services/recognition.ts`) — Core Business Logic
+## Coverage Gaps — Prioritized Recommendations
 
-**Why:** This is the heart of the app — the three-tier waterfall. A bug here means wrong cards identified or unnecessary API costs.
+### Priority 1: Critical Business Logic (Data Integrity / Correctness Risk)
 
-**What to test (unit-testable pieces, mocking workers/fetch):**
-- Blurry image returns early with `failReason`
-- Tier 1 hit: IDB hash match returns immediately without calling Tier 2/3
-- Tier 1 hit: Supabase hash match returns and writes back to IDB
-- Tier 1 miss falls through to Tier 3 (Tier 2 is currently disabled)
-- Unauthenticated user skips Tier 3 with "Sign in" message
-- Tier 3 network error returns null with appropriate `failReason`
-- Tier 3 HTTP errors (401, 429, 503) set correct `failReason`
-- Tier 3 success: card matched in local DB, hash written to cache
-- Tier 3 success with hero mismatch: confidence reduced
-- Tier 3 success but card not in local DB: returns null
-- `onTierChange` callback fires at correct transitions
-- `finalize()` records scan history and auto-tags parallel cards
+#### 1. `deck-validator.ts` (~383 LOC) — Tournament rule engine
 
-**Mocking strategy:** Mock `comlink` worker, `idb`, `card-db`, `supabase`, and `fetch`.
+The most complex pure-logic module in the codebase, enforcing legality across 6 tournament formats. A validation bug could allow illegal decks or reject valid ones.
 
-**Effort:** ~3 hours, ~15-20 tests
+**Recommended tests (~20 cases):**
+- Hero count enforcement (exactly 60)
+- SPEC Power cap (no card > 160 in SPEC format)
+- Combined Power cap (sum ≤ 8,250 in Elite format)
+- Max 6 heroes at same power level
+- Unique variation enforcement (hero + weapon + parallel)
+- All 30 Plays must be unique; no duplicate Plays
+- Hot Dog cards: 10 allowed, duplicates OK
+- DBS budget (total ≤ 1,000)
+- Apex Madness insert-unlock logic (10+ of a type → 1 Apex card)
+- Edge cases: exactly at limit, one over, empty deck, no-cap format (Apex Playmaker)
 
----
+**Testability:** Excellent — pure functions, no external dependencies.
 
-### 4. API Route: `/api/grade` (`src/routes/api/grade/+server.ts`) — Medium Value
+#### 2. `sync.ts` (~162 LOC) — Bidirectional IDB ↔ Supabase sync
 
-**Why:** Another Claude API-consuming endpoint. Same auth/rate-limit/validation pattern as scan, but with grading-specific logic.
+Race conditions here cause data loss. Uses promise-based locking and debounced push.
 
-**What to test:**
-- Auth and rate limit enforcement
-- Image validation and CDR processing
-- Grading prompt construction
-- Response parsing (grade extraction, condition mapping)
-- Error handling for Claude API failures
-
-**Effort:** ~1.5 hours, ~10 tests
-
----
-
-### 5. IndexedDB Service (`src/lib/services/idb.ts`) — Data Integrity
-
-**Why:** This is the offline data layer. Bugs here mean lost collections or broken hash cache.
-
-**What to test:**
-- `getHash()` / `setHash()` — round-trip storage and retrieval
-- `getCards()` / `setCards()` — bulk card storage
-- `getCollection()` / `setCollection()` — collection CRUD
-- Error handling when IndexedDB is unavailable
-- Data migration between schema versions
-
-**Mocking strategy:** Use `fake-indexeddb` package for a pure JS IDB implementation.
-
-**Effort:** ~1.5 hours, ~12 tests
-
----
-
-### 6. Collection Sync (`src/lib/services/sync.ts`) — Data Consistency
-
-**Why:** Syncs between IDB and Supabase. Bugs cause duplicate cards or data loss.
-
-**What to test:**
-- Sync from IDB to Supabase (upload)
-- Sync from Supabase to IDB (download)
-- Conflict resolution (which copy wins)
+**Recommended tests (~10 cases):**
+- Sync lock prevents concurrent syncs
+- Debounced push batches rapid writes
+- Tombstone-based deletions propagate correctly
+- Offline queue drains when connectivity returns
+- Error during sync doesn't corrupt local state
 - Graceful handling when Supabase is unavailable
-- Partial sync failure recovery
 
-**Effort:** ~2 hours, ~10 tests
+**Testability:** Good — mock IDB and Supabase client.
 
----
+#### 3. `idb.ts` (~239 LOC) — IndexedDB offline storage layer
 
-### 7. Scan Learning (`src/lib/services/scan-learning.ts`) — Accuracy Over Time
+All offline caching depends on this. Silent transaction failures could corrupt cached data.
 
-**Why:** Correction tracking improves scan accuracy. If broken, the system never learns from mistakes.
+**Recommended tests (~12 cases, use `fake-indexeddb`):**
+- CRUD for each object store (cards, hashes, collections, prices)
+- Bulk operations (putMany, getAll)
+- TTL-aware reads (expired entries excluded)
+- Schema upgrade/versioning
+- Error handling (doesn't corrupt store on failure)
 
-**What to test:**
-- `recordCorrection()` stores OCR→correct mappings
-- `checkCorrection()` returns learned corrections
-- Corrections persist across sessions (IDB storage)
-- Edge cases: same OCR text corrected to different cards
+**Testability:** Good with `fake-indexeddb` package.
 
-**Effort:** ~45 min, ~6-8 tests
+#### 4. `collection-service.ts` (~130 LOC) — Collection data layer
 
----
+Every collection mutation flows through this. Handles Supabase + IDB fallback.
 
-### 8. eBay Auth (`src/lib/server/ebay-auth.ts`) — Token Management
+**Recommended tests (~8 cases):**
+- Add card (Supabase path and IDB fallback path)
+- Update quantity
+- Delete with tombstone recording
+- Fetch with card join
+- Graceful fallback when Supabase is unavailable
 
-**Why:** Token refresh bugs silently break all pricing features.
+**Testability:** Good — mock Supabase and IDB.
 
-**What to test:**
-- Token acquisition with valid credentials
-- Token caching (doesn't re-fetch within TTL)
-- Token refresh on expiry
-- Error handling when eBay API is down
-- Missing credentials handling
+### Priority 2: Security & Core Utilities
 
-**Effort:** ~1 hour, ~6-8 tests
+#### 5. `src/lib/utils/index.ts` (~50 LOC) — Shared utilities
+
+Contains `escapeHtml` (XSS prevention — security critical), `formatPrice`, `debounce`, `truncate`.
+
+**Recommended tests (~12 cases):**
+- `escapeHtml`: `<script>`, event handlers, nested entities, null/undefined
+- `formatPrice`: zero, negative, large numbers, null → "N/A"
+- `debounce`: rapid calls invoke once, trailing execution (`vi.useFakeTimers()`)
+- `truncate`: at/below/above limit, ellipsis behavior
+
+**Testability:** Excellent — pure functions.
+
+#### 6. `middleware.js` (~118 LOC) — Bot/scraper blocking
+
+A regex bug could block real users or let bots through. Runs at the edge on every request.
+
+**Recommended tests (~8 cases):**
+- Known bot User-Agents blocked (Googlebot, curl, etc.)
+- Normal browser User-Agents pass through
+- Missing User-Agent handling
+- Header-based detection (X-Forwarded-For anomalies, etc.)
+
+**Testability:** Good — export the handler function and test with mock Request objects.
+
+#### 7. `POST /api/upload` (~88 LOC) — Image upload with CDR
+
+Untested upload endpoint is a security concern (EXIF data leakage, pixel bombs).
+
+**Recommended tests (~6 cases):**
+- EXIF stripping verified
+- Pixel bomb rejection (oversized dimensions)
+- Valid image re-encoding
+- File size limits enforced
+- Invalid file type rejected
+
+**Testability:** Medium — requires sharp mocking (same pattern as scan tests).
+
+### Priority 3: Feature Quality
+
+#### 8. `scan-learning.ts` (~130 LOC) — OCR correction tracking
+
+LRU-pruned correction map. Bad corrections degrade scan accuracy over time.
+
+**Recommended tests (~8 cases):**
+- Store and retrieve corrections
+- LRU pruning at 500 entries (oldest evicted)
+- Validation against card DB (rejects invalid corrections)
+- Key normalization
+
+**Testability:** Good — mock localStorage and card-db.
+
+#### 9. `export-templates.ts` (~220 LOC) — CSV export
+
+Export bugs corrupt user data exports.
+
+**Recommended tests (~8 cases):**
+- CSV escaping (commas, quotes, newlines in field values)
+- Template CRUD (localStorage)
+- Admin template merging
+- Empty collection export
+
+**Testability:** Good — pure CSV logic + mock localStorage.
+
+#### 10. `ebay.ts` (~157 LOC) — Client-side eBay utilities
+
+URL building, listing match scoring, price calculation.
+
+**Recommended tests (~6 cases):**
+- Search URL generation with affiliate params
+- Listing match scoring (exact, partial, no match)
+- Price calculation from listings
+
+**Testability:** Excellent — pure functions.
+
+#### 11. `ebay/browse/+server.ts` (~162 LOC) — eBay Browse API proxy
+
+Price aggregation and filtering logic.
+
+**Recommended tests (~6 cases):**
+- Price stats calculation (low, mid, high)
+- Empty results handling
+- Auth token refresh on 401
+
+**Testability:** Medium — mock eBay auth and fetch.
+
+### Priority 4: Nice to Have
+
+- **Stores** — Test the pure logic inside `collection.ts` (per-card locking), `feature-flags.ts` (flag evaluation), `scan-history.ts` (stats calculation)
+- **`error-tracking.ts`** — Event batching, sendBeacon flushing
+- **`version.ts`** — Version comparison, polling interval
+- **`parallel-config.ts`** — Cache invalidation, fallback logic
+- **`listing-generator.ts`** — Title/description formatting
 
 ---
 
 ## Infrastructure Recommendations
 
-### Enable Coverage Reporting
-
-Add coverage to `vitest` so the team can track progress:
+### 1. Enable Coverage Reporting
 
 ```bash
-# Install coverage provider
 npm i -D @vitest/coverage-v8
-
-# Run with coverage
-npx vitest run --coverage
 ```
 
 Add to `package.json`:
@@ -176,32 +215,43 @@ Add to `package.json`:
 }
 ```
 
-### Add Coverage Gate to CI
+### 2. Add Coverage Gate to CI
 
-In `.github/workflows/ci.yml`, replace `npm test` with a coverage threshold:
-
+In `.github/workflows/ci.yml`:
 ```yaml
-- run: npm run test:coverage
-  env:
-    COVERAGE_THRESHOLD: 30
+- run: npx vitest run --coverage --coverage.thresholds.lines=30
 ```
 
-Start with a low threshold (30%) and ratchet it up as coverage improves.
+Start at 30% and ratchet up as tests are added.
 
-### Prioritized Roadmap
+### 3. Coverage Targets
 
-| Phase | Target | Tests to Add | Cumulative Coverage |
+| Metric | Current (est.) | 3-Month Target | 6-Month Target |
+|--------|---------------|----------------|----------------|
+| Lines | ~15% | 40% | 60% |
+| Branches | ~10% | 35% | 50% |
+| Functions | ~20% | 45% | 65% |
+
+---
+
+## Implementation Roadmap
+
+| Phase | Modules | Est. New Tests | Cumulative Coverage |
 |---|---|---|---|
-| **Now** | Utilities + scan API route | ~25 tests | ~15% |
-| **Next** | Recognition pipeline + grade API | ~25 tests | ~30% |
-| **Later** | IDB, sync, scan-learning, eBay auth | ~35 tests | ~50% |
+| **Phase 1** | deck-validator, utils | ~32 | ~25% |
+| **Phase 2** | sync, idb, collection-service | ~30 | ~40% |
+| **Phase 3** | middleware, upload API, scan-learning | ~22 | ~50% |
+| **Phase 4** | export-templates, ebay client, ebay browse API | ~20 | ~55% |
+| **Phase 5** | stores (pure logic), remaining services | ~15 | ~60% |
+
+**Total estimated effort:** ~119 new test cases across 5 phases.
 
 ---
 
 ## What NOT to Test (Low ROI)
 
-- **Svelte components** — UI tests are brittle and the app is mobile-first (manual QA is more effective)
-- **Web Workers** (`image-processor.ts`, `ocr-worker.js`) — require browser APIs (Canvas, ImageBitmap), better tested via integration/E2E
-- **Stores** — thin wrappers around Svelte 5 runes; test the services they call instead
-- **`boba-config.ts` / `boba-heroes.ts`** — static data files, not logic
-- **`static-cards.ts`** — simple mapping, already indirectly tested via `card-db.test.ts`
+- **Svelte components** — UI tests are brittle for a mobile-first PWA; manual QA and E2E (Playwright) are more effective
+- **Web Workers** (`image-processor.js`, `ocr-worker.js`) — require Canvas/ImageBitmap browser APIs; better tested via the recognition pipeline E2E tests that already exist
+- **Static data files** (`boba-config.ts`, `boba-heroes.ts`, `card-database.json`) — configuration, not logic
+- **`static-cards.ts`** — simple JSON mapping, indirectly tested via `card-db.test.ts`
+- **`supabase.ts`** — thin client initialization; tested implicitly by all integration tests
