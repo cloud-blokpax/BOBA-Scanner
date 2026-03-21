@@ -51,9 +51,9 @@ export interface SetRelease {
 
 export const BOBA_SET_RELEASES: SetRelease[] = [
 	{ setCode: 'alpha', name: 'Alpha Edition', releaseYear: 2024, isAlpha: true },
-	// Add future sets here as they release:
-	// { setCode: '2025_s1', name: '2025 Series 1', releaseYear: 2025, isAlpha: false },
-	// { setCode: '2026_s1', name: '2026 Edition', releaseYear: 2026, isAlpha: false },
+	{ setCode: 'alpha_update', name: 'Alpha Update', releaseYear: 2025, isAlpha: true },
+	{ setCode: 'alpha_blast', name: 'Alpha Blast', releaseYear: 2025, isAlpha: true },
+	{ setCode: 'griffey', name: '2026 Edition', releaseYear: 2025, isAlpha: false },
 ];
 
 export type CompetitiveFormat = 'modern' | 'alpha_trilogy' | 'hall_of_fame';

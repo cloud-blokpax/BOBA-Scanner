@@ -12,6 +12,7 @@ import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { createClient } from '@supabase/supabase-js';
+import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
 // Helper: get a service-role client for cache writes (bypasses RLS)
@@ -100,28 +101,22 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		const data = await browseRes.json();
 		const items = data.itemSummaries || [];
 
-		// Calculate price statistics
-		const prices = items
+		// Calculate price statistics with IQR outlier filtering
+		const rawPrices = items
 			.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value || '0'))
-			.filter((p: number) => p > 0)
-			.sort((a: number, b: number) => a - b);
+			.filter((p: number) => p > 0);
 
-		// Calculate proper median: average two middle values for even-length arrays
-		let median: number | null = null;
-		if (prices.length > 0) {
-			const mid = Math.floor(prices.length / 2);
-			median = prices.length % 2 !== 0
-				? prices[mid]
-				: (prices[mid - 1] + prices[mid]) / 2;
-		}
+		const stats = calculatePriceStats(rawPrices);
 
 		const priceData = {
 			card_id: cardId,
 			source: 'ebay',
-			price_low: prices.length > 0 ? prices[0] : null,
-			price_mid: median,
-			price_high: prices.length > 0 ? prices[prices.length - 1] : null,
-			listings_count: prices.length,
+			price_low: stats?.low ?? null,
+			price_mid: stats?.median ?? null,
+			price_high: stats?.high ?? null,
+			listings_count: rawPrices.length,
+			filtered_count: stats?.filteredCount ?? rawPrices.length,
+			confidence_score: stats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
 
