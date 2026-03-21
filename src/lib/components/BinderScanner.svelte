@@ -75,60 +75,67 @@
 		processing = true;
 
 		const bitmap = await createImageBitmap(imageFile);
-		const cellWidth = Math.floor(bitmap.width / preset.cols);
-		const cellHeight = Math.floor(bitmap.height / preset.rows);
+		try {
+			const cellWidth = Math.floor(bitmap.width / preset.cols);
+			const cellHeight = Math.floor(bitmap.height / preset.rows);
 
-		// Process 2 cells concurrently
-		const pending = grid.filter((c) => !c.skipped && c.status === 'pending');
-		const concurrency = 2;
+			// Process 2 cells concurrently
+			const pending = grid.filter((c) => !c.skipped && c.status === 'pending');
+			const concurrency = 2;
 
-		// Helper: immutably update a cell in the grid by row+col identity
-		function updateCell(cell: Cell, patch: Partial<Cell>) {
-			grid = grid.map((c) =>
-				c.row === cell.row && c.col === cell.col ? { ...c, ...patch } : c
-			);
-		}
+			// Helper: immutably update a cell in the grid by row+col identity
+			function updateCell(cell: Cell, patch: Partial<Cell>) {
+				grid = grid.map((c) =>
+					c.row === cell.row && c.col === cell.col ? { ...c, ...patch } : c
+				);
+			}
 
-		for (let i = 0; i < pending.length; i += concurrency) {
-			const batch = pending.slice(i, i + concurrency);
-			await Promise.all(
-				batch.map(async (cell) => {
-					updateCell(cell, { status: 'processing' });
+			for (let i = 0; i < pending.length; i += concurrency) {
+				const batch = pending.slice(i, i + concurrency);
+				await Promise.all(
+					batch.map(async (cell) => {
+						updateCell(cell, { status: 'processing' });
 
-					try {
-						// Crop cell from image
-						const canvas = new OffscreenCanvas(cellWidth, cellHeight);
-						const ctx = canvas.getContext('2d')!;
-						ctx.drawImage(
-							bitmap,
-							cell.col * cellWidth,
-							cell.row * cellHeight,
-							cellWidth,
-							cellHeight,
-							0,
-							0,
-							cellWidth,
-							cellHeight
-						);
-						const cellBitmap = await createImageBitmap(canvas);
+						try {
+							// Crop cell from image
+							const canvas = new OffscreenCanvas(cellWidth, cellHeight);
+							const ctx = canvas.getContext('2d')!;
+							ctx.drawImage(
+								bitmap,
+								cell.col * cellWidth,
+								cell.row * cellHeight,
+								cellWidth,
+								cellHeight,
+								0,
+								0,
+								cellWidth,
+								cellHeight
+							);
+							const cellBitmap = await createImageBitmap(canvas);
 
-						const result = await recognizeCard(cellBitmap);
-						cellBitmap.close(); // Free GPU memory
-						if (result.card_id) {
-							updateCell(cell, { result, status: 'done' });
-						} else {
-							updateCell(cell, { status: 'empty' });
+							let result;
+							try {
+								result = await recognizeCard(cellBitmap);
+							} finally {
+								cellBitmap.close();
+							}
+							if (result.card_id) {
+								updateCell(cell, { result, status: 'done' });
+							} else {
+								updateCell(cell, { status: 'empty' });
+							}
+						} catch (err) {
+							updateCell(cell, {
+								error: err instanceof Error ? err.message : 'Failed',
+								status: 'error'
+							});
 						}
-					} catch (err) {
-						updateCell(cell, {
-							error: err instanceof Error ? err.message : 'Failed',
-							status: 'error'
-						});
-					}
-				})
-			);
+					})
+				);
+			}
+		} finally {
+			bitmap.close();
 		}
-		bitmap.close(); // Free GPU memory for the source image
 		processing = false;
 	}
 

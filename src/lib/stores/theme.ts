@@ -26,7 +26,10 @@ function loadTheme(): Theme {
 	if (!browser) return DEFAULT_THEME;
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw ? { ...DEFAULT_THEME, ...JSON.parse(raw) } : DEFAULT_THEME;
+		if (!raw) return DEFAULT_THEME;
+		const parsed = JSON.parse(raw);
+		if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return DEFAULT_THEME;
+		return { ...DEFAULT_THEME, ...parsed };
 	} catch {
 		return DEFAULT_THEME;
 	}

@@ -110,11 +110,18 @@
 	// Check eBay connection status for scan-to-list users
 	$effect(() => {
 		if (!$hasScanToList || ebayChecked) return;
-		fetch('/api/ebay/status')
+		const controller = new AbortController();
+		fetch('/api/ebay/status', { signal: controller.signal })
 			.then(res => res.ok ? res.json() : Promise.reject())
 			.then(data => { ebayConnected = data.connected; })
-			.catch(() => { ebayConnected = false; })
-			.finally(() => { ebayChecked = true; });
+			.catch((err) => {
+				if (err instanceof DOMException && err.name === 'AbortError') return;
+				ebayConnected = false;
+			})
+			.finally(() => {
+				if (!controller.signal.aborted) ebayChecked = true;
+			});
+		return () => controller.abort();
 	});
 
 	async function handleListOnEbay() {

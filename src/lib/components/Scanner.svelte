@@ -162,14 +162,16 @@
 			return;
 		}
 
+		let bitmap: ImageBitmap | null = null;
 		try {
-			const bitmap = await captureFrame(videoEl);
+			bitmap = await captureFrame(videoEl);
 			const result = await analyzeFrame(bitmap);
 
 			if (result.cardDetected && result.isSharp) {
 				// Compute frame hash for stability check
 				const frameHash = await computeFrameHash(bitmap);
 				bitmap.close();
+				bitmap = null;
 
 				if (lastFrameHash) {
 					const dist = await computeHammingDistance(lastFrameHash, frameHash);
@@ -197,6 +199,7 @@
 				}
 			} else {
 				bitmap.close();
+				bitmap = null;
 				stableFrameCount = 0;
 				lastFrameHash = null;
 				cardDetectedSince = null;
@@ -209,6 +212,7 @@
 				}
 			}
 		} catch {
+			bitmap?.close();
 			// Frame analysis error — ignore silently
 		}
 	}
@@ -283,10 +287,13 @@
 			}
 
 			const imageUrl = bitmapToDataUrl(bitmap);
-			// scanImage transfers or consumes the bitmap; close it after
 			// skipBlurCheck: true because we already ran checkImageQuality above
-			const scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
-			bitmap.close();
+			let scanResult;
+			try {
+				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
+			} finally {
+				bitmap.close();
+			}
 			if (scanResult) {
 				handleScanResult(scanResult, imageUrl);
 			} else {

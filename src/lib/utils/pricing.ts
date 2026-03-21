@@ -55,7 +55,7 @@ export function calculatePriceStats(rawPrices: number[]): PriceStats | null {
 	const mean = sorted.reduce((a, b) => a + b, 0) / sorted.length;
 
 	// Confidence: more listings + tighter spread = higher confidence
-	const spread = sorted.length > 1
+	const spread = sorted.length > 1 && median > 0
 		? (sorted[sorted.length - 1] - sorted[0]) / median
 		: 1;
 	const volumeScore = Math.min(sorted.length / 10, 1); // maxes at 10 listings
