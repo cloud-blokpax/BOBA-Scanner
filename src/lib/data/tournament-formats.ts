@@ -72,6 +72,12 @@ export interface FormatRules {
 	/** Min power for a card to qualify as "Apex" in Madness */
 	madnessApexMinPower: number | null;
 
+	// --- Graduated power slots (SPEC+) ---
+	/** Per-power-level slot maximums for graduated formats like SPEC+. Maps power value → max count allowed. null = use maxPerPowerLevel for all. */
+	powerSlotLimits: Record<number, number> | null;
+	/** Absolute max power — cards above this are illegal regardless of other caps. null = no absolute max. */
+	absoluteMaxPower: number | null;
+
 	// --- Team format specific ---
 	/** Team size range (null if not a team format) */
 	teamSize: { min: number; max: number } | null;
@@ -106,6 +112,8 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: null,
 		playersPerRound: null
 	},
@@ -135,18 +143,20 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: null,
 		playersPerRound: null
 	},
 	{
 		id: 'spec_plus',
 		name: 'SPEC+ Playmaker',
-		description: 'Advanced format. Higher power access than SPEC with strategic trade-offs. 175 SPEC cap, 9,500 Combined Power.',
+		description: 'Advanced format. Core 60 Heroes at SPEC 160, plus graduated power slots up to 200. 70 Heroes max, 9,500 Combined Power.',
 		gameMode: 'playmaker',
 		isTeamFormat: false,
 		heroDeckMin: 60,
-		heroDeckMax: null,
-		specPowerCap: 175,
+		heroDeckMax: 70,
+		specPowerCap: null,
 		combinedPowerCap: 9500,
 		maxPerPowerLevel: 6,
 		maxPerVariation: 1,
@@ -164,6 +174,10 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: {
+			165: 2, 170: 2, 175: 1, 180: 1, 185: 1, 190: 1, 195: 1, 200: 1
+		},
+		absoluteMaxPower: 200,
 		teamSize: null,
 		playersPerRound: null
 	},
@@ -193,6 +207,8 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: null,
 		playersPerRound: null
 	},
@@ -222,6 +238,8 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: 6,
 		madnessFoilHotDogBonusCards: 4,
 		madnessApexMinPower: 165,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: { min: 4, max: 6 },
 		playersPerRound: 4
 	},
@@ -251,6 +269,8 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: null,
 		playersPerRound: null
 	},
@@ -280,6 +300,8 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		madnessMaxInsertUnlocks: null,
 		madnessFoilHotDogBonusCards: null,
 		madnessApexMinPower: null,
+		powerSlotLimits: null,
+		absoluteMaxPower: null,
 		teamSize: null,
 		playersPerRound: null
 	}

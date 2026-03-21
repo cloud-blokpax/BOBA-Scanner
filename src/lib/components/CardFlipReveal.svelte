@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { triggerHaptic } from '$lib/utils/haptics';
 
 	let {
 		imageUrl,
@@ -12,6 +13,7 @@
 	} = $props();
 
 	let flipped = $state(false);
+	let shimmerActive = $state(false);
 	const shouldFlip = $derived(['uncommon', 'rare', 'ultra_rare', 'legendary'].includes(rarity));
 
 	const rarityColor: Record<string, string> = {
@@ -23,19 +25,22 @@
 
 	const glowColor = $derived(rarityColor[rarity] ?? '#9CA3AF');
 
-	const flipDelay: Record<string, number> = {
-		legendary: 600,
-		ultra_rare: 450,
-		rare: 350,
-		uncommon: 300
-	};
-
 	let flipTimer: ReturnType<typeof setTimeout> | null = null;
+	let shimmerTimer: ReturnType<typeof setTimeout> | null = null;
 
 	onMount(() => {
 		if (shouldFlip) {
-			const delay = flipDelay[rarity] ?? 300;
-			flipTimer = setTimeout(() => { flipped = true; }, delay);
+			// Pre-flip shimmer phase
+			shimmerActive = true;
+			const shimmerDuration = 800;
+			shimmerTimer = setTimeout(() => {
+				shimmerActive = false;
+				flipped = true;
+				// Fire haptic for rare+ cards
+				if (['rare', 'ultra_rare', 'legendary'].includes(rarity)) {
+					triggerHaptic('rareReveal');
+				}
+			}, shimmerDuration);
 		} else {
 			flipped = true;
 		}
@@ -43,13 +48,14 @@
 
 	onDestroy(() => {
 		if (flipTimer) clearTimeout(flipTimer);
+		if (shimmerTimer) clearTimeout(shimmerTimer);
 	});
 </script>
 
 <div class="flip-container" class:no-flip={!shouldFlip}>
 	<div class="flip-card" class:flipped>
 		<!-- Card back (shown initially for uncommon+) -->
-		<div class="flip-face flip-front" style:--glow-color={glowColor}>
+		<div class="flip-face flip-front" class:scanning={shimmerActive} style:--glow-color={glowColor}>
 			<div class="card-back">
 				<div class="card-back-logo">🎴</div>
 				<div class="card-back-text">BOBA</div>
@@ -105,6 +111,23 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	/* Pre-flip scanning shimmer */
+	@keyframes scan-shimmer {
+		0% { background-position: -200% 0; }
+		100% { background-position: 200% 0; }
+	}
+
+	.flip-front.scanning {
+		background: linear-gradient(
+			90deg,
+			var(--bg-elevated, #121d34) 0%,
+			color-mix(in srgb, var(--glow-color) 20%, var(--bg-elevated, #121d34)) 50%,
+			var(--bg-elevated, #121d34) 100%
+		);
+		background-size: 200% 100%;
+		animation: scan-shimmer 0.8s ease-in-out;
 	}
 
 	.flip-back {

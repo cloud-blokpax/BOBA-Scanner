@@ -108,6 +108,7 @@ BOBA-Scanner/
 │   │   │   └── Onboarding.svelte   # New user onboarding flow
 │   │   ├── data/
 │   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards)
+│   │   │   ├── play-cards.json     # Play card master list (409 cards across 4 releases, with DBS values and hot dog costs)
 │   │   │   ├── play-cards.json     # Play card database (409 cards with DBS values, hot dog costs)
 │   │   │   ├── static-cards.ts     # Maps raw JSON to Card type
 │   │   │   ├── boba-config.ts      # OCR regions, scan config, rarities, weapons
@@ -224,6 +225,7 @@ The card database has a layered loading strategy (see `card-db.ts`):
 
 ## Testing
 
+The test suite (~91 test cases across 9 files) uses Vitest with three tiers:
 The test suite (91 test cases across 9 files) uses Vitest with three tiers:
 
 - **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`
@@ -276,6 +278,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/boba-parallels.ts` — All parallel/treatment types with Madness unlock eligibility
 - `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
 - `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (409 entries across Alpha, Griffey, Alpha Update, and Alpha Blast releases)
+- `src/lib/data/play-cards.json` — Master Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
 - `src/lib/data/play-cards.json` — Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
 - `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
 - `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions

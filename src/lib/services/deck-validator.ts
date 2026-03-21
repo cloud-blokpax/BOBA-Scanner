@@ -177,6 +177,49 @@ export function validateDeck(
 		}
 	}
 
+	// ── Rule 2b: Graduated power slot limits (SPEC+) ─────────
+	if (format.powerSlotLimits) {
+		for (const [powerStr, maxAllowed] of Object.entries(format.powerSlotLimits)) {
+			const power = Number(powerStr);
+			const count = heroCards.filter(c => (c.power || 0) === power).length;
+			if (count > maxAllowed) {
+				violations.push({
+					rule: 'power_slot_limit',
+					message: `${count} Heroes at Power ${power} — maximum ${maxAllowed} allowed in ${format.name}`,
+					severity: 'error',
+					cardIds: heroCards.filter(c => (c.power || 0) === power).map(c => c.id)
+				});
+			}
+		}
+	}
+
+	// ── Rule 2c: Absolute max power ───────────────────────────
+	if (format.absoluteMaxPower !== null) {
+		const overMax = heroCards.filter(c => (c.power || 0) > format.absoluteMaxPower!);
+		for (const card of overMax) {
+			violations.push({
+				rule: 'absolute_max_power',
+				message: `"${card.hero_name || card.name}" has ${card.power} Power — exceeds ${format.absoluteMaxPower} absolute maximum in ${format.name}`,
+				severity: 'error',
+				cardIds: [card.id]
+			});
+		}
+	}
+
+	// ── Rule 2d: SPEC+ core deck requirement (first 60 must be ≤160) ─
+	if (format.id === 'spec_plus' && heroCards.length >= 60) {
+		const coreCards = heroCards.slice(0, 60);
+		const coreOverSpec = coreCards.filter(c => (c.power || 0) > 160);
+		for (const card of coreOverSpec) {
+			violations.push({
+				rule: 'spec_plus_core',
+				message: `Core Deck card "${card.hero_name || card.name}" has ${card.power} Power — first 60 cards must be ≤160 in SPEC+`,
+				severity: 'error',
+				cardIds: [card.id]
+			});
+		}
+	}
+
 	// ── Rule 3: Combined Power cap ─────────────────────────
 	if (format.combinedPowerCap !== null && totalPower > format.combinedPowerCap) {
 		violations.push({

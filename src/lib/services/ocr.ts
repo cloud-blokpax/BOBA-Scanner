@@ -25,15 +25,15 @@ export async function initOcr(whitelist?: string): Promise<void> {
 	await worker.setParameters({
 		tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
 		tessedit_char_whitelist:
-			whitelist || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- '
+			whitelist || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-. '
 	});
 }
 
 export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 	if (!worker) await initOcr();
 
-	// Restart worker every 100 recognitions (WASM memory leak mitigation)
-	if (++recognitionCount > 100) {
+	// Restart worker every 50 recognitions (WASM memory leak mitigation, reduced from 100 for better mobile memory)
+	if (++recognitionCount > 50) {
 		try {
 			const oldWorker = worker;
 			worker = null;

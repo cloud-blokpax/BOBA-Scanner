@@ -6,7 +6,7 @@
  */
 
 import { writable, derived, get } from 'svelte/store';
-import { supabase } from '$lib/services/supabase';
+import { getSupabase } from '$lib/services/supabase';
 import { user } from '$lib/stores/auth';
 
 // Feature definitions (fallback defaults)
@@ -156,7 +156,15 @@ export function featureEnabled(featureKey: string) {
  */
 export async function loadFeatureFlags(): Promise<void> {
 	try {
-		const { data: flagsRaw, error: flagErr } = await supabase.from('feature_flags').select('*');
+		const client = getSupabase();
+		if (!client) {
+			// No Supabase — use defaults immediately, skip DB fetch
+			featureFlags.set(new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f])));
+			flagsLoaded.set(true);
+			return;
+		}
+
+		const { data: flagsRaw, error: flagErr } = await client.from('feature_flags').select('*');
 		const flags = (flagsRaw || []) as FeatureFlag[];
 
 		const flagMap = new Map<string, FeatureFlag>();
@@ -185,7 +193,7 @@ export async function loadFeatureFlags(): Promise<void> {
 		const currentUser = get(user);
 		if (currentUser) {
 			// Fetch user profile for role check
-			const { data: profile } = await supabase
+			const { data: profile } = await client
 				.from('users')
 				.select('is_member, is_admin')
 				.eq('id', currentUser.id)
@@ -193,7 +201,7 @@ export async function loadFeatureFlags(): Promise<void> {
 			_userProfile = profile || null;
 			_userProfileForUserId = currentUser.id;
 
-			const { data: overrides } = await supabase
+			const { data: overrides } = await client
 				.from('user_feature_overrides')
 				.select('feature_key, enabled')
 				.eq('user_id', currentUser.id);
@@ -224,12 +232,14 @@ export async function saveFeatureFlag(
 	updates: Partial<FeatureFlag>
 ): Promise<boolean> {
 	try {
+		const client = getSupabase();
+		if (!client) return false;
 		// Get existing flag to ensure required fields are present for upsert
 		const existing = get(featureFlags).get(featureKey);
 		const displayName = updates.display_name || existing?.display_name || featureKey;
 		// Strip non-DB fields (icon is local-only)
 		const { icon: _icon, ...dbUpdates } = updates;
-		const { error } = await supabase.from('feature_flags').upsert(
+		const { error } = await client.from('feature_flags').upsert(
 			{ feature_key: featureKey, display_name: displayName, ...dbUpdates, updated_at: new Date().toISOString() },
 			{ onConflict: 'feature_key' }
 		);

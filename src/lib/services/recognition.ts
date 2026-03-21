@@ -23,6 +23,7 @@ import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
 let imageWorker: Comlink.Remote<{
 	computeDHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
+	computePHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
 	hammingDistance: (a: string, b: string) => number;
 	resizeForUpload: (bitmap: ImageBitmap, max?: number) => Promise<Blob>;
 	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;
@@ -75,6 +76,24 @@ export async function checkImageQuality(bitmap: ImageBitmap): Promise<{
 		hasGlare: glare.hasGlare,
 		glareRegions: glare.regions
 	};
+}
+
+/**
+ * Compute a quick frame hash for stability detection (not card matching).
+ * Used by Scanner.svelte to detect frame-to-frame stability before auto-capture.
+ */
+export async function computeFrameHash(bitmap: ImageBitmap): Promise<string> {
+	await initWorkers();
+	return imageWorker!.computeDHash(bitmap, 8);
+}
+
+/**
+ * Compute Hamming distance between two hex hash strings.
+ * Exposed for Scanner.svelte stability detection.
+ */
+export async function computeHammingDistance(a: string, b: string): Promise<number> {
+	await initWorkers();
+	return imageWorker!.hammingDistance(a, b);
 }
 
 /**
@@ -231,7 +250,7 @@ export async function recognizeCard(
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}`);
 				const hash = await imageWorker!.computeDHash(bitmap);
-				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence);
+				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap);
 				return finalize(tier2Result);
 			}
 			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
@@ -251,7 +270,7 @@ export async function recognizeCard(
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}`);
 		const hash = await imageWorker!.computeDHash(bitmap);
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence);
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
@@ -318,23 +337,44 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			const { data: fuzzyMatch } = await (client.rpc as CallableFunction)('find_similar_hash', {
 				query_hash: hash,
 				max_distance: 5
-			}) as { data: Array<{ card_id: string; confidence: number; distance: number }> | null };
+			}) as { data: Array<{ card_id: string; confidence: number; distance: number; phash_256?: string }> | null };
 			if (fuzzyMatch && fuzzyMatch.length > 0) {
 				const match = fuzzyMatch[0];
-				const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
-				if (card) {
-					// Reduce confidence slightly based on distance (5 bits = ~8% penalty)
-					const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
-					// Cache the new hash → same card for future exact matches
-					await writeHashToAllLayers(hash, match.card_id, adjustedConfidence);
-					console.debug(`[scan:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
-					return {
-						card_id: card.id,
-						card,
-						scan_method: 'hash_cache' as const,
-						confidence: adjustedConfidence,
-						processing_ms: 0
-					};
+
+				// pHash verification: if the fuzzy match has a pHash stored,
+				// compute our pHash and compare to reduce false positives
+				let pHashVerified = true;
+				if (match.phash_256) {
+					try {
+						const queryPHash = await imageWorker!.computePHash(bitmap, 16);
+						const pHashDist = await imageWorker!.hammingDistance(queryPHash, match.phash_256);
+						// pHash threshold: 256-bit hash, allow up to 20 bits different
+						pHashVerified = pHashDist <= 20;
+						if (!pHashVerified) {
+							console.debug(`[scan:tier1] Fuzzy dHash match rejected by pHash verification (pHash distance=${pHashDist})`);
+						}
+					} catch {
+						// pHash computation failed — trust the dHash match
+						pHashVerified = true;
+					}
+				}
+
+				if (pHashVerified) {
+					const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
+					if (card) {
+						// Reduce confidence slightly based on distance (5 bits = ~8% penalty)
+						const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
+						// Cache the new hash → same card for future exact matches
+						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap);
+						console.debug(`[scan:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
+						return {
+							card_id: card.id,
+							card,
+							scan_method: 'hash_cache' as const,
+							confidence: adjustedConfidence,
+							processing_ms: 0
+						};
+					}
 				}
 			}
 		} catch (err) {
@@ -501,11 +541,22 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 async function writeHashToAllLayers(
 	hash: string,
 	cardId: string,
-	confidence: number
+	confidence: number,
+	bitmap?: ImageBitmap
 ): Promise<void> {
+	// Compute pHash if bitmap is available (for enhanced matching)
+	let phash256: string | null = null;
+	if (bitmap && imageWorker) {
+		try {
+			phash256 = await imageWorker.computePHash(bitmap, 16);
+		} catch {
+			// Non-critical — pHash is an enhancement
+		}
+	}
+
 	// Layer 1: IndexedDB
 	try {
-		await idb.setHash({ phash: hash, card_id: cardId, confidence });
+		await idb.setHash({ phash: hash, card_id: cardId, confidence, ...(phash256 ? { phash_256: phash256 } : {}) });
 	} catch {
 		// Non-critical
 	}
@@ -520,7 +571,8 @@ async function writeHashToAllLayers(
 					card_id: cardId,
 					confidence,
 					scan_count: 1,
-					last_seen: new Date().toISOString()
+					last_seen: new Date().toISOString(),
+					...(phash256 ? { phash_256: phash256 } : {})
 				},
 				{ onConflict: 'phash' }
 			);

@@ -10,7 +10,7 @@
  */
 
 const DB_NAME = 'boba-scanner-v2';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const STORES = {
 	cards: 'cards',
@@ -19,7 +19,8 @@ const STORES = {
 	prices: 'prices',
 	meta: 'meta',
 	tombstones: 'tombstones',
-	scanQueue: 'scan_queue'
+	scanQueue: 'scan_queue',
+	decks: 'decks'
 } as const;
 
 type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -63,6 +64,9 @@ function openDB(): Promise<IDBDatabase> {
 			}
 			if (!db.objectStoreNames.contains(STORES.scanQueue)) {
 				db.createObjectStore(STORES.scanQueue, { keyPath: 'id' });
+			}
+			if (!db.objectStoreNames.contains(STORES.decks)) {
+				db.createObjectStore(STORES.decks, { keyPath: 'id' });
 			}
 		};
 
@@ -194,6 +198,26 @@ export const idb = {
 		await clear(STORES.tombstones);
 	},
 
+	// Decks
+	async getDeck(id: string) {
+		return get(STORES.decks, id);
+	},
+	async saveDeck(deck: { id: string; name: string; formatId: string; heroCardIds: string[]; playEntries: unknown[]; hotDogCount: number; updatedAt: string }) {
+		await put(STORES.decks, deck);
+	},
+	async listDecks() {
+		return getAll(STORES.decks);
+	},
+	async deleteDeck(id: string) {
+		const db = await openDB();
+		return new Promise<void>((resolve, reject) => {
+			const tx = db.transaction(STORES.decks, 'readwrite');
+			const req = tx.objectStore(STORES.decks).delete(id);
+			req.onsuccess = () => resolve();
+			req.onerror = () => reject(req.error);
+		});
+	},
+
 	// Meta
 	async getMeta<T>(key: string): Promise<T | undefined> {
 		return get(STORES.meta, key);
@@ -236,3 +260,11 @@ export const scanQueue = {
 		});
 	}
 };
+
+// Request persistent storage to prevent iOS Safari from evicting IndexedDB
+if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+	navigator.storage.persist().then((granted) => {
+		if (granted) console.debug('[idb] Persistent storage granted');
+		else console.debug('[idb] Persistent storage denied — data may be evicted');
+	});
+}

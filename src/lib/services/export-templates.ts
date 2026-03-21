@@ -204,6 +204,107 @@ export function generateCSV(
 	return [header, ...rows].join('\n');
 }
 
+// ── eBay Seller Hub CSV Export ───────────────────────────────
+
+export interface ExportCard {
+	heroName?: string;
+	name?: string;
+	cardNumber?: string;
+	setCode?: string;
+	weaponType?: string;
+	parallel?: string;
+	rarity?: string;
+	conditionId?: string;
+	price?: number;
+}
+
+const CONDITION_MULTIPLIERS: Record<string, number> = {
+	NM: 1.0,
+	LP: 0.85,
+	MP: 0.70,
+	HP: 0.55,
+	D: 0.35
+};
+
+export function getConditionMultiplier(condition: string): number {
+	return CONDITION_MULTIPLIERS[condition] ?? 1.0;
+}
+
+/**
+ * Generate an optimized eBay title (max 80 chars).
+ * Structure: [Card Name] [Finish] [Number] [Rarity] [Set] [Game]
+ */
+export function generateEbayTitle(card: ExportCard): string {
+	const parts = [
+		card.heroName || card.name || '',
+		card.parallel || '',
+		card.cardNumber || '',
+		card.weaponType || '',
+		card.setCode || '',
+		'BoBA Battle Arena'
+	].filter(Boolean);
+
+	let title = parts.join(' ');
+	if (title.length > 80) {
+		while (title.length > 80 && parts.length > 2) {
+			parts.pop();
+			title = parts.join(' ');
+		}
+		title = title.substring(0, 80);
+	}
+	return title;
+}
+
+function generateDescription(card: ExportCard): string {
+	const lines = ['Bo Jackson Battle Arena (BoBA) Trading Card'];
+	if (card.heroName) lines.push(`Hero: ${card.heroName}`);
+	if (card.cardNumber) lines.push(`Card Number: ${card.cardNumber}`);
+	if (card.setCode) lines.push(`Set: ${card.setCode}`);
+	if (card.weaponType) lines.push(`Weapon: ${card.weaponType}`);
+	if (card.parallel) lines.push(`Parallel: ${card.parallel}`);
+	return lines.join(' | ');
+}
+
+function escapeCsvFieldExport(value: string): string {
+	if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+		return '"' + value.replace(/"/g, '""') + '"';
+	}
+	return value;
+}
+
+/**
+ * Generate eBay Seller Hub-compatible CSV for bulk upload.
+ */
+export function generateEbayCSV(cards: ExportCard[]): string {
+	const headers = [
+		'*Action(SiteID=US|Country=US|Currency=USD|Version=1193)',
+		'*Category', '*Title', '*ConditionID', '*C:Card Name', '*C:Set',
+		'*C:Card Number', 'PicURL', '*StartPrice', '*Quantity',
+		'*Format', '*Duration', 'Description'
+	];
+
+	const rows = cards.map(card => [
+		'Add',
+		'183454',
+		generateEbayTitle(card),
+		card.conditionId || '1000',
+		card.heroName || card.name || '',
+		card.setCode || '',
+		card.cardNumber || '',
+		'',
+		card.price?.toFixed(2) || '',
+		'1',
+		'FixedPrice',
+		'GTC',
+		generateDescription(card)
+	]);
+
+	return [
+		headers.join(','),
+		...rows.map(r => r.map(escapeCsvFieldExport).join(','))
+	].join('\n');
+}
+
 /**
  * Download a file via blob URL.
  */

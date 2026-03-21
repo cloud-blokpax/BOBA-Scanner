@@ -17,6 +17,19 @@ interface OcrRegion {
 	h: number;
 }
 
+// ── DCT-II coefficient matrix (32×32) for pHash ───────────
+// C[k][n] = cos(π * k * (2n+1) / (2N))
+// Row 0 scaled by 1/√N, others by √(2/N)
+const DCT_SIZE = 32;
+const DCT_MATRIX: Float64Array[] = [];
+for (let k = 0; k < DCT_SIZE; k++) {
+	DCT_MATRIX[k] = new Float64Array(DCT_SIZE);
+	const scale = k === 0 ? 1 / Math.sqrt(DCT_SIZE) : Math.sqrt(2 / DCT_SIZE);
+	for (let n = 0; n < DCT_SIZE; n++) {
+		DCT_MATRIX[k][n] = scale * Math.cos((Math.PI * k * (2 * n + 1)) / (2 * DCT_SIZE));
+	}
+}
+
 const imageProcessor = {
 	async computeDHash(imageBitmap: ImageBitmap, hashSize = 8): Promise<string> {
 		const canvas = new OffscreenCanvas(hashSize + 1, hashSize);
@@ -39,6 +52,80 @@ const imageProcessor = {
 		// hashSize*hashSize bits → hashSize*hashSize/4 hex digits
 		const hexDigits = (hashSize * hashSize) / 4;
 		return BigInt('0b' + hash)
+			.toString(16)
+			.padStart(hexDigits, '0');
+	},
+
+	/**
+	 * Compute a perceptual hash using DCT (pHash algorithm).
+	 * More robust than dHash for different lighting/angles.
+	 * Returns a 64-char hex string (256-bit hash) for hashSize=16.
+	 */
+	async computePHash(imageBitmap: ImageBitmap, hashSize = 16): Promise<string> {
+		// Resize to 32×32 for DCT
+		const canvas = new OffscreenCanvas(DCT_SIZE, DCT_SIZE);
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(imageBitmap, 0, 0, DCT_SIZE, DCT_SIZE);
+		const pixels = ctx.getImageData(0, 0, DCT_SIZE, DCT_SIZE).data;
+
+		// Convert to grayscale matrix
+		const gray = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let i = 0; i < DCT_SIZE * DCT_SIZE; i++) {
+			const idx = i * 4;
+			gray[i] = pixels[idx] * 0.299 + pixels[idx + 1] * 0.587 + pixels[idx + 2] * 0.114;
+		}
+
+		// Apply 2D DCT: first on rows, then on columns
+		// Row transform
+		const rowDct = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let y = 0; y < DCT_SIZE; y++) {
+			for (let k = 0; k < DCT_SIZE; k++) {
+				let sum = 0;
+				for (let n = 0; n < DCT_SIZE; n++) {
+					sum += DCT_MATRIX[k][n] * gray[y * DCT_SIZE + n];
+				}
+				rowDct[y * DCT_SIZE + k] = sum;
+			}
+		}
+
+		// Column transform on the row-transformed result
+		const dctCoeffs = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let x = 0; x < DCT_SIZE; x++) {
+			for (let k = 0; k < DCT_SIZE; k++) {
+				let sum = 0;
+				for (let n = 0; n < DCT_SIZE; n++) {
+					sum += DCT_MATRIX[k][n] * rowDct[n * DCT_SIZE + x];
+				}
+				dctCoeffs[k * DCT_SIZE + x] = sum;
+			}
+		}
+
+		// Take top-left hashSize×hashSize block (low frequencies), skipping [0][0] (DC component)
+		const coeffs: number[] = [];
+		for (let y = 0; y < hashSize; y++) {
+			for (let x = 0; x < hashSize; x++) {
+				if (y === 0 && x === 0) continue; // Skip DC
+				coeffs.push(dctCoeffs[y * DCT_SIZE + x]);
+			}
+		}
+
+		// Median of the coefficients
+		const sorted = [...coeffs].sort((a, b) => a - b);
+		const median = sorted.length % 2 === 0
+			? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+			: sorted[Math.floor(sorted.length / 2)];
+
+		// Generate hash bits: 1 if coefficient > median, else 0
+		// Total bits = hashSize*hashSize (256 for hashSize=16)
+		let hashBits = '';
+		for (let y = 0; y < hashSize; y++) {
+			for (let x = 0; x < hashSize; x++) {
+				hashBits += dctCoeffs[y * DCT_SIZE + x] > median ? '1' : '0';
+			}
+		}
+
+		const hexDigits = (hashSize * hashSize) / 4;
+		return BigInt('0b' + hashBits)
 			.toString(16)
 			.padStart(hexDigits, '0');
 	},
@@ -310,6 +397,14 @@ const imageProcessor = {
 			gray[i] = Math.round(
 				data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114
 			);
+		}
+
+		// Apply contrast boost: threshold at 128 on grayscale for cleaner OCR input
+		for (let i = 0; i < totalPx; i++) {
+			const v = gray[i];
+			// Sigmoid contrast curve centered at 128
+			const boosted = 255 / (1 + Math.exp(-0.05 * (v - 128)));
+			gray[i] = Math.round(boosted);
 		}
 
 		// Unsharp mask (3x3 Laplacian sharpening)

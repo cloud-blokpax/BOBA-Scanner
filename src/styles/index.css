@@ -111,6 +111,19 @@
   --shadow-gold-lg: 0 8px 32px rgba(245,158,11,0.45);
   --shadow-blue: 0 4px 20px rgba(59,130,246,0.35);
 
+  /* Rarity glow colors */
+  --glow-common: #9CA3AF;
+  --glow-uncommon: #22C55E;
+  --glow-rare: #3B82F6;
+  --glow-ultra-rare: #A855F7;
+  --glow-legendary: #F59E0B;
+
+  /* Surface elevation (dark mode: lighter bg = higher elevation) */
+  --elevation-0: var(--bg-base);
+  --elevation-1: var(--bg-surface);
+  --elevation-2: var(--bg-elevated);
+  --elevation-3: var(--bg-hover);
+
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4,0,0.2,1);
   --transition-base: 220ms cubic-bezier(0.4,0,0.2,1);
@@ -126,6 +139,19 @@
   --z-popover:     1060;
   --z-tooltip:     1070;
 }
+
+/* ── View Transitions ──────────────────────────────────── */
+@view-transition { navigation: auto; }
+
+::view-transition-old(root) {
+  animation: 150ms ease-out both vt-fade-out;
+}
+::view-transition-new(root) {
+  animation: 150ms ease-in both vt-fade-in;
+}
+
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
 
 /* ── Accessibility ──────────────────────────────────────── */
 /* Visually hides elements while keeping them accessible to screen readers */
