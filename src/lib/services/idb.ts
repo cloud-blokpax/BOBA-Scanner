@@ -159,7 +159,7 @@ export const idb = {
 	async getHash(phash: string) {
 		return get(STORES.hashCache, phash);
 	},
-	async setHash(entry: { phash: string; card_id: string; confidence: number }) {
+	async setHash(entry: { phash: string; card_id: string; confidence: number; phash_256?: string }) {
 		await put(STORES.hashCache, {
 			...entry,
 			scan_count: 1,

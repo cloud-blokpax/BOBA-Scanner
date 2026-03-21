@@ -159,6 +159,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw new Error('Invalid response from eBay offer API');
 		}
 		const offerId = offerData.offerId;
+		if (!offerId) {
+			throw new Error('eBay API did not return an offer ID');
+		}
 
 		// Step 3: Publish offer
 		const publishRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${offerId}/publish`, {
@@ -182,6 +185,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw new Error('Invalid response from eBay publish API');
 		}
 		const listingId = publishData.listingId;
+		if (!listingId) {
+			throw new Error('eBay API did not return a listing ID');
+		}
 		const listingUrl = `https://www.ebay.com/itm/${listingId}`;
 
 		// Update template with success

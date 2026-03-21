@@ -149,8 +149,8 @@ export async function fullSync(): Promise<void> {
 export function setupAutoSync(): () => void {
 	if (!browser) return () => {};
 
-	// Initial sync
-	fullSync();
+	// Initial sync (catch to avoid unhandled promise rejection)
+	fullSync().catch((err) => console.warn('Initial sync failed:', err));
 
 	// Auto-sync every 5 minutes
 	_autoSyncInterval = setInterval(fullSync, AUTO_SYNC_INTERVAL);

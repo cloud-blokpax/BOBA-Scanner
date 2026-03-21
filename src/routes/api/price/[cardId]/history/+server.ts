@@ -35,8 +35,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	return json({
 		card_id: cardId,
-		history: (data || []).map((row: { recorded_at: string; price_mid: number | null; price_low: number | null; price_high: number | null }) => ({
-			date: row.recorded_at, price_mid: row.price_mid, price_low: row.price_low, price_high: row.price_high
+		history: (data || []).map((row: { recorded_at: string; price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null }) => ({
+			date: row.recorded_at, price_mid: row.price_mid, price_low: row.price_low, price_high: row.price_high, listings_count: row.listings_count
 		}))
 	});
 };

@@ -21,6 +21,7 @@
 	let selectedPlaySet = $state('all');
 	let showAffordableOnly = $state(false);
 	let savedMessage = $state<string | null>(null);
+	let _pendingHeroIds = $state<string[] | null>(null);
 
 	// ── Derived: DBS calculations ──────────────────────────
 	const totalDbs = $derived(playEntries.reduce((sum, p) => sum + p.dbs, 0));
@@ -127,6 +128,16 @@
 		loadDeckFromStorage();
 	});
 
+	// Resolve pending hero card IDs when collection finishes loading
+	$effect(() => {
+		if (!_pendingHeroIds) return;
+		const items = $collectionItems;
+		if (items.length === 0) return;
+		const idSet = new Set(_pendingHeroIds);
+		heroCards = items.filter(item => idSet.has(item.id));
+		_pendingHeroIds = null;
+	});
+
 	// ── Hero deck operations ───────────────────────────────
 	function addHeroToDeck(item: CollectionItem) {
 		if (heroCards.length >= 70) return;
@@ -190,17 +201,15 @@
 			selectedFormatId = deck.formatId || 'spec_playmaker';
 			hotDogCount = deck.hotDogCount ?? 10;
 			playEntries = deck.playEntries || [];
-			// Hero cards will be resolved after collection loads
+			// Hero cards will be resolved reactively when collection loads
 			if (deck.heroCardIds?.length) {
-				const resolveHeroes = () => {
-					const items = $collectionItems;
-					if (items.length === 0) return;
-					const idSet = new Set(deck.heroCardIds as string[]);
+				_pendingHeroIds = deck.heroCardIds as string[];
+				const items = $collectionItems;
+				if (items.length > 0) {
+					const idSet = new Set(_pendingHeroIds);
 					heroCards = items.filter(item => idSet.has(item.id));
-				};
-				// Try immediately and also after a short delay for collection load
-				resolveHeroes();
-				setTimeout(resolveHeroes, 500);
+					_pendingHeroIds = null;
+				}
 			}
 		} catch { /* ignore */ }
 	}
