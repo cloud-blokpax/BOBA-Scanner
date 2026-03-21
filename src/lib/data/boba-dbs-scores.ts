@@ -10,8 +10,6 @@
  * exists across releases with different DBS values.
  */
 
-import playCardsData from './play-cards.json';
-
 export interface PlayCardData {
 	id: string;
 	card_number: string;
@@ -22,22 +20,6 @@ export interface PlayCardData {
 	hot_dog_cost: number | null;
 	dbs: number;
 }
-
-/** Release letter to set_code mapping */
-const RELEASE_TO_SET: Record<string, string> = {
-	'A': 'Alpha Edition',
-	'G': 'Griffey Edition',
-	'U': 'Alpha Update',
-	'HTD': 'Alpha Blast'
-};
-
-/** set_code to release letter mapping */
-const SET_TO_RELEASE: Record<string, string> = {
-	'Alpha Edition': 'A',
-	'Griffey Edition': 'G',
-	'Alpha Update': 'U',
-	'Alpha Blast': 'HTD',
-};
 
 /** DBS score for a specific Play card, keyed by "set_code:card_number" */
 const DBS_SCORES: Record<string, number> = {
@@ -460,13 +442,6 @@ const DBS_SCORES: Record<string, number> = {
 
 };
 
-/** Full play card data indexed by composite key */
-const PLAY_CARDS_BY_KEY: Record<string, PlayCardData> = {};
-for (const card of playCardsData as PlayCardData[]) {
-	const setCode = RELEASE_TO_SET[card.release] || card.release;
-	PLAY_CARDS_BY_KEY[setCode + ':' + card.card_number] = card;
-}
-
 /** Build a composite key from set_code and card_number */
 function buildKey(cardNumber: string, setCode?: string): string {
 	const num = cardNumber.trim().toUpperCase();
@@ -494,36 +469,6 @@ export function getDbsScore(cardNumber: string, setCode?: string): number | null
 /** Alias for getDbsScore — look up the DBS score for a single Play/Bonus Play card number. */
 export function getDbs(cardNumber: string, setCode?: string): number | null {
 	return getDbsScore(cardNumber, setCode);
-}
-
-/**
- * Get full play card data for a card.
- * @param cardNumber - e.g. "PL-1"
- * @param setCode - e.g. "Alpha Edition"
- */
-export function getPlayCard(cardNumber: string, setCode?: string): PlayCardData | null {
-	const key = buildKey(cardNumber, setCode);
-	return PLAY_CARDS_BY_KEY[key] ?? null;
-}
-
-/**
- * Get all play cards for a given set.
- */
-export function getPlayCardsBySet(setCode: string): PlayCardData[] {
-	return (playCardsData as PlayCardData[]).filter(c => {
-		const s = RELEASE_TO_SET[c.release] || c.release;
-		return s === setCode;
-	});
-}
-
-/** Get the release letter for a set_code */
-export function getReleaseForSet(setCode: string): string | null {
-	return SET_TO_RELEASE[setCode] ?? null;
-}
-
-/** Get the set_code for a release letter */
-export function getSetForRelease(release: string): string | null {
-	return RELEASE_TO_SET[release] ?? null;
 }
 
 /** Check if DBS data is available (enough cards have scores to be useful) */
@@ -560,3 +505,8 @@ export function calculateTotalDbs(
 }
 
 export const DBS_CAP = 1000;
+
+/** Return a copy of the DBS scores map (for server-side data passing) */
+export function getDbsScoresMap(): Record<string, number> {
+	return DBS_SCORES;
+}

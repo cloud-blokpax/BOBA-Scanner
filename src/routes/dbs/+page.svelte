@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { calculateTotalDbs, getDbs, getPlayCardsBySet, type PlayCardData } from '$lib/data/boba-dbs-scores';
+	let { data } = $props();
 
 	const SETS = [
 		{ code: 'Alpha Edition', label: 'Alpha (A)' },
@@ -11,10 +11,42 @@
 	let selectedSet = $state('Alpha Edition');
 	let playEntries = $state<Array<{ cardNumber: string; setCode: string; name?: string }>>([]);
 	let inputValue = $state('');
+
+	/** Look up a DBS score using the server-provided scores map */
+	function getDbs(cardNumber: string, setCode?: string): number | null {
+		const num = cardNumber.trim().toUpperCase();
+		let key: string;
+		if (setCode) {
+			key = setCode + ':' + num;
+		} else if (num.startsWith('HTD-')) {
+			key = 'Alpha Blast:' + num;
+		} else {
+			key = num;
+		}
+		return data.dbsScores[key] ?? null;
+	}
+
+	/** Calculate total DBS for the current play entries */
+	function calculateTotalDbs(cards: Array<{ cardNumber: string; setCode: string }>) {
+		if (Object.keys(data.dbsScores).length < 20) return null;
+		let total = 0;
+		const missing: string[] = [];
+		for (const { cardNumber, setCode } of cards) {
+			const score = getDbs(cardNumber, setCode);
+			if (score !== null) {
+				total += score;
+			} else {
+				missing.push(setCode ? setCode + ':' + cardNumber : cardNumber);
+			}
+		}
+		if (missing.length > cards.length * 0.25) return null;
+		return { total, missing };
+	}
+
 	let dbsResult = $derived(calculateTotalDbs(playEntries));
 
-	/** Available play cards for the selected set (for autocomplete/reference) */
-	let availablePlays = $derived(getPlayCardsBySet(selectedSet));
+	/** Available play cards for the selected set (from server-loaded data) */
+	let availablePlays = $derived(data.playCardsBySet[selectedSet] ?? []);
 
 	function addPlay() {
 		const cleaned = inputValue.trim().toUpperCase();
