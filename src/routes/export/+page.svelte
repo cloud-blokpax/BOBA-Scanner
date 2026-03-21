@@ -9,7 +9,11 @@
 		getUserTemplates,
 		saveUserTemplate,
 		deleteUserTemplate,
-		type ExportTemplate
+		generateEbayCSV,
+		generateEbayTitle,
+		getConditionMultiplier,
+		type ExportTemplate,
+		type ExportCard
 	} from '$lib/services/export-templates';
 	import { showToast } from '$lib/stores/toast';
 	import { formatPrice } from '$lib/utils';
@@ -25,6 +29,66 @@
 	let templates = $state<ExportTemplate[]>(getUserTemplates());
 	let newTemplateName = $state('');
 	let activeTab = $state<'csv' | 'deck' | 'ebay'>('csv');
+
+	// eBay batch export state
+	interface EbayQueueItem {
+		id: string;
+		heroName: string;
+		cardNumber: string;
+		setCode: string;
+		weaponType: string;
+		parallel: string;
+		condition: string;
+		price: number;
+	}
+
+	let ebayQueue = $state<EbayQueueItem[]>([]);
+	let ebayBulkCondition = $state('NM');
+
+	function populateEbayQueue() {
+		ebayQueue = $collectionItems.map(item => ({
+			id: item.id,
+			heroName: item.card?.hero_name || item.card?.name || '',
+			cardNumber: item.card?.card_number || '',
+			setCode: item.card?.set_code || '',
+			weaponType: item.card?.weapon_type || '',
+			parallel: item.card?.parallel || '',
+			condition: 'NM',
+			price: 0.99
+		}));
+	}
+
+	function setBulkCondition(condition: string) {
+		ebayBulkCondition = condition;
+		ebayQueue = ebayQueue.map(item => ({
+			...item,
+			condition,
+			price: parseFloat((item.price * getConditionMultiplier(condition)).toFixed(2))
+		}));
+	}
+
+	function removeFromEbayQueue(id: string) {
+		ebayQueue = ebayQueue.filter(q => q.id !== id);
+	}
+
+	function runEnhancedEbayExport() {
+		if (ebayQueue.length === 0) {
+			showToast('No cards in export queue', 'x');
+			return;
+		}
+		const cards: ExportCard[] = ebayQueue.map(item => ({
+			heroName: item.heroName,
+			cardNumber: item.cardNumber,
+			setCode: item.setCode,
+			weaponType: item.weaponType,
+			parallel: item.parallel,
+			conditionId: EBAY_CONDITION_MAP[item.condition === 'NM' ? 'Near Mint' : item.condition] || '3000',
+			price: item.price
+		}));
+		const csv = generateEbayCSV(cards);
+		downloadFile(csv, `boba-ebay-${new Date().toISOString().split('T')[0]}.csv`);
+		showToast(`Exported ${cards.length} cards for eBay`, 'check');
+	}
 
 	function toggleField(key: string) {
 		const next = new Set(selectedFields);
@@ -225,8 +289,49 @@
 		</div>
 	{:else if activeTab === 'ebay'}
 		<div class="section">
-			<p class="info-text">Generate an eBay Seller Hub bulk upload file for your collection.</p>
-			<button class="export-btn" onclick={runEbayExport}>Download eBay CSV</button>
+			<p class="info-text">Generate an eBay Seller Hub-compatible CSV with optimized titles and pricing.</p>
+
+			{#if ebayQueue.length === 0}
+				<button class="export-btn" onclick={populateEbayQueue}>Load Collection into Queue</button>
+			{:else}
+				<!-- Bulk actions -->
+				<div class="ebay-bulk-actions">
+					<span class="bulk-label">{ebayQueue.length} cards</span>
+					<select bind:value={ebayBulkCondition} onchange={() => setBulkCondition(ebayBulkCondition)} class="condition-select">
+						<option value="NM">All NM</option>
+						<option value="LP">All LP</option>
+						<option value="MP">All MP</option>
+						<option value="HP">All HP</option>
+						<option value="D">All Damaged</option>
+					</select>
+				</div>
+
+				<!-- Queue list -->
+				<div class="ebay-queue">
+					{#each ebayQueue as item, i (item.id)}
+						<div class="ebay-item">
+							<div class="ebay-item-info">
+								<span class="ebay-item-name">{item.heroName}</span>
+								<span class="ebay-item-number">{item.cardNumber}</span>
+							</div>
+							<select bind:value={ebayQueue[i].condition} class="condition-select-sm">
+								<option value="NM">NM</option>
+								<option value="LP">LP</option>
+								<option value="MP">MP</option>
+								<option value="HP">HP</option>
+								<option value="D">D</option>
+							</select>
+							<div class="ebay-price-input">
+								<span class="price-symbol">$</span>
+								<input type="number" bind:value={ebayQueue[i].price} step="0.01" min="0" class="price-field" />
+							</div>
+							<button class="remove-btn-sm" onclick={() => removeFromEbayQueue(item.id)}>x</button>
+						</div>
+					{/each}
+				</div>
+
+				<button class="export-btn" onclick={runEnhancedEbayExport}>Download eBay CSV ({ebayQueue.length} cards)</button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -356,5 +461,84 @@
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
+		margin-top: 0.75rem;
 	}
+
+	/* eBay queue styles */
+	.ebay-bulk-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.bulk-label {
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		font-weight: 600;
+	}
+
+	.condition-select, .condition-select-sm {
+		padding: 0.375rem 0.5rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		font-size: 0.8rem;
+	}
+
+	.condition-select-sm { padding: 0.25rem 0.375rem; font-size: 0.75rem; }
+
+	.ebay-queue {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		max-height: 400px;
+		overflow-y: auto;
+		margin-bottom: 0.75rem;
+	}
+
+	.ebay-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
+	}
+
+	.ebay-item-info { flex: 1; min-width: 0; }
+	.ebay-item-name { font-size: 0.85rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ebay-item-number { font-size: 0.7rem; color: var(--text-tertiary); }
+
+	.ebay-price-input {
+		display: flex;
+		align-items: center;
+		gap: 0.125rem;
+	}
+
+	.price-symbol { font-size: 0.8rem; color: var(--text-secondary); }
+
+	.price-field {
+		width: 60px;
+		padding: 0.25rem 0.375rem;
+		border-radius: 4px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		font-size: 0.8rem;
+		text-align: right;
+	}
+
+	.remove-btn-sm {
+		background: none;
+		border: none;
+		color: var(--text-tertiary);
+		cursor: pointer;
+		padding: 0.25rem;
+		font-size: 0.8rem;
+	}
+
+	.remove-btn-sm:hover { color: var(--danger, #ef4444); }
 </style>
