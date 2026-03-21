@@ -6,7 +6,51 @@ import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from './$types';
 
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
+const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
 const EBAY_CATEGORY_TRADING_CARDS = '183454';
+
+/**
+ * Fetch the seller's default business policies from eBay Account API.
+ * Returns null if policies couldn't be fetched.
+ */
+async function getSellerPolicies(token: string): Promise<{
+	fulfillmentPolicyId: string;
+	paymentPolicyId: string;
+	returnPolicyId: string;
+} | null> {
+	const headers = {
+		Authorization: `Bearer ${token}`,
+		'Content-Type': 'application/json',
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+	};
+
+	try {
+		const [fulfillment, payment, returns] = await Promise.all([
+			fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
+			fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
+			fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json())
+		]);
+
+		const findPolicy = (policies: Array<Record<string, string>>, idField: string) => {
+			if (!Array.isArray(policies) || policies.length === 0) return null;
+			return policies[0][idField] || null;
+		};
+
+		const fulfillmentId = findPolicy(fulfillment.fulfillmentPolicies, 'fulfillmentPolicyId');
+		const paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
+		const returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
+
+		if (!fulfillmentId || !paymentId || !returnId) return null;
+
+		return {
+			fulfillmentPolicyId: fulfillmentId,
+			paymentPolicyId: paymentId,
+			returnPolicyId: returnId
+		};
+	} catch {
+		return null;
+	}
+}
 
 const CONDITION_MAP: Record<string, { conditionId: string; conditionDescription: string }> = {
 	'Mint': { conditionId: '1000', conditionDescription: 'Brand New' },
@@ -109,6 +153,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw new Error(errMsg);
 		}
 
+		// Fetch seller's business policies
+		const policies = await getSellerPolicies(token);
+		if (!policies) {
+			throw new Error(
+				'No business policies found. Please set up shipping, payment, and return policies in eBay Seller Hub (https://www.ebay.com/sh/selling) before creating listings.'
+			);
+		}
+
 		// Step 2: Create offer
 		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
 			method: 'POST',
@@ -131,9 +183,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					}
 				},
 				listingPolicies: {
-					fulfillmentPolicyId: '', // Seller must have default policies
-					paymentPolicyId: '',
-					returnPolicyId: ''
+					fulfillmentPolicyId: policies.fulfillmentPolicyId,
+					paymentPolicyId: policies.paymentPolicyId,
+					returnPolicyId: policies.returnPolicyId
 				}
 			})
 		});

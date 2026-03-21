@@ -3,6 +3,7 @@
 	import { invalidate, onNavigate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { getSupabase } from '$lib/services/supabase';
+	import { setupAutoSync } from '$lib/services/sync';
 	import { featureEnabled } from '$lib/stores/feature-flags';
 
 	const hasScanToList = featureEnabled('scan_to_list');
@@ -50,10 +51,21 @@
 			console.warn('Failed to verify client auth:', err);
 		});
 
+		// Activate bidirectional collection sync (5-minute interval)
+		let cleanupSync = () => {};
+		if (data.user) {
+			cleanupSync = setupAutoSync();
+		}
+
 		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {
 			// Only invalidate when the session actually changes to avoid redundant server re-fetches
 			if (newSession?.expires_at !== data.session?.expires_at) {
 				invalidate('supabase:auth');
+			}
+			// Start/stop sync when auth changes
+			cleanupSync();
+			if (newSession?.user) {
+				cleanupSync = setupAutoSync();
 			}
 		});
 
@@ -84,9 +96,21 @@
 			showToast(`Processing ${queued.length} queued scan(s)...`, 'info');
 
 			const { recognizeCard } = await import('$lib/services/recognition');
+			const { addToCollection } = await import('$lib/stores/collection');
+			let successCount = 0;
+
 			for (const item of queued) {
 				try {
-					await recognizeCard(item.imageBlob);
+					const result = await recognizeCard(item.imageBlob);
+					if (result?.card_id) {
+						try {
+							await addToCollection(result.card_id, 'near_mint');
+							successCount++;
+						} catch {
+							// Collection add failed — still remove from queue
+							// since the scan itself succeeded
+						}
+					}
 					await scanQueue.remove(item.id);
 				} catch {
 					// Leave failed items in queue for next attempt
@@ -94,7 +118,14 @@
 			}
 			const remaining = await scanQueue.count();
 			if (remaining === 0) {
-				showToast('All queued scans processed!', 'check');
+				showToast(
+					successCount > 0
+						? `Done! ${successCount} card(s) added to collection.`
+						: 'All queued scans processed!',
+					'check'
+				);
+			} else {
+				showToast(`${remaining} scan(s) still queued — will retry later.`, 'info');
 			}
 		};
 		window.addEventListener('online', handleOnline);
@@ -103,6 +134,7 @@
 			authSubscription?.data.subscription.unsubscribe();
 			cleanupErrors();
 			cleanupVersion();
+			cleanupSync();
 			window.removeEventListener('online', handleOnline);
 		};
 	});
@@ -158,6 +190,8 @@
 				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>Deck Builder</a>
 				<a href="/dbs" class="more-item" onclick={() => (showMore = false)}>DBS Calculator</a>
 				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
+				<a href="/batch" class="more-item" onclick={() => (showMore = false)}>Batch Scanner</a>
+				<a href="/binder" class="more-item" onclick={() => (showMore = false)}>Binder Scanner</a>
 				<a href="/set-completion" class="more-item" onclick={() => (showMore = false)}>Set Completion</a>
 				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>

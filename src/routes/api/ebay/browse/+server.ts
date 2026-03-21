@@ -146,7 +146,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			}) => ({
 				itemId: item.itemId,
 				title: item.title,
-				price: item.price?.value ? `$${item.price.value}` : 'N/A',
+				price: item.price?.value ? parseFloat(item.price.value) : 0,
 				url: item.itemWebUrl,
 				image: item.image?.imageUrl || null
 			})

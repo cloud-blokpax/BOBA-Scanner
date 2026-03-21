@@ -6,7 +6,7 @@
  */
 
 import { browser } from '$app/environment';
-import { supabase } from '$lib/services/supabase';
+import { getSupabase } from '$lib/services/supabase';
 
 const STORAGE_KEY = 'exportTemplates';
 
@@ -105,7 +105,8 @@ export async function pushTemplatesToCloud(userId: string): Promise<void> {
 	const templates = getUserTemplates();
 	// Table not in generated types — uses untyped query
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const client = supabase as any;
+	const client = getSupabase() as any;
+	if (!client) throw new Error('Supabase not configured');
 	const { error } = await client
 		.from('user_settings')
 		.upsert({ user_id: userId, export_templates: templates }, { onConflict: 'user_id' });
@@ -118,7 +119,8 @@ export async function pushTemplatesToCloud(userId: string): Promise<void> {
 export async function pullTemplatesFromCloud(userId: string): Promise<ExportTemplate[]> {
 	// Table not in generated types — uses untyped query
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const client = supabase as any;
+	const client = getSupabase() as any;
+	if (!client) return [];
 	const { data, error } = await client
 		.from('user_settings')
 		.select('export_templates')
@@ -148,7 +150,8 @@ export async function pullTemplatesFromCloud(userId: string): Promise<ExportTemp
 export async function loadAdminTemplates(userId: string): Promise<ExportTemplate[]> {
 	// Table not in generated types — uses untyped query
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const client = supabase as any;
+	const client = getSupabase() as any;
+	if (!client) return [];
 	const { data, error } = await client
 		.from('user_admin_template_assignments')
 		.select('admin_template_id, admin_templates(id, name, fields, description)')
