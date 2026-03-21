@@ -2,12 +2,14 @@
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner';
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import { onMount } from 'svelte';
-	import type { ScanResult } from '$lib/types';
+	import type { Card, ScanResult } from '$lib/types';
 
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let uploadResult = $state<ScanResult | null>(null);
+	let showManualSearch = $state(false);
 	let uploading = $state(false);
 	let adding = $state(false);
 	let addSuccess = $state(false);
@@ -71,7 +73,27 @@
 		uploadResult = null;
 		addSuccess = false;
 		addError = null;
+		showManualSearch = false;
 		resetScanner();
+	}
+
+	function handleManualCorrection(correctedCard: Partial<Card>) {
+		if (!correctedCard.id) return;
+		uploadResult = {
+			card_id: correctedCard.id,
+			card: correctedCard as Card,
+			scan_method: 'manual',
+			confidence: 1,
+			processing_ms: 0
+		};
+		showManualSearch = false;
+	}
+
+	/** Extract card number from failReason like 'AI identified "BFA-81" (Cutback)...' */
+	function extractCardNumberFromFail(reason: string | null | undefined): string {
+		if (!reason) return '';
+		const match = reason.match(/AI identified "([^"]+)"/);
+		return match?.[1] || '';
 	}
 
 	async function handleAdd() {
@@ -196,7 +218,20 @@
 					{#if uploadResult.failReason}
 						<p class="result-hint">Check browser console (F12) for detailed scan logs.</p>
 					{/if}
-					<button class="btn-primary" onclick={dismissResult}>Try Again</button>
+					{#if showManualSearch}
+						<div class="manual-search-container">
+							<CardCorrection
+								card={{ card_number: extractCardNumberFromFail(uploadResult.failReason) }}
+								onCorrect={handleManualCorrection}
+								onClose={() => { showManualSearch = false; }}
+							/>
+						</div>
+					{:else}
+						<div class="result-actions">
+							<button class="btn-primary" onclick={() => { showManualSearch = true; }}>Search Manually</button>
+							<button class="btn-secondary" onclick={dismissResult}>Try Again</button>
+						</div>
+					{/if}
 				</div>
 			{:else if uploading}
 				<div class="upload-status">

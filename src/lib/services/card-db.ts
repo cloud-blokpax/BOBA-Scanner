@@ -252,6 +252,12 @@ function heroMatches(card: Card, normalizedHero: string): boolean {
 	// Exact match on either field
 	if (cardName === normalizedHero || cardHero === normalizedHero) return true;
 
+	// Quoted nickname match — card names like 'Barry "Cutback" Sanders' should
+	// match when the AI returns just the nickname "Cutback" as the hero name.
+	// Extract quoted portions from card name/hero and compare.
+	const quotedNames = extractQuotedNames(cardName).concat(extractQuotedNames(cardHero));
+	if (quotedNames.some((q) => q === normalizedHero)) return true;
+
 	// Contains match (handles cases like "Air Jordan" vs "AIR JORDAN III")
 	// Both strings must be at least 3 chars to avoid false positives like
 	// "MICHAEL" matching "MICHAEL JORDAN" via substring.
@@ -269,6 +275,18 @@ function heroMatches(card: Card, normalizedHero: string): boolean {
 	}
 
 	return false;
+}
+
+/** Extract quoted substrings from a name (e.g., 'BARRY "CUTBACK" SANDERS' → ['CUTBACK']) */
+function extractQuotedNames(name: string): string[] {
+	const matches: string[] = [];
+	const regex = /[""]([^""]+)[""]|"([^"]+)"/g;
+	let m;
+	while ((m = regex.exec(name)) !== null) {
+		const val = (m[1] || m[2] || '').trim();
+		if (val.length >= 3) matches.push(val);
+	}
+	return matches;
 }
 
 /**
