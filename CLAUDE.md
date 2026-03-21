@@ -108,13 +108,13 @@ BOBA-Scanner/
 │   │   │   └── Onboarding.svelte   # New user onboarding flow
 │   │   ├── data/
 │   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards)
-│   │   │   ├── play-cards.json     # Play card master list (~2,100+ cards with DBS values)
+│   │   │   ├── play-cards.json     # Play card database (409 cards with DBS values, hot dog costs)
 │   │   │   ├── static-cards.ts     # Maps raw JSON to Card type
 │   │   │   ├── boba-config.ts      # OCR regions, scan config, rarities, weapons
 │   │   │   ├── boba-heroes.ts      # Hero name → athlete name mappings
 │   │   │   ├── boba-weapons.ts     # Weapon hierarchy with rarity and tier rankings
 │   │   │   ├── boba-parallels.ts   # All parallel/treatment types with Madness unlock eligibility
-│   │   │   ├── boba-dbs-scores.ts  # DBS point values for Play cards (200+ entries, auto-generated from play-cards.json)
+│   │   │   ├── boba-dbs-scores.ts  # DBS point values for all Play cards (409 entries, maintained manually)
 │   │   │   └── tournament-formats.ts # Machine-readable rules for all 6 competitive formats
 │   │   ├── server/
 │   │   │   ├── rate-limit.ts       # Upstash Redis rate limiting + in-memory fallback
@@ -161,15 +161,15 @@ BOBA-Scanner/
 │   │   └── workers/
 │   │       └── image-processor.ts  # Web Worker: dHash, resize, blur detection, OCR preprocess
 ├── tests/
-│   ├── card-db.test.ts             # Unit: card database operations (15 cases)
-│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction (12 cases)
-│   ├── rate-limit.test.ts          # Unit: rate limiting logic (7 cases)
+│   ├── card-db.test.ts             # Unit: card database operations (18 cases)
+│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction (11 cases)
+│   ├── rate-limit.test.ts          # Unit: rate limiting logic (6 cases)
 │   ├── api-config.integration.test.ts  # Integration: config API (3 cases)
-│   ├── api-price.integration.test.ts   # Integration: price API (8 cases)
-│   ├── api-scan.integration.test.ts    # Integration: scan API (15 cases)
-│   ├── api-grade.integration.test.ts   # Integration: grade API (12 cases)
-│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes (13 cases)
-│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (16 cases)
+│   ├── api-price.integration.test.ts   # Integration: price API (7 cases)
+│   ├── api-scan.integration.test.ts    # Integration: scan API (12 cases)
+│   ├── api-grade.integration.test.ts   # Integration: grade API (11 cases)
+│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes (11 cases)
+│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (12 cases)
 ├── static/
 │   ├── manifest.json               # PWA manifest
 │   ├── sw.js                       # Service Worker (differentiated caching)
@@ -212,7 +212,8 @@ The card database has a layered loading strategy (see `card-db.ts`):
 - Google OAuth via Supabase Auth
 - eBay Seller OAuth via Authorization Code Grant (per-user, managed by `ebay-seller-auth.ts`)
 - Server-side auth via `hooks.server.ts` using `getUser()` (JWT validation, not just session cookies)
-- Protected routes: `/collection`, `/deck`, `/scan`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`, `/dbs`
+- Protected routes: `/collection`, `/deck`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`
+- Public routes (no auth required): `/scan` (anonymous users get stricter rate limits on Tier 3), `/dbs` (public calculator, no user data)
 - API routes handle their own auth checks
 
 ### Data Flow
@@ -223,7 +224,7 @@ The card database has a layered loading strategy (see `card-db.ts`):
 
 ## Testing
 
-The test suite (~101 test cases across 9 files) uses Vitest with three tiers:
+The test suite (91 test cases across 9 files) uses Vitest with three tiers:
 
 - **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`
 - **Integration tests**: `api-config`, `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
@@ -247,7 +248,7 @@ Bo Jackson Battle Arena (BoBA) is a collectible trading card game where professi
 ### Power Systems
 - **SPEC Power**: Cap on the maximum Power of any INDIVIDUAL Hero card (e.g., SPEC 160 = no card above 160 Power).
 - **Combined Power (CP)**: Cap on the SUM of all Hero Power values in the deck (e.g., 8,250 CP across 60 cards).
-- **DBS (Deck Balancing Score)**: Point budget for the Playbook. Each Play has a DBS value. Total must not exceed 1,000. DBS values are stored in `play-cards.json` and exposed via `boba-dbs-scores.ts`.
+- **DBS (Deck Balancing Score)**: Point budget for the Playbook. Each Play has a DBS value. Total must not exceed 1,000. DBS values are maintained in `boba-dbs-scores.ts` (used by the deck validator) and `play-cards.json` (used by the DBS calculator page for card metadata alongside DBS values).
 
 ### Weapon Types (rarity order, most rare first)
 Super (1/1) → Gum (secret) → Hex (/10) → Glow (/25) → Fire (/50) → Ice (/50) → Steel (common) → Brawl (common, 2026+)
@@ -274,8 +275,8 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/boba-weapons.ts` — Weapon hierarchy with rarity and tier rankings
 - `src/lib/data/boba-parallels.ts` — All parallel/treatment types with Madness unlock eligibility
 - `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
-- `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (200+ entries, auto-generated from play-cards.json)
-- `src/lib/data/play-cards.json` — Master Play card database (~2,100+ cards with DBS, hot dog costs, abilities)
+- `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (409 entries across Alpha, Griffey, Alpha Update, and Alpha Blast releases)
+- `src/lib/data/play-cards.json` — Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
 - `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
 - `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions
 
