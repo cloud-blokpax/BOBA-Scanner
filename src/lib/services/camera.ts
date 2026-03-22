@@ -44,7 +44,8 @@ export async function startCamera(config: CameraConfig = {}): Promise<MediaStrea
 
 	try {
 		currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-	} catch {
+	} catch (err) {
+		console.debug('[camera] Preferred constraints failed, falling back:', err);
 		// Fallback: try without specific constraints
 		currentStream = await navigator.mediaDevices.getUserMedia({
 			video: { facingMode: settings.facingMode },
@@ -87,7 +88,8 @@ export async function toggleTorch(enabled: boolean): Promise<boolean> {
 			advanced: [{ torch: enabled }]
 		});
 		return true;
-	} catch {
+	} catch (err) {
+		console.debug('[camera] Torch toggle failed:', err);
 		return false;
 	}
 }

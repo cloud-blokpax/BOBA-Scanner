@@ -135,7 +135,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			await writeCacheClient.from('price_cache').upsert(priceData, {
 				onConflict: 'card_id,source'
 			});
-		} catch {
+		} catch (err) {
+			console.debug('[api/price] Cache write failed:', err);
 			console.warn('[api/price] Cache write failed (possible RLS issue)');
 		}
 

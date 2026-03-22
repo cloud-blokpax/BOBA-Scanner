@@ -54,7 +54,8 @@
 			if (!raw) return [];
 			const all: Record<string, PricePoint[]> = JSON.parse(raw);
 			return all[cardNumber] || [];
-		} catch {
+		} catch (err) {
+			console.debug('[PriceTrends] Price history load failed:', err);
 			return [];
 		}
 	}
@@ -64,7 +65,8 @@
 		try {
 			const raw = localStorage.getItem(ALERTS_KEY);
 			return raw ? JSON.parse(raw) : [];
-		} catch {
+		} catch (err) {
+			console.debug('[PriceTrends] Alerts load failed:', err);
 			return [];
 		}
 	}

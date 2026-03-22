@@ -124,7 +124,8 @@ export async function deleteCollectionItem(itemId: string): Promise<void> {
 export async function recordDeletion(cardId: string): Promise<void> {
 	try {
 		await idb.addTombstone(cardId);
-	} catch {
+	} catch (err) {
+		console.debug('[collection-service] Deletion tombstone write failed:', err);
 		console.warn('Failed to record deletion tombstone for sync');
 	}
 }

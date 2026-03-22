@@ -68,7 +68,8 @@ export function getUserTemplates(): ExportTemplate[] {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		return raw ? JSON.parse(raw) : [];
-	} catch {
+	} catch (err) {
+		console.debug('[export-templates] User templates load failed:', err);
 		return [];
 	}
 }

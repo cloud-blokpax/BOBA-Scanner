@@ -88,7 +88,8 @@
 
 			if (regError) throw regError;
 			registrations = (regData || []) as Registration[];
-		} catch {
+		} catch (err) {
+			console.debug('[tournament-detail] Tournament data load failed:', err);
 			errorMsg = 'Failed to load tournament data';
 		}
 		loading = false;
@@ -122,7 +123,8 @@
 		try {
 			await navigator.clipboard.writeText(code);
 			showToast('Code copied', 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[tournament-detail] Clipboard copy failed:', err);
 			showToast('Copy failed', 'x');
 		}
 	}

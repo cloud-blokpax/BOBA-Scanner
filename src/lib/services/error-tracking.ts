@@ -68,8 +68,8 @@ function flushErrors(): void {
 	try {
 		const blob = new Blob([JSON.stringify(batch)], { type: 'application/json' });
 		navigator.sendBeacon('/api/log', blob);
-	} catch {
-		// sendBeacon not available — errors are lost (acceptable)
+	} catch (err) {
+		console.debug('[error-tracking] sendBeacon failed:', err);
 	}
 }
 

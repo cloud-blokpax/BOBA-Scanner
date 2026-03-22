@@ -211,7 +211,8 @@
 					updateGuidance('Position card within the frame');
 				}
 			}
-		} catch {
+		} catch (err) {
+			console.debug('[Scanner] Frame analysis failed:', err);
 			bitmap?.close();
 			// Frame analysis error — ignore silently
 		}

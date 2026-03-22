@@ -66,7 +66,8 @@
 			if (sets.length === 0) {
 				showToast('No sets found in collection', 'info');
 			}
-		} catch {
+		} catch (err) {
+			console.debug('[set-completion] Set analysis failed:', err);
 			showToast('Failed to analyze sets', 'x');
 		}
 		loading = false;

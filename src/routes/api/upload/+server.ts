@@ -45,7 +45,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	let metadata;
 	try {
 		metadata = await sharp(buffer).metadata();
-	} catch {
+	} catch (err) {
+		console.debug('[api/upload] Image metadata read failed:', err);
 		throw error(400, 'Invalid image file');
 	}
 

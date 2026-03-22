@@ -47,7 +47,8 @@ async function getSellerPolicies(token: string): Promise<{
 			paymentPolicyId: paymentId,
 			returnPolicyId: returnId
 		};
-	} catch {
+	} catch (err) {
+		console.debug('[ebay/listing] Seller policies fetch failed:', err);
 		return null;
 	}
 }
@@ -114,8 +115,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				status: 'pending',
 				created_at: new Date().toISOString()
 			});
-		} catch {
-			// Non-critical
+		} catch (err) {
+			console.debug('[ebay/listing] Template save failed:', err);
 		}
 	}
 
@@ -207,7 +208,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let offerData;
 		try {
 			offerData = await offerRes.json();
-		} catch {
+		} catch (err) {
+			console.debug('[ebay/listing] Offer response parse failed:', err);
 			throw new Error('Invalid response from eBay offer API');
 		}
 		const offerId = offerData.offerId;
@@ -233,7 +235,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let publishData;
 		try {
 			publishData = await publishRes.json();
-		} catch {
+		} catch (err) {
+			console.debug('[ebay/listing] Publish response parse failed:', err);
 			throw new Error('Invalid response from eBay publish API');
 		}
 		const listingId = publishData.listingId;
@@ -251,8 +254,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					ebay_listing_url: listingUrl,
 					updated_at: new Date().toISOString()
 				}).eq('sku', sku);
-			} catch {
-				// Non-critical
+			} catch (err) {
+				console.debug('[ebay/listing] Template status update failed:', err);
 			}
 		}
 
@@ -273,8 +276,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					error_message: message,
 					updated_at: new Date().toISOString()
 				}).eq('sku', sku);
-			} catch {
-				// Non-critical
+			} catch (err) {
+				console.debug('[ebay/listing] Template error update failed:', err);
 			}
 		}
 

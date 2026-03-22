@@ -128,7 +128,8 @@
 				return;
 			}
 			tournamentResult = await res.json();
-		} catch {
+		} catch (err) {
+			console.debug('[home] Tournament lookup failed:', err);
 			tournamentError = 'Network error';
 		} finally {
 			tournamentLoading = false;

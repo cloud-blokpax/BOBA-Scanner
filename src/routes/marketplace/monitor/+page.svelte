@@ -29,7 +29,8 @@
 		try {
 			const raw = localStorage.getItem(SETTINGS_KEY);
 			return raw ? JSON.parse(raw) : { enabled: false, sellerUsername: '' };
-		} catch {
+		} catch (err) {
+			console.debug('[marketplace-monitor] Settings load failed:', err);
 			return { enabled: false, sellerUsername: '' };
 		}
 	}
@@ -79,7 +80,8 @@
 			lastCheck = new Date().toISOString();
 			if (browser) localStorage.setItem(LAST_CHECK_KEY, lastCheck);
 			showToast(`Found ${matches.length} matches`, 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[marketplace-monitor] Listing check failed:', err);
 			showToast('Failed to check listings', 'x');
 		}
 		checking = false;

@@ -275,6 +275,30 @@ export function validateDeck(
 		}
 	}
 
+	// ── Rule 6b: Silver Headlines minimum per parallel ──────
+	if (format.id === 'silver_headlines') {
+		const silverCount = heroCards.filter(c =>
+			(c.parallel || '').toLowerCase() === 'silver'
+		).length;
+		const headlineCount = heroCards.filter(c =>
+			['headline', 'headlines'].includes((c.parallel || '').toLowerCase())
+		).length;
+		if (silverCount < 20) {
+			violations.push({
+				rule: 'silver_headlines_min_silver',
+				message: `Only ${silverCount} Silver cards — minimum 20 required in Silver Headlines`,
+				severity: 'error'
+			});
+		}
+		if (headlineCount < 20) {
+			violations.push({
+				rule: 'silver_headlines_min_headline',
+				message: `Only ${headlineCount} Headline cards — minimum 20 required in Silver Headlines`,
+				severity: 'error'
+			});
+		}
+	}
+
 	// ── Rule 7: Allowed weapons (themed formats) ───────────
 	if (format.allowedWeapons) {
 		for (const c of heroCards) {

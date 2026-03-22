@@ -22,7 +22,8 @@ function loadTags(): Map<string, string[]> {
 		if (!raw) return new Map();
 		const entries: Record<string, string[]> = JSON.parse(raw);
 		return new Map(Object.entries(entries));
-	} catch {
+	} catch (err) {
+		console.debug('[tags] Tags load from storage failed:', err);
 		return new Map();
 	}
 }

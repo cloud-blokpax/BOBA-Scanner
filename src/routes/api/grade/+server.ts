@@ -39,7 +39,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	let body: Record<string, unknown>;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (err) {
+		console.debug('[api/grade] JSON parse failed:', err);
 		throw error(400, 'Invalid JSON body');
 	}
 
@@ -126,7 +127,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		let data;
 		try {
 			data = await response.json();
-		} catch {
+		} catch (err) {
+			console.debug('[api/grade] AI response parse failed:', err);
 			throw error(502, 'Invalid response from AI service');
 		}
 
@@ -140,7 +142,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		let gradeResult;
 		try {
 			gradeResult = JSON.parse(jsonMatch[0]);
-		} catch {
+		} catch (err) {
+			console.debug('[api/grade] Grade JSON parse failed:', err);
 			return json({ error: 'Invalid grading response format', raw: text }, { status: 422 });
 		}
 

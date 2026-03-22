@@ -219,7 +219,8 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 			try {
 				const permission = await (DeviceOrientationEvent as any).requestPermission();
 				if (permission !== 'granted') return;
-			} catch {
+			} catch (err) {
+				console.debug('[tilt] Device orientation permission denied:', err);
 				return;
 			}
 		}

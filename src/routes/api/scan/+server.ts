@@ -73,7 +73,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	let metadata;
 	try {
 		metadata = await sharp(rawBuffer).metadata();
-	} catch {
+	} catch (err) {
+		console.debug('[api/scan] Image metadata read failed:', err);
 		throw error(400, 'Invalid image file');
 	}
 
@@ -167,7 +168,8 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 		let cardData;
 		try {
 			cardData = JSON.parse(jsonMatch[0]);
-		} catch {
+		} catch (err) {
+			console.debug('[api/scan] Claude response JSON parse failed:', err);
 			console.warn('[api/scan] Failed to parse JSON from Claude response');
 			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
 		}

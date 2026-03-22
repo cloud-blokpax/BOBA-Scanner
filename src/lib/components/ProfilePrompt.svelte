@@ -30,8 +30,8 @@
 			if (data && !data.name && !data.discord_id) {
 				visible = true;
 			}
-		} catch {
-			// Silently fail — don't block the user
+		} catch (err) {
+			console.debug('[profile-prompt] Profile check failed:', err);
 		}
 	}
 
@@ -51,7 +51,8 @@
 
 			if (error) throw error;
 			showToast('Profile updated', 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[ProfilePrompt] Profile save failed:', err);
 			showToast('Failed to save', 'x');
 		}
 		visible = false;

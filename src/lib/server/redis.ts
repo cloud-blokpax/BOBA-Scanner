@@ -119,7 +119,8 @@ export async function checkEbayDailyLimit(): Promise<boolean> {
 		const count = await r.incr(dailyKey);
 		if (count === 1) await r.expire(dailyKey, 86400);
 		return count <= EBAY_DAILY_LIMIT;
-	} catch {
+	} catch (err) {
+		console.debug('[redis] eBay rate limit check failed:', err);
 		return true; // Redis error = allow the call
 	}
 }

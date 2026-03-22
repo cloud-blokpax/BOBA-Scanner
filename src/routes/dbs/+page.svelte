@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { showToast } from '$lib/stores/toast';
+
 	let { data } = $props();
 
 	const SETS = [
@@ -69,6 +74,55 @@
 		playEntries = [];
 	}
 
+	// ── URL sharing ──────────────────────────────────────────
+	const setToPrefix: Record<string, string> = {
+		'Alpha Edition': 'A', 'Griffey Edition': 'G',
+		'Alpha Update': 'U', 'Alpha Blast': 'HTD'
+	};
+	const prefixToSet: Record<string, string> = {
+		'A': 'Alpha Edition', 'G': 'Griffey Edition',
+		'U': 'Alpha Update', 'HTD': 'Alpha Blast'
+	};
+
+	onMount(() => {
+		const params = $page.url.searchParams;
+		const playsParam = params.get('plays');
+		if (playsParam) {
+			const entries = playsParam.split(',').filter(Boolean).map(entry => {
+				const [setPrefix, cardNumber] = entry.includes(':') ? entry.split(':', 2) : ['A', entry];
+				const setCode = prefixToSet[setPrefix] || 'Alpha Edition';
+				const plays = data.playCardsBySet[setCode] ?? [];
+				const playCard = plays.find((p: { card_number: string; name?: string }) => p.card_number.toUpperCase() === cardNumber.toUpperCase());
+				return { cardNumber: cardNumber.toUpperCase(), setCode, name: playCard?.name };
+			});
+			playEntries = entries;
+		}
+	});
+
+	function getShareUrl(): string {
+		const encoded = playEntries
+			.map(e => `${setToPrefix[e.setCode] || 'A'}:${e.cardNumber}`)
+			.join(',');
+		const url = new URL($page.url);
+		if (encoded) {
+			url.searchParams.set('plays', encoded);
+		} else {
+			url.searchParams.delete('plays');
+		}
+		return url.toString();
+	}
+
+	async function copyShareLink() {
+		const url = getShareUrl();
+		try {
+			await navigator.clipboard.writeText(url);
+			showToast('Link copied! Share it with your squad.', 'success');
+		} catch (err) {
+			console.debug('[dbs] Clipboard copy failed:', err);
+			showToast(url, 'info');
+		}
+	}
+
 	const DBS_CAP = 1000;
 	let isOverCap = $derived((dbsResult?.total ?? 0) > DBS_CAP);
 	let remaining = $derived(DBS_CAP - (dbsResult?.total ?? 0));
@@ -132,7 +186,10 @@
 		<div class="play-list">
 			<div class="play-list-header">
 				<span>Playbook ({playEntries.length} card{playEntries.length !== 1 ? 's' : ''})</span>
-				<button class="btn-text" onclick={clearAll}>Clear All</button>
+				<div class="play-list-actions">
+					<button class="btn-text" onclick={copyShareLink}>Share</button>
+					<button class="btn-text" onclick={clearAll}>Clear All</button>
+				</div>
 			</div>
 			{#each playEntries as entry, i}
 				{@const score = getDbs(entry.cardNumber, entry.setCode)}
@@ -241,6 +298,10 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		margin-bottom: 0.5rem;
+	}
+	.play-list-actions {
+		display: flex;
+		gap: 0.75rem;
 	}
 	.btn-text {
 		background: none;
