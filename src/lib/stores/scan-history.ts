@@ -27,7 +27,8 @@ function loadFromStorage(): ScanHistoryEntry[] {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		return raw ? JSON.parse(raw) : [];
-	} catch {
+	} catch (err) {
+		console.debug('[scan-history] History load from storage failed:', err);
 		return [];
 	}
 }

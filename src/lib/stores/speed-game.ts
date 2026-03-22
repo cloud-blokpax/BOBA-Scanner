@@ -152,7 +152,8 @@ function loadHighScores(): HighScoreEntry[] {
 	try {
 		const raw = localStorage.getItem(HIGH_SCORES_KEY);
 		return raw ? JSON.parse(raw) : [];
-	} catch {
+	} catch (err) {
+		console.debug('[speed-game] High scores load failed:', err);
 		return [];
 	}
 }

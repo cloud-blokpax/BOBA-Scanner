@@ -36,8 +36,8 @@ export async function checkForUpdates(): Promise<void> {
 				notes: remote.notes || ''
 			});
 		}
-	} catch {
-		// Non-critical — silent fail
+	} catch (err) {
+		console.debug('[version] Version check failed:', err);
 	}
 }
 

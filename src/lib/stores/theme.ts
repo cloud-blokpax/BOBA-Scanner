@@ -30,7 +30,8 @@ function loadTheme(): Theme {
 		const parsed = JSON.parse(raw);
 		if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return DEFAULT_THEME;
 		return { ...DEFAULT_THEME, ...parsed };
-	} catch {
+	} catch (err) {
+		console.debug('[theme] Theme load from storage failed:', err);
 		return DEFAULT_THEME;
 	}
 }

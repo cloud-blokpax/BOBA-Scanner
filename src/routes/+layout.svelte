@@ -76,8 +76,9 @@
 		const cleanupVersion = initVersionChecking();
 
 		// Register Service Worker for PWA offline support
+		// SvelteKit generates service-worker.js from src/service-worker.ts
 		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/sw.js').catch((err) => {
+			navigator.serviceWorker.register('/service-worker.js').catch((err) => {
 				console.warn('SW registration failed:', err);
 			});
 		}
@@ -106,14 +107,15 @@
 						try {
 							await addToCollection(result.card_id, 'near_mint');
 							successCount++;
-						} catch {
+						} catch (err) {
+							console.debug('[layout] Collection add from scan queue failed:', err);
 							// Collection add failed — still remove from queue
 							// since the scan itself succeeded
 						}
 					}
 					await scanQueue.remove(item.id);
-				} catch {
-					// Leave failed items in queue for next attempt
+				} catch (err) {
+					console.debug('[scan-queue] Offline scan processing failed:', err);
 				}
 			}
 			const remaining = await scanQueue.count();

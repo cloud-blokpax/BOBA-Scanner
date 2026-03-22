@@ -24,7 +24,8 @@
 		searching = true;
 		try {
 			searchResults = await searchCards(searchQuery.trim(), 10);
-		} catch {
+		} catch (err) {
+			console.debug('[CardCorrection] Card search failed:', err);
 			searchResults = [];
 		}
 		searching = false;
@@ -33,6 +34,16 @@
 	function selectCorrection(corrected: Partial<Card>) {
 		onCorrect?.(corrected);
 		showToast('Card corrected', '✓');
+
+		// Submit correction to community pool (async, fire-and-forget)
+		const originalNumber = card.card_number;
+		const correctedNumber = corrected.card_number;
+		if (originalNumber && correctedNumber && originalNumber !== correctedNumber) {
+			import('$lib/services/community-corrections').then(({ submitCommunityCorrection }) => {
+				submitCommunityCorrection(originalNumber, correctedNumber);
+			}).catch(() => {});
+		}
+
 		onClose?.();
 	}
 </script>

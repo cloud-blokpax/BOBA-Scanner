@@ -200,7 +200,8 @@
 		try {
 			await navigator.clipboard.writeText(code);
 			showToast('Code copied', 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[tournaments] Clipboard copy failed:', err);
 			showToast('Copy failed', 'x');
 		}
 	}
@@ -228,7 +229,8 @@
 				return;
 			}
 			goto(`/tournaments/enter?code=${code}`);
-		} catch {
+		} catch (err) {
+			console.debug('[tournaments] Tournament entry lookup failed:', err);
 			entryError = 'Network error';
 		} finally {
 			entryLoading = false;

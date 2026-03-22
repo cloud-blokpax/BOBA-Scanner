@@ -9,7 +9,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	let body;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (err) {
+		console.debug('[api/tournament/register] JSON parse failed:', err);
 		throw error(400, 'Invalid JSON body');
 	}
 	const { tournament_id, email, name, discord_id, deck_csv } = body;

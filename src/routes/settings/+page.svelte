@@ -59,7 +59,8 @@
 
 			if (error) throw error;
 			showToast('Profile saved', 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[settings] Profile save failed:', err);
 			showToast('Failed to save profile', 'x');
 		}
 		saving = false;
@@ -103,7 +104,8 @@
 			if (!res.ok) throw new Error();
 			ebayConnected = false;
 			showToast('eBay account disconnected', 'check');
-		} catch {
+		} catch (err) {
+			console.debug('[settings] eBay disconnect failed:', err);
 			showToast('Failed to disconnect eBay', 'x');
 		}
 		ebayDisconnecting = false;

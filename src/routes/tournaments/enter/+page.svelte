@@ -51,7 +51,8 @@
 				return;
 			}
 			tournament = await res.json();
-		} catch {
+		} catch (err) {
+			console.debug('[tournament-enter] Tournament fetch failed:', err);
 			fetchError = 'Network error';
 			loading = false;
 			return;
@@ -101,7 +102,8 @@
 			if ($collectionItems.length === 0) {
 				showToast('No cards found in collection', 'x');
 			}
-		} catch {
+		} catch (err) {
+			console.debug('[tournament-enter] Collection load failed:', err);
 			showToast('Failed to load collection', 'x');
 		}
 		collectionLoading = false;

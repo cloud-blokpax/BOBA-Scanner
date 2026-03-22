@@ -37,7 +37,8 @@ function loadCorrections(): Map<string, CorrectionEntry> {
 		} else {
 			_corrections = new Map();
 		}
-	} catch {
+	} catch (err) {
+		console.debug('[scan-learning] Corrections load failed:', err);
 		_corrections = new Map();
 	}
 	return _corrections;

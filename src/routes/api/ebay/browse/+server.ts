@@ -42,7 +42,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	let body: Record<string, unknown>;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (err) {
+		console.debug('[api/ebay/browse] JSON parse failed:', err);
 		throw error(400, 'Invalid JSON body');
 	}
 	const seller = typeof body.seller === 'string' ? body.seller : undefined;

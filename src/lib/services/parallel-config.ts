@@ -53,8 +53,8 @@ async function _loadParallelConfigImpl(): Promise<Map<string, CardRarity>> {
 			}
 		}
 		isLoaded = true;
-	} catch {
-		// Supabase unavailable — use hardcoded fallback
+	} catch (err) {
+		console.debug('[parallel-config] Supabase load failed, using hardcoded fallback:', err);
 	}
 
 	return configMap;

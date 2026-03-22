@@ -2,8 +2,8 @@
  * Price Cache Store
  *
  * Fetches eBay prices via server API with three-layer caching:
- *   1. IndexedDB (client, 1-hour TTL)
- *   2. Server price_cache table (1-hour TTL)
+ *   1. IndexedDB (client, 4-hour TTL)
+ *   2. Server price_cache table (4-hour TTL)
  *   3. eBay Browse API (live)
  */
 
@@ -36,9 +36,9 @@ export async function getPrice(cardId: string): Promise<PriceData | null> {
 }
 
 async function _fetchPrice(cardId: string): Promise<PriceData | null> {
-	// Check IndexedDB cache (1-hour TTL)
+	// Check IndexedDB cache (4-hour TTL)
 	try {
-		const cached = await idb.getPrice(cardId, 3600_000);
+		const cached = await idb.getPrice(cardId, 14400_000);
 		if (cached) {
 			const priceData = cached as PriceData;
 			priceCache.update((map) => {

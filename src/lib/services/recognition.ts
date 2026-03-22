@@ -451,8 +451,19 @@ async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			// Track the raw OCR reading for potential correction recording
 			ctx.lastOcrReading = resolvedNumber;
 
-			// Check if we have a learned correction for this OCR output
-			const correctedNumber = checkCorrection(resolvedNumber);
+			// Check local learned correction first (instant, offline-capable)
+			let correctedNumber = checkCorrection(resolvedNumber);
+
+			// If no local correction, check community corrections (requires network)
+			if (!correctedNumber) {
+				try {
+					const { lookupCommunityCorrection } = await import('$lib/services/community-corrections');
+					correctedNumber = await lookupCommunityCorrection(resolvedNumber);
+				} catch (err) {
+					console.debug('[scan:tier2] Community correction lookup failed:', err);
+				}
+			}
+
 			const lookupNumber = correctedNumber || resolvedNumber;
 
 			const card = findCard(lookupNumber);
@@ -510,7 +521,8 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	let result;
 	try {
 		result = await response.json();
-	} catch {
+	} catch (err) {
+		console.debug('[scan:tier3] API response JSON parse failed:', err);
 		console.error('[scan:tier3] Invalid JSON in API response');
 		ctx.lastTier3FailReason = 'Invalid response from scan API';
 		return null;
@@ -573,8 +585,8 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 				card_id: `__unrecognized:${claudeNumber}`,
 				confidence: 0
 			});
-		} catch {
-			console.debug('[scan:tier3] Failed to write negative cache entry');
+		} catch (err) {
+			console.debug('[scan:tier3] Failed to write negative cache entry:', err);
 		}
 	}
 

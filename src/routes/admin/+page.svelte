@@ -134,7 +134,8 @@
 		parallelsLoading = true;
 		try {
 			parallelEntries = await getAllParallelConfig();
-		} catch {
+		} catch (err) {
+			console.debug('[admin] Parallel config load failed:', err);
 			showToast('Failed to load parallel config', 'x');
 		}
 		parallelsLoading = false;
@@ -150,7 +151,8 @@
 			} else {
 				showToast('No new parallels found', 'check');
 			}
-		} catch {
+		} catch (err) {
+			console.debug('[admin] Parallel seeding failed:', err);
 			showToast('Failed to seed parallels', 'x');
 		}
 		seeding = false;
@@ -223,7 +225,8 @@
 					}));
 				}
 			}
-		} catch {
+		} catch (err) {
+			console.debug('[admin] Features load failed:', err);
 			showToast('Failed to load features', 'x');
 		}
 		featuresLoading = false;
