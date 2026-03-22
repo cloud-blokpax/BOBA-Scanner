@@ -66,6 +66,18 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			}
 		}
 
+		// Verify the images are actually JPEG by checking the magic bytes
+		// JPEG files start with FF D8 FF (base64: /9j/)
+		if (!imageData.startsWith('/9j/')) {
+			throw error(400, 'Image must be JPEG format');
+		}
+		if (cornerRegionData && !cornerRegionData.startsWith('/9j/')) {
+			throw error(400, 'Corner region image must be JPEG format');
+		}
+		if (centeringImageData && !centeringImageData.startsWith('/9j/')) {
+			throw error(400, 'Centering image must be JPEG format');
+		}
+
 		const apiKey = env.ANTHROPIC_API_KEY ?? env.CLAUDE_API_KEY ?? '';
 		if (!apiKey) {
 			throw error(500, 'Server configuration error');

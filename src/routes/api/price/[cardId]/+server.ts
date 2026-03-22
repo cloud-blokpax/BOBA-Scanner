@@ -43,7 +43,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		return json({ error: 'Database not available' }, { status: 503 });
 	}
 
-	// Check price cache (1-hour freshness) — use service role to bypass RLS
+	// Check price cache (4-hour freshness) — use service role to bypass RLS
 	const cacheClient = getServiceClient() || locals.supabase;
 	const { data: cachedRaw } = await cacheClient
 		.from('price_cache')

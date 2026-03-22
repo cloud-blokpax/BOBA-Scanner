@@ -44,8 +44,8 @@ function makeRequest(body: Record<string, unknown>) {
 	});
 }
 
-// Valid small base64 string
-const VALID_BASE64 = 'iVBORw0KGgoAAAANSUhEUg==';
+// Valid small JPEG base64 string (starts with /9j/ = JPEG magic bytes FF D8 FF)
+const VALID_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQ==';
 
 // ── Tests ────────────────────────────────────────────────────
 

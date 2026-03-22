@@ -36,18 +36,3 @@ export function getSupabase(): SupabaseClient | null {
 	return _supabase;
 }
 
-/**
- * Backward-compatible export. Throws if Supabase is not configured.
- * Prefer `getSupabase()` with null checks for new code.
- */
-export const supabase = new Proxy({} as SupabaseClient, {
-	get(_target, prop) {
-		const client = getSupabase();
-		if (!client) {
-			throw new Error(
-				`Supabase not configured. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY env vars.`
-			);
-		}
-		return (client as unknown as Record<string | symbol, unknown>)[prop];
-	}
-});

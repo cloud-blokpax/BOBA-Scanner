@@ -27,6 +27,7 @@ let cards: Card[] = [];
 const cardIndex = new Map<string, Card[]>();
 const prefixIndex = new Map<string, Card[]>();
 const idIndex = new Map<string, Card>();
+const heroIndex = new Map<string, Card[]>();
 let isLoaded = false;
 let _loadPromise: Promise<Card[]> | null = null;
 
@@ -55,11 +56,17 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	try {
 		const cached = await idb.getCards();
 		if (cached && cached.length > 0) {
-			cards = cached as Card[];
-			buildIndexes();
-			isLoaded = true;
-			refreshFromSupabaseInBackground();
-			return cards;
+			// Runtime guard: ensure cached data has expected shape
+			const firstItem = cached[0] as Record<string, unknown>;
+			if (firstItem && typeof firstItem.id === 'string' && 'card_number' in firstItem) {
+				cards = cached as Card[];
+				buildIndexes();
+				isLoaded = true;
+				refreshFromSupabaseInBackground();
+				return cards;
+			}
+			// Cache is stale/corrupt — fall through to static cards
+			console.debug('[card-db] IDB cache has unexpected shape, falling back to static');
 		}
 	} catch (err) {
 		console.debug('[card-db] IDB cache read failed, falling back to static:', err);
@@ -110,31 +117,46 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 			if (!isNaN(cachedTime) && Date.now() - cachedTime < backoffMs) return;
 		}
 
-		const { data, error } = await supabase.from('cards').select('*');
-		if (error || !data || data.length === 0) return;
+		// Try incremental refresh first (only cards updated since last sync)
+		const lastSyncTime = await idb.getMeta<string>('cards-last-sync');
+		let isIncremental = false;
 
-		// Compute a simple content hash to detect modifications (not just count changes)
-		const contentHash = data.length + '-' + data.reduce((acc: number, c: Record<string, unknown>) => {
-			const str = (c.card_number || '') + '|' + (c.rarity || '') + '|' + (c.hero_name || '');
-			let hash = 0;
-			for (let i = 0; i < (str as string).length; i++) hash = ((hash << 5) - hash + (str as string).charCodeAt(i)) | 0;
-			return acc ^ hash;
-		}, 0);
-
-		const lastHash = await idb.getMeta<string>('cards-content-hash');
-		if (lastHash === contentHash.toString()) {
-			// Content unchanged — update timestamp to avoid re-fetching
-			await idb.setCardsVersion('supabase-' + new Date().toISOString());
-			return;
+		if (lastSyncTime && cards.length > 0) {
+			const { data: newCards, error } = await supabase
+				.from('cards')
+				.select('*')
+				.gt('updated_at', lastSyncTime);
+			if (!error && newCards && newCards.length > 0) {
+				// Merge new/updated cards into existing array
+				const cardMap = new Map(cards.map(c => [c.id, c]));
+				for (const card of newCards) {
+					cardMap.set((card as { id: string }).id, card as unknown as Card);
+				}
+				cards = [...cardMap.values()];
+				isIncremental = true;
+			} else if (!error && newCards && newCards.length === 0) {
+				// No changes — just update timestamp
+				await idb.setCardsVersion('supabase-' + new Date().toISOString());
+				await idb.setMeta('cards-last-sync', new Date().toISOString());
+				_refreshFailCount = 0;
+				return;
+			}
+			// If error, fall through to full refresh
 		}
 
-		cards = data as unknown as Card[];
+		if (!isIncremental) {
+			// Full refresh (first load or incremental failed)
+			const { data, error } = await supabase.from('cards').select('*');
+			if (error || !data || data.length === 0) return;
+			cards = data as unknown as Card[];
+		}
+
 		buildIndexes();
 		await applyParallelConfig();
 		try {
 			await idb.setCards(cards);
 			await idb.setCardsVersion('supabase-' + new Date().toISOString());
-			await idb.setMeta('cards-content-hash', contentHash.toString());
+			await idb.setMeta('cards-last-sync', new Date().toISOString());
 		} catch (err) {
 			console.debug('[card-db] IDB refresh write failed:', err);
 		}
@@ -167,10 +189,18 @@ function buildIndexes() {
 	cardIndex.clear();
 	prefixIndex.clear();
 	idIndex.clear();
+	heroIndex.clear();
 
 	for (const card of cards) {
 		// ID index for O(1) lookup by id
 		if (card.id) idIndex.set(card.id, card);
+
+		// Hero name index for O(1) hero-based lookups (Tier 3 fallback)
+		const heroKey = (card.hero_name || card.name || '').toUpperCase().trim();
+		if (heroKey) {
+			if (!heroIndex.has(heroKey)) heroIndex.set(heroKey, []);
+			heroIndex.get(heroKey)!.push(card);
+		}
 
 		const num = normalizeCardNum(card.card_number || '');
 		if (!num) continue;
@@ -345,14 +375,23 @@ export function findSimilarCardNumbers(
 export function searchCards(query: string, limit = 20): Card[] {
 	if (!isLoaded) return [];
 
-	const q = query.toLowerCase();
+	const q = query.toUpperCase().trim();
+
+	// Fast path: exact hero name match via index
+	const heroMatch = heroIndex.get(q);
+	if (heroMatch && heroMatch.length > 0) {
+		return heroMatch.slice(0, limit);
+	}
+
+	// Fallback: linear search for partial matches
+	const lq = query.toLowerCase();
 	return cards
 		.filter(
 			(c) =>
-				c.name?.toLowerCase().includes(q) ||
-				c.hero_name?.toLowerCase().includes(q) ||
-				c.set_code?.toLowerCase().includes(q) ||
-				c.card_number?.toLowerCase().includes(q)
+				c.name?.toLowerCase().includes(lq) ||
+				c.hero_name?.toLowerCase().includes(lq) ||
+				c.set_code?.toLowerCase().includes(lq) ||
+				c.card_number?.toLowerCase().includes(lq)
 		)
 		.slice(0, limit);
 }

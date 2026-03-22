@@ -51,6 +51,18 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		);
 	}
 
+	// ── Global anonymous scan cap (prevents IP rotation abuse) ──
+	if (!user) {
+		const { checkGlobalAnonScanLimit } = await import('$lib/server/redis');
+		const globalAllowed = await checkGlobalAnonScanLimit();
+		if (!globalAllowed) {
+			return json(
+				{ error: 'Daily scan limit reached. Please sign in for unlimited scans.' },
+				{ status: 429 }
+			);
+		}
+	}
+
 	// ── Parse form data ─────────────────────────────────────
 	const formData = await request.formData();
 	const imageFile = formData.get('image');
