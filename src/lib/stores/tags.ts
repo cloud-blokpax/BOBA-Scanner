@@ -7,25 +7,13 @@
 
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { idb } from '$lib/services/idb';
 
-const STORAGE_KEY = 'cardTags';
+const IDB_KEY = 'cardTags';
 
 export interface TagEntry {
 	cardId: string;
 	tags: string[];
-}
-
-function loadTags(): Map<string, string[]> {
-	if (!browser) return new Map();
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return new Map();
-		const entries: Record<string, string[]> = JSON.parse(raw);
-		return new Map(Object.entries(entries));
-	} catch (err) {
-		console.debug('[tags] Tags load from storage failed:', err);
-		return new Map();
-	}
 }
 
 function saveTags(tags: Map<string, string[]>): void {
@@ -34,10 +22,23 @@ function saveTags(tags: Map<string, string[]>): void {
 	for (const [key, val] of tags) {
 		obj[key] = val;
 	}
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+	idb.setMeta(IDB_KEY, obj).catch(err => {
+		console.debug('[tags] Tags save to IDB failed:', err);
+	});
 }
 
-export const cardTags = writable<Map<string, string[]>>(loadTags());
+export const cardTags = writable<Map<string, string[]>>(new Map());
+
+// Load tags from IDB asynchronously on startup
+if (browser) {
+	idb.getMeta<Record<string, string[]>>(IDB_KEY).then(raw => {
+		if (raw && typeof raw === 'object') {
+			cardTags.set(new Map(Object.entries(raw)));
+		}
+	}).catch(err => {
+		console.debug('[tags] Tags load from IDB failed:', err);
+	});
+}
 
 /**
  * Get tags for a specific card.

@@ -102,8 +102,10 @@
 
 	// Fetch price when card is identified — uses the deduplicated store
 	// so concurrent requests for the same card share a single API call
+	let lastPriceFetchCardId: string | null = null;
 	$effect(() => {
-		if (!card?.id) return;
+		if (!card?.id || card.id === lastPriceFetchCardId) return;
+		lastPriceFetchCardId = card.id;
 		const cardId = card.id;
 		priceLoading = true;
 		priceError = false;

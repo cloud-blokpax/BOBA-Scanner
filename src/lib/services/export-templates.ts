@@ -235,5 +235,6 @@ export function downloadFile(content: string, filename: string, type = 'text/csv
 	a.href = url;
 	a.download = filename;
 	a.click();
-	URL.revokeObjectURL(url);
+	// Delay revocation to ensure download starts on slow devices
+	setTimeout(() => URL.revokeObjectURL(url), 10000);
 }

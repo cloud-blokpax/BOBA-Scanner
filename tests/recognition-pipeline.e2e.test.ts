@@ -87,7 +87,8 @@ vi.mock('$lib/services/ocr', () => ({
 
 vi.mock('$lib/services/scan-learning', () => ({
 	checkCorrection: vi.fn().mockReturnValue(null),
-	recordCorrection: vi.fn()
+	recordCorrection: vi.fn(),
+	loadCorrectionsFromIdb: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('$lib/stores/scan-history', () => ({

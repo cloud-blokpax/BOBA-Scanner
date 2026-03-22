@@ -7,8 +7,9 @@
 
 import { browser } from '$app/environment';
 import { findCard } from '$lib/services/card-db';
+import { idb } from '$lib/services/idb';
 
-const STORAGE_KEY = 'ocrCorrections';
+const IDB_KEY = 'ocrCorrections';
 const MAX_ENTRIES = 500;
 
 interface CorrectionEntry {
@@ -20,27 +21,40 @@ interface CorrectionEntry {
 }
 
 let _corrections: Map<string, CorrectionEntry> | null = null;
+let _loadPromise: Promise<void> | null = null;
 
 function normalize(text: string): string {
 	return text.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
 }
 
-function loadCorrections(): Map<string, CorrectionEntry> {
-	if (_corrections) return _corrections;
-	if (!browser) return new Map();
-
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw) {
-			const entries = JSON.parse(raw);
-			_corrections = new Map(Object.entries(entries));
-		} else {
+/**
+ * Eagerly load corrections from IDB into the in-memory Map.
+ * Call once during initWorkers() to ensure synchronous checkCorrection() works.
+ */
+export async function loadCorrectionsFromIdb(): Promise<void> {
+	if (_corrections) return;
+	if (_loadPromise) return _loadPromise;
+	_loadPromise = (async () => {
+		if (!browser) { _corrections = new Map(); return; }
+		try {
+			const raw = await idb.getMeta<Record<string, CorrectionEntry>>(IDB_KEY);
+			if (raw && typeof raw === 'object') {
+				_corrections = new Map(Object.entries(raw));
+			} else {
+				_corrections = new Map();
+			}
+		} catch (err) {
+			console.debug('[scan-learning] Corrections load from IDB failed:', err);
 			_corrections = new Map();
 		}
-	} catch (err) {
-		console.debug('[scan-learning] Corrections load failed:', err);
-		_corrections = new Map();
-	}
+	})();
+	await _loadPromise;
+}
+
+function getCorrections(): Map<string, CorrectionEntry> {
+	if (_corrections) return _corrections;
+	// Synchronous fallback — return empty map if not yet loaded
+	_corrections = new Map();
 	return _corrections;
 }
 
@@ -50,7 +64,9 @@ function saveCorrections(): void {
 	for (const [key, val] of _corrections) {
 		obj[key] = val;
 	}
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+	idb.setMeta(IDB_KEY, obj).catch(err => {
+		console.debug('[scan-learning] Corrections save to IDB failed:', err);
+	});
 }
 
 /**
@@ -58,7 +74,7 @@ function saveCorrections(): void {
  * Returns the corrected card number or null.
  */
 export function checkCorrection(ocrText: string): string | null {
-	const corrections = loadCorrections();
+	const corrections = getCorrections();
 	const key = normalize(ocrText);
 	if (!key) return null;
 
@@ -89,7 +105,7 @@ export function recordCorrection(
 	confirmedCardNumber: string,
 	source: string = 'auto'
 ): void {
-	const corrections = loadCorrections();
+	const corrections = getCorrections();
 	const key = normalize(ocrText);
 	if (!key || key === normalize(confirmedCardNumber)) return;
 

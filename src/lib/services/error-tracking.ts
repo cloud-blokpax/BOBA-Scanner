@@ -31,7 +31,7 @@ let _flushInterval: ReturnType<typeof setInterval> | null = null;
 
 function getSessionId(): string {
 	if (!_sessionId) {
-		_sessionId = Math.random().toString(36).slice(2, 10);
+		_sessionId = crypto.randomUUID();
 	}
 	return _sessionId;
 }

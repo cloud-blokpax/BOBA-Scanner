@@ -12,7 +12,7 @@ import * as Comlink from 'comlink';
 import { idb } from './idb';
 import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards, searchCards } from './card-db';
 import { getSupabase } from './supabase';
-import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
+import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { addToScanHistory } from '$lib/stores/scan-history';
@@ -127,6 +127,9 @@ export async function initWorkers(): Promise<void> {
 			);
 			imageWorker = Comlink.wrap(ImageWorker);
 		}
+
+		// Eagerly load OCR corrections into memory for synchronous lookups
+		loadCorrectionsFromIdb().catch(() => {});
 
 		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
 		// skipped gracefully and we fall through to Tier 3 (Claude API).

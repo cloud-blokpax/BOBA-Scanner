@@ -19,8 +19,19 @@ vi.mock('$env/dynamic/private', () => ({
 	env: { ANTHROPIC_API_KEY: 'test-key-123' }
 }));
 
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockCreate = vi.fn();
+vi.mock('@anthropic-ai/sdk', () => {
+	return {
+		default: class MockAnthropic {
+			messages = { create: (...args: unknown[]) => mockCreate(...args) };
+			constructor() {}
+			static APIError = class APIError extends Error {
+				status: number;
+				constructor(status: number, message: string) { super(message); this.status = status; }
+			};
+		}
+	};
+});
 
 vi.mock('$lib/server/grading-prompts', () => ({
 	buildGradePrompt: vi.fn().mockReturnValue('Grade this card on a 1-10 scale.')
@@ -126,26 +137,22 @@ describe('POST /api/grade', () => {
 	describe('Claude grading response', () => {
 		it('returns parsed grade result on success', async () => {
 			const locals = makeLocals();
-			mockFetch.mockResolvedValue({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({
-					content: [{
-						type: 'text',
-						text: JSON.stringify({
-							grade: 8.5,
-							grade_label: 'NM-MT+',
-							confidence: 0.85,
-							corners: 'Sharp corners with minimal wear',
-							edges: 'Clean edges',
-							surface: 'No scratches visible',
-							front_centering: '52/48',
-							back_centering: '50/50',
-							summary: 'High-grade card with excellent condition',
-							submit_recommendation: 'yes'
-						})
-					}]
-				})
+			mockCreate.mockResolvedValue({
+				content: [{
+					type: 'text',
+					text: JSON.stringify({
+						grade: 8.5,
+						grade_label: 'NM-MT+',
+						confidence: 0.85,
+						corners: 'Sharp corners with minimal wear',
+						edges: 'Clean edges',
+						surface: 'No scratches visible',
+						front_centering: '52/48',
+						back_centering: '50/50',
+						summary: 'High-grade card with excellent condition',
+						submit_recommendation: 'yes'
+					})
+				}]
 			});
 
 			const request = makeRequest({ imageData: VALID_BASE64 });
@@ -160,12 +167,8 @@ describe('POST /api/grade', () => {
 
 		it('returns 422 when Claude response has no JSON', async () => {
 			const locals = makeLocals();
-			mockFetch.mockResolvedValue({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({
-					content: [{ type: 'text', text: 'Sorry, I cannot grade this image.' }]
-				})
+			mockCreate.mockResolvedValue({
+				content: [{ type: 'text', text: 'Sorry, I cannot grade this image.' }]
 			});
 
 			const request = makeRequest({ imageData: VALID_BASE64 });
@@ -175,15 +178,11 @@ describe('POST /api/grade', () => {
 
 		it('returns 422 when grade value is out of range', async () => {
 			const locals = makeLocals();
-			mockFetch.mockResolvedValue({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({
-					content: [{
-						type: 'text',
-						text: '{"grade": 15, "grade_label": "Invalid"}'
-					}]
-				})
+			mockCreate.mockResolvedValue({
+				content: [{
+					type: 'text',
+					text: '{"grade": 15, "grade_label": "Invalid"}'
+				}]
 			});
 
 			const request = makeRequest({ imageData: VALID_BASE64 });
@@ -192,33 +191,26 @@ describe('POST /api/grade', () => {
 		});
 
 		it('handles Claude API overload (529) by rethrowing as 503', async () => {
-			vi.useFakeTimers();
 			const locals = makeLocals();
-			// Return 529 for all attempts, then the code breaks out of retry loop
-			mockFetch.mockResolvedValue({
-				ok: false,
-				status: 529
-			});
+			const Anthropic = (await import('@anthropic-ai/sdk')).default;
+			mockCreate.mockRejectedValue(
+				Object.assign(new Error('Overloaded'), { status: 529, name: 'APIError' })
+			);
+			// Make the error look like an APIError instance
+			const apiErr = new (Anthropic as any).APIError(529, 'Overloaded');
+			mockCreate.mockRejectedValue(apiErr);
 
 			const request = makeRequest({ imageData: VALID_BASE64 });
-			const promise = POST({ request, locals } as any).catch((e: unknown) => e);
-
-			// Advance through all retry delays (1000, 2000, 3000ms)
-			for (let i = 0; i < 4; i++) {
-				await vi.advanceTimersByTimeAsync(3500);
-			}
-
-			const err = await promise;
-			expect(err).toMatchObject({ status: 503 });
-			vi.useRealTimers();
+			await expect(
+				POST({ request, locals } as any)
+			).rejects.toMatchObject({ status: 503 });
 		});
 
 		it('handles Claude API errors as 502', async () => {
 			const locals = makeLocals();
-			mockFetch.mockResolvedValue({
-				ok: false,
-				status: 500
-			});
+			const Anthropic = (await import('@anthropic-ai/sdk')).default;
+			const apiErr = new (Anthropic as any).APIError(500, 'Server error');
+			mockCreate.mockRejectedValue(apiErr);
 
 			const request = makeRequest({ imageData: VALID_BASE64 });
 			await expect(
@@ -230,15 +222,11 @@ describe('POST /api/grade', () => {
 	describe('multi-image support', () => {
 		it('accepts cornerRegionData and centeringImageData', async () => {
 			const locals = makeLocals();
-			mockFetch.mockResolvedValue({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({
-					content: [{
-						type: 'text',
-						text: '{"grade":9,"grade_label":"Mint","confidence":0.9,"corners":"Perfect","edges":"Clean","surface":"Pristine","front_centering":"50/50","back_centering":"50/50","summary":"Gem mint","submit_recommendation":"yes"}'
-					}]
-				})
+			mockCreate.mockResolvedValue({
+				content: [{
+					type: 'text',
+					text: '{"grade":9,"grade_label":"Mint","confidence":0.9,"corners":"Perfect","edges":"Clean","surface":"Pristine","front_centering":"50/50","back_centering":"50/50","summary":"Gem mint","submit_recommendation":"yes"}'
+				}]
 			});
 
 			const request = makeRequest({
@@ -249,10 +237,9 @@ describe('POST /api/grade', () => {
 			const response = await POST({ request, locals } as any);
 			expect(response.status).toBe(200);
 
-			// Should have sent 3 images + 1 text to Claude
-			const fetchCall = mockFetch.mock.calls[0];
-			const sentBody = JSON.parse(fetchCall[1].body);
-			const imageContent = sentBody.messages[0].content.filter(
+			// Should have sent 3 images + 1 text to Claude via SDK
+			const createCall = mockCreate.mock.calls[0][0];
+			const imageContent = createCall.messages[0].content.filter(
 				(c: { type: string }) => c.type === 'image'
 			);
 			expect(imageContent.length).toBe(3);

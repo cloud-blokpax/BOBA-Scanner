@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import PriceDisplay from './PriceDisplay.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import { updateQuantity, removeFromCollection } from '$lib/stores/collection';
@@ -56,11 +57,18 @@
 			updating = false;
 		}
 	}
+
+	onMount(() => {
+		// Focus the close button on mount for keyboard accessibility
+		const closeBtn = document.querySelector('.card-detail-sheet .close-btn') as HTMLElement;
+		closeBtn?.focus();
+	});
 </script>
 
 {#if item}
-	<div class="card-detail-overlay" role="dialog" aria-modal="true">
-		<div class="card-detail-backdrop" onclick={onClose} onkeydown={(e) => e.key === 'Escape' && onClose()} role="button" tabindex="-1" aria-label="Close detail"></div>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="card-detail-overlay" role="dialog" aria-modal="true" onkeydown={(e) => e.key === 'Escape' && onClose()}>
+		<div class="card-detail-backdrop" onclick={onClose} role="button" tabindex="-1" aria-label="Close detail"></div>
 		<div class="card-detail-sheet">
 			<button class="close-btn" onclick={onClose} aria-label="Close">x</button>
 

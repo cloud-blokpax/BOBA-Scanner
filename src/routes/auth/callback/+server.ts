@@ -41,11 +41,15 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					.maybeSingle();
 
 				if (existingUser && !existingUser.auth_user_id) {
-					// Link existing unlinked user record to this auth user
-					await locals.supabase
+					// Link existing unlinked user record — use WHERE clause to prevent race
+					const { error: updateErr } = await locals.supabase
 						.from('users')
 						.update({ auth_user_id: user.id })
-						.eq('id', existingUser.id);
+						.eq('id', existingUser.id)
+						.is('auth_user_id', null);
+					if (updateErr) {
+						console.debug('[auth/callback] User link race condition handled:', updateErr);
+					}
 				} else if (!existingUser) {
 					// No user record at all — create one
 					const googleId =

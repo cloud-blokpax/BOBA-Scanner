@@ -19,6 +19,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'tournament_id and email are required');
 	}
 
+	// Validate deck_csv size to prevent database bloat
+	if (deck_csv && typeof deck_csv === 'string' && deck_csv.length > 50000) {
+		throw error(400, 'Deck CSV too large (max 50KB)');
+	}
+
 	// Validate the email format
 	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
 		throw error(400, 'Invalid email format');
