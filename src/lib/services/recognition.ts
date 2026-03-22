@@ -10,7 +10,7 @@
 
 import * as Comlink from 'comlink';
 import { idb } from './idb';
-import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards } from './card-db';
+import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards, searchCards } from './card-db';
 import { getSupabase } from './supabase';
 import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
@@ -541,7 +541,30 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	// Match Claude response to local card database (hero-verified)
 	const claudeHero = result.card.hero_name || result.card.card_name || null;
 	const claudeNumber = result.card.card_number;
-	const card = findCard(claudeNumber, claudeHero);
+	let card = claudeNumber ? findCard(claudeNumber, claudeHero) : null;
+
+	// Fallback: if card_number didn't match (or was null/cleared by server validation),
+	// try searching by hero name alone. This handles cases where the AI misread the
+	// card number but correctly identified the hero.
+	if (!card && claudeHero) {
+		const heroSearchResults = searchCards(claudeHero, 10);
+		if (heroSearchResults.length > 0) {
+			// If we have power info from Claude, use it to disambiguate among hero matches
+			const claudePower = result.card.power ? Number(result.card.power) : null;
+			if (claudePower && heroSearchResults.length > 1) {
+				const powerMatch = heroSearchResults.find(c => c.power === claudePower);
+				if (powerMatch) {
+					card = powerMatch;
+					console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" + power=${claudePower} → ${card.card_number}`);
+				}
+			}
+			// If still no match (or no power info), take the first hero match
+			if (!card) {
+				card = heroSearchResults[0];
+				console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" → ${card.card_number}`);
+			}
+		}
+	}
 
 	if (card) {
 		// Cross-verify: ensure the matched card's hero aligns with Claude's identification

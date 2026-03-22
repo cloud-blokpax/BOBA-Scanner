@@ -111,44 +111,45 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 							type: 'text',
 							text: `Identify this Bo Jackson Battle Arena (BoBA) trading card.
 
+CRITICAL — POWER vs CARD NUMBER:
+- The POWER value is the LARGE number in the TOP-RIGHT corner, often with "POWER" written vertically beside it. Common values: 60, 80, 100, 120, 140, 160, 180, 200. This is NOT the card number. NEVER return the power value as the card_number.
+- The CARD NUMBER is SMALL text in the BOTTOM-LEFT corner, inside a small colored box. It almost always has a letter prefix followed by a dash and digits.
+
+CARD NUMBER PREFIXES (most common):
+BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD
+
+Example card numbers: BF-108, BFA-5, BLBF-84, PL-46, BBF-56, BPL-7, RAD-42, GLBF-100, HTD-15
+Some older cards use plain numbers (35, 76, 155) but these are ALWAYS small text in the bottom-left — never the large power number.
+
 CARD LAYOUT GUIDE:
-- Hero name: Large text centered at the top of the card
-- Power value: Number displayed in the TOP-RIGHT corner area (NOT the card number)
-- Card number: Small text in the BOTTOM-LEFT corner (formats: BF-108, BLBF-84, PL-46, BBF-56, BPL-7, or plain numbers like 76)
-- Set identifier: Text on the card border or bottom area (e.g., "Alpha Edition", "2026 Edition")
+- Hero name: Large text at the top of the card
+- Power value: Large number in TOP-RIGHT (DO NOT use this as card_number)
+- Card number: Small text in BOTTOM-LEFT box (use the prefix-dash-number format above)
+- Set identifier: Text on the card border or bottom area
+- Serial number: Sometimes shown as "X/Y" (e.g., "1/10") — this is NOT the card number either
 
-WEAPON TYPE IDENTIFICATION (by icon color/style):
-- Fire: Red flame icon (rare)
-- Ice: Blue crystal/snowflake icon (rare)
-- Steel: Gray shield icon (common, most frequent)
-- Hex: Purple skull/dark magic icon (ultra rare)
-- Glow: Yellow/green radioactive glow icon (ultra rare)
-- Brawl: Orange fist icon (common, 2026 Edition)
-- Gum: Pink bubblegum themed (secret rare)
-- Super: Gold-on-black finish, 1/1 superfoil (legendary)
+WEAPON TYPE (by icon color at bottom-right):
+Fire (red), Ice (blue), Steel (gray), Hex (purple), Glow (yellow-green), Brawl (orange), Gum (pink), Super (gold-on-black 1/1)
 
-PARALLEL/TREATMENT IDENTIFICATION:
-- Base Paper: Matte, non-reflective surface
-- Battlefoil: Holographic foil surface (Silver, Blue, Orange, Green, Pink, Red)
-- Named Inserts: Special foil patterns (Blizzard=ice pattern, 80s Rad=neon retro, Headlines=newspaper style, etc.)
-- Inspired Ink: On-card autograph (not a sticker), visible signature on the card face
+PARALLEL/TREATMENT:
+Base Paper (matte), Battlefoil (holographic foil — Silver, Blue, Orange, Green, Pink, Red), Named Inserts (Blizzard, 80s Rad, Headlines, Sepia, Neon, etc.), Inspired Ink (on-card autograph with signature visible)
 
-Return ONLY valid JSON with these fields:
+Return ONLY valid JSON:
 {
   "card_name": "full card name as printed",
-  "hero_name": "BoBA hero name (e.g., BoJax, Air Jordan, The Kid)",
-  "athlete_name": "real athlete name if known (e.g., Bo Jackson, Michael Jordan)",
-  "set_code": "set identifier (e.g., Alpha Edition, 2026 Edition)",
-  "card_number": "number from BOTTOM-LEFT of card (e.g., BF-108, PL-46)",
-  "power": null or number from TOP-RIGHT of card,
+  "hero_name": "BoBA hero name (e.g., BoJax, Air Jordan, Cutback)",
+  "athlete_name": "real athlete name if known",
+  "set_code": "set identifier",
+  "card_number": "PREFIX-NUMBER from BOTTOM-LEFT (e.g., BFA-5, NOT the power value)",
+  "power": null or the large number from TOP-RIGHT,
   "rarity": "common/uncommon/rare/ultra_rare/legendary",
   "variant": "base/foil/battlefoil/paper/inspired_ink",
-  "parallel": "specific parallel name if identifiable (e.g., Blizzard, Silver, Headlines, 80s Rad)",
+  "parallel": "specific parallel name if identifiable",
   "weapon_type": "Fire/Ice/Steel/Hex/Glow/Brawl/Gum/Super",
   "confidence": 0.0 to 1.0
 }
 
-Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
+IMPORTANT: The card_number field must contain the small text from the BOTTOM-LEFT corner. If you can only see a large number (like 200), that is the POWER — look harder at the bottom-left for the actual card number with a letter prefix.`
 						}
 					]
 				}
@@ -172,6 +173,36 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 			console.debug('[api/scan] Claude response JSON parse failed:', err);
 			console.warn('[api/scan] Failed to parse JSON from Claude response');
 			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
+		}
+
+		// ── Validate card_number isn't actually the power value ──────
+		// Common failure mode: Haiku returns the power (large top-right number)
+		// instead of the card number (small bottom-left text with a prefix).
+		const KNOWN_POWER_VALUES = new Set([
+			55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120,
+			125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180,
+			185, 190, 195, 200, 250
+		]);
+
+		const rawCardNumber = String(cardData.card_number || '').trim();
+		const parsedAsNumber = parseInt(rawCardNumber, 10);
+
+		// If the "card_number" is a bare number that matches a common power value,
+		// and the power field contains the same number, it's almost certainly wrong.
+		if (
+			!rawCardNumber.includes('-') &&
+			!isNaN(parsedAsNumber) &&
+			KNOWN_POWER_VALUES.has(parsedAsNumber) &&
+			(cardData.power === parsedAsNumber || cardData.power === rawCardNumber)
+		) {
+			console.warn(
+				`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
+				`Clearing card_number to force hero-based fallback.`
+			);
+			// Clear the card_number so the client-side pipeline tries hero-based lookup
+			cardData.card_number = null;
+			// Reduce confidence since we can't trust the identification
+			cardData.confidence = Math.min(cardData.confidence || 0.5, 0.6);
 		}
 
 		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
