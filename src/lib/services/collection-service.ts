@@ -29,7 +29,9 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 
 			if (error) throw error;
 
-			const items = (data || []) as CollectionItem[];
+			const items = (data || []).filter(
+				(row: Record<string, unknown>) => row && typeof row.card_id === 'string'
+			) as CollectionItem[];
 
 			// Cache in IndexedDB for offline use
 			try {
@@ -126,6 +128,5 @@ export async function recordDeletion(cardId: string): Promise<void> {
 		await idb.addTombstone(cardId);
 	} catch (err) {
 		console.debug('[collection-service] Deletion tombstone write failed:', err);
-		console.warn('Failed to record deletion tombstone for sync');
 	}
 }

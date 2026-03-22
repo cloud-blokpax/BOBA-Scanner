@@ -145,8 +145,18 @@ export const idb = {
 		return getAll(STORES.cards);
 	},
 	async setCards(cards: unknown[]) {
-		await clear(STORES.cards);
-		await bulkPut(STORES.cards, cards);
+		const db = await openDB();
+		return new Promise<void>((resolve, reject) => {
+			const tx = db.transaction(STORES.cards, 'readwrite');
+			const store = tx.objectStore(STORES.cards);
+			// Clear and repopulate in one transaction — atomic
+			store.clear();
+			for (const card of cards) {
+				store.put(card);
+			}
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error);
+		});
 	},
 	async getCardsVersion(): Promise<string | undefined> {
 		return get(STORES.meta, 'cards-version');

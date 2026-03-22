@@ -698,5 +698,7 @@ async function fetchCardById(cardId: string): Promise<Card | null> {
 	const client = getSupabase();
 	if (!client) return null;
 	const { data } = await client.from('cards').select('*').eq('id', cardId).maybeSingle();
-	return data as Card | null;
+	// Runtime guard: ensure the critical fields exist before trusting the cast
+	if (!data || typeof (data as Record<string, unknown>).id !== 'string') return null;
+	return data as Card;
 }

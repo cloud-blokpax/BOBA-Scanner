@@ -149,12 +149,25 @@
 			}
 		}
 
-		// Stop camera when tab is hidden to save battery
+		// Stop camera when tab is hidden to save battery, resume when visible
 		_visibilityHandler = () => {
 			if (document.visibilityState === 'hidden') {
 				stopCamera();
 				stopAutoAnalyze();
 				torchOn = false;
+			} else if (document.visibilityState === 'visible' && phase !== 'error') {
+				// Resume camera after tab becomes visible again
+				startCamera().then((stream) => {
+					if (videoEl) {
+						videoEl.srcObject = stream;
+						videoEl.play().then(() => {
+							phase = 'idle';
+							startAutoAnalyze();
+						});
+					}
+				}).catch((err) => {
+					console.warn('[Scanner] Camera resume after tab switch failed:', err);
+				});
 			}
 		};
 		document.addEventListener('visibilitychange', _visibilityHandler);

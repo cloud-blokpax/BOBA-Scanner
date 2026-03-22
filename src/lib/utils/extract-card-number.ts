@@ -1,3 +1,11 @@
+// Known BoBA card number prefixes (update as new sets release)
+const KNOWN_PREFIXES = new Set([
+	'BF', 'BFA', 'BBFA', 'BBF', 'BLBF', 'ABF', 'CBF', 'GBF', 'OBF', 'PBF',
+	'SBF', 'HBF', 'IBF', 'RBF', 'BGBF', 'RHBF', 'OHBF', 'MBFA', 'GLBF',
+	'PL', 'BPL', 'HTD', 'RAD', 'MIX', 'MI', 'BL', 'GGL', 'LOGO', 'FT',
+	'SF', 'SL', 'CHILL', 'ALT', 'CJ', 'PG', 'HD'
+]);
+
 /**
  * Extract card number from OCR text.
  * Handles common OCR confusables (0↔O, 1↔I, etc.)
@@ -21,13 +29,16 @@ export function extractCardNumber(text: string): string | null {
 		const match = upper.match(pattern);
 		if (match) {
 			// Fix common OCR confusables in letter prefix
-			const prefix = match[1]
+			const rawPrefix = match[1];
+			const correctedPrefix = rawPrefix
 				.replace(/0/g, 'O')
 				.replace(/8/g, 'B')
 				.replace(/5/g, 'S')
 				.replace(/1/g, 'I')
 				.replace(/2/g, 'Z')
 				.replace(/6/g, 'G');
+			// Use corrected prefix only if it matches a known prefix; otherwise keep raw
+			const prefix = KNOWN_PREFIXES.has(correctedPrefix) ? correctedPrefix : rawPrefix;
 			// Fix common OCR confusables in numeric part
 			const numPart = match[2]
 				.replace(/O/g, '0')

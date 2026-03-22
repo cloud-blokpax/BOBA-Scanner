@@ -75,7 +75,7 @@ async function pushToCloud(skipLock = false): Promise<void> {
 				.upsert(rows, { onConflict: 'user_id,card_id,condition' });
 
 			if (error) {
-				console.error('Sync push upsert error:', error);
+				console.warn('Sync push upsert error:', error);
 			}
 		}
 
@@ -90,14 +90,14 @@ async function pushToCloud(skipLock = false): Promise<void> {
 				.in('card_id', cardIds);
 
 			if (error) {
-				console.error('Sync push delete error:', error);
+				console.warn('Sync push delete error:', error);
 			} else {
 				// Only clear tombstones after successful remote delete
 				await idb.clearTombstones();
 			}
 		}
 	} catch (err) {
-		console.error('Sync push error:', err);
+		console.warn('Sync push error:', err);
 	} finally {
 		if (release) release();
 	}
@@ -123,7 +123,7 @@ export async function fullSync(): Promise<void> {
 		const items = await fetchCollection();
 		collectionItems.set(items);
 	} catch (err) {
-		console.error('Full sync error:', err);
+		console.warn('Full sync error:', err);
 	} finally {
 		release();
 	}

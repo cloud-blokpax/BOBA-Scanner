@@ -124,3 +124,27 @@ export async function checkEbayDailyLimit(): Promise<boolean> {
 		return true; // Redis error = allow the call
 	}
 }
+
+// ── Global Anonymous Scan Daily Cap ─────────────────────────
+
+const GLOBAL_ANON_SCAN_DAILY_LIMIT = 500;
+
+/**
+ * Check and increment the global daily anonymous scan counter.
+ * Returns true if the scan is allowed, false if the daily global cap is exceeded.
+ * This prevents IP-rotation attacks from running up Claude API costs.
+ */
+export async function checkGlobalAnonScanLimit(): Promise<boolean> {
+	const r = getRedis();
+	if (!r) return true; // No Redis = no tracking, allow the call
+
+	try {
+		const dailyKey = `global-anon-scans:${new Date().toISOString().slice(0, 10)}`;
+		const count = await r.incr(dailyKey);
+		if (count === 1) await r.expire(dailyKey, 86400);
+		return count <= GLOBAL_ANON_SCAN_DAILY_LIMIT;
+	} catch (err) {
+		console.debug('[redis] Global anon scan limit check failed:', err);
+		return true; // Redis error = allow the call
+	}
+}

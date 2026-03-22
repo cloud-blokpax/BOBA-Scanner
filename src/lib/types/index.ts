@@ -1,3 +1,13 @@
+// ── App User (enriched Supabase user for layout data) ──────
+export interface AppUser {
+	id: string;
+	email?: string;
+	user_metadata?: Record<string, unknown>;
+	app_metadata?: Record<string, unknown>;
+	is_admin: boolean;
+	is_member: boolean;
+}
+
 // ── Card Types ──────────────────────────────────────────────────
 
 export interface Card {
