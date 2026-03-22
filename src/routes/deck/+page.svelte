@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import { validateDeck } from '$lib/services/deck-validator';
 	import type { CollectionItem, Card } from '$lib/types';
 	import type { PlayCardData } from '$lib/data/boba-dbs-scores';
+	import type { DeckValidationResult } from '$lib/services/deck-validator';
 
 	let { data } = $props();
 
@@ -55,16 +55,43 @@
 		return counts;
 	});
 
-	// ── Derived: validation ────────────────────────────────
-	const validationResult = $derived.by(() => {
+	// ── Reactive: server-side validation ────────────────────
+	let validationResult = $state<DeckValidationResult>({
+		isValid: true,
+		formatId: selectedFormatId,
+		formatName: '',
+		violations: [],
+		warnings: [],
+		stats: {
+			totalHeroes: 0, totalPower: 0, averagePower: 0,
+			maxPower: 0, minPower: 0, uniqueVariations: 0,
+			powerLevelCounts: {}, weaponCounts: {}, parallelCounts: {},
+			madnessUnlockedInserts: [], madnessTotalApexAllowed: 0, dbsTotal: null
+		}
+	});
+
+	// Debounced server-side validation — fires when deck contents or format change
+	let _validateTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Reactive trigger: recompute when inputs change
+	$effect(() => {
+		// Touch reactive dependencies so Svelte tracks them
+		const _heroes = heroCards;
+		const _plays = playEntries;
+		const _format = selectedFormatId;
+
+		// Debounce to avoid spamming the server on rapid card additions
+		if (_validateTimer) clearTimeout(_validateTimer);
+		_validateTimer = setTimeout(() => {
+			validateOnServer();
+		}, 300);
+	});
+
+	async function validateOnServer() {
 		const cards = heroCards
 			.map(item => item.card)
 			.filter((c): c is Card => c !== null && c !== undefined);
 
-		// Sort by power ascending so lower-power cards fill the core deck (first 60)
-		// and higher-power cards naturally fall into the expanded section.
-		// This matches SPEC+ and Apex Madness rules where the core deck has
-		// a lower power cap than the expanded deck.
 		const sortedCards = [...cards].sort((a, b) => (a.power || 0) - (b.power || 0));
 
 		const playCards = playEntries.map(p => ({
@@ -82,8 +109,26 @@
 			image_url: null,
 			created_at: ''
 		} satisfies Card));
-		return validateDeck(sortedCards, selectedFormatId, playCards, []);
-	});
+
+		try {
+			const res = await fetch('/api/deck/validate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					heroCards: sortedCards,
+					formatId: selectedFormatId,
+					playCards,
+					hotDogCards: []
+				})
+			});
+
+			if (res.ok) {
+				validationResult = await res.json();
+			}
+		} catch (err) {
+			console.warn('[deck] Server validation failed, deck may not be validated:', err);
+		}
+	}
 
 	// ── Derived: filtered play cards ───────────────────────
 	const allPlayCards = $derived.by(() => {

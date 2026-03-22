@@ -5,10 +5,29 @@
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { featureEnabled } from '$lib/stores/feature-flags';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
-	import { tilt } from '$lib/actions/tilt';
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import type { ScanResult, Card } from '$lib/types';
+	import type { ActionReturn } from 'svelte/action';
+
+	// Lazy-load the tilt action — it's visual polish, not critical for initial render
+	let tiltAction: ((node: HTMLElement, params?: any) => ActionReturn) | null = null;
+	import('$lib/actions/tilt').then(m => { tiltAction = m.tilt; });
+
+	function tilt(node: HTMLElement, params?: any): ActionReturn {
+		if (tiltAction) return tiltAction(node, params);
+		let cleanup: ActionReturn | void;
+		import('$lib/actions/tilt').then(m => {
+			cleanup = m.tilt(node, params);
+		});
+		return {
+			destroy() {
+				if (cleanup && typeof cleanup === 'object' && cleanup.destroy) {
+					cleanup.destroy();
+				}
+			}
+		};
+	}
 
 	const hasPriceHistory = featureEnabled('price_history');
 	const hasScanToList = featureEnabled('scan_to_list');

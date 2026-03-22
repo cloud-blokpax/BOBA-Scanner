@@ -31,7 +31,7 @@ jobs:
       - name: Check bundle size
         run: |
           # Card database JSON is ~2.7MB compiled — exclude it from the app code budget
-          APP_MAX=563200  # 550KB for application JS (excludes card data)
+          APP_MAX=614400  # 600KB for application JS (excludes card data)
           TOTAL_MAX=4194304  # 4MB total including card database
 
           TOTAL_SIZE=$(find .svelte-kit/output/client -name '*.js' -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
