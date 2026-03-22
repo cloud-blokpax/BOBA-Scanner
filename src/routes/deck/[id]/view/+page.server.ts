@@ -23,17 +23,24 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		throw error(503, 'Database not available');
 	}
 
-	const { data: deck, error: fetchErr } = await locals.supabase
-		.from('shared_decks')
+	// Try user_decks first, then fall back to shared_decks
+	const { data: deck } = await (locals.supabase as any)  // eslint-disable-line @typescript-eslint/no-explicit-any
+		.from('user_decks')
 		.select('*')
 		.eq('id', id)
-		.single();
+		.maybeSingle();
 
-	if (fetchErr || !deck) {
-		throw error(404, 'Deck not found');
+	let typedDeck = deck as unknown as SharedDeck;
+
+	if (!typedDeck) {
+		const { data: shared } = await locals.supabase
+			.from('shared_decks')
+			.select('*')
+			.eq('id', id)
+			.single();
+		if (!shared) throw error(404, 'Deck not found');
+		typedDeck = shared as unknown as SharedDeck;
 	}
-
-	const typedDeck = deck as unknown as SharedDeck;
 
 	// Increment view count (non-blocking)
 	(locals.supabase.from('shared_decks') as unknown as { update: (val: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> } })

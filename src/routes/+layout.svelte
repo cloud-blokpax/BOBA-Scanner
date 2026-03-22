@@ -190,8 +190,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
 				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
-				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>Deck Builder</a>
-				<a href="/deck/shop" class="more-item" onclick={() => (showMore = false)}>Deck Shop</a>
+				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>My Decks</a>
 				<a href="/dbs" class="more-item" onclick={() => (showMore = false)}>DBS Calculator</a>
 				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
 				<a href="/batch" class="more-item" onclick={() => (showMore = false)}>Batch Scanner</a>
