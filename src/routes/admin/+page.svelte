@@ -36,7 +36,7 @@
 		created_at: string;
 	}
 
-	let activeTab = $state<'users' | 'logs' | 'stats' | 'parallels' | 'features'>('users');
+	let activeTab = $state<'users' | 'logs' | 'stats' | 'parallels' | 'features' | 'config'>('users');
 	let users = $state<UserRow[]>([]);
 	let filteredUsers = $state<UserRow[]>([]);
 	let logs = $state<LogRow[]>([]);
@@ -70,6 +70,42 @@
 		enabled: boolean;
 		user_email?: string;
 	}>>([]);
+
+	// ── Deck shop config ──
+	let freeRefreshLimit = $state(3);
+	let memberRefreshLimit = $state(10);
+	let configLoading = $state(false);
+
+	async function loadDeckShopConfig() {
+		const client = getSupabase();
+		if (!client) return;
+		const { data } = await client
+			.from('app_config')
+			.select('key, value')
+			.in('key', ['deck_shop_daily_refreshes_free', 'deck_shop_daily_refreshes_member']);
+		if (data) {
+			for (const row of data) {
+				if (row.key === 'deck_shop_daily_refreshes_free') freeRefreshLimit = Number(row.value);
+				if (row.key === 'deck_shop_daily_refreshes_member') memberRefreshLimit = Number(row.value);
+			}
+		}
+	}
+
+	async function saveDeckShopConfig() {
+		const client = getSupabase();
+		if (!client) return;
+		configLoading = true;
+		try {
+			await client.from('app_config').upsert([
+				{ key: 'deck_shop_daily_refreshes_free', value: freeRefreshLimit as unknown, updated_at: new Date().toISOString() },
+				{ key: 'deck_shop_daily_refreshes_member', value: memberRefreshLimit as unknown, updated_at: new Date().toISOString() }
+			], { onConflict: 'key' });
+			showToast('Config saved', 'check');
+		} catch {
+			showToast('Failed to save', 'x');
+		}
+		configLoading = false;
+	}
 
 	const RARITY_TIERS: { key: CardRarity; label: string; color: string }[] = [
 		{ key: 'common', label: 'Common', color: '#9CA3AF' },
@@ -236,6 +272,10 @@
 		if (activeTab === 'features') loadFeaturesTab();
 	});
 
+	$effect(() => {
+		if (activeTab === 'config') loadDeckShopConfig();
+	});
+
 	async function toggleFlagRole(
 		featureKey: string,
 		role: 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_member' | 'enabled_for_admin',
@@ -330,6 +370,7 @@
 			<button class:active={activeTab === 'logs'} onclick={() => (activeTab = 'logs')}>Logs</button>
 			<button class:active={activeTab === 'stats'} onclick={() => (activeTab = 'stats')}>Stats</button>
 			<button class:active={activeTab === 'features'} onclick={() => (activeTab = 'features')}>Features</button>
+			<button class:active={activeTab === 'config'} onclick={() => (activeTab = 'config')}>Config</button>
 		</div>
 
 		{#if activeTab === 'users'}
@@ -474,6 +515,25 @@
 						<strong>{stats.activeToday}</strong>
 					</div>
 				</div>
+			</div>
+		{:else if activeTab === 'config'}
+			<div class="tab-content">
+				<h2 class="section-title">Deck Shop — Price Refresh Limits</h2>
+				<p class="section-desc">Configure how many price refresh batches each user tier gets per day.</p>
+				<div class="config-row">
+					<label class="config-label" for="free-refresh-limit">Free users (per day)</label>
+					<input id="free-refresh-limit" type="number" min="0" max="50" bind:value={freeRefreshLimit} class="config-input" />
+				</div>
+				<div class="config-row">
+					<label class="config-label" for="member-refresh-limit">Members (per day)</label>
+					<input id="member-refresh-limit" type="number" min="0" max="100" bind:value={memberRefreshLimit} class="config-input" />
+				</div>
+				<button class="btn-discover" onclick={saveDeckShopConfig} disabled={configLoading}>
+					{configLoading ? 'Saving...' : 'Save Limits'}
+				</button>
+				<p class="config-hint">
+					Per-user overrides: add a key <code>deck_shop_limit:USER_ID</code> to app_config with a numeric value.
+				</p>
 			</div>
 		{:else if activeTab === 'features'}
 			<div class="tab-content">
@@ -878,4 +938,15 @@
 	.overrides-table { margin-top: 0.5rem; }
 	.remove-btn { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 4px; }
 	.remove-btn:hover { background: var(--danger-light); color: var(--danger); }
+
+	/* ── Config Tab ── */
+	.config-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+	.config-label { font-size: 0.9rem; color: var(--text-secondary); min-width: 160px; }
+	.config-input {
+		width: 80px; padding: 0.5rem 0.75rem; border-radius: 8px;
+		border: 1px solid var(--border-color); background: var(--bg-base);
+		color: var(--text-primary); font-size: 0.9rem; text-align: center;
+	}
+	.config-hint { font-size: 0.8rem; color: var(--text-tertiary); margin-top: 1rem; }
+	.config-hint code { background: var(--bg-hover); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
 </style>

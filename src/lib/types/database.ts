@@ -434,6 +434,38 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['api_call_logs']['Insert']>;
 				Relationships: [];
 			};
+			app_config: {
+				Row: {
+					key: string;
+					value: unknown;
+					description: string | null;
+					updated_at: string;
+				};
+				Insert: {
+					key: string;
+					value: unknown;
+					description?: string | null;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['app_config']['Insert']>;
+				Relationships: [];
+			};
+			deck_shop_refresh_log: {
+				Row: {
+					id: string;
+					user_id: string;
+					card_count: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					card_count?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['deck_shop_refresh_log']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: Record<string, never>;

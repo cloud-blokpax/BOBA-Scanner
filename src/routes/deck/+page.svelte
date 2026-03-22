@@ -5,6 +5,9 @@
 	import type { PlayCardData } from '$lib/data/boba-dbs-scores';
 	import type { DeckValidationResult } from '$lib/services/deck-validator';
 	import { tryAwardBadge } from '$lib/services/badges';
+	import { analyzeDeckGaps, selectCardsForPriceRefresh, type GapAnalysis } from '$lib/services/deck-gap-finder';
+	import { isAuthenticated } from '$lib/stores/auth';
+	import { showToast } from '$lib/stores/toast';
 
 	let { data } = $props();
 
@@ -16,13 +19,20 @@
 	let hotDogCount = $state(10);
 
 	// ── UI state ───────────────────────────────────────────
-	let activeTab = $state<'heroes' | 'plays' | 'stats'>('heroes');
+	let activeTab = $state<'heroes' | 'plays' | 'stats' | 'shop'>('heroes');
 	let heroSearch = $state('');
 	let playSearch = $state('');
 	let selectedPlaySet = $state('all');
 	let showAffordableOnly = $state(false);
 	let savedMessage = $state<string | null>(null);
 	let _pendingHeroIds = $state<string[] | null>(null);
+
+	// ── Gap finder state ────────────────────────────────────
+	let gapAnalysis = $state<GapAnalysis | null>(null);
+	let gapLoading = $state(false);
+	let refreshing = $state(false);
+	let refreshesRemaining = $state<number | null>(null);
+	let refreshLimit = $state<number | null>(null);
 
 	// ── Derived: DBS calculations ──────────────────────────
 	const totalDbs = $derived(playEntries.reduce((sum, p) => sum + p.dbs, 0));
@@ -154,6 +164,91 @@
 		if (validationResult?.isValid) {
 			tryAwardBadge('deck_architect');
 		}
+	}
+
+	// Recompute deck gaps when heroes or format change
+	$effect(() => {
+		// Touch reactive dependencies
+		const _heroes = heroCards;
+		const _format = selectedFormatId;
+		const _collection = $collectionItems;
+
+		if (_heroes.length === 0) {
+			gapAnalysis = null;
+			return;
+		}
+
+		gapLoading = true;
+
+		// Build the set of owned card IDs from the user's collection
+		const ownedIds = new Set<string>();
+		for (const item of _collection) {
+			ownedIds.add(item.card_id);
+		}
+
+		// Build price cache (sparse initially — the refresh button fills it in)
+		const priceCache = new Map<string, { price_mid: number | null; fetched_at: string | null }>();
+
+		// Extract cards from collection items
+		const currentCards = _heroes
+			.map(item => item.card)
+			.filter((c): c is Card => c !== null && c !== undefined);
+
+		const result = analyzeDeckGaps(currentCards, _format, ownedIds, priceCache, 50);
+		gapAnalysis = result;
+		gapLoading = false;
+	});
+
+	async function handleRefreshPrices() {
+		if (!gapAnalysis || refreshing) return;
+
+		const toRefresh = selectCardsForPriceRefresh(gapAnalysis.candidates, 10);
+		if (toRefresh.length === 0) return;
+
+		refreshing = true;
+		try {
+			const res = await fetch('/api/deck/refresh-prices', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ card_ids: toRefresh.map(c => c.card.id) })
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				refreshesRemaining = data.refreshes_remaining;
+				refreshLimit = data.limit;
+
+				// Update the gap analysis with fresh prices
+				for (const result of data.results || []) {
+					const candidate = gapAnalysis.candidates.find(c => c.card.id === result.card_id);
+					if (candidate) {
+						candidate.priceMid = result.price_mid;
+						candidate.priceSearched = true;
+						candidate.priceLastUpdated = new Date().toISOString();
+					}
+				}
+				// Re-sort candidates after price update
+				gapAnalysis.candidates.sort((a, b) => {
+					if (a.priceMid !== null && b.priceMid !== null) return a.priceMid - b.priceMid;
+					if (a.priceMid !== null) return -1;
+					if (b.priceMid !== null) return 1;
+					if (!a.priceSearched && b.priceSearched) return -1;
+					if (a.priceSearched && !b.priceSearched) return 1;
+					return a.commonalityScore - b.commonalityScore;
+				});
+				gapAnalysis = gapAnalysis; // Trigger reactivity
+			} else if (res.status === 429) {
+				const data = await res.json();
+				refreshesRemaining = 0;
+				refreshLimit = data.limit;
+				showToast(data.is_member
+					? 'Daily refresh limit reached — resets at midnight UTC'
+					: 'Daily refresh limit reached — upgrade for more refreshes', 'info');
+			}
+		} catch (err) {
+			console.warn('[deck-shop] Price refresh failed:', err);
+		}
+		refreshing = false;
 	}
 
 	// ── Derived: filtered play cards ───────────────────────
@@ -334,6 +429,9 @@
 		</button>
 		<button class="tab-btn" class:active={activeTab === 'stats'} onclick={() => activeTab = 'stats'}>
 			Stats
+		</button>
+		<button class="tab-btn" class:active={activeTab === 'shop'} onclick={() => activeTab = 'shop'}>
+			Shop ({gapAnalysis?.cardsNeeded ?? '?'})
 		</button>
 	</div>
 
@@ -549,6 +647,95 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Shop / Gap Finder Panel -->
+		<div class="panel" class:panel-hidden={activeTab !== 'shop'}>
+			{#if !$isAuthenticated}
+				<div class="shop-auth-prompt">
+					<p>Sign in to see personalized card recommendations based on your collection.</p>
+					<a href="/auth/login?redirectTo=/deck" class="btn-primary">Sign In</a>
+				</div>
+			{:else if gapLoading}
+				<div class="shop-loading">Analyzing deck gaps...</div>
+			{:else if !gapAnalysis || gapAnalysis.gaps.length === 0}
+				<div class="shop-empty">
+					{#if heroCards.length === 0}
+						<p>Add cards to your deck to see shopping recommendations.</p>
+					{:else}
+						<p>Your deck is fully filled at every power level for this format. Nice work, Coach!</p>
+					{/if}
+				</div>
+			{:else}
+				<!-- Gap summary -->
+				<div class="gap-summary">
+					<div class="gap-stat">
+						<span class="gap-stat-value">{gapAnalysis.cardsNeeded}</span>
+						<span class="gap-stat-label">Cards Needed</span>
+					</div>
+					<div class="gap-stat">
+						<span class="gap-stat-value">{gapAnalysis.gaps.length}</span>
+						<span class="gap-stat-label">Open Power Levels</span>
+					</div>
+					<div class="gap-stat">
+						<span class="gap-stat-value">{gapAnalysis.totalCandidates.toLocaleString()}</span>
+						<span class="gap-stat-label">Available Cards</span>
+					</div>
+				</div>
+
+				<!-- Price refresh button -->
+				<div class="refresh-bar">
+					<button
+						class="btn-refresh"
+						onclick={handleRefreshPrices}
+						disabled={refreshing || refreshesRemaining === 0}
+					>
+						{refreshing ? 'Refreshing...' : 'Update 10 Prices'}
+					</button>
+					{#if refreshesRemaining !== null}
+						<span class="refresh-budget">{refreshesRemaining}/{refreshLimit} refreshes today</span>
+					{/if}
+				</div>
+
+				<!-- Candidate cards -->
+				<div class="candidate-list">
+					{#each gapAnalysis.candidates.slice(0, 20) as candidate}
+						<a href={candidate.ebayUrl} target="_blank" rel="noopener noreferrer" class="candidate-card">
+							<div class="cc-power">
+								<span class="power-badge" style="background: var(--weapon-{candidate.card.weapon_type?.toLowerCase() || 'steel'})">{candidate.card.power}</span>
+							</div>
+							<div class="cc-info">
+								<div class="cc-name">{candidate.card.hero_name || candidate.card.name}</div>
+								<div class="cc-meta">
+									{candidate.card.card_number}
+									{#if candidate.card.parallel && candidate.card.parallel !== 'Paper'}
+										· {candidate.card.parallel}
+									{/if}
+									· {candidate.card.weapon_type}
+								</div>
+							</div>
+							<div class="cc-price">
+								{#if candidate.priceMid !== null}
+									<span class="price-value">${candidate.priceMid.toFixed(2)}</span>
+									{#if candidate.priceLastUpdated}
+										<span class="price-date">{new Date(candidate.priceLastUpdated).toLocaleDateString()}</span>
+									{/if}
+								{:else if candidate.priceSearched}
+									<span class="price-none">No listings</span>
+								{:else}
+									<span class="price-unknown">—</span>
+								{/if}
+							</div>
+						</a>
+					{/each}
+				</div>
+
+				{#if gapAnalysis.totalCandidates > 20}
+					<a href="/deck/shop?format={selectedFormatId}" class="see-all-link">
+						See all {gapAnalysis.totalCandidates} candidates →
+					</a>
+				{/if}
+			{/if}
+		</div>
 	</div>
 
 	{#if savedMessage}
@@ -655,7 +842,7 @@
 
 	@media (min-width: 768px) {
 		.tab-nav { display: none; }
-		.deck-layout { grid-template-columns: 1fr 1fr 1fr; }
+		.deck-layout { grid-template-columns: 1fr 1fr 1fr 1fr; }
 		.panel { display: block !important; }
 		.panel-hidden { display: block !important; }
 	}
@@ -941,6 +1128,57 @@
 	}
 
 	.dist-count { width: 24px; text-align: right; color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
+
+	/* Shop / Gap Finder */
+	.shop-auth-prompt, .shop-loading, .shop-empty {
+		text-align: center; padding: 2rem 1rem; color: var(--text-secondary);
+	}
+	.gap-summary {
+		display: flex; gap: 1rem; justify-content: center;
+		margin-bottom: 1rem;
+	}
+	.gap-stat { text-align: center; }
+	.gap-stat-value { display: block; font-size: 1.3rem; font-weight: 700; color: var(--accent-gold, #f59e0b); }
+	.gap-stat-label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+
+	.refresh-bar {
+		display: flex; align-items: center; gap: 1rem;
+		margin-bottom: 1rem; padding: 0.75rem;
+		background: var(--bg-elevated); border-radius: 10px;
+	}
+	.btn-refresh {
+		padding: 0.5rem 1rem; border-radius: 8px; border: none;
+		background: var(--accent-primary); color: white;
+		font-size: 0.85rem; font-weight: 600; cursor: pointer;
+	}
+	.btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+	.refresh-budget { font-size: 0.8rem; color: var(--text-secondary); }
+
+	.candidate-list { display: flex; flex-direction: column; gap: 2px; }
+	.candidate-card {
+		display: grid; grid-template-columns: 50px 1fr 70px;
+		align-items: center; gap: 0.5rem;
+		padding: 0.6rem 0.5rem; border-radius: 8px;
+		background: var(--bg-elevated); text-decoration: none; color: inherit;
+	}
+	.candidate-card:hover { background: var(--bg-hover); }
+	.cc-power { text-align: center; }
+	.power-badge {
+		display: inline-block; padding: 2px 8px; border-radius: 6px;
+		font-size: 0.8rem; font-weight: 700; color: white;
+	}
+	.cc-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.cc-meta { font-size: 0.75rem; color: var(--text-secondary); }
+	.cc-price { text-align: right; }
+	.price-value { display: block; font-weight: 700; color: var(--color-success, #22c55e); font-size: 0.9rem; }
+	.price-date { display: block; font-size: 0.65rem; color: var(--text-tertiary); }
+	.price-none { font-size: 0.8rem; color: var(--text-tertiary); }
+	.price-unknown { font-size: 0.8rem; color: var(--text-tertiary); }
+	.see-all-link {
+		display: block; text-align: center; padding: 0.75rem;
+		margin-top: 0.5rem; color: var(--accent-primary);
+		font-size: 0.85rem; font-weight: 600; text-decoration: none;
+	}
 
 	/* Save toast */
 	.save-toast {
