@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import type { ScanResult } from '$lib/types';
 	import { recognizeCard } from '$lib/services/recognition';
 	import { addToCollection } from '$lib/stores/collection';
@@ -21,6 +21,12 @@
 	let processing = $state(false);
 	let committed = $state(false);
 	let fileInput = $state<HTMLInputElement>(undefined!);
+
+	onDestroy(() => {
+		for (const entry of entries) {
+			if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+		}
+	});
 
 	const pendingCount = $derived(entries.filter((e) => e.status === 'pending').length);
 	const doneCount = $derived(entries.filter((e) => e.status === 'done').length);

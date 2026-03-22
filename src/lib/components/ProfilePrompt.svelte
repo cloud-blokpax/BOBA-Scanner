@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { supabase } from '$lib/services/supabase';
+	import { getSupabase } from '$lib/services/supabase';
 	import { user } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores/toast';
 
@@ -19,8 +19,10 @@
 	});
 
 	async function checkProfile(authUserId: string) {
+		const client = getSupabase();
+		if (!client) return;
 		try {
-			const { data } = await supabase
+			const { data } = await client
 				.from('users')
 				.select('name, discord_id')
 				.eq('auth_user_id', authUserId)
@@ -38,10 +40,12 @@
 	async function save() {
 		const currentUser = $user;
 		if (!currentUser) return;
+		const client = getSupabase();
+		if (!client) return;
 
 		saving = true;
 		try {
-			const { error } = await supabase
+			const { error } = await client
 				.from('users')
 				.update({
 					name: profileName.trim() || null,

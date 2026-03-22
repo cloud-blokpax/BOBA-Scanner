@@ -20,8 +20,19 @@ const PRECACHE = [...BUILD_ASSETS, ...STATIC_ASSETS];
 
 sw.addEventListener('install', (event) => {
 	event.waitUntil(
-		caches.open(CACHE_NAME).then((cache) => {
-			return cache.addAll(PRECACHE);
+		caches.open(CACHE_NAME).then(async (cache) => {
+			// Precache assets individually so one large/slow asset can't block
+			// service worker installation. The card database chunk (~2.7MB) is
+			// lazy-loaded by card-db.ts and doesn't need eager precaching —
+			// it will be cached on first use via the stale-while-revalidate handler.
+			for (const asset of PRECACHE) {
+				try {
+					await cache.add(asset);
+				} catch (err) {
+					// Log but don't fail — the asset will be fetched on demand later
+					console.warn('[sw] Failed to precache:', asset);
+				}
+			}
 		})
 	);
 	// Activate immediately — don't wait for old tabs to close

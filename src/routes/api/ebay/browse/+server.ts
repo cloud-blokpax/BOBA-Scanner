@@ -10,6 +10,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
@@ -53,6 +54,10 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	// Mode 1: keyword price lookup
 	if (query) {
+		const withinLimit = await checkEbayDailyLimit();
+		if (!withinLimit) {
+			return json({ error: 'API call limit reached for today', avgPrice: null, lowPrice: null, highPrice: null, count: 0 }, { status: 503 });
+		}
 		try {
 			const token = await getEbayToken();
 			const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
@@ -108,6 +113,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	}
 
 	// Mode 2: seller listing monitor
+	{
+		const withinLimit = await checkEbayDailyLimit();
+		if (!withinLimit) {
+			return json({ error: 'API call limit reached for today', listings: [], total: 0 }, { status: 503 });
+		}
+	}
 	if (!seller?.trim()) {
 		throw error(400, 'Missing seller username or query');
 	}

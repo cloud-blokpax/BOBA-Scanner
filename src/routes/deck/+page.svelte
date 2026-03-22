@@ -87,7 +87,10 @@
 		}, 300);
 	});
 
+	let validating = $state(false);
+
 	async function validateOnServer() {
+		validating = true;
 		const cards = heroCards
 			.map(item => item.card)
 			.filter((c): c is Card => c !== null && c !== undefined);
@@ -110,24 +113,38 @@
 			created_at: ''
 		} satisfies Card));
 
-		try {
-			const res = await fetch('/api/deck/validate', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					heroCards: sortedCards,
-					formatId: selectedFormatId,
-					playCards,
-					hotDogCards: []
-				})
-			});
+		// Try server-side validation first
+		if (navigator.onLine) {
+			try {
+				const res = await fetch('/api/deck/validate', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						heroCards: sortedCards,
+						formatId: selectedFormatId,
+						playCards,
+						hotDogCards: []
+					})
+				});
 
-			if (res.ok) {
-				validationResult = await res.json();
+				if (res.ok) {
+					validationResult = await res.json();
+					validating = false;
+					return;
+				}
+			} catch (err) {
+				console.warn('[deck] Server validation failed, trying local fallback:', err);
 			}
-		} catch (err) {
-			console.warn('[deck] Server validation failed, deck may not be validated:', err);
 		}
+
+		// Offline fallback: dynamically import the validator
+		try {
+			const { validateDeck } = await import('$lib/services/deck-validator');
+			validationResult = validateDeck(sortedCards, selectedFormatId, playCards, []);
+		} catch (err) {
+			console.warn('[deck] Local validation also failed:', err);
+		}
+		validating = false;
 	}
 
 	// ── Derived: filtered play cards ───────────────────────
@@ -438,9 +455,15 @@
 
 			<!-- Validation status -->
 			<div class="validation-section">
+				{#if validating}
+					<div class="validation-header" style="background: rgba(59,130,246,0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.2);">
+						Validating...
+					</div>
+				{:else}
 				<div class="validation-header" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
 					{validationResult.isValid ? 'Deck is Valid' : `${validationResult.violations.filter(v => v.severity === 'error').length} Violation(s)`}
 				</div>
+				{/if}
 
 				{#each validationResult.violations as violation}
 					<div class="violation" class:violation-error={violation.severity === 'error'} class:violation-warning={violation.severity === 'warning'}>
