@@ -38,19 +38,6 @@ function acquireSyncLock(): (() => void) | null {
 }
 
 /**
- * Record a card deletion for sync purposes.
- * Stored in IDB (survives browser cache clears better than localStorage).
- */
-export async function recordDeletedCard(cardId: string): Promise<void> {
-	try {
-		await idb.addTombstone(cardId);
-	} catch {
-		// IDB unavailable — deletion may not sync
-		console.warn('Failed to record deletion tombstone for sync');
-	}
-}
-
-/**
  * Schedule a debounced push to cloud.
  */
 export function schedulePush(): void {

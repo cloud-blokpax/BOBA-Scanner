@@ -25,9 +25,11 @@ const BLOCKED_USER_AGENTS = [
   'blackwidow', 'webcopier', 'webzip', 'teleport',
 ];
 
-// Paths that should always be accessible (health checks, etc.)
+// Paths that should always be accessible (health checks, monitoring, API endpoints)
 const ALLOWED_PATHS = [
-  '/api/config',  // needed for app initialization
+  '/api/config',       // needed for app initialization
+  '/api/',             // all API endpoints (they have their own auth/rate limiting)
+  '/.well-known/',     // standard well-known paths
 ];
 
 export const config = {

@@ -1,4 +1,8 @@
 <script lang="ts">
+	// NOTE: This component is not currently mounted anywhere in the app.
+	// It provides price alerts and a more detailed sparkline than the inline
+	// version in ScanConfirmation.svelte. Intended for future use in CardDetail
+	// or a dedicated price dashboard. See Fix 7 for a bug fix applied here.
 	import { browser } from '$app/environment';
 
 	const HISTORY_KEY = 'priceHistory';
@@ -84,8 +88,14 @@
 		showAlertModal = false;
 	}
 
-	function removeAlert(idx: number): void {
-		alerts = alerts.filter((_, i) => i !== idx);
+	function removeAlert(alert: PriceAlert): void {
+		alerts = alerts.filter(
+			(a) =>
+				!(a.cardNumber === alert.cardNumber &&
+				  a.direction === alert.direction &&
+				  a.targetPrice === alert.targetPrice &&
+				  a.created === alert.created)
+		);
 		saveAlerts(alerts);
 	}
 
@@ -162,7 +172,7 @@
 				{#each cardAlerts as alert, i}
 					<div class="alert-item">
 						<span>{alert.direction === 'below' ? 'Below' : 'Above'} ${alert.targetPrice.toFixed(2)}</span>
-						<button class="alert-remove" onclick={() => removeAlert(i)}>x</button>
+						<button class="alert-remove" onclick={() => removeAlert(alert)}>x</button>
 					</div>
 				{/each}
 			</div>

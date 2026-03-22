@@ -111,6 +111,7 @@ export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<Imag
  */
 let _workerInitPromise: Promise<void> | null = null;
 let _ocrAvailable = false;
+let _ocrRetryAttempted = false;
 
 export async function initWorkers(): Promise<void> {
 	if (imageWorker) return;
@@ -242,6 +243,23 @@ export async function recognizeCard(
 	}
 
 	// ── TIER 2: OCR + Fuzzy Match ────────────────────────────
+	// One-time retry if OCR failed during initial setup
+	if (!_ocrAvailable && !_ocrRetryAttempted && navigator.onLine) {
+		_ocrRetryAttempted = true;
+		try {
+			await Promise.race([
+				initOcr(),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('OCR retry timed out')), 10000)
+				)
+			]);
+			_ocrAvailable = true;
+			console.debug('[scan] Tesseract OCR initialized on retry');
+		} catch (err) {
+			console.warn('[scan] Tesseract OCR retry failed — Tier 2 remains disabled:', err);
+		}
+	}
+
 	if (_ocrAvailable) {
 		onTierChange?.(2);
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
@@ -561,16 +579,24 @@ async function writeHashToAllLayers(
 		// Non-critical
 	}
 
-	// Layer 3: Supabase (via service role on server, but client can insert if allowed)
+	// Layer 3: Supabase (with scan_count increment)
 	try {
 		const client = getSupabase();
 		if (client) {
+			// Read existing scan_count
+			const { data: existing } = await client
+				.from('hash_cache')
+				.select('scan_count')
+				.eq('phash', hash)
+				.maybeSingle();
+			const prevCount = (existing as { scan_count?: number } | null)?.scan_count || 0;
+
 			await client.from('hash_cache').upsert(
 				{
 					phash: hash,
 					card_id: cardId,
 					confidence,
-					scan_count: 1,
+					scan_count: prevCount + 1,
 					last_seen: new Date().toISOString(),
 					...(phash256 ? { phash_256: phash256 } : {})
 				},

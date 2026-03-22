@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast';
+	import { featureEnabled } from '$lib/stores/feature-flags';
 	import type { GradeResult } from '$lib/types';
+
+	const hasGrader = featureEnabled('condition_grader');
 
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
@@ -94,6 +97,7 @@
 	<title>Card Grader - BOBA Scanner</title>
 </svelte:head>
 
+{#if $hasGrader}
 <div class="grader-page">
 	<header class="page-header">
 		<h1>AI Card Grader</h1>
@@ -185,8 +189,36 @@
 		</div>
 	{/if}
 </div>
+{:else}
+<div class="premium-block">
+	<div class="premium-icon">+</div>
+	<h2>AI Card Grader</h2>
+	<p>The AI condition grader estimates PSA/BGS grades from card photos.</p>
+	<p class="premium-note">This feature is available to members. Contact the admin for access.</p>
+</div>
+{/if}
 
 <style>
+	.premium-block {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		padding: 3rem 1.5rem;
+		min-height: 50vh;
+	}
+	.premium-icon { font-size: 3rem; margin-bottom: 1rem; }
+	.premium-block h2 {
+		font-family: 'Syne', sans-serif;
+		font-weight: 700;
+		margin-bottom: 0.5rem;
+	}
+	.premium-note {
+		color: var(--text-tertiary);
+		font-size: 0.85rem;
+		margin-top: 0.5rem;
+	}
 	.grader-page {
 		max-width: 500px;
 		margin: 0 auto;

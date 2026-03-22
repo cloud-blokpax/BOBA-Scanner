@@ -60,6 +60,13 @@
 		const cards = heroCards
 			.map(item => item.card)
 			.filter((c): c is Card => c !== null && c !== undefined);
+
+		// Sort by power ascending so lower-power cards fill the core deck (first 60)
+		// and higher-power cards naturally fall into the expanded section.
+		// This matches SPEC+ and Apex Madness rules where the core deck has
+		// a lower power cap than the expanded deck.
+		const sortedCards = [...cards].sort((a, b) => (a.power || 0) - (b.power || 0));
+
 		const playCards = playEntries.map(p => ({
 			id: `play-${p.cardNumber}`,
 			name: p.name,
@@ -75,7 +82,7 @@
 			image_url: null,
 			created_at: ''
 		} satisfies Card));
-		return validateDeck(cards, selectedFormatId, playCards, []);
+		return validateDeck(sortedCards, selectedFormatId, playCards, []);
 	});
 
 	// ── Derived: filtered play cards ───────────────────────
