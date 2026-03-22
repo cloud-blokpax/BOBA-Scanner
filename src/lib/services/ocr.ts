@@ -3,8 +3,14 @@
  *
  * Tesseract.js manages its own internal Web Worker, so OCR computation
  * runs off the main thread without needing an additional Comlink wrapper.
+ *
+ * IMPORTANT: Tesseract is dynamically imported to keep it out of the
+ * initial shared chunk. It only downloads when OCR is first triggered
+ * (Tier 2 of the recognition pipeline).
  */
-import Tesseract from 'tesseract.js';
+
+// Tesseract types — import type-only so it's erased at build time
+import type { Worker as TesseractWorker } from 'tesseract.js';
 
 interface OcrWord {
 	text: string;
@@ -17,7 +23,7 @@ export interface OcrResult {
 	words: OcrWord[];
 }
 
-let worker: Tesseract.Worker | null = null;
+let worker: TesseractWorker | null = null;
 let recognitionCount = 0;
 let _initPromise: Promise<void> | null = null;
 
@@ -28,6 +34,10 @@ export async function initOcr(whitelist?: string): Promise<void> {
 
 	_initPromise = (async () => {
 		if (worker) return; // Double-check after awaiting
+
+		// Dynamic import — Vite splits Tesseract into its own async chunk
+		const Tesseract = await import('tesseract.js');
+
 		worker = await Tesseract.createWorker('eng', 1);
 		await worker.setParameters({
 			tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
