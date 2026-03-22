@@ -162,6 +162,7 @@
 				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
+				<a href="/speed" class="more-item" onclick={() => (showMore = false)}>Speed Challenge</a>
 				{#if $hasScanToList}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>
 						<span class="premium-badge">PRO</span> eBay Listings
