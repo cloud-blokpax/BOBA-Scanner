@@ -16,6 +16,7 @@ import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { addToScanHistory } from '$lib/stores/scan-history';
+import { trackScanMetric } from '$lib/services/error-tracking';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
@@ -203,6 +204,16 @@ export async function recognizeCard(
 			confidence: final.confidence,
 			success: final.card_id !== null,
 			processingMs: final.processing_ms
+		});
+
+		// Track scan performance metrics for operational monitoring
+		trackScanMetric({
+			tier: final.scan_method || 'unknown',
+			success: final.card_id !== null,
+			confidence: Math.round(final.confidence * 100),
+			ms: final.processing_ms,
+			cardNumber: final.card?.card_number ?? null,
+			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false
 		});
 
 		// Auto-tag card with its parallel name
@@ -654,6 +665,51 @@ async function writeHashToAllLayers(
 		}
 	} catch (err) {
 		console.debug('[scan] Supabase hash writeback failed:', err);
+	}
+
+	// Layer 4: Reference image (best scan per card)
+	// Only upload when confidence is high and we have the original bitmap
+	if (bitmap && imageWorker && confidence >= 0.9) {
+		try {
+			// Table not in generated types — uses untyped query
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const client = getSupabase() as any;
+			if (client) {
+				// Check if this card already has a reference image with equal or higher confidence
+				const { data: existing } = await client
+					.from('card_reference_images')
+					.select('confidence')
+					.eq('card_id', cardId)
+					.maybeSingle();
+
+				if (!existing || confidence > (existing.confidence || 0)) {
+					// Upload the image to Supabase Storage
+					const imageBlob = await imageWorker.resizeForUpload(bitmap, 512);
+					const path = `references/${cardId}.jpg`;
+
+					await client.storage
+						.from('scans')
+						.upload(path, imageBlob, {
+							contentType: 'image/jpeg',
+							upsert: true
+						});
+
+					// Update the reference table
+					await client.from('card_reference_images').upsert({
+						card_id: cardId,
+						image_path: path,
+						phash: hash,
+						phash_256: phash256 || null,
+						confidence,
+						updated_at: new Date().toISOString()
+					}, { onConflict: 'card_id' });
+
+					console.debug(`[scan] Reference image updated for ${cardId} (confidence: ${confidence})`);
+				}
+			}
+		} catch (err) {
+			console.debug('[scan] Reference image upload failed:', err);
+		}
 	}
 }
 

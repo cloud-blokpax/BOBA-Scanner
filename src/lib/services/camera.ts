@@ -102,10 +102,3 @@ export function captureFrame(
 ): Promise<ImageBitmap> {
 	return createImageBitmap(video);
 }
-
-/**
- * Check if the camera is currently active.
- */
-export function isCameraActive(): boolean {
-	return currentStream !== null && currentStream.active;
-}

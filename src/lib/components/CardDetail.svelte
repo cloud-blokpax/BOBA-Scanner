@@ -118,7 +118,7 @@
 					{#if item.card?.id}
 						<div class="price-section">
 							<h3>eBay Prices</h3>
-							<PriceDisplay cardId={item.card.id} />
+							<PriceDisplay cardId={item.card.id} card={item.card} />
 						</div>
 						{#if $hasPriceHistory}
 							{#await import('$lib/components/PriceTrends.svelte') then PriceTrends}

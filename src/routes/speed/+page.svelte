@@ -5,6 +5,7 @@
 	import Scanner from '$lib/components/Scanner.svelte';
 	import { initScanner } from '$lib/stores/scanner';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import { showToast } from '$lib/stores/toast';
 	import {
 		speedGame,
 		gamePhase,
@@ -51,6 +52,34 @@
 
 	// Track whether a new high score was set
 	let isNewHighScore = $state(false);
+
+	async function shareScore() {
+		const finalScore = $gameScore;
+		const cards = $scanCount;
+		const duration = selectedDuration;
+		const text = `I scored ${finalScore} points scanning ${cards} cards in ${duration}s on BOBA Scanner! Can you beat me?`;
+		const url = `${window.location.origin}/speed`;
+
+		// Try native Web Share API first (mobile), fall back to clipboard
+		if (navigator.share) {
+			try {
+				await navigator.share({ title: 'BOBA Speed Challenge', text, url });
+				return;
+			} catch (err) {
+				// User cancelled or share failed — fall through to clipboard
+				if (err instanceof Error && err.name === 'AbortError') return;
+			}
+		}
+
+		// Clipboard fallback
+		try {
+			await navigator.clipboard.writeText(`${text}\n${url}`);
+			showToast('Score copied — paste it in Discord!', 'success');
+		} catch {
+			// Final fallback
+			prompt('Copy your score:', `${text} ${url}`);
+		}
+	}
 
 	onMount(() => {
 		initScanner();
@@ -394,6 +423,10 @@
 						</div>
 					</div>
 				{/if}
+
+				<button class="share-score-btn" onclick={shareScore}>
+					Share Score
+				</button>
 
 				<div class="results-actions">
 					<button class="start-btn" onclick={handlePlayAgain}>Play Again</button>
@@ -880,6 +913,24 @@
 	.log-time {
 		color: var(--text-tertiary, #475569);
 		font-size: 0.75rem;
+	}
+
+	.share-score-btn {
+		display: block;
+		width: 100%;
+		max-width: 320px;
+		margin-top: 0.5rem;
+		padding: 0.75rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-color, #334155);
+		background: transparent;
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.share-score-btn:hover {
+		background: var(--bg-hover, rgba(255,255,255,0.05));
 	}
 
 	/* ── Results Actions ── */

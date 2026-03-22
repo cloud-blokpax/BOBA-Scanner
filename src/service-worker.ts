@@ -105,6 +105,14 @@ sw.addEventListener('fetch', (event) => {
 		return;
 	}
 
+	// For version.json: always network-first so update checks get fresh data
+	if (url.pathname === '/version.json') {
+		event.respondWith(
+			fetch(event.request).catch(() => caches.match(event.request).then(r => r || new Response('{}', { headers: { 'Content-Type': 'application/json' } })))
+		);
+		return;
+	}
+
 	// For everything else: stale-while-revalidate
 	event.respondWith(
 		(async () => {
@@ -121,4 +129,11 @@ sw.addEventListener('fetch', (event) => {
 			return cached || fetchPromise;
 		})()
 	);
+});
+
+// Allow the client to trigger immediate activation of a new service worker
+sw.addEventListener('message', (event) => {
+	if (event.data?.type === 'SKIP_WAITING') {
+		sw.skipWaiting();
+	}
 });
