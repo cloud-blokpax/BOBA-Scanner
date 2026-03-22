@@ -1,8 +1,24 @@
 <script lang="ts">
 	import { getPrice } from '$lib/stores/prices';
-	import type { PriceData } from '$lib/types';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import type { PriceData, Card } from '$lib/types';
 
-	let { cardId }: { cardId: string } = $props();
+	let {
+		cardId,
+		card = null
+	}: {
+		cardId: string;
+		card?: Card | null;
+	} = $props();
+
+	// Build eBay search URL if we have card metadata
+	const ebayUrl = $derived(
+		card ? buildEbaySearchUrl({
+			card_number: card.card_number,
+			hero_name: card.hero_name,
+			set_code: card.set_code
+		}) : null
+	);
 
 	let priceData = $state<PriceData | null>(null);
 	let loading = $state(true);
@@ -50,6 +66,11 @@
 			<span class="price-value">{formatPrice(priceData.price_high)}</span>
 		</div>
 		<span class="price-count">{priceData.listings_count} active listings</span>
+		{#if ebayUrl}
+			<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="ebay-link">
+				View on eBay →
+			</a>
+		{/if}
 	{:else}
 		<span class="price-empty">No listings found</span>
 	{/if}
@@ -89,6 +110,22 @@
 		font-size: 0.8rem;
 		color: var(--text-tertiary, #64748b);
 		margin-top: 0.25rem;
+	}
+
+	.ebay-link {
+		display: inline-block;
+		margin-top: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		border-radius: 6px;
+		background: rgba(0, 100, 210, 0.1);
+		color: var(--accent-primary, #3b82f6);
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-decoration: none;
+		text-align: center;
+	}
+	.ebay-link:hover {
+		background: rgba(0, 100, 210, 0.2);
 	}
 
 	.price-loading,

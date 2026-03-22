@@ -12,6 +12,7 @@
 	import { initVersionChecking } from '$lib/services/version';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 	import '../styles/index.css';
 
 	let { children, data } = $props();
@@ -215,6 +216,7 @@
 	{/if}
 </div>
 
+<UpdateBanner />
 <Toast />
 
 {#if data.user}

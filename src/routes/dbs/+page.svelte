@@ -130,6 +130,10 @@
 
 <svelte:head>
 	<title>DBS Calculator — BOBA Scanner</title>
+	<meta name="description" content="Calculate your Playbook's Deck Balancing Score for BoBA tournaments. Check if your Play card lineup stays under the 1,000 DBS cap." />
+	<meta property="og:title" content="DBS Calculator — BOBA Scanner" />
+	<meta property="og:description" content="Build your BoBA Playbook and check DBS compliance for tournaments." />
+	<meta property="og:type" content="website" />
 </svelte:head>
 
 <div class="dbs-page">

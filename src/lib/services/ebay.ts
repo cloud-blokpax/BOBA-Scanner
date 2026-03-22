@@ -81,40 +81,6 @@ export function buildEbaySoldUrl(card: {
 }
 
 /**
- * Open eBay search in a new tab.
- */
-export function openEbaySearch(card: {
-	card_number?: string | null;
-	hero_name?: string | null;
-	set_code?: string | null;
-}): void {
-	if (!browser) return;
-	window.open(buildEbaySearchUrl(card), '_blank');
-}
-
-/**
- * Fetch average price from eBay active listings.
- */
-export async function fetchEbayAvgPrice(card: {
-	card_number?: string | null;
-	hero_name?: string | null;
-	athlete_name?: string | null;
-}): Promise<EbayPriceData> {
-	const res = await fetch('/api/ebay/browse', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			query: buildEbayQuery(card),
-			cardNumber: card.card_number,
-			hero: card.hero_name,
-			athlete: card.athlete_name
-		})
-	});
-	if (!res.ok) throw new Error(`eBay browse failed: ${res.status}`);
-	return res.json();
-}
-
-/**
  * Fetch seller listings via eBay Browse API.
  */
 export async function fetchSellerListings(sellerUsername: string): Promise<EbayListing[]> {

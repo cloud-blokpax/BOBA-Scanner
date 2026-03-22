@@ -17,12 +17,31 @@
 		paused?: boolean;
 	} = $props();
 
+	// ── Scanner State Machine ───────────────────────────────
+	// Single phase variable replaces scattered boolean flags.
+	// Every legal transition is explicit — impossible states are impossible.
+	type ScanPhase =
+		| 'initializing'    // Camera starting up
+		| 'idle'            // Camera active, waiting for card detection
+		| 'detecting'       // Card shape detected, checking stability
+		| 'stabilizing'     // Counting stable frames before auto-capture
+		| 'capturing'       // Auto-capture triggered, taking the frame
+		| 'processing'      // Recognition pipeline running
+		| 'result_success'  // Card identified
+		| 'result_fail'     // Card not identified
+		| 'foil_capturing'  // Foil mode: collecting multi-angle captures
+		| 'error';          // Camera or pipeline error
+
+	let phase = $state<ScanPhase>('initializing');
+
+	// Derived booleans for template compatibility
+	const scanning = $derived(phase === 'processing' || phase === 'capturing');
+	const scanSuccess = $derived(phase === 'result_success');
+	const scanFailed = $derived(phase === 'result_fail');
+	const cameraReady = $derived(!['initializing', 'error'].includes(phase));
+
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let torchOn = $state(false);
-	let cameraReady = $state(false);
-	let scanning = $state(false);
-	let scanSuccess = $state(false);
-	let scanFailed = $state(false);
 	let revealedCard = $state<Card | null>(null);
 	let blurWarning = $state(false);
 	let glareRegions = $state<Array<{ x: number; y: number; w: number; h: number }>>([]);
@@ -109,11 +128,12 @@
 			if (videoEl) {
 				videoEl.srcObject = stream;
 				await videoEl.play();
-				cameraReady = true;
+				phase = 'idle';
 				startAutoAnalyze();
 			}
 		} catch (err) {
 			console.error('Camera error:', err);
+			phase = 'error';
 			if (err instanceof DOMException) {
 				if (err.name === 'NotAllowedError') {
 					cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
@@ -248,21 +268,21 @@
 	function handleScanResult(result: ScanResult | null, imageUrl?: string) {
 		if (result?.card) {
 			revealedCard = result.card;
-			scanSuccess = true;
+			phase = 'result_success';
 			lastFailReason = null;
 			const r = result.card.rarity;
 			if (r === 'legendary') triggerHaptic('legendary');
 			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
 			else triggerHaptic('success');
 			onResult?.(result, imageUrl);
-			setTimeout(() => { scanSuccess = false; revealedCard = null; }, 1800);
+			setTimeout(() => { phase = 'idle'; revealedCard = null; }, 1800);
 		} else {
 			revealedCard = null;
-			scanFailed = true;
+			phase = 'result_fail';
 			lastFailReason = result?.failReason || null;
 			triggerHaptic('error');
 			if (result) onResult?.(result, imageUrl);
-			setTimeout(() => { scanFailed = false; }, 1200);
+			setTimeout(() => { phase = 'idle'; }, 1200);
 		}
 	}
 
@@ -277,9 +297,7 @@
 
 	async function handleCapture() {
 		if (!videoEl || scanning || paused) return;
-		scanning = true;
-		scanSuccess = false;
-		scanFailed = false;
+		phase = 'capturing';
 		blurWarning = false;
 		glareRegions = [];
 		triggerHaptic('tap');
@@ -294,7 +312,7 @@
 				blurWarning = true;
 				triggerHaptic('error');
 				setTimeout(() => { blurWarning = false; }, 2000);
-				scanning = false;
+				phase = 'idle';
 				return;
 			}
 			if (quality.hasGlare) {
@@ -302,6 +320,7 @@
 				setTimeout(() => { glareRegions = []; }, 2000);
 			}
 
+			phase = 'processing';
 			const imageUrl = bitmapToDataUrl(bitmap);
 			// skipBlurCheck: true because we already ran checkImageQuality above
 			let scanResult;
@@ -323,13 +342,14 @@
 					failReason: errorMsg
 				}, imageUrl);
 			}
-		} finally {
-			scanning = false;
+		} catch {
+			phase = 'idle';
 		}
 	}
 
 	async function handleFoilCapture() {
 		if (!videoEl || scanning) return;
+		phase = 'foil_capturing';
 		const bitmap = await captureFrame(videoEl);
 		foilCaptures = [...foilCaptures, bitmap];
 		foilStep = foilCaptures.length;
@@ -340,7 +360,7 @@
 		setTimeout(() => { showFlash = false; }, 150);
 
 		if (foilCaptures.length >= FOIL_CAPTURES_NEEDED) {
-			scanning = true;
+			phase = 'processing';
 			try {
 				const composite = await compositeForFoilMode(foilCaptures);
 				// Clean up captures
@@ -364,9 +384,11 @@
 						failReason: errorMsg
 					}, imageUrl);
 				}
-			} finally {
-				scanning = false;
+			} catch {
+				phase = 'idle';
 			}
+		} else {
+			phase = 'idle';
 		}
 	}
 
@@ -381,9 +403,7 @@
 		const file = input.files?.[0];
 		if (!file) return;
 
-		scanning = true;
-		scanSuccess = false;
-		scanFailed = false;
+		phase = 'processing';
 
 		try {
 			const imageUrl = URL.createObjectURL(file);
@@ -402,8 +422,9 @@
 					failReason: errorMsg
 				}, imageUrl);
 			}
+		} catch {
+			phase = 'idle';
 		} finally {
-			scanning = false;
 			input.value = '';
 		}
 	}

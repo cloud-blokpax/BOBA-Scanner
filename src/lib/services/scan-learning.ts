@@ -116,15 +116,3 @@ export function recordCorrection(
 
 	saveCorrections();
 }
-
-/**
- * Get stats about stored corrections.
- */
-export function getCorrectionStats(): { total: number; totalHits: number } {
-	const corrections = loadCorrections();
-	let totalHits = 0;
-	for (const entry of corrections.values()) {
-		totalHits += entry.hits;
-	}
-	return { total: corrections.size, totalHits };
-}
