@@ -18,12 +18,22 @@ export function initAuth() {
 	const client = getSupabase();
 	if (!client) return () => {};
 
-	// Get initial session
-	client.auth.getSession().then(({ data }) => {
-		session.set(data.session);
-		user.set(data.session?.user ?? null);
+	// Get initial session — validate JWT with getUser() to avoid stale cookie data
+	client.auth.getUser().then(({ data: { user: validatedUser }, error: authErr }) => {
+		if (authErr || !validatedUser) {
+			session.set(null);
+			user.set(null);
+			return;
+		}
+		// User is validated — now safe to read session for token metadata
+		client.auth.getSession().then(({ data }) => {
+			session.set(data.session);
+			user.set(validatedUser);
+		});
 	}).catch((err) => {
 		console.warn('Failed to get initial auth session:', err);
+		session.set(null);
+		user.set(null);
 	});
 
 	// Listen for auth changes

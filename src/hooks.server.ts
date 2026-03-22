@@ -42,6 +42,15 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 			return { session: null, user: null };
 		}
 
+		// Trust the session if the JWT has >5 minutes remaining.
+		// This avoids a round-trip to Supabase Auth on every request.
+		const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+		const fiveMinutes = 5 * 60 * 1000;
+		if (expiresAt - Date.now() > fiveMinutes) {
+			return { session, user: session.user };
+		}
+
+		// Near expiry or no expiry info — validate with getUser()
 		const {
 			data: { user },
 			error

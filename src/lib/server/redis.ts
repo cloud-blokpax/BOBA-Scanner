@@ -43,7 +43,8 @@ export async function getHashFromRedis(
 	try {
 		const data = await r.get<{ card_id: string; confidence: number }>(HASH_PREFIX + phash);
 		return data;
-	} catch {
+	} catch (err) {
+		console.debug('[redis] Hash lookup failed:', err);
 		return null;
 	}
 }
@@ -65,15 +66,15 @@ export async function setHashInRedis(
 			{ card_id: cardId, confidence },
 			{ ex: HASH_TTL }
 		);
-	} catch {
-		// Non-critical
+	} catch (err) {
+		console.debug('[redis] Hash write failed:', err);
 	}
 }
 
 // ── Hot Price Cache ─────────────────────────────────────────
 
 const PRICE_PREFIX = 'price:';
-const PRICE_TTL = 60 * 60; // 1 hour
+const PRICE_TTL = 60 * 60 * 4; // 4 hours — BoBA card prices don't move fast enough for hourly refreshes
 
 export async function getPriceFromRedis(cardId: string): Promise<Record<string, unknown> | null> {
 	const r = getRedis();
@@ -81,7 +82,8 @@ export async function getPriceFromRedis(cardId: string): Promise<Record<string, 
 
 	try {
 		return await r.get<Record<string, unknown>>(PRICE_PREFIX + cardId);
-	} catch {
+	} catch (err) {
+		console.debug('[redis] Price lookup failed:', err);
 		return null;
 	}
 }
@@ -95,7 +97,29 @@ export async function setPriceInRedis(
 
 	try {
 		await r.set(PRICE_PREFIX + cardId, priceData, { ex: PRICE_TTL });
+	} catch (err) {
+		console.debug('[redis] Price write failed:', err);
+	}
+}
+
+// ── eBay API Daily Call Counter ─────────────────────────────
+
+const EBAY_DAILY_LIMIT = 4500; // Leave 500 headroom from eBay's 5,000/day cap
+
+/**
+ * Check and increment the daily eBay API call counter.
+ * Returns true if the call is allowed, false if the daily limit is exceeded.
+ */
+export async function checkEbayDailyLimit(): Promise<boolean> {
+	const r = getRedis();
+	if (!r) return true; // No Redis = no tracking, allow the call
+
+	try {
+		const dailyKey = `ebay-calls:${new Date().toISOString().slice(0, 10)}`;
+		const count = await r.incr(dailyKey);
+		if (count === 1) await r.expire(dailyKey, 86400);
+		return count <= EBAY_DAILY_LIMIT;
 	} catch {
-		// Non-critical
+		return true; // Redis error = allow the call
 	}
 }

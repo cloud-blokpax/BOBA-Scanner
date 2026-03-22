@@ -47,8 +47,8 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 			});
 			return priceData;
 		}
-	} catch {
-		// Continue to server
+	} catch (err) {
+		console.debug('[prices] IDB cache read failed:', err);
 	}
 
 	// Fetch from server API
@@ -61,8 +61,8 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 		// Cache in IDB
 		try {
 			await idb.setPrice(priceData);
-		} catch {
-			// Non-critical
+		} catch (err) {
+			console.debug('[prices] IDB cache write failed:', err);
 		}
 
 		priceCache.update((map) => {
@@ -71,7 +71,8 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 		});
 
 		return priceData;
-	} catch {
+	} catch (err) {
+		console.debug('[prices] Server fetch failed:', err);
 		return null;
 	}
 }

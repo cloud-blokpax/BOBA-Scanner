@@ -9,6 +9,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { checkEbayDailyLimit } from '$lib/server/redis';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { createClient } from '@supabase/supabase-js';
@@ -55,10 +56,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	if (cached) {
 		const age = Date.now() - new Date(cached.fetched_at).getTime();
-		if (age < 3600_000) {
+		if (age < 14400_000) { // 4-hour TTL — BoBA card prices don't move hourly
 			return json(cached, {
 				headers: {
-					'Cache-Control': 's-maxage=3600, stale-while-revalidate=7200'
+					'Cache-Control': 's-maxage=14400, stale-while-revalidate=28800'
 				}
 			});
 		}
@@ -79,6 +80,13 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const heroOrName = card.hero_name || card.name || '';
 	const cardNum = card.card_number || '';
 	const query = `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
+
+	// Check eBay daily API call limit (4,500/day with 500 headroom)
+	const withinLimit = await checkEbayDailyLimit();
+	if (!withinLimit) {
+		if (cached) return json(cached, { headers: { 'Cache-Control': 's-maxage=60' } });
+		return json({ error: 'Price lookups temporarily limited' }, { status: 503 });
+	}
 
 	try {
 		const token = await getEbayToken();
@@ -131,25 +139,36 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			console.warn('[api/price] Cache write failed (possible RLS issue)');
 		}
 
-		// Log price data point to history (always-on, not gated by feature flag)
+		// Log price data point to history — only when price actually changed
 		try {
 			const historyClient = getServiceClient() || locals.supabase;
-			await historyClient.from('price_history').insert({
-				card_id: cardId,
-				source: 'ebay',
-				price_low: priceData.price_low,
-				price_mid: priceData.price_mid,
-				price_high: priceData.price_high,
-				listings_count: priceData.listings_count,
-				recorded_at: new Date().toISOString()
-			});
-		} catch {
-			// Non-critical — don't fail the request if history logging fails
+			const { data: lastEntry } = await historyClient
+				.from('price_history')
+				.select('price_mid')
+				.eq('card_id', cardId)
+				.order('recorded_at', { ascending: false })
+				.limit(1)
+				.maybeSingle();
+
+			const priceChanged = !lastEntry || lastEntry.price_mid !== priceData.price_mid;
+			if (priceChanged) {
+				await historyClient.from('price_history').insert({
+					card_id: cardId,
+					source: 'ebay',
+					price_low: priceData.price_low,
+					price_mid: priceData.price_mid,
+					price_high: priceData.price_high,
+					listings_count: priceData.listings_count,
+					recorded_at: new Date().toISOString()
+				});
+			}
+		} catch (err) {
+			console.debug('[api/price] Price history write failed:', err);
 		}
 
 		return json(priceData, {
 			headers: {
-				'Cache-Control': 's-maxage=3600, stale-while-revalidate=7200'
+				'Cache-Control': 's-maxage=14400, stale-while-revalidate=28800'
 			}
 		});
 	} catch (err) {
