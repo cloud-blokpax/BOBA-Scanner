@@ -1,1197 +1,533 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import type { CollectionItem, Card } from '$lib/types';
-	import type { PlayCardData } from '$lib/data/boba-dbs-scores';
-	import type { DeckValidationResult } from '$lib/services/deck-validator';
-	import { tryAwardBadge } from '$lib/services/badges';
-	import { analyzeDeckGaps, selectCardsForPriceRefresh, type GapAnalysis } from '$lib/services/deck-gap-finder';
-	import { isAuthenticated } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
+	import { fetchUserDecks, deleteDeck, computeDeckStats, createDeck, updateDeckContents, getFormatDefaults, type UserDeck } from '$lib/services/deck-service';
+	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { showToast } from '$lib/stores/toast';
 
-	let { data } = $props();
+	const formatOptions = getFormatOptions();
 
-	// ── Deck state ─────────────────────────────────────────
-	let deckName = $state('My Deck');
-	let selectedFormatId = $state('spec_playmaker');
-	let heroCards = $state<CollectionItem[]>([]);
-	let playEntries = $state<Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>>([]);
-	let hotDogCount = $state(10);
+	let decks = $state<UserDeck[]>([]);
+	let loading = $state(true);
+	let activeFilter = $state('all');
+	let deleteConfirmId = $state<string | null>(null);
+	let menuOpenId = $state<string | null>(null);
 
-	// ── UI state ───────────────────────────────────────────
-	let activeTab = $state<'heroes' | 'plays' | 'stats' | 'shop'>('heroes');
-	let heroSearch = $state('');
-	let playSearch = $state('');
-	let selectedPlaySet = $state('all');
-	let showAffordableOnly = $state(false);
-	let savedMessage = $state<string | null>(null);
-	let _pendingHeroIds = $state<string[] | null>(null);
+	// Legacy import state
+	let showLegacyImportPrompt = $state(false);
+	let legacyDeck = $state<Record<string, unknown> | null>(null);
 
-	// ── Gap finder state ────────────────────────────────────
-	let gapAnalysis = $state<GapAnalysis | null>(null);
-	let gapLoading = $state(false);
-	let refreshing = $state(false);
-	let refreshesRemaining = $state<number | null>(null);
-	let refreshLimit = $state<number | null>(null);
-
-	// ── Derived: DBS calculations ──────────────────────────
-	const totalDbs = $derived(playEntries.reduce((sum, p) => sum + p.dbs, 0));
-	const dbsBudgetPercent = $derived(Math.min(100, (totalDbs / 1000) * 100));
-	const dbsBudgetColor = $derived(
-		totalDbs <= 700 ? 'var(--color-success, #22C55E)' :
-		totalDbs <= 900 ? 'var(--color-warning, #F59E0B)' :
-		'var(--color-error, #EF4444)'
-	);
-
-	// ── Derived: hero stats ────────────────────────────────
-	const totalPower = $derived(
-		heroCards.reduce((sum, item) => sum + (item.card?.power || 0), 0)
-	);
-
-	const weaponCounts = $derived.by(() => {
-		const counts: Record<string, number> = {};
-		for (const item of heroCards) {
-			const weapon = item.card?.weapon_type || 'None';
-			counts[weapon] = (counts[weapon] || 0) + 1;
-		}
-		return counts;
-	});
-
-	const powerLevelCounts = $derived.by(() => {
-		const counts: Record<number, number> = {};
-		for (const item of heroCards) {
-			const p = item.card?.power || 0;
-			counts[p] = (counts[p] || 0) + 1;
-		}
-		return counts;
-	});
-
-	// ── Reactive: server-side validation ────────────────────
-	let validationResult = $state<DeckValidationResult>({
-		isValid: true,
-		formatId: selectedFormatId,
-		formatName: '',
-		violations: [],
-		warnings: [],
-		stats: {
-			totalHeroes: 0, totalPower: 0, averagePower: 0,
-			maxPower: 0, minPower: 0, uniqueVariations: 0,
-			powerLevelCounts: {}, weaponCounts: {}, parallelCounts: {},
-			madnessUnlockedInserts: [], madnessTotalApexAllowed: 0, dbsTotal: null
-		}
-	});
-
-	// Debounced server-side validation — fires when deck contents or format change
-	let _validateTimer: ReturnType<typeof setTimeout> | null = null;
-
-	// Reactive trigger: recompute when inputs change
-	$effect(() => {
-		// Touch reactive dependencies so Svelte tracks them
-		const _heroes = heroCards;
-		const _plays = playEntries;
-		const _format = selectedFormatId;
-
-		// Debounce to avoid spamming the server on rapid card additions
-		if (_validateTimer) clearTimeout(_validateTimer);
-		_validateTimer = setTimeout(() => {
-			validateOnServer();
-		}, 300);
-	});
-
-	let validating = $state(false);
-
-	async function validateOnServer() {
-		validating = true;
-		const cards = heroCards
-			.map(item => item.card)
-			.filter((c): c is Card => c !== null && c !== undefined);
-
-		const sortedCards = [...cards].sort((a, b) => (a.power || 0) - (b.power || 0));
-
-		const playCards = playEntries.map(p => ({
-			id: `play-${p.cardNumber}`,
-			name: p.name,
-			hero_name: null,
-			athlete_name: null,
-			set_code: p.setCode,
-			card_number: p.cardNumber,
-			parallel: null,
-			power: null,
-			rarity: null,
-			weapon_type: null,
-			battle_zone: null,
-			image_url: null,
-			created_at: ''
-		} satisfies Card));
-
-		// Try server-side validation first
-		if (navigator.onLine) {
-			try {
-				const res = await fetch('/api/deck/validate', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						heroCards: sortedCards,
-						formatId: selectedFormatId,
-						playCards,
-						hotDogCards: []
-					})
-				});
-
-				if (res.ok) {
-					validationResult = await res.json();
-					validating = false;
-					if (validationResult?.isValid) {
-						tryAwardBadge('deck_architect');
-					}
-					return;
-				}
-			} catch (err) {
-				console.warn('[deck] Server validation failed, trying local fallback:', err);
-			}
-		}
-
-		// Offline fallback: dynamically import the validator
-		try {
-			const { validateDeck } = await import('$lib/services/deck-validator');
-			validationResult = validateDeck(sortedCards, selectedFormatId, playCards, []);
-		} catch (err) {
-			console.warn('[deck] Local validation also failed:', err);
-		}
-		validating = false;
-
-		// Award Deck Architect badge when deck passes validation
-		if (validationResult?.isValid) {
-			tryAwardBadge('deck_architect');
-		}
+	async function loadDecks() {
+		loading = true;
+		decks = await fetchUserDecks(activeFilter);
+		loading = false;
 	}
 
-	// Recompute deck gaps when heroes or format change
-	$effect(() => {
-		// Touch reactive dependencies
-		const _heroes = heroCards;
-		const _format = selectedFormatId;
-		const _collection = $collectionItems;
+	function setFilter(filter: string) {
+		activeFilter = filter;
+		loadDecks();
+	}
 
-		if (_heroes.length === 0) {
-			gapAnalysis = null;
-			return;
+	async function handleDelete(deckId: string) {
+		const ok = await deleteDeck(deckId);
+		if (ok) {
+			decks = decks.filter(d => d.id !== deckId);
+			showToast('Deck deleted', 'check');
 		}
+		deleteConfirmId = null;
+	}
 
-		gapLoading = true;
+	async function importLegacyDeck() {
+		if (!legacyDeck) return;
+		const formatId = (legacyDeck.formatId as string) || 'spec_playmaker';
+		const defaults = getFormatDefaults(formatId);
+		const deckId = await createDeck({
+			...defaults,
+			name: (legacyDeck.name as string) || 'Imported Deck',
+		});
 
-		// Build the set of owned card IDs from the user's collection
-		const ownedIds = new Set<string>();
-		for (const item of _collection) {
-			ownedIds.add(item.card_id);
-		}
-
-		// Build price cache (sparse initially — the refresh button fills it in)
-		const priceCache = new Map<string, { price_mid: number | null; fetched_at: string | null }>();
-
-		// Extract cards from collection items
-		const currentCards = _heroes
-			.map(item => item.card)
-			.filter((c): c is Card => c !== null && c !== undefined);
-
-		const result = analyzeDeckGaps(currentCards, _format, ownedIds, priceCache, 50);
-		gapAnalysis = result;
-		gapLoading = false;
-	});
-
-	async function handleRefreshPrices() {
-		if (!gapAnalysis || refreshing) return;
-
-		const toRefresh = selectCardsForPriceRefresh(gapAnalysis.candidates, 10);
-		if (toRefresh.length === 0) return;
-
-		refreshing = true;
-		try {
-			const res = await fetch('/api/deck/refresh-prices', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ card_ids: toRefresh.map(c => c.card.id) })
+		if (deckId) {
+			await updateDeckContents(deckId, {
+				hero_card_ids: (legacyDeck.heroCardIds as string[]) || [],
+				play_entries: (legacyDeck.playEntries as Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>) || [],
+				hot_dog_count: (legacyDeck.hotDogCount as number) ?? 10
 			});
-
-			if (res.ok) {
-				const data = await res.json();
-				refreshesRemaining = data.refreshes_remaining;
-				refreshLimit = data.limit;
-
-				// Update the gap analysis with fresh prices
-				for (const result of data.results || []) {
-					const candidate = gapAnalysis.candidates.find(c => c.card.id === result.card_id);
-					if (candidate) {
-						candidate.priceMid = result.price_mid;
-						candidate.priceSearched = true;
-						candidate.priceLastUpdated = new Date().toISOString();
-					}
-				}
-				// Re-sort candidates after price update
-				gapAnalysis.candidates.sort((a, b) => {
-					if (a.priceMid !== null && b.priceMid !== null) return a.priceMid - b.priceMid;
-					if (a.priceMid !== null) return -1;
-					if (b.priceMid !== null) return 1;
-					if (!a.priceSearched && b.priceSearched) return -1;
-					if (a.priceSearched && !b.priceSearched) return 1;
-					return a.commonalityScore - b.commonalityScore;
-				});
-				gapAnalysis = gapAnalysis; // Trigger reactivity
-			} else if (res.status === 429) {
-				const data = await res.json();
-				refreshesRemaining = 0;
-				refreshLimit = data.limit;
-				showToast(data.is_member
-					? 'Daily refresh limit reached — resets at midnight UTC'
-					: 'Daily refresh limit reached — upgrade for more refreshes', 'info');
-			}
-		} catch (err) {
-			console.warn('[deck-shop] Price refresh failed:', err);
+			localStorage.removeItem('boba-deck-draft');
+			showLegacyImportPrompt = false;
+			await loadDecks();
+			showToast('Deck imported successfully!', 'check');
 		}
-		refreshing = false;
 	}
 
-	// ── Derived: filtered play cards ───────────────────────
-	const allPlayCards = $derived.by(() => {
-		const cards: PlayCardData[] = [];
-		for (const [setCode, setCards] of Object.entries(data.playCardsBySet)) {
-			for (const card of setCards) {
-				cards.push({ ...card, release: setCode });
-			}
-		}
-		return cards;
-	});
-
-	const filteredPlayCards = $derived.by(() => {
-		let cards = allPlayCards;
-		if (selectedPlaySet !== 'all') {
-			cards = cards.filter(c => c.release === selectedPlaySet);
-		}
-		if (playSearch) {
-			const q = playSearch.toLowerCase();
-			cards = cards.filter(c =>
-				c.name.toLowerCase().includes(q) ||
-				c.card_number.toLowerCase().includes(q)
-			);
-		}
-		if (showAffordableOnly) {
-			const remaining = 1000 - totalDbs;
-			cards = cards.filter(c => c.dbs <= remaining);
-		}
-		// Exclude already-added plays
-		const addedKeys = new Set(playEntries.map(p => `${p.setCode}:${p.cardNumber}`));
-		cards = cards.filter(c => !addedKeys.has(`${c.release}:${c.card_number}`));
-		return cards;
-	});
-
-	// ── Filtered heroes from collection ────────────────────
-	const filteredCollectionHeroes = $derived.by(() => {
-		const items = $collectionItems;
-		if (!heroSearch) return items;
-		const q = heroSearch.toLowerCase();
-		return items.filter(item =>
-			(item.card?.name || '').toLowerCase().includes(q) ||
-			(item.card?.hero_name || '').toLowerCase().includes(q) ||
-			(item.card?.card_number || '').toLowerCase().includes(q)
-		);
-	});
-
-	onMount(() => {
-		loadCollection();
-		loadDeckFromStorage();
-	});
-
-	// Resolve pending hero card IDs when collection finishes loading
-	$effect(() => {
-		if (!_pendingHeroIds) return;
-		const items = $collectionItems;
-		if (items.length === 0) return;
-		const idSet = new Set(_pendingHeroIds);
-		heroCards = items.filter(item => idSet.has(item.id));
-		_pendingHeroIds = null;
-	});
-
-	// ── Hero deck operations ───────────────────────────────
-	function addHeroToDeck(item: CollectionItem) {
-		if (heroCards.length >= 70) return;
-		if (heroCards.some(d => d.id === item.id)) return;
-		heroCards = [...heroCards, item];
-		saveDeckToStorage();
+	function formatDate(dateStr: string): string {
+		const d = new Date(dateStr);
+		const now = new Date();
+		const diffMs = now.getTime() - d.getTime();
+		const diffMins = Math.floor(diffMs / 60000);
+		if (diffMins < 1) return 'Just now';
+		if (diffMins < 60) return `${diffMins}m ago`;
+		const diffHours = Math.floor(diffMins / 60);
+		if (diffHours < 24) return `${diffHours}h ago`;
+		const diffDays = Math.floor(diffHours / 24);
+		if (diffDays < 7) return `${diffDays}d ago`;
+		return d.toLocaleDateString();
 	}
 
-	function removeHero(itemId: string) {
-		heroCards = heroCards.filter(d => d.id !== itemId);
-		saveDeckToStorage();
+	function formatName(formatId: string): string {
+		const fmt = formatOptions.find(f => f.id === formatId);
+		return fmt?.name || formatId;
 	}
 
-	// ── Play deck operations ───────────────────────────────
-	function addPlay(card: PlayCardData) {
-		const key = `${card.release}:${card.card_number}`;
-		if (playEntries.some(p => `${p.setCode}:${p.cardNumber}` === key)) return;
-		if (playEntries.length >= 55) return; // 30 + 25 bonus max
-		playEntries = [...playEntries, {
-			cardNumber: card.card_number,
-			setCode: card.release,
-			name: card.name,
-			dbs: card.dbs
-		}];
-		saveDeckToStorage();
-	}
-
-	function removePlay(index: number) {
-		playEntries = playEntries.filter((_, i) => i !== index);
-		saveDeckToStorage();
-	}
-
-	// ── DBS badge color ────────────────────────────────────
-	function dbsBadgeColor(dbs: number): string {
-		if (dbs <= 20) return '#22C55E';
-		if (dbs <= 40) return '#F59E0B';
-		if (dbs <= 60) return '#F97316';
-		return '#EF4444';
-	}
-
-	// ── Persistence (localStorage) ─────────────────────────
-	function saveDeckToStorage() {
-		try {
-			const deck = {
-				name: deckName,
-				formatId: selectedFormatId,
-				heroCardIds: heroCards.map(h => h.id),
-				playEntries,
-				hotDogCount
-			};
-			localStorage.setItem('boba-deck-draft', JSON.stringify(deck));
-		} catch { /* ignore */ }
-	}
-
-	function loadDeckFromStorage() {
+	onMount(async () => {
+		// Check for legacy localStorage deck
 		try {
 			const raw = localStorage.getItem('boba-deck-draft');
-			if (!raw) return;
-			const deck = JSON.parse(raw);
-			deckName = deck.name || 'My Deck';
-			selectedFormatId = deck.formatId || 'spec_playmaker';
-			hotDogCount = deck.hotDogCount ?? 10;
-			playEntries = deck.playEntries || [];
-			// Hero cards will be resolved reactively when collection loads
-			if (deck.heroCardIds?.length) {
-				_pendingHeroIds = deck.heroCardIds as string[];
-				const items = $collectionItems;
-				if (items.length > 0) {
-					const idSet = new Set(_pendingHeroIds);
-					heroCards = items.filter(item => idSet.has(item.id));
-					_pendingHeroIds = null;
+			if (raw) {
+				const legacy = JSON.parse(raw);
+				if (legacy.heroCardIds?.length > 0 || legacy.playEntries?.length > 0) {
+					showLegacyImportPrompt = true;
+					legacyDeck = legacy;
 				}
 			}
 		} catch { /* ignore */ }
-	}
 
-	function clearDeck() {
-		heroCards = [];
-		playEntries = [];
-		hotDogCount = 10;
-		localStorage.removeItem('boba-deck-draft');
-	}
+		await loadDecks();
+	});
 </script>
 
 <svelte:head>
-	<title>{deckName} | Deck Builder | BOBA Scanner</title>
+	<title>My Decks | BOBA Scanner</title>
 </svelte:head>
 
-<div class="deck-page">
-	<!-- Header -->
-	<div class="deck-header">
-		<input
-			type="text"
-			bind:value={deckName}
-			class="deck-name-input"
-			placeholder="Deck name..."
-			oninput={saveDeckToStorage}
-		/>
-		<div class="header-actions">
-			<select bind:value={selectedFormatId} class="format-select" onchange={saveDeckToStorage}>
-				{#each data.formats as fmt}
-					<option value={fmt.id}>{fmt.name}</option>
-				{/each}
-			</select>
-			<button class="clear-btn" onclick={clearDeck}>Clear</button>
-		</div>
+<div class="decks-page">
+	<div class="page-header">
+		<h1>My Decks</h1>
+		<a href="/deck/new" class="btn-create">+ Create New Deck</a>
 	</div>
 
-	<!-- Tab navigation (mobile) -->
-	<div class="tab-nav">
-		<button class="tab-btn" class:active={activeTab === 'heroes'} onclick={() => activeTab = 'heroes'}>
-			Heroes ({heroCards.length})
-		</button>
-		<button class="tab-btn" class:active={activeTab === 'plays'} onclick={() => activeTab = 'plays'}>
-			Plays ({playEntries.length})
-		</button>
-		<button class="tab-btn" class:active={activeTab === 'stats'} onclick={() => activeTab = 'stats'}>
-			Stats
-		</button>
-		<button class="tab-btn" class:active={activeTab === 'shop'} onclick={() => activeTab = 'shop'}>
-			Shop ({gapAnalysis?.cardsNeeded ?? '?'})
-		</button>
+	{#if showLegacyImportPrompt}
+		<div class="legacy-banner">
+			<p>Found a deck from your previous session. Import it?</p>
+			<div class="legacy-actions">
+				<button class="btn-import" onclick={importLegacyDeck}>Import Deck</button>
+				<button class="btn-dismiss" onclick={() => { localStorage.removeItem('boba-deck-draft'); showLegacyImportPrompt = false; }}>Dismiss</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Format filter bar -->
+	<div class="filter-bar">
+		<button class="filter-btn" class:active={activeFilter === 'all'} onclick={() => setFilter('all')}>All</button>
+		{#each formatOptions as fmt}
+			<button class="filter-btn" class:active={activeFilter === fmt.id} onclick={() => setFilter(fmt.id)}>{fmt.name}</button>
+		{/each}
 	</div>
 
-	<div class="deck-layout">
-		<!-- Hero Deck Panel -->
-		<div class="panel" class:panel-hidden={activeTab !== 'heroes'}>
-			<h2>Hero Deck <span class="panel-count">{heroCards.length}/60{heroCards.length > 60 ? '+' : ''}</span></h2>
-
-			<!-- Hero search -->
-			<input
-				type="text"
-				bind:value={heroSearch}
-				class="search-input"
-				placeholder="Search collection..."
-			/>
-
-			<!-- Current heroes in deck -->
-			<div class="card-list">
-				{#each heroCards as item, i (item.id)}
-					<div class="deck-card" class:deck-card-over={i >= 60}>
-						<span class="deck-card-name">{item.card?.hero_name || item.card?.name}</span>
-						<span class="deck-card-number">{item.card?.card_number}</span>
-						{#if item.card?.power}
-							<span class="deck-card-power">PWR {item.card.power}</span>
-						{/if}
-						{#if item.card?.weapon_type}
-							<span class="deck-card-weapon">{item.card.weapon_type}</span>
-						{/if}
-						<button class="remove-btn" onclick={() => removeHero(item.id)}>x</button>
-					</div>
-				{:else}
-					<p class="empty-msg">Add heroes from your collection below</p>
-				{/each}
-			</div>
-
-			<!-- Available heroes -->
-			<h3 class="sub-heading">Collection</h3>
-			<div class="card-list available-list">
-				{#each filteredCollectionHeroes as item (item.id)}
-					{@const inDeck = heroCards.some(d => d.id === item.id)}
-					<button
-						class="available-card"
-						class:in-deck={inDeck}
-						onclick={() => addHeroToDeck(item)}
-						disabled={inDeck || heroCards.length >= 70}
-					>
-						<span class="avail-name">{item.card?.hero_name || item.card?.name}</span>
-						<span class="avail-number">{item.card?.card_number}</span>
-						{#if item.card?.power}
-							<span class="avail-power">PWR {item.card.power}</span>
-						{/if}
-					</button>
-				{:else}
-					<p class="empty-msg">No cards in collection</p>
-				{/each}
-			</div>
+	{#if loading}
+		<div class="loading-state">Loading decks...</div>
+	{:else if decks.length === 0}
+		<div class="empty-state">
+			<div class="empty-icon">🃏</div>
+			<p>No decks yet — create your first one!</p>
+			<a href="/deck/new" class="btn-create">+ Create New Deck</a>
 		</div>
-
-		<!-- Playbook Panel -->
-		<div class="panel" class:panel-hidden={activeTab !== 'plays'}>
-			<h2>Playbook <span class="panel-count">{playEntries.length}/30{playEntries.length > 30 ? ' (+bonus)' : ''}</span></h2>
-
-			<!-- DBS Budget Bar -->
-			<div class="dbs-bar" role="progressbar" aria-valuenow={totalDbs} aria-valuemax={1000}>
-				<div class="dbs-bar-label">DBS: {totalDbs} / 1,000</div>
-				<div class="dbs-bar-track">
-					<div class="dbs-bar-fill" style:width="{dbsBudgetPercent}%" style:background={dbsBudgetColor}></div>
-				</div>
-				{#if totalDbs > 1000}
-					<div class="dbs-bar-over">Over budget by {totalDbs - 1000}</div>
-				{/if}
-			</div>
-
-			<!-- Current plays -->
-			<div class="card-list">
-				{#each playEntries as play, i}
-					<div class="deck-card play-card">
-						<span class="play-name">{play.name}</span>
-						<span class="play-number">{play.cardNumber}</span>
-						<span class="dbs-badge" style:background={dbsBadgeColor(play.dbs)}>{play.dbs}</span>
-						<button class="remove-btn" onclick={() => removePlay(i)}>x</button>
-					</div>
-				{:else}
-					<p class="empty-msg">Add plays from the catalog below</p>
-				{/each}
-			</div>
-
-			<!-- Play search & filters -->
-			<h3 class="sub-heading">Play Catalog</h3>
-			<div class="play-filters">
-				<input
-					type="text"
-					bind:value={playSearch}
-					class="search-input"
-					placeholder="Search plays..."
-				/>
-				<select bind:value={selectedPlaySet} class="set-filter">
-					<option value="all">All Sets</option>
-					{#each Object.keys(data.playCardsBySet) as setCode}
-						<option value={setCode}>{setCode}</option>
-					{/each}
-				</select>
-				<button
-					class="affordable-toggle"
-					class:active={showAffordableOnly}
-					onclick={() => showAffordableOnly = !showAffordableOnly}
-				>
-					Affordable ({1000 - totalDbs} left)
-				</button>
-			</div>
-
-			<div class="card-list available-list">
-				{#each filteredPlayCards as card}
-					<button class="available-card play-available" onclick={() => addPlay(card)}>
-						<span class="avail-name">{card.name}</span>
-						<span class="avail-number">{card.card_number}</span>
-						<span class="dbs-badge" style:background={dbsBadgeColor(card.dbs)}>{card.dbs}</span>
-					</button>
-				{:else}
-					<p class="empty-msg">{showAffordableOnly ? 'No affordable plays remaining' : 'No plays match your search'}</p>
-				{/each}
-			</div>
-		</div>
-
-		<!-- Stats & Validation Panel -->
-		<div class="panel" class:panel-hidden={activeTab !== 'stats'}>
-			<h2>Deck Stats</h2>
-
-			<!-- Validation status -->
-			<div class="validation-section">
-				{#if validating}
-					<div class="validation-header" style="background: rgba(59,130,246,0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.2);">
-						Validating...
-					</div>
-				{:else}
-				<div class="validation-header" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
-					{validationResult.isValid ? 'Deck is Valid' : `${validationResult.violations.filter(v => v.severity === 'error').length} Violation(s)`}
-				</div>
-				{/if}
-
-				{#each validationResult.violations as violation}
-					<div class="violation" class:violation-error={violation.severity === 'error'} class:violation-warning={violation.severity === 'warning'}>
-						<span class="violation-icon">{violation.severity === 'error' ? 'x' : '!'}</span>
-						<span>{violation.message}</span>
-					</div>
-				{/each}
-
-				{#each validationResult.warnings as warning}
-					<div class="violation violation-warning">
-						<span class="violation-icon">!</span>
-						<span>{warning}</span>
-					</div>
-				{/each}
-			</div>
-
-			<!-- Stats -->
-			<div class="stats-grid">
-				<div class="stat-card">
-					<div class="stat-value">{heroCards.length}</div>
-					<div class="stat-label">Heroes</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-value">{totalPower.toLocaleString()}</div>
-					<div class="stat-label">Total Power</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-value">{heroCards.length > 0 ? Math.round(totalPower / heroCards.length) : 0}</div>
-					<div class="stat-label">Avg Power</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-value">{playEntries.length}</div>
-					<div class="stat-label">Plays</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-value">{totalDbs}</div>
-					<div class="stat-label">DBS Total</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-value">{hotDogCount}</div>
-					<div class="stat-label">Hot Dogs</div>
-				</div>
-			</div>
-
-			<!-- Weapon distribution -->
-			{#if Object.keys(weaponCounts).length > 0}
-				<h3 class="sub-heading">Weapon Distribution</h3>
-				<div class="distribution-list">
-					{#each Object.entries(weaponCounts).sort((a, b) => b[1] - a[1]) as [weapon, count]}
-						<div class="dist-item">
-							<span class="dist-label">{weapon}</span>
-							<div class="dist-bar-track">
-								<div class="dist-bar-fill" style:width="{(count / heroCards.length) * 100}%"></div>
-							</div>
-							<span class="dist-count">{count}</span>
+	{:else}
+		<div class="deck-grid">
+			{#each decks as deck (deck.id)}
+				{@const stats = computeDeckStats(deck)}
+				<div class="deck-card">
+					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+					<div class="deck-card-body" onclick={() => goto(`/deck/${deck.id}`)}>
+						<div class="deck-card-top">
+							<h3 class="deck-card-name">{deck.name}</h3>
+							<span class="format-badge">{formatName(deck.format_id)}</span>
 						</div>
-					{/each}
-				</div>
-			{/if}
 
-			<!-- Power curve -->
-			{#if Object.keys(powerLevelCounts).length > 0}
-				<h3 class="sub-heading">Power Curve</h3>
-				<div class="distribution-list">
-					{#each Object.entries(powerLevelCounts).sort((a, b) => Number(a[0]) - Number(b[0])) as [power, count]}
-						<div class="dist-item">
-							<span class="dist-label">{power}</span>
-							<div class="dist-bar-track">
-								<div class="dist-bar-fill" style:width="{(count / Math.max(...Object.values(powerLevelCounts))) * 100}%"></div>
+						<div class="deck-card-stats">
+							<div class="mini-stat">
+								<span class="mini-stat-value">{stats.heroCount}/{stats.heroTarget}</span>
+								<span class="mini-stat-label">Heroes</span>
 							</div>
-							<span class="dist-count">{count}</span>
+							<div class="mini-stat">
+								<span class="mini-stat-value">{stats.playCount}/{stats.playTarget}</span>
+								<span class="mini-stat-label">Plays</span>
+							</div>
+							<div class="mini-stat">
+								<span class="mini-stat-value">{stats.totalDbs}/{stats.dbsCap}</span>
+								<span class="mini-stat-label">DBS</span>
+							</div>
 						</div>
-					{/each}
+
+						<!-- Progress bar -->
+						<div class="progress-track">
+							<div
+								class="progress-fill"
+								style:width="{Math.round((stats.heroPercent + stats.playPercent) / 2)}%"
+								style:background={stats.isComplete ? 'var(--color-success, #22C55E)' : stats.heroPercent >= 50 ? 'var(--color-warning, #F59E0B)' : 'var(--color-error, #EF4444)'}
+							></div>
+						</div>
+
+						{#if deck.notes}
+							<p class="deck-card-notes">{deck.notes.split('\n')[0]}</p>
+						{/if}
+
+						<div class="deck-card-footer">
+							<span class="deck-card-date">{formatDate(deck.last_edited_at)}</span>
+							{#if stats.isComplete}
+								<span class="complete-badge">Complete</span>
+							{/if}
+						</div>
+					</div>
+
+					<!-- Three-dot menu -->
+					<div class="deck-card-menu">
+						<button class="menu-trigger" onclick={(e) => { e.stopPropagation(); menuOpenId = menuOpenId === deck.id ? null : deck.id; }}>
+							&#8942;
+						</button>
+						{#if menuOpenId === deck.id}
+							<div class="menu-dropdown">
+								<button class="menu-item" onclick={() => { menuOpenId = null; goto(`/deck/${deck.id}`); }}>Edit</button>
+								<button class="menu-item" onclick={() => { menuOpenId = null; goto(`/deck/${deck.id}/view`); }}>View</button>
+								<button class="menu-item menu-item-danger" onclick={() => { menuOpenId = null; deleteConfirmId = deck.id; }}>Delete</button>
+							</div>
+						{/if}
+					</div>
 				</div>
-			{/if}
+			{/each}
 		</div>
+	{/if}
 
-		<!-- Shop / Gap Finder Panel -->
-		<div class="panel" class:panel-hidden={activeTab !== 'shop'}>
-			{#if !$isAuthenticated}
-				<div class="shop-auth-prompt">
-					<p>Sign in to see personalized card recommendations based on your collection.</p>
-					<a href="/auth/login?redirectTo=/deck" class="btn-primary">Sign In</a>
+	<!-- Delete confirmation modal -->
+	{#if deleteConfirmId}
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={() => deleteConfirmId = null}>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<h3>Delete Deck?</h3>
+				<p>This action cannot be undone.</p>
+				<div class="modal-actions">
+					<button class="btn-cancel" onclick={() => deleteConfirmId = null}>Cancel</button>
+					<button class="btn-delete" onclick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>Delete</button>
 				</div>
-			{:else if gapLoading}
-				<div class="shop-loading">Analyzing deck gaps...</div>
-			{:else if !gapAnalysis || gapAnalysis.gaps.length === 0}
-				<div class="shop-empty">
-					{#if heroCards.length === 0}
-						<p>Add cards to your deck to see shopping recommendations.</p>
-					{:else}
-						<p>Your deck is fully filled at every power level for this format. Nice work, Coach!</p>
-					{/if}
-				</div>
-			{:else}
-				<!-- Gap summary -->
-				<div class="gap-summary">
-					<div class="gap-stat">
-						<span class="gap-stat-value">{gapAnalysis.cardsNeeded}</span>
-						<span class="gap-stat-label">Cards Needed</span>
-					</div>
-					<div class="gap-stat">
-						<span class="gap-stat-value">{gapAnalysis.gaps.length}</span>
-						<span class="gap-stat-label">Open Power Levels</span>
-					</div>
-					<div class="gap-stat">
-						<span class="gap-stat-value">{gapAnalysis.totalCandidates.toLocaleString()}</span>
-						<span class="gap-stat-label">Available Cards</span>
-					</div>
-				</div>
-
-				<!-- Price refresh button -->
-				<div class="refresh-bar">
-					<button
-						class="btn-refresh"
-						onclick={handleRefreshPrices}
-						disabled={refreshing || refreshesRemaining === 0}
-					>
-						{refreshing ? 'Refreshing...' : 'Update 10 Prices'}
-					</button>
-					{#if refreshesRemaining !== null}
-						<span class="refresh-budget">{refreshesRemaining}/{refreshLimit} refreshes today</span>
-					{/if}
-				</div>
-
-				<!-- Candidate cards -->
-				<div class="candidate-list">
-					{#each gapAnalysis.candidates.slice(0, 20) as candidate}
-						<a href={candidate.ebayUrl} target="_blank" rel="noopener noreferrer" class="candidate-card">
-							<div class="cc-power">
-								<span class="power-badge" style="background: var(--weapon-{candidate.card.weapon_type?.toLowerCase() || 'steel'})">{candidate.card.power}</span>
-							</div>
-							<div class="cc-info">
-								<div class="cc-name">{candidate.card.hero_name || candidate.card.name}</div>
-								<div class="cc-meta">
-									{candidate.card.card_number}
-									{#if candidate.card.parallel && candidate.card.parallel !== 'Paper'}
-										· {candidate.card.parallel}
-									{/if}
-									· {candidate.card.weapon_type}
-								</div>
-							</div>
-							<div class="cc-price">
-								{#if candidate.priceMid !== null}
-									<span class="price-value">${candidate.priceMid.toFixed(2)}</span>
-									{#if candidate.priceLastUpdated}
-										<span class="price-date">{new Date(candidate.priceLastUpdated).toLocaleDateString()}</span>
-									{/if}
-								{:else if candidate.priceSearched}
-									<span class="price-none">No listings</span>
-								{:else}
-									<span class="price-unknown">—</span>
-								{/if}
-							</div>
-						</a>
-					{/each}
-				</div>
-
-				{#if gapAnalysis.totalCandidates > 20}
-					<a href="/deck/shop?format={selectedFormatId}" class="see-all-link">
-						See all {gapAnalysis.totalCandidates} candidates →
-					</a>
-				{/if}
-			{/if}
+			</div>
 		</div>
-	</div>
-
-	{#if savedMessage}
-		<div class="save-toast">{savedMessage}</div>
 	{/if}
 </div>
 
 <style>
-	.deck-page {
-		max-width: 1200px;
+	.decks-page {
+		max-width: 900px;
 		margin: 0 auto;
 		padding: 1rem;
 	}
 
-	.deck-header {
+	.page-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 1rem;
-		gap: 1rem;
-		flex-wrap: wrap;
 	}
 
-	.deck-name-input {
-		font-family: 'Syne', sans-serif;
-		font-size: 1.25rem;
+	.page-header h1 {
+		font-size: 1.5rem;
 		font-weight: 700;
-		background: transparent;
-		border: none;
 		color: var(--text-primary, #f1f5f9);
-		padding: 0.25rem 0;
-		border-bottom: 2px solid transparent;
-		min-width: 0;
-		flex: 1;
 	}
 
-	.deck-name-input:focus {
-		outline: none;
-		border-bottom-color: var(--accent-primary, #3b82f6);
-	}
-
-	.header-actions {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-	}
-
-	.format-select {
-		padding: 0.375rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--bg-surface, #0d1524);
-		color: var(--text-primary, #f1f5f9);
-		font-size: 0.85rem;
-	}
-
-	.clear-btn {
-		padding: 0.375rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: transparent;
-		color: var(--text-secondary, #94a3b8);
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-
-	.clear-btn:hover { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
-
-	/* Tab navigation */
-	.tab-nav {
-		display: flex;
-		gap: 0;
-		margin-bottom: 1rem;
-		border-bottom: 1px solid var(--border-color, #1e293b);
-	}
-
-	.tab-btn {
-		flex: 1;
-		padding: 0.625rem 0.5rem;
-		border: none;
-		background: transparent;
-		color: var(--text-secondary, #94a3b8);
-		font-size: 0.85rem;
-		font-weight: 500;
-		cursor: pointer;
-		border-bottom: 2px solid transparent;
-		transition: color 0.15s, border-color 0.15s;
-	}
-
-	.tab-btn.active {
-		color: var(--text-primary, #f1f5f9);
-		border-bottom-color: var(--accent-primary, #3b82f6);
-	}
-
-	/* Layout */
-	.deck-layout {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 1.5rem;
-	}
-
-	.panel { display: block; }
-	.panel-hidden { display: none; }
-
-	@media (min-width: 768px) {
-		.tab-nav { display: none; }
-		.deck-layout { grid-template-columns: 1fr 1fr 1fr 1fr; }
-		.panel { display: block !important; }
-		.panel-hidden { display: block !important; }
-	}
-
-	.panel h2 {
-		font-size: 1rem;
-		font-weight: 600;
-		margin-bottom: 0.75rem;
-		color: var(--text-secondary, #94a3b8);
-	}
-
-	.panel-count {
-		color: var(--text-tertiary, #64748b);
-		font-weight: 400;
-	}
-
-	.sub-heading {
-		font-size: 0.85rem;
-		font-weight: 600;
-		margin: 1rem 0 0.5rem;
-		color: var(--text-secondary, #94a3b8);
-	}
-
-	/* Search */
-	.search-input {
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--bg-surface, #0d1524);
-		color: var(--text-primary, #f1f5f9);
-		font-size: 0.85rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.search-input:focus { outline: none; border-color: var(--accent-primary, #3b82f6); }
-
-	/* Card lists */
-	.card-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		max-height: 300px;
-		overflow-y: auto;
-	}
-
-	.available-list { max-height: 250px; }
-
-	.deck-card {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.375rem 0.625rem;
-		border-radius: 6px;
-		background: var(--bg-surface, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
-		font-size: 0.85rem;
-	}
-
-	.deck-card-over {
-		border-color: rgba(168, 85, 247, 0.3);
-		background: rgba(168, 85, 247, 0.05);
-	}
-
-	.deck-card-name, .play-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.deck-card-number, .play-number { color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
-	.deck-card-power { color: var(--accent-gold, #f59e0b); font-weight: 600; font-size: 0.8rem; }
-	.deck-card-weapon { color: var(--text-secondary, #94a3b8); font-size: 0.75rem; }
-
-	.remove-btn {
-		background: none;
-		border: none;
-		color: var(--text-secondary, #94a3b8);
-		cursor: pointer;
-		padding: 0.125rem 0.375rem;
-		font-size: 0.8rem;
-		border-radius: 4px;
-		flex-shrink: 0;
-	}
-
-	.remove-btn:hover { color: var(--color-error, #ef4444); background: rgba(239, 68, 68, 0.1); }
-
-	.available-card {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.375rem 0.625rem;
-		border-radius: 6px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--bg-surface, #0d1524);
-		color: var(--text-primary, #f1f5f9);
-		cursor: pointer;
-		font-size: 0.85rem;
-		text-align: left;
-		width: 100%;
-	}
-
-	.available-card:hover:not(:disabled) { border-color: var(--accent-primary, #3b82f6); }
-	.available-card.in-deck { opacity: 0.35; }
-	.available-card:disabled { cursor: not-allowed; }
-
-	.avail-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.avail-number { color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
-	.avail-power { color: var(--accent-gold, #f59e0b); font-size: 0.8rem; font-weight: 600; flex-shrink: 0; }
-
-	.empty-msg {
-		text-align: center;
-		color: var(--text-secondary, #94a3b8);
-		padding: 1.5rem;
-		font-size: 0.85rem;
-	}
-
-	/* DBS Budget Bar */
-	.dbs-bar {
-		margin-bottom: 0.75rem;
-		padding: 0.5rem 0.75rem;
+	.btn-create {
+		padding: 0.5rem 1rem;
 		border-radius: 8px;
-		background: var(--bg-surface, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
-	}
-
-	.dbs-bar-label {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--text-primary, #f1f5f9);
-		margin-bottom: 0.375rem;
-	}
-
-	.dbs-bar-track {
-		height: 6px;
-		border-radius: 3px;
-		background: var(--bg-elevated, #1e293b);
-		overflow: hidden;
-	}
-
-	.dbs-bar-fill {
-		height: 100%;
-		border-radius: 3px;
-		transition: width 0.3s ease, background 0.3s ease;
-	}
-
-	.dbs-bar-over {
-		font-size: 0.75rem;
-		color: var(--color-error, #ef4444);
-		font-weight: 600;
-		margin-top: 0.25rem;
-	}
-
-	/* DBS Badge */
-	.dbs-badge {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 28px;
-		padding: 0.125rem 0.375rem;
-		border-radius: 4px;
-		font-size: 0.7rem;
-		font-weight: 700;
+		background: var(--accent-primary, #3b82f6);
 		color: white;
-		flex-shrink: 0;
+		font-size: 0.9rem;
+		font-weight: 600;
+		text-decoration: none;
+		border: none;
+		cursor: pointer;
 	}
 
-	/* Play filters */
-	.play-filters {
-		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
+	.btn-create:hover { opacity: 0.9; }
+
+	/* Legacy banner */
+	.legacy-banner {
+		padding: 0.75rem 1rem;
+		border-radius: 8px;
+		background: rgba(245, 158, 11, 0.1);
+		border: 1px solid rgba(245, 158, 11, 0.3);
+		margin-bottom: 1rem;
+	}
+
+	.legacy-banner p {
+		color: var(--text-primary, #f1f5f9);
+		font-size: 0.9rem;
 		margin-bottom: 0.5rem;
 	}
 
-	.play-filters .search-input { flex: 1; min-width: 120px; margin-bottom: 0; }
+	.legacy-actions { display: flex; gap: 0.5rem; }
 
-	.set-filter {
-		padding: 0.375rem 0.5rem;
+	.btn-import {
+		padding: 0.375rem 0.75rem;
 		border-radius: 6px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--bg-surface, #0d1524);
-		color: var(--text-primary, #f1f5f9);
-		font-size: 0.8rem;
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		border: none;
+		font-size: 0.85rem;
+		cursor: pointer;
 	}
 
-	.affordable-toggle {
-		padding: 0.375rem 0.625rem;
+	.btn-dismiss {
+		padding: 0.375rem 0.75rem;
 		border-radius: 6px;
+		background: transparent;
+		border: 1px solid var(--border-color, #1e293b);
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	/* Filter bar */
+	.filter-bar {
+		display: flex;
+		gap: 0.375rem;
+		overflow-x: auto;
+		padding-bottom: 0.5rem;
+		margin-bottom: 1rem;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.filter-btn {
+		padding: 0.375rem 0.75rem;
+		border-radius: 20px;
 		border: 1px solid var(--border-color, #1e293b);
 		background: transparent;
 		color: var(--text-secondary, #94a3b8);
 		font-size: 0.8rem;
 		cursor: pointer;
 		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
-	.affordable-toggle.active {
-		background: rgba(34, 197, 94, 0.1);
-		border-color: rgba(34, 197, 94, 0.3);
-		color: #22C55E;
+	.filter-btn.active {
+		background: rgba(59, 130, 246, 0.15);
+		border-color: rgba(59, 130, 246, 0.3);
+		color: #60a5fa;
 	}
 
-	/* Validation */
-	.validation-section { margin-bottom: 1rem; }
-
-	.validation-header {
-		padding: 0.5rem 0.75rem;
-		border-radius: 6px;
-		font-size: 0.85rem;
-		font-weight: 600;
-		margin-bottom: 0.5rem;
-	}
-
-	.validation-header.valid {
-		background: rgba(34, 197, 94, 0.1);
-		color: #22C55E;
-		border: 1px solid rgba(34, 197, 94, 0.2);
-	}
-
-	.validation-header.invalid {
-		background: rgba(239, 68, 68, 0.1);
-		color: #EF4444;
-		border: 1px solid rgba(239, 68, 68, 0.2);
-	}
-
-	.violation {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5rem;
-		padding: 0.375rem 0.625rem;
-		border-radius: 4px;
-		font-size: 0.8rem;
-		margin-bottom: 0.25rem;
-	}
-
-	.violation-error { background: rgba(239, 68, 68, 0.05); color: #fca5a5; }
-	.violation-warning { background: rgba(245, 158, 11, 0.05); color: #fcd34d; }
-
-	.violation-icon { font-weight: 700; flex-shrink: 0; }
-	.violation-error .violation-icon { color: #EF4444; }
-	.violation-warning .violation-icon { color: #F59E0B; }
-
-	/* Stats grid */
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.stat-card {
-		padding: 0.625rem;
-		border-radius: 8px;
-		background: var(--bg-surface, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
+	/* Loading / Empty */
+	.loading-state, .empty-state {
 		text-align: center;
+		padding: 3rem 1rem;
+		color: var(--text-secondary, #94a3b8);
 	}
 
-	.stat-value { font-size: 1.1rem; font-weight: 700; color: var(--text-primary, #f1f5f9); }
-	.stat-label { font-size: 0.7rem; color: var(--text-secondary, #94a3b8); margin-top: 0.125rem; }
+	.empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
 
-	/* Distribution bars */
-	.distribution-list { display: flex; flex-direction: column; gap: 0.375rem; }
+	.empty-state p { margin-bottom: 1rem; font-size: 1rem; }
 
-	.dist-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.8rem;
+	/* Deck grid */
+	.deck-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.75rem;
 	}
 
-	.dist-label { width: 60px; color: var(--text-secondary, #94a3b8); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+	@media (min-width: 600px) {
+		.deck-grid { grid-template-columns: 1fr 1fr; }
+	}
 
-	.dist-bar-track {
-		flex: 1;
-		height: 8px;
-		border-radius: 4px;
-		background: var(--bg-elevated, #1e293b);
+	.deck-card {
+		position: relative;
+		border-radius: 10px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--bg-surface, #0d1524);
 		overflow: hidden;
 	}
 
-	.dist-bar-fill {
+	.deck-card-body {
+		padding: 0.875rem;
+		cursor: pointer;
+	}
+
+	.deck-card-body:hover { background: var(--bg-hover, rgba(255, 255, 255, 0.02)); }
+
+	.deck-card-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.5rem;
+		margin-bottom: 0.625rem;
+	}
+
+	.deck-card-name {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--text-primary, #f1f5f9);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.format-badge {
+		padding: 0.2rem 0.5rem;
+		border-radius: 10px;
+		background: rgba(59, 130, 246, 0.15);
+		color: #60a5fa;
+		font-size: 0.7rem;
+		font-weight: 600;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.deck-card-stats {
+		display: flex;
+		gap: 1rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.mini-stat { display: flex; flex-direction: column; }
+	.mini-stat-value { font-size: 0.85rem; font-weight: 600; color: var(--text-primary, #f1f5f9); }
+	.mini-stat-label { font-size: 0.7rem; color: var(--text-tertiary, #64748b); }
+
+	.progress-track {
+		height: 4px;
+		border-radius: 2px;
+		background: var(--bg-elevated, #1e293b);
+		overflow: hidden;
+		margin-bottom: 0.5rem;
+	}
+
+	.progress-fill {
 		height: 100%;
-		border-radius: 4px;
-		background: var(--accent-primary, #3b82f6);
+		border-radius: 2px;
 		transition: width 0.3s ease;
 	}
 
-	.dist-count { width: 24px; text-align: right; color: var(--text-tertiary, #64748b); font-size: 0.75rem; }
-
-	/* Shop / Gap Finder */
-	.shop-auth-prompt, .shop-loading, .shop-empty {
-		text-align: center; padding: 2rem 1rem; color: var(--text-secondary);
+	.deck-card-notes {
+		font-size: 0.8rem;
+		color: var(--text-tertiary, #64748b);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		margin-bottom: 0.375rem;
 	}
-	.gap-summary {
-		display: flex; gap: 1rem; justify-content: center;
+
+	.deck-card-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.deck-card-date { font-size: 0.75rem; color: var(--text-tertiary, #64748b); }
+
+	.complete-badge {
+		padding: 0.125rem 0.5rem;
+		border-radius: 10px;
+		background: rgba(34, 197, 94, 0.15);
+		color: #22C55E;
+		font-size: 0.7rem;
+		font-weight: 600;
+	}
+
+	/* Three-dot menu */
+	.deck-card-menu {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+	}
+
+	.menu-trigger {
+		background: none;
+		border: none;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 1.2rem;
+		cursor: pointer;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		line-height: 1;
+	}
+
+	.menu-trigger:hover { background: var(--bg-hover, rgba(255, 255, 255, 0.05)); }
+
+	.menu-dropdown {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		background: var(--bg-elevated, #1e293b);
+		border: 1px solid var(--border-color, #334155);
+		border-radius: 8px;
+		padding: 0.25rem;
+		min-width: 100px;
+		z-index: 10;
+	}
+
+	.menu-item {
+		display: block;
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		border: none;
+		background: none;
+		color: var(--text-primary, #f1f5f9);
+		font-size: 0.85rem;
+		cursor: pointer;
+		text-align: left;
+		border-radius: 6px;
+	}
+
+	.menu-item:hover { background: var(--bg-hover, rgba(255, 255, 255, 0.05)); }
+	.menu-item-danger { color: var(--color-error, #ef4444); }
+	.menu-item-danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+	/* Modal */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+
+	.modal-content {
+		background: var(--bg-elevated, #1e293b);
+		border: 1px solid var(--border-color, #334155);
+		border-radius: 12px;
+		padding: 1.5rem;
+		max-width: 360px;
+		width: 90%;
+	}
+
+	.modal-content h3 {
+		color: var(--text-primary, #f1f5f9);
+		margin-bottom: 0.5rem;
+	}
+
+	.modal-content p {
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.9rem;
 		margin-bottom: 1rem;
 	}
-	.gap-stat { text-align: center; }
-	.gap-stat-value { display: block; font-size: 1.3rem; font-weight: 700; color: var(--accent-gold, #f59e0b); }
-	.gap-stat-label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
 
-	.refresh-bar {
-		display: flex; align-items: center; gap: 1rem;
-		margin-bottom: 1rem; padding: 0.75rem;
-		background: var(--bg-elevated); border-radius: 10px;
-	}
-	.btn-refresh {
-		padding: 0.5rem 1rem; border-radius: 8px; border: none;
-		background: var(--accent-primary); color: white;
-		font-size: 0.85rem; font-weight: 600; cursor: pointer;
-	}
-	.btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
-	.refresh-budget { font-size: 0.8rem; color: var(--text-secondary); }
+	.modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
 
-	.candidate-list { display: flex; flex-direction: column; gap: 2px; }
-	.candidate-card {
-		display: grid; grid-template-columns: 50px 1fr 70px;
-		align-items: center; gap: 0.5rem;
-		padding: 0.6rem 0.5rem; border-radius: 8px;
-		background: var(--bg-elevated); text-decoration: none; color: inherit;
-	}
-	.candidate-card:hover { background: var(--bg-hover); }
-	.cc-power { text-align: center; }
-	.power-badge {
-		display: inline-block; padding: 2px 8px; border-radius: 6px;
-		font-size: 0.8rem; font-weight: 700; color: white;
-	}
-	.cc-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.cc-meta { font-size: 0.75rem; color: var(--text-secondary); }
-	.cc-price { text-align: right; }
-	.price-value { display: block; font-weight: 700; color: var(--color-success, #22c55e); font-size: 0.9rem; }
-	.price-date { display: block; font-size: 0.65rem; color: var(--text-tertiary); }
-	.price-none { font-size: 0.8rem; color: var(--text-tertiary); }
-	.price-unknown { font-size: 0.8rem; color: var(--text-tertiary); }
-	.see-all-link {
-		display: block; text-align: center; padding: 0.75rem;
-		margin-top: 0.5rem; color: var(--accent-primary);
-		font-size: 0.85rem; font-weight: 600; text-decoration: none;
-	}
-
-	/* Save toast */
-	.save-toast {
-		position: fixed;
-		bottom: 5rem;
-		left: 50%;
-		transform: translateX(-50%);
+	.btn-cancel {
 		padding: 0.5rem 1rem;
-		border-radius: 8px;
-		background: rgba(34, 197, 94, 0.15);
-		border: 1px solid rgba(34, 197, 94, 0.3);
-		color: #22C55E;
-		font-size: 0.85rem;
-		z-index: 100;
+		border-radius: 6px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		cursor: pointer;
+	}
+
+	.btn-delete {
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		border: none;
+		background: var(--color-error, #ef4444);
+		color: white;
+		font-weight: 600;
+		cursor: pointer;
 	}
 </style>
