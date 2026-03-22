@@ -23,6 +23,7 @@
 		RARITY_POINTS
 	} from '$lib/stores/speed-game';
 	import type { ScanResult, CardRarity } from '$lib/types';
+	import { tryAwardBadge } from '$lib/services/badges';
 
 	const RARITY_COLORS: Record<string, string> = {
 		common: '#9CA3AF',
@@ -172,6 +173,11 @@
 		// Check for high score
 		isNewHighScore = addHighScore(finalScore, $scanCount, selectedDuration);
 		triggerHaptic('success');
+
+		// Award Speed Demon badge for 50+ points
+		if (finalScore >= 50) {
+			tryAwardBadge('speed_demon');
+		}
 	}
 
 	function handleSpeedResult(result: ScanResult, imageUrl?: string) {

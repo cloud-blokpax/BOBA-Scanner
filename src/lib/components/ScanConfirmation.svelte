@@ -9,6 +9,8 @@
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import type { ScanResult, Card } from '$lib/types';
+	import { tryAwardBadge } from '$lib/services/badges';
+	import { get } from 'svelte/store';
 	import type { ActionReturn } from 'svelte/action';
 
 	// Lazy-load the tilt action — it's visual polish, not critical for initial render
@@ -198,6 +200,12 @@
 			triggerHaptic('successAdd');
 			showConfetti = true;
 			setTimeout(() => { showConfetti = false; }, 800);
+
+			// Award Collector badge at 100 unique cards
+			const counts = get(ownedCardCounts);
+			if (counts.size >= 100) {
+				tryAwardBadge('collector');
+			}
 		} catch (err) {
 			addError = err instanceof Error ? err.message : 'Failed to add card';
 		} finally {
