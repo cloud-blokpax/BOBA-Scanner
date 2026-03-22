@@ -641,29 +641,16 @@ async function writeHashToAllLayers(
 		console.debug('[scan] IDB hash write failed:', err);
 	}
 
-	// Layer 3: Supabase (with scan_count increment)
+	// Layer 3: Supabase (atomic scan_count increment via RPC)
 	try {
 		const client = getSupabase();
 		if (client) {
-			// Read existing scan_count
-			const { data: existing } = await client
-				.from('hash_cache')
-				.select('scan_count')
-				.eq('phash', hash)
-				.maybeSingle();
-			const prevCount = (existing as { scan_count?: number } | null)?.scan_count || 0;
-
-			await client.from('hash_cache').upsert(
-				{
-					phash: hash,
-					card_id: cardId,
-					confidence,
-					scan_count: prevCount + 1,
-					last_seen: new Date().toISOString(),
-					...(phash256 ? { phash_256: phash256 } : {})
-				},
-				{ onConflict: 'phash' }
-			);
+			await (client.rpc as CallableFunction)('upsert_hash_cache', {
+				p_phash: hash,
+				p_card_id: cardId,
+				p_confidence: confidence,
+				p_phash_256: phash256 || null
+			});
 		}
 	} catch (err) {
 		console.debug('[scan] Supabase hash writeback failed:', err);

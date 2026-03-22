@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/services/supabase';
+	import { getSupabase } from '$lib/services/supabase';
 	import { collectionItems, loadCollection } from '$lib/stores/collection';
 	import { showToast } from '$lib/stores/toast';
 	import type { CollectionItem } from '$lib/types';
@@ -62,11 +62,12 @@
 		const currentUser = $page.data.user;
 		if (currentUser) {
 			regEmail = currentUser.email || '';
-			const { data: profile } = await supabase
+			const client = getSupabase();
+			const { data: profile } = client ? await client
 				.from('users')
 				.select('name, discord_id')
 				.eq('auth_user_id', currentUser.id)
-				.single();
+				.single() : { data: null };
 			if (profile) {
 				regName = profile.name || '';
 				regDiscord = profile.discord_id || '';

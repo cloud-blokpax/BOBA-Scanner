@@ -22,7 +22,10 @@ function initLimiters() {
 
 	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
 	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
-	if (!upstashUrl || !upstashToken) return;
+	if (!upstashUrl || !upstashToken) {
+		console.warn('[rate-limit] Upstash Redis not configured — using in-memory fallback. Rate limiting will reset on every cold start and is ineffective across concurrent Vercel function instances.');
+		return;
+	}
 
 	const redis = new Redis({ url: upstashUrl, token: upstashToken });
 

@@ -196,7 +196,7 @@ export async function loadFeatureFlags(): Promise<void> {
 			const { data: profile } = await client
 				.from('users')
 				.select('is_member, is_admin')
-				.eq('id', currentUser.id)
+				.eq('auth_user_id', currentUser.id)
 				.single();
 			_userProfile = profile || null;
 			_userProfileForUserId = currentUser.id;

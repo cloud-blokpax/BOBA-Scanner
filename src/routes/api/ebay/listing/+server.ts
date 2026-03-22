@@ -75,7 +75,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// Server-side feature gate
 	if (locals.supabase) {
-		const { data: profile } = await locals.supabase.from('users').select('is_member, is_admin').eq('id', user.id).single();
+		const { data: profile } = await locals.supabase.from('users').select('is_member, is_admin').eq('auth_user_id', user.id).single();
 		const { data: override } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'scan_to_list').maybeSingle();
 		if (override) {
 			if (!override.enabled) throw error(403, 'Feature not available');

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
+	import { getPrice } from '$lib/stores/prices';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { featureEnabled } from '$lib/stores/feature-flags';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
@@ -97,31 +98,31 @@
 	const isOwned = $derived(ownedCount > 0);
 	const isLowConfidence = $derived(activeResult.confidence < 0.7);
 
-	// Fetch price when card is identified
+	// Fetch price when card is identified — uses the deduplicated store
+	// so concurrent requests for the same card share a single API call
 	$effect(() => {
 		if (!card?.id) return;
-
-		const controller = new AbortController();
+		const cardId = card.id;
 		priceLoading = true;
 		priceError = false;
 		priceData = null;
 
-		fetch(`/api/price/${encodeURIComponent(card.id)}`, { signal: controller.signal })
-			.then(res => res.ok ? res.json() : Promise.reject(new Error('Price fetch failed')))
+		getPrice(cardId)
 			.then(data => {
-				priceData = data;
+				if (card?.id === cardId) {
+					priceData = data;
+				}
 			})
-			.catch((err) => {
-				if (err instanceof DOMException && err.name === 'AbortError') return;
-				priceError = true;
+			.catch(() => {
+				if (card?.id === cardId) {
+					priceError = true;
+				}
 			})
 			.finally(() => {
-				if (!controller.signal.aborted) {
+				if (card?.id === cardId) {
 					priceLoading = false;
 				}
 			});
-
-		return () => controller.abort();
 	});
 
 	// Fetch price history for premium users

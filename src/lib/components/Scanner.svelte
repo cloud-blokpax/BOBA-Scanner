@@ -40,6 +40,8 @@
 	const STABLE_FRAMES_REQUIRED = 4; // 4 stable frames at 250ms = 1s of stability
 	const STABILITY_THRESHOLD = 3;    // Hamming distance — frames within 3 bits are "same"
 
+	let _visibilityHandler: (() => void) | null = null;
+
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
 	let foilStep = $state(0);
@@ -126,12 +128,25 @@
 				cameraError = 'Camera failed to start. Please reload the page.';
 			}
 		}
+
+		// Stop camera when tab is hidden to save battery
+		_visibilityHandler = () => {
+			if (document.visibilityState === 'hidden') {
+				stopCamera();
+				stopAutoAnalyze();
+				torchOn = false;
+			}
+		};
+		document.addEventListener('visibilitychange', _visibilityHandler);
 	});
 
 	onDestroy(() => {
 		stopAutoAnalyze();
 		stopCamera();
 		resetScanner();
+		if (_visibilityHandler) {
+			document.removeEventListener('visibilitychange', _visibilityHandler);
+		}
 	});
 
 	function startAutoAnalyze() {
