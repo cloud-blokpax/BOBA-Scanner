@@ -17,6 +17,7 @@ import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { addToScanHistory } from '$lib/stores/scan-history';
 import { trackScanMetric } from '$lib/services/error-tracking';
+import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
@@ -667,49 +668,27 @@ async function writeHashToAllLayers(
 		console.debug('[scan] Supabase hash writeback failed:', err);
 	}
 
-	// Layer 4: Reference image (best scan per card)
-	// Only upload when confidence is high and we have the original bitmap
-	if (bitmap && imageWorker && confidence >= 0.9) {
-		try {
-			// Table not in generated types — uses untyped query
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const client = getSupabase() as any;
-			if (client) {
-				// Check if this card already has a reference image with equal or higher confidence
-				const { data: existing } = await client
-					.from('card_reference_images')
-					.select('confidence')
-					.eq('card_id', cardId)
-					.maybeSingle();
+	// Layer 4: Reference image competition
+	// Automatically submit high-confidence scans as candidate reference images.
+	// The server-side RPC handles the atomic "beat the champion" logic.
+	// This runs in the background — it never blocks the scan result.
+	if (bitmap && imageWorker && confidence >= 0.8) {
+		(async () => {
+			try {
+				// Resize the bitmap to a clean JPEG for upload
+				const uploadBlob = await imageWorker!.resizeForUpload(bitmap, 800);
 
-				if (!existing || confidence > (existing.confidence || 0)) {
-					// Upload the image to Supabase Storage
-					const imageBlob = await imageWorker.resizeForUpload(bitmap, 512);
-					const path = `references/${cardId}.jpg`;
+				// Check blur quality — we want sharp reference images
+				const { variance: blurVariance } = await imageWorker!.checkBlurry(bitmap, 100);
 
-					await client.storage
-						.from('scans')
-						.upload(path, imageBlob, {
-							contentType: 'image/jpeg',
-							upsert: true
-						});
-
-					// Update the reference table
-					await client.from('card_reference_images').upsert({
-						card_id: cardId,
-						image_path: path,
-						phash: hash,
-						phash_256: phash256 || null,
-						confidence,
-						updated_at: new Date().toISOString()
-					}, { onConflict: 'card_id' });
-
-					console.debug(`[scan] Reference image updated for ${cardId} (confidence: ${confidence})`);
+				// Only submit non-blurry images (variance > 150 means reasonably sharp)
+				if (blurVariance > 150) {
+					await submitReferenceImage(cardId, confidence, uploadBlob, blurVariance);
 				}
+			} catch (err) {
+				console.debug('[scan] Reference image submission failed:', err);
 			}
-		} catch (err) {
-			console.debug('[scan] Reference image upload failed:', err);
-		}
+		})();  // Fire-and-forget — don't await
 	}
 }
 

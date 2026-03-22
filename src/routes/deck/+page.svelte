@@ -4,6 +4,7 @@
 	import type { CollectionItem, Card } from '$lib/types';
 	import type { PlayCardData } from '$lib/data/boba-dbs-scores';
 	import type { DeckValidationResult } from '$lib/services/deck-validator';
+	import { tryAwardBadge } from '$lib/services/badges';
 
 	let { data } = $props();
 
@@ -130,6 +131,9 @@
 				if (res.ok) {
 					validationResult = await res.json();
 					validating = false;
+					if (validationResult?.isValid) {
+						tryAwardBadge('deck_architect');
+					}
 					return;
 				}
 			} catch (err) {
@@ -145,6 +149,11 @@
 			console.warn('[deck] Local validation also failed:', err);
 		}
 		validating = false;
+
+		// Award Deck Architect badge when deck passes validation
+		if (validationResult?.isValid) {
+			tryAwardBadge('deck_architect');
+		}
 	}
 
 	// ── Derived: filtered play cards ───────────────────────

@@ -200,6 +200,7 @@
 				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
 				<a href="/speed" class="more-item" onclick={() => (showMore = false)}>Speed Challenge</a>
+				<a href="/leaderboard" class="more-item" onclick={() => (showMore = false)}>Leaderboard</a>
 				{#if $hasScanToList}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>
 						<span class="premium-badge">PRO</span> eBay Listings

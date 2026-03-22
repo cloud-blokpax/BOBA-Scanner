@@ -13,6 +13,9 @@
 	let discordId = $state('');
 	let email = $state('');
 
+	// Badges state
+	let badges = $state<Array<{ badge_key: string; badge_name: string; badge_description: string; badge_icon: string; earned_at: string }>>([]);
+
 	// eBay connection state
 	let ebayConfigured = $state(false);
 	let ebayConnected = $state(false);
@@ -45,7 +48,21 @@
 			profileName = data.name || '';
 			discordId = data.discord_id || '';
 		}
+		await loadBadges();
 		loading = false;
+	}
+
+	async function loadBadges() {
+		const client = getSupabase();
+		if (!client || !$user) return;
+		// Table not in generated types — use untyped query
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data } = await (client as any)
+			.from('user_badges')
+			.select('badge_key, badge_name, badge_description, badge_icon, earned_at')
+			.eq('user_id', $user.id)
+			.order('earned_at', { ascending: true });
+		badges = data || [];
 	}
 
 	async function saveProfile() {
@@ -184,6 +201,25 @@
 				{/if}
 			</div>
 		{/if}
+
+		<section class="badges-section">
+			<h3>Badges</h3>
+			{#if badges.length === 0}
+				<p class="no-badges">No badges yet. Scan cards to earn your first!</p>
+			{:else}
+				<div class="badge-grid">
+					{#each badges as badge}
+						<div class="badge-card">
+							<span class="badge-icon">{badge.badge_icon}</span>
+							<div class="badge-info">
+								<span class="badge-name">{badge.badge_name}</span>
+								<span class="badge-desc">{badge.badge_description}</span>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -271,4 +307,17 @@
 	.ebay-message-success { background: rgba(16, 185, 129, 0.12); color: #10b981; }
 	.ebay-message-error { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
 	.ebay-message-info { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+
+	.badges-section { margin-top: 2rem; }
+	.badges-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+	.no-badges { font-size: 0.85rem; color: var(--text-secondary); }
+	.badge-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+	.badge-card {
+		display: flex; align-items: center; gap: 0.75rem;
+		padding: 0.75rem; border-radius: 10px;
+		background: var(--bg-elevated); border: 1px solid var(--border-color);
+	}
+	.badge-icon { font-size: 1.5rem; }
+	.badge-name { display: block; font-weight: 600; font-size: 0.9rem; }
+	.badge-desc { display: block; font-size: 0.75rem; color: var(--text-secondary); }
 </style>

@@ -1,0 +1,130 @@
+/**
+ * POST /api/reference-image — Submit a scan as a candidate reference image
+ *
+ * Accepts a card image from an authenticated user, uploads it to Supabase
+ * Storage, and atomically checks if it beats the current reference image
+ * for that card. If it wins, the user becomes the new champion for that card.
+ * Awards the "Shutterbug" badge on first accepted reference image.
+ */
+
+import { json, error } from '@sveltejs/kit';
+import sharp from 'sharp';
+import type { RequestHandler } from './$types';
+
+export const POST: RequestHandler = async ({ request, locals }) => {
+	const { user } = await locals.safeGetSession();
+	if (!user) throw error(401, 'Sign in to contribute reference images');
+	if (!locals.supabase) throw error(503, 'Storage unavailable');
+
+	// Tables/RPCs not in generated types — use untyped client
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const client = locals.supabase as any;
+
+	const formData = await request.formData();
+	const imageFile = formData.get('image');
+	const cardId = formData.get('card_id') as string;
+	const confidence = parseFloat(formData.get('confidence') as string);
+	const blurVariance = parseFloat((formData.get('blur_variance') as string) || '0');
+
+	if (!imageFile || !(imageFile instanceof File)) throw error(400, 'Image required');
+	if (!cardId || typeof cardId !== 'string') throw error(400, 'card_id required');
+	if (isNaN(confidence) || confidence < 0.7) throw error(400, 'Confidence too low (min 0.7)');
+
+	// CDR: strip metadata, re-encode, resize to standard reference dimensions
+	const rawBuffer = Buffer.from(await imageFile.arrayBuffer());
+	const cleanBuffer = await sharp(rawBuffer)
+		.rotate()
+		.resize(800, 1120, { fit: 'inside', withoutEnlargement: true })
+		.jpeg({ quality: 90 })
+		.toBuffer();
+
+	// Upload to Supabase Storage
+	const storagePath = `references/${cardId}.jpg`;
+	const { error: uploadErr } = await client.storage
+		.from('scans')
+		.upload(storagePath, cleanBuffer, {
+			contentType: 'image/jpeg',
+			upsert: true
+		});
+
+	if (uploadErr) {
+		console.error('[reference-image] Upload failed:', uploadErr);
+		throw error(500, 'Image upload failed');
+	}
+
+	// Get user's display name for the leaderboard
+	const { data: profile } = await client
+		.from('users')
+		.select('name, email')
+		.eq('auth_user_id', user.id)
+		.maybeSingle();
+
+	const displayName = profile?.name || profile?.email?.split('@')[0] || 'Anonymous';
+
+	// Atomic "beat the champion" check via RPC
+	const { data: result, error: rpcErr } = await client
+		.rpc('submit_reference_image', {
+			p_card_id: cardId,
+			p_image_path: storagePath,
+			p_confidence: confidence,
+			p_user_id: user.id,
+			p_user_name: displayName,
+			p_blur_variance: isNaN(blurVariance) ? null : blurVariance
+		});
+
+	if (rpcErr) {
+		console.error('[reference-image] RPC failed:', rpcErr);
+		throw error(500, 'Reference image submission failed');
+	}
+
+	// Award badges on accepted reference images
+	const badgesAwarded: string[] = [];
+	if (result?.accepted) {
+		// Shutterbug: first accepted reference image
+		const { data: shutterbug } = await client
+			.rpc('award_badge_if_new', {
+				p_user_id: user.id,
+				p_badge_key: 'shutterbug',
+				p_badge_name: 'Shutterbug',
+				p_description: 'Captured the top reference image for a card',
+				p_icon: '📸'
+			});
+		if (shutterbug === true) badgesAwarded.push('shutterbug');
+
+		// Milestone badges based on total reference images held
+		const { count: topCount } = await client
+			.from('card_reference_images')
+			.select('*', { count: 'exact', head: true })
+			.eq('contributed_by', user.id);
+
+		const milestones: Array<{ threshold: number; key: string; name: string; desc: string; icon: string }> = [
+			{ threshold: 10, key: 'sharp_eye', name: 'Sharp Eye', desc: 'Hold 10 top reference images', icon: '👁️' },
+			{ threshold: 50, key: 'card_photographer', name: 'Card Photographer', desc: 'Hold 50 top reference images', icon: '📷' },
+			{ threshold: 100, key: 'lens_master', name: 'Lens Master', desc: 'Hold 100 top reference images', icon: '🔍' },
+			{ threshold: 500, key: 'the_archivist', name: 'The Archivist', desc: 'Hold 500 top reference images — legendary contributor', icon: '🏛️' }
+		];
+
+		if (topCount) {
+			for (const m of milestones) {
+				if (topCount >= m.threshold) {
+					const { data: awarded } = await client
+						.rpc('award_badge_if_new', {
+							p_user_id: user.id,
+							p_badge_key: m.key,
+							p_badge_name: m.name,
+							p_description: m.desc,
+							p_icon: m.icon
+						});
+					if (awarded === true) badgesAwarded.push(m.key);
+				}
+			}
+		}
+	}
+
+	return json({
+		...(result as Record<string, unknown>),
+		badge_awarded: badgesAwarded.length > 0,
+		badges_awarded: badgesAwarded,
+		display_name: displayName
+	});
+};
