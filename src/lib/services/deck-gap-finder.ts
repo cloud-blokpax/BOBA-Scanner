@@ -102,12 +102,19 @@ export function analyzeDeckGaps(
 	// ── Step 2: Find gaps — power levels with available slots ─
 	const gaps: DeckGap[] = [];
 	const cardsNeeded = Math.max(0, format.heroDeckMin - currentHeroCards.length);
+	const allCards = getAllCards();
 
-	// Determine which power levels are legal for this format
-	const maxCardPower = format.absoluteMaxPower || format.specPowerCap || 200;
+	// Collect distinct power levels from the actual card database
+	// instead of iterating fixed increments (which misses non-standard values)
+	const allPowerLevels = new Set<number>();
+	for (const c of allCards) {
+		if (c.power && c.power > 0) allPowerLevels.add(c.power);
+	}
 
-	// Check every power level from 55 to maxCardPower in increments of 5
-	for (let power = 55; power <= maxCardPower; power += 5) {
+	for (const power of allPowerLevels) {
+		// Skip powers above format caps
+		if (format.specPowerCap && power > format.specPowerCap) continue;
+		if (format.absoluteMaxPower && power > format.absoluteMaxPower) continue;
 		// Get the max allowed at this power level
 		let maxAtLevel = format.maxPerPowerLevel;
 
@@ -133,7 +140,6 @@ export function analyzeDeckGaps(
 	}
 
 	// ── Step 3: Find candidate cards from the full database ──
-	const allCards = getAllCards();
 	const candidateMap = new Map<string, GapCandidate>();
 
 	// Build a set of gap power levels for fast lookup

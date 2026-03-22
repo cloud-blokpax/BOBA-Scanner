@@ -38,20 +38,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.jpeg({ quality: 90 })
 		.toBuffer();
 
-	// Upload to Supabase Storage
-	const storagePath = `references/${cardId}.jpg`;
-	const { error: uploadErr } = await client.storage
-		.from('scans')
-		.upload(storagePath, cleanBuffer, {
-			contentType: 'image/jpeg',
-			upsert: true
-		});
-
-	if (uploadErr) {
-		console.error('[reference-image] Upload failed:', uploadErr);
-		throw error(500, 'Image upload failed');
-	}
-
 	// Get user's display name for the leaderboard
 	const { data: profile } = await client
 		.from('users')
@@ -61,7 +47,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const displayName = profile?.name || profile?.email?.split('@')[0] || 'Anonymous';
 
-	// Atomic "beat the champion" check via RPC
+	// Atomic "beat the champion" check via RPC BEFORE uploading
+	// This prevents overwriting the storage image when the submission loses
+	const storagePath = `references/${cardId}.jpg`;
 	const { data: result, error: rpcErr } = await client
 		.rpc('submit_reference_image', {
 			p_card_id: cardId,
@@ -75,6 +63,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (rpcErr) {
 		console.error('[reference-image] RPC failed:', rpcErr);
 		throw error(500, 'Reference image submission failed');
+	}
+
+	// Only upload to storage if the submission was accepted
+	if (result?.accepted) {
+		const { error: uploadErr } = await client.storage
+			.from('scans')
+			.upload(storagePath, cleanBuffer, {
+				contentType: 'image/jpeg',
+				upsert: true
+			});
+
+		if (uploadErr) {
+			console.error('[reference-image] Upload failed:', uploadErr);
+			// RPC accepted but upload failed — not fatal, image will be stale
+		}
 	}
 
 	// Award badges on accepted reference images

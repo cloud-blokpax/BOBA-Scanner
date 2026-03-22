@@ -11,13 +11,12 @@ import { getFormat } from '$lib/data/tournament-formats';
 
 // ── Supabase helper for untyped table ───────────────────────
 // user_decks is not yet in the generated Database types.
-// Cast .from() to a generic postgrest builder to avoid type errors.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Use a typed wrapper to avoid `any` while still bypassing generated type restrictions.
 function userDecksTable() {
 	const client = getSupabase();
 	if (!client) return null;
-	// Cast to any to bypass generated type restrictions for the new table
-	return (client as any).from('user_decks');  // eslint-disable-line @typescript-eslint/no-explicit-any
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (client as any).from('user_decks') as ReturnType<NonNullable<ReturnType<typeof getSupabase>>['from']>;
 }
 
 // ── Types ───────────────────────────────────────────────────

@@ -8,9 +8,18 @@
 
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import Anthropic from '@anthropic-ai/sdk';
 import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
+
+let _anthropic: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+	const apiKey = env.ANTHROPIC_API_KEY ?? env.CLAUDE_API_KEY ?? '';
+	if (!apiKey) throw new Error('Anthropic API key not configured');
+	if (!_anthropic) _anthropic = new Anthropic({ apiKey });
+	return _anthropic;
+}
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	// Auth required — grading uses Claude Sonnet which is expensive (~$0.03/call)
@@ -78,74 +87,48 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			throw error(400, 'Centering image must be JPEG format');
 		}
 
-		const apiKey = env.ANTHROPIC_API_KEY ?? env.CLAUDE_API_KEY ?? '';
-		if (!apiKey) {
-			throw error(500, 'Server configuration error');
-		}
-
 		// Build content array — image order matches numbering in the prompt
-		const contentParts: Array<Record<string, unknown>> = [];
+		const contentParts: Anthropic.MessageCreateParams['messages'][0]['content'] = [];
 
 		if (centeringImageData) {
-			contentParts.push({
+			(contentParts as Anthropic.ContentBlockParam[]).push({
 				type: 'image',
 				source: { type: 'base64', media_type: 'image/jpeg', data: centeringImageData }
 			});
 		}
 
-		contentParts.push({
+		(contentParts as Anthropic.ContentBlockParam[]).push({
 			type: 'image',
 			source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
 		});
 
 		if (cornerRegionData) {
-			contentParts.push({
+			(contentParts as Anthropic.ContentBlockParam[]).push({
 				type: 'image',
 				source: { type: 'base64', media_type: 'image/jpeg', data: cornerRegionData }
 			});
 		}
 
 		const prompt = buildGradePrompt(!!centeringImageData, !!cornerRegionData, centeringData || null);
-		contentParts.push({ type: 'text', text: prompt });
-
-		const requestBody = JSON.stringify({
-			model: 'claude-sonnet-4-6-20250514',
-			max_tokens: 1024,
-			messages: [{ role: 'user', content: contentParts }]
-		});
-
-		// Retry on overload (529)
-		let response: Response | undefined;
-		const OVERLOAD_RETRIES = [1000, 2000, 3000];
-		for (let attempt = 0; attempt <= OVERLOAD_RETRIES.length; attempt++) {
-			response = await fetch('https://api.anthropic.com/v1/messages', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'x-api-key': apiKey,
-					'anthropic-version': '2023-06-01'
-				},
-				body: requestBody
-			});
-			if (response.status !== 529 || attempt === OVERLOAD_RETRIES.length) break;
-			await new Promise((r) => setTimeout(r, OVERLOAD_RETRIES[attempt]));
-		}
-
-		if (!response || !response.ok) {
-			const status = response?.status === 529 ? 503 : 502;
-			throw error(status, `AI service error: ${response?.status ?? 'unknown'}`);
-		}
+		(contentParts as Anthropic.ContentBlockParam[]).push({ type: 'text', text: prompt });
 
 		let data;
 		try {
-			data = await response.json();
+			data = await getAnthropicClient().messages.create({
+				model: 'claude-sonnet-4-6-20250514',
+				max_tokens: 1024,
+				messages: [{ role: 'user', content: contentParts }]
+			});
 		} catch (err) {
-			console.debug('[api/grade] AI response parse failed:', err);
-			throw error(502, 'Invalid response from AI service');
+			if (err instanceof Anthropic.APIError) {
+				if (err.status === 529) throw error(503, 'AI service temporarily overloaded. Please retry.');
+				throw error(502, 'AI service error');
+			}
+			throw err;
 		}
 
 		// Extract and validate the grading JSON from the Claude response
-		const text = data?.content?.[0]?.type === 'text' ? data.content[0].text : '';
+		const text = data.content[0]?.type === 'text' ? data.content[0].text : '';
 		const jsonMatch = text.match(/\{[\s\S]*\}/);
 		if (!jsonMatch) {
 			return json({ error: 'Could not parse grading response', raw: text }, { status: 422 });
