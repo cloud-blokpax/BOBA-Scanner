@@ -11,33 +11,13 @@ import { createClient } from '@supabase/supabase-js';
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 
-// Full scope set granted by eBay for this application.
+// Minimal scopes — only request what the app actually uses (inventory + account policy reads).
+// Over-provisioning scopes risks seller account compromise if tokens are leaked.
 const SELLER_SCOPES = [
 	'https://api.ebay.com/oauth/api_scope',
-	'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
 	'https://api.ebay.com/oauth/api_scope/sell.inventory',
-	'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.account',
-	'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
-	'https://api.ebay.com/oauth/api_scope/sell.marketing.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.marketing',
-	'https://api.ebay.com/oauth/api_scope/sell.analytics.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.finances',
-	'https://api.ebay.com/oauth/api_scope/sell.payment.dispute',
-	'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.reputation',
-	'https://api.ebay.com/oauth/api_scope/sell.reputation.readonly',
-	'https://api.ebay.com/oauth/api_scope/commerce.notification.subscription',
-	'https://api.ebay.com/oauth/api_scope/commerce.notification.subscription.readonly',
-	'https://api.ebay.com/oauth/api_scope/sell.stores',
-	'https://api.ebay.com/oauth/api_scope/sell.stores.readonly',
-	'https://api.ebay.com/oauth/scope/sell.edelivery',
-	'https://api.ebay.com/oauth/api_scope/commerce.vero',
-	'https://api.ebay.com/oauth/api_scope/sell.inventory.mapping',
-	'https://api.ebay.com/oauth/api_scope/commerce.message',
-	'https://api.ebay.com/oauth/api_scope/commerce.feedback',
-	'https://api.ebay.com/oauth/api_scope/commerce'
+	'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+	'https://api.ebay.com/oauth/api_scope/sell.account.readonly'
 ].join(' ');
 
 function getServiceClient() {

@@ -143,7 +143,7 @@ describe('GET /api/price/[cardId]', () => {
 
 			const event = makeEvent('card-1');
 			const response = await GET(event as any);
-			expect(response.headers.get('Cache-Control')).toContain('s-maxage=3600');
+			expect(response.headers.get('Cache-Control')).toContain('s-maxage=14400');
 		});
 	});
 });

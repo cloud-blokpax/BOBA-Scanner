@@ -9,10 +9,18 @@
  * Tier 1 and Tier 2 scanning always work, even fully offline.
  */
 
-import { STATIC_CARDS } from '$lib/data/static-cards';
 import { idb } from './idb';
 import { loadParallelConfig, getParallelRarity } from './parallel-config';
 import type { Card } from '$lib/types';
+
+// Lazy-loaded static cards — only downloaded when IDB cache is empty
+let _staticCards: Card[] | null = null;
+async function getStaticCards(): Promise<Card[]> {
+	if (_staticCards) return _staticCards;
+	const { STATIC_CARDS } = await import('$lib/data/static-cards');
+	_staticCards = STATIC_CARDS;
+	return _staticCards;
+}
 
 // ── In-memory indexes ──────────────────────────────────────
 let cards: Card[] = [];
@@ -53,12 +61,12 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 			refreshFromSupabaseInBackground();
 			return cards;
 		}
-	} catch {
-		// IDB unavailable — continue to static fallback
+	} catch (err) {
+		console.debug('[card-db] IDB cache read failed, falling back to static:', err);
 	}
 
-	// Layer 2: Static bundled JSON (always available)
-	cards = STATIC_CARDS;
+	// Layer 2: Static bundled JSON (lazy-loaded — only fetched if IDB is empty)
+	cards = await getStaticCards();
 	buildIndexes();
 	isLoaded = true;
 
@@ -69,8 +77,8 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	try {
 		await idb.setCards(cards);
 		await idb.setCardsVersion('static-' + new Date().toISOString());
-	} catch {
-		// IDB write failure is non-critical
+	} catch (err) {
+		console.debug('[card-db] IDB seed write failed:', err);
 	}
 
 	// Layer 3: Background Supabase refresh (non-blocking)
@@ -83,7 +91,10 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
  * Non-blocking background refresh from Supabase.
  * If Supabase has more/newer cards, update the in-memory index and IDB cache.
  * If Supabase is unavailable, this silently does nothing.
+ * Uses exponential backoff on failure: 1hr → 2hr → 4hr → 8hr cap.
  */
+let _refreshFailCount = 0;
+
 async function refreshFromSupabaseInBackground(): Promise<void> {
 	try {
 		// Dynamic import so Supabase is not a hard dependency
@@ -91,11 +102,12 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		const supabase = getSupabase();
 		if (!supabase) return;
 
-		// Check cached version age — skip refresh if data was fetched recently (within 1 hour)
+		// Check cached version age — skip refresh with exponential backoff on failure
+		const backoffMs = Math.min(3600_000 * Math.pow(2, _refreshFailCount), 28800_000);
 		const cachedVersion = await idb.getCardsVersion();
 		if (cachedVersion?.startsWith('supabase-')) {
 			const cachedTime = new Date(cachedVersion.replace('supabase-', '')).getTime();
-			if (!isNaN(cachedTime) && Date.now() - cachedTime < 3600_000) return;
+			if (!isNaN(cachedTime) && Date.now() - cachedTime < backoffMs) return;
 		}
 
 		const { data, error } = await supabase.from('cards').select('*');
@@ -123,11 +135,13 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 			await idb.setCards(cards);
 			await idb.setCardsVersion('supabase-' + new Date().toISOString());
 			await idb.setMeta('cards-content-hash', contentHash.toString());
-		} catch {
-			// Non-critical
+		} catch (err) {
+			console.debug('[card-db] IDB refresh write failed:', err);
 		}
-	} catch {
-		// Supabase unavailable — static data is sufficient
+		_refreshFailCount = 0; // Reset backoff on success
+	} catch (err) {
+		_refreshFailCount = Math.min(_refreshFailCount + 1, 4);
+		console.debug('[card-db] Supabase refresh failed (backoff count:', _refreshFailCount, '):', err);
 	}
 }
 

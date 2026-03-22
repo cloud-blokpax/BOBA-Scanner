@@ -34,13 +34,13 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 			// Cache in IndexedDB for offline use
 			try {
 				await idb.setCollectionItems(items);
-			} catch {
-				// Non-critical
+			} catch (err) {
+				console.debug('[collection] IDB cache write failed:', err);
 			}
 
 			return items;
-		} catch {
-			// Fall through to IndexedDB
+		} catch (err) {
+			console.debug('[collection] Supabase fetch failed, falling through to IDB:', err);
 		}
 	}
 
@@ -50,8 +50,8 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 		if (cached.length > 0) {
 			return cached as CollectionItem[];
 		}
-	} catch {
-		// Both sources failed
+	} catch (err) {
+		console.debug('[collection] IDB fallback read failed:', err);
 	}
 	return [];
 }
@@ -68,9 +68,9 @@ export async function upsertCollectionItem(
 	const supabase = getSupabase();
 	if (!supabase) throw new Error('Supabase is not configured');
 
-	const { data: sessionData } = await supabase.auth.getSession();
-	const userId = sessionData?.session?.user?.id;
-	if (!userId) throw new Error('Not authenticated');
+	const { data: { user }, error: authError } = await supabase.auth.getUser();
+	if (authError || !user) throw new Error('Session expired — please sign in again');
+	const userId = user.id;
 
 	const { data, error } = await supabase
 		.from('collections_v2')

@@ -183,8 +183,8 @@ Common OCR confusions: 6↔8, 0↔O, 1↔I, B↔8, S↔5.`
 					confidence: cardData.confidence || null,
 					processing_ms: null
 				});
-			} catch {
-				// Non-critical logging failure
+			} catch (err) {
+				console.debug('[api/scan] Scan log insert failed:', err);
 			}
 		}
 

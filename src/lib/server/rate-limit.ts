@@ -109,8 +109,8 @@ export async function checkScanRateLimit(userId: string): Promise<RateLimitResul
 				remaining: result.remaining,
 				reset: result.reset
 			};
-		} catch {
-			// Fall through to in-memory
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
 		}
 	}
 
@@ -141,8 +141,8 @@ export async function checkAnonScanRateLimit(ip: string): Promise<RateLimitResul
 				remaining: result.remaining,
 				reset: result.reset
 			};
-		} catch {
-			// Fall through to in-memory
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
 		}
 	}
 
@@ -173,8 +173,8 @@ export async function checkCollectionRateLimit(userId: string): Promise<RateLimi
 				remaining: result.remaining,
 				reset: result.reset
 			};
-		} catch {
-			// Fall through to in-memory
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
 		}
 	}
 

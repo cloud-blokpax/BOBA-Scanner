@@ -310,6 +310,18 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	// Layer 1: IndexedDB exact match (instant, free)
 	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
 	if (idbEntry) {
+		// Detect negative cache entries (card recognized but not in database)
+		if (idbEntry.card_id.startsWith('__unrecognized:')) {
+			const cardNum = idbEntry.card_id.replace('__unrecognized:', '');
+			return {
+				card_id: null,
+				card: null,
+				scan_method: 'hash_cache' as ScanMethod,
+				confidence: 0,
+				processing_ms: 0,
+				failReason: `Card "${cardNum}" recognized but not yet in database`
+			};
+		}
 		const card = getCardById(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
 		if (card) {
 			return {
@@ -371,8 +383,8 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 						if (!pHashVerified) {
 							console.debug(`[scan:tier1] Fuzzy dHash match rejected by pHash verification (pHash distance=${pHashDist})`);
 						}
-					} catch {
-						// pHash computation failed — trust the dHash match
+					} catch (err) {
+						console.debug('[scan:tier1] pHash computation failed, trusting dHash:', err);
 						pHashVerified = true;
 					}
 				}
@@ -551,6 +563,21 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 
 	console.warn(`[scan:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
 	ctx.lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
+
+	// Negative cache: prevent repeated Tier 3 calls for unrecognized cards
+	if (claudeNumber) {
+		try {
+			const hash = await imageWorker!.computeDHash(bitmap);
+			await idb.setHash({
+				phash: hash,
+				card_id: `__unrecognized:${claudeNumber}`,
+				confidence: 0
+			});
+		} catch {
+			console.debug('[scan:tier3] Failed to write negative cache entry');
+		}
+	}
+
 	return null;
 }
 
@@ -567,16 +594,16 @@ async function writeHashToAllLayers(
 	if (bitmap && imageWorker) {
 		try {
 			phash256 = await imageWorker.computePHash(bitmap, 16);
-		} catch {
-			// Non-critical — pHash is an enhancement
+		} catch (err) {
+			console.debug('[scan] pHash computation failed:', err);
 		}
 	}
 
 	// Layer 1: IndexedDB
 	try {
 		await idb.setHash({ phash: hash, card_id: cardId, confidence, ...(phash256 ? { phash_256: phash256 } : {}) });
-	} catch {
-		// Non-critical
+	} catch (err) {
+		console.debug('[scan] IDB hash write failed:', err);
 	}
 
 	// Layer 3: Supabase (with scan_count increment)
@@ -603,8 +630,8 @@ async function writeHashToAllLayers(
 				{ onConflict: 'phash' }
 			);
 		}
-	} catch {
-		// Non-critical
+	} catch (err) {
+		console.debug('[scan] Supabase hash writeback failed:', err);
 	}
 }
 
