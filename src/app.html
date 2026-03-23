@@ -21,6 +21,16 @@
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
 		<title>BOBA Scanner | AI-Powered Card Recognition</title>
+		<script>
+			try {
+				var t = JSON.parse(localStorage.getItem('appTheme') || '{}');
+				var m = t.mode === 'system'
+					? (matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark')
+					: (t.mode || 'dark');
+				document.documentElement.dataset.theme = m;
+				if (t.accentColor) document.documentElement.style.setProperty('--accent-primary', t.accentColor);
+			} catch(e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

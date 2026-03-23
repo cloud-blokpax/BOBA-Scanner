@@ -54,30 +54,9 @@ function applyTheme(t: Theme): void {
 				: 'dark'
 			: t.mode;
 
-	if (effectiveMode === 'light') {
-		root.style.setProperty('--bg-base', '#f8fafc');
-		root.style.setProperty('--bg-surface', '#ffffff');
-		root.style.setProperty('--bg-elevated', '#f1f5f9');
-		root.style.setProperty('--bg-hover', '#e2e8f0');
-		root.style.setProperty('--text-primary', '#0f172a');
-		root.style.setProperty('--text-secondary', '#475569');
-		root.style.setProperty('--text-tertiary', '#94a3b8');
-		root.style.setProperty('--border-color', 'rgba(15, 23, 42, 0.10)');
-		root.style.setProperty('--border-strong', 'rgba(15, 23, 42, 0.20)');
-	} else {
-		root.style.setProperty('--bg-base', '#070b14');
-		root.style.setProperty('--bg-surface', '#0d1524');
-		root.style.setProperty('--bg-elevated', '#121d34');
-		root.style.setProperty('--bg-hover', '#182540');
-		root.style.setProperty('--text-primary', '#e2e8f0');
-		root.style.setProperty('--text-secondary', '#94a3b8');
-		root.style.setProperty('--text-tertiary', '#64748b');
-		root.style.setProperty('--border-color', 'rgba(148, 163, 184, 0.10)');
-		root.style.setProperty('--border-strong', 'rgba(148, 163, 184, 0.20)');
-	}
-
-	root.style.setProperty('--accent-primary', t.accentColor);
+	// CSS handles light/dark via [data-theme] attribute selector in index.css
 	root.dataset.theme = effectiveMode;
+	root.style.setProperty('--accent-primary', t.accentColor);
 
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(t));
 }
