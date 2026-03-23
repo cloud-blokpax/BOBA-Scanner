@@ -275,6 +275,61 @@ export const scanQueue = {
 	}
 };
 
+/**
+ * Verify IndexedDB is healthy and accessible. If the database is
+ * corrupted or inaccessible, delete it and re-open a fresh one.
+ * This handles iOS Safari's tendency to corrupt IDB stores.
+ *
+ * Call once from the root layout's onMount, before any other IDB access.
+ */
+export async function verifyIdbHealth(): Promise<'healthy' | 'recovered' | 'unavailable'> {
+	try {
+		const db = await openDB();
+
+		// Verify we can read/write to the meta store
+		const testKey = '__health_check__';
+		const tx = db.transaction(STORES.meta, 'readwrite');
+		const store = tx.objectStore(STORES.meta);
+		store.put({ ts: Date.now() }, testKey);
+		await new Promise<void>((resolve, reject) => {
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error);
+		});
+
+		// Clean up the test key
+		const cleanTx = db.transaction(STORES.meta, 'readwrite');
+		cleanTx.objectStore(STORES.meta).delete(testKey);
+
+		return 'healthy';
+	} catch (err) {
+		console.warn('[idb] Health check failed, attempting recovery:', err);
+
+		// Reset the cached promise so openDB() creates a fresh connection
+		dbPromise = null;
+
+		try {
+			// Delete the corrupted database entirely
+			await new Promise<void>((resolve, reject) => {
+				const req = indexedDB.deleteDatabase(DB_NAME);
+				req.onsuccess = () => resolve();
+				req.onerror = () => reject(req.error);
+				req.onblocked = () => {
+					console.warn('[idb] Database deletion blocked — close other tabs');
+					resolve(); // Proceed anyway — the next openDB() will retry
+				};
+			});
+
+			// Re-open a fresh database (triggers onupgradeneeded to recreate stores)
+			await openDB();
+			console.warn('[idb] Database recovered — all cached data has been cleared');
+			return 'recovered';
+		} catch (recoveryErr) {
+			console.error('[idb] Recovery failed — IndexedDB unavailable:', recoveryErr);
+			return 'unavailable';
+		}
+	}
+}
+
 // Request persistent storage to prevent iOS Safari from evicting IndexedDB
 if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
 	navigator.storage.persist().then((granted) => {

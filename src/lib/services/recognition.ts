@@ -167,10 +167,11 @@ export async function recognizeCard(
 	onTierChange?: (tier: 1 | 2 | 3) => void,
 	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean }
 ): Promise<ScanResult> {
+	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
 	await initWorkers();
 	const loadedCards = await loadCardDatabase();
-	console.debug(`[scan] Pipeline started. Card database: ${loadedCards.length} cards loaded.`);
+	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
 	const ctx: ScanContext = { lastOcrReading: null, lastTier3FailReason: null };
@@ -200,7 +201,7 @@ export async function recognizeCard(
 
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
-		const final = { ...result, processing_ms: Math.round(performance.now() - startTime) };
+		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId };
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,

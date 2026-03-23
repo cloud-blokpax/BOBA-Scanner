@@ -57,6 +57,8 @@ export interface ScanResult {
 	variant?: string | null;
 	/** Human-readable reason when scan fails to identify a card */
 	failReason?: string | null;
+	/** Trace ID for correlating logs across tiers */
+	traceId?: string;
 }
 
 export interface ScanPipelineState {

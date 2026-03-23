@@ -131,4 +131,30 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(globalRateLimit, supabaseHandle, authGuard);
+/**
+ * Lightweight API request logger for observability.
+ * Only logs API routes — skips page navigation and static assets.
+ */
+const requestLogger: Handle = async ({ event, resolve }) => {
+	if (!event.url.pathname.startsWith('/api/')) {
+		return resolve(event);
+	}
+
+	const start = performance.now();
+	const response = await resolve(event);
+	const duration = Math.round(performance.now() - start);
+
+	// Structured log line — parseable by log aggregators
+	console.log(JSON.stringify({
+		type: 'api_request',
+		method: event.request.method,
+		path: event.url.pathname,
+		status: response.status,
+		duration_ms: duration,
+		user_id: event.locals.user?.id ?? null
+	}));
+
+	return response;
+};
+
+export const handle = sequence(globalRateLimit, supabaseHandle, authGuard, requestLogger);

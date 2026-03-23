@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { checkCollectionRateLimit } from '$lib/server/rate-limit';
+import { incrementTournamentUsageRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
@@ -95,12 +96,11 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		throw error(500, 'Failed to register');
 	}
 
-	// Atomically increment usage_count using RPC to avoid read-modify-write race condition.
-	// Falls back to direct update using the value we already fetched (still racy under
-	// high concurrency but avoids the separate read that doubles the race window).
-	const { error: rpcError } = await locals.supabase
-		.rpc('increment_tournament_usage' as never, { tid: tournament_id } as never);
-	if (rpcError) {
+	// Atomically increment usage_count using typed RPC wrapper.
+	// Falls back to direct update if the RPC doesn't exist.
+	try {
+		await incrementTournamentUsageRpc(locals.supabase, tournament_id);
+	} catch {
 		await locals.supabase
 			.from('tournaments')
 			.update({ usage_count: ((tournament.usage_count as number) || 0) + 1 } as never)

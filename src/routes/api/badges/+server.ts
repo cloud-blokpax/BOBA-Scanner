@@ -7,6 +7,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { checkCollectionRateLimit } from '$lib/server/rate-limit';
+import { awardBadgeRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
 
 /** All valid badges and their metadata */
@@ -73,16 +74,13 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	const badge = BADGE_DEFINITIONS[badgeKey];
 
-	// RPC not in generated types — use untyped client
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const { data: awarded } = await (locals.supabase as any)
-		.rpc('award_badge_if_new', {
-			p_user_id: user.id,
-			p_badge_key: badgeKey,
-			p_badge_name: badge.name,
-			p_description: badge.description,
-			p_icon: badge.icon
-		});
+	const awarded = await awardBadgeRpc(locals.supabase, {
+		p_user_id: user.id,
+		p_badge_key: badgeKey,
+		p_badge_name: badge.name,
+		p_description: badge.description,
+		p_icon: badge.icon
+	});
 
-	return json({ awarded: awarded === true, badge_key: badgeKey, badge_name: badge.name });
+	return json({ awarded, badge_key: badgeKey, badge_name: badge.name });
 };

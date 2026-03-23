@@ -30,6 +30,17 @@
 	});
 
 	onMount(() => {
+		// Verify IndexedDB health (fire-and-forget, non-blocking)
+		import('$lib/services/idb').then(({ verifyIdbHealth }) =>
+			verifyIdbHealth().then((status) => {
+				if (status === 'recovered') {
+					showToast('Local cache was reset — your data will resync from the cloud.', 'ℹ️', 5000);
+				} else if (status === 'unavailable') {
+					showToast('Offline storage unavailable — some features may not work.', 'ℹ️', 5000);
+				}
+			})
+		).catch(() => { /* IDB check failed — non-fatal */ });
+
 		const client = getSupabase();
 
 		// Server-verified auth check — uses getUser() instead of getSession()
@@ -95,40 +106,48 @@
 			const queued = await scanQueue.getAll();
 			if (queued.length === 0) return;
 
-			showToast(`Processing ${queued.length} queued scan(s)...`, 'info');
+			// Filter out stale items (older than 24 hours)
+			const STALE_THRESHOLD = 24 * 60 * 60 * 1000;
+			const fresh = queued.filter(item => Date.now() - item.timestamp < STALE_THRESHOLD);
+			const stale = queued.filter(item => Date.now() - item.timestamp >= STALE_THRESHOLD);
+
+			// Remove stale items
+			for (const item of stale) {
+				await scanQueue.remove(item.id);
+			}
+
+			if (fresh.length === 0) return;
+
+			showToast(`Processing ${fresh.length} queued scan(s)...`, 'ℹ️');
 
 			const { recognizeCard } = await import('$lib/services/recognition');
 			const { addToCollection } = await import('$lib/stores/collection.svelte');
 			let successCount = 0;
+			let failCount = 0;
 
-			for (const item of queued) {
+			for (const item of fresh) {
 				try {
 					const result = await recognizeCard(item.imageBlob);
 					if (result?.card_id) {
 						try {
 							await addToCollection(result.card_id, 'near_mint');
 							successCount++;
-						} catch (err) {
-							console.debug('[layout] Collection add from scan queue failed:', err);
-							// Collection add failed — still remove from queue
-							// since the scan itself succeeded
+						} catch {
+							// Collection add failed but scan succeeded — still remove from queue
 						}
 					}
 					await scanQueue.remove(item.id);
 				} catch (err) {
-					console.debug('[scan-queue] Offline scan processing failed:', err);
+					failCount++;
+					// Don't remove from queue — it will be retried next time we come online
+					console.debug('[scan-queue] Scan failed, will retry:', err);
 				}
 			}
-			const remaining = await scanQueue.count();
-			if (remaining === 0) {
-				showToast(
-					successCount > 0
-						? `Done! ${successCount} card(s) added to collection.`
-						: 'All queued scans processed!',
-					'check'
-				);
-			} else {
-				showToast(`${remaining} scan(s) still queued — will retry later.`, 'info');
+
+			if (failCount > 0) {
+				showToast(`Processed ${successCount} scan(s), ${failCount} will retry later.`, 'ℹ️');
+			} else if (successCount > 0) {
+				showToast(`Done! ${successCount} card(s) added to collection.`, '✓');
 			}
 		};
 		window.addEventListener('online', handleOnline);
