@@ -1,12 +1,13 @@
 /**
- * Supabase client — optional dependency.
+ * Supabase browser client.
  *
  * Returns null when PUBLIC_SUPABASE_URL or PUBLIC_SUPABASE_ANON_KEY
- * are not configured. All callers must handle the null case.
+ * are not configured. All callers must handle the null case via
+ * getSupabase() which returns SupabaseClient | null.
  *
- * For backward compatibility, `supabase` is exported as a non-null alias
- * that will error at runtime if used without configuration. Gradually
- * migrate callers to use `getSupabase()` with null checks instead.
+ * When Supabase is unconfigured, cloud features (auth, collections,
+ * sync, pricing) are disabled and the app runs in offline-only mode
+ * with the static card database and IndexedDB caching.
  */
 
 import { createBrowserClient } from '@supabase/ssr';
