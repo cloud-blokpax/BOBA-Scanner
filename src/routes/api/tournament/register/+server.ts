@@ -61,8 +61,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		throw error(400, 'Discord ID is required for this tournament');
 	}
 
-	// Get auth user id if logged in
-	const { session, user } = await locals.safeGetSession();
+	// Auth user id (already fetched for rate limiting above)
 	const userId = user?.id ?? null;
 
 	// Upsert registration (update if same tournament + email)
