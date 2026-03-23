@@ -143,27 +143,46 @@ export function recordScan(result: ScanResult): number {
 	return points;
 }
 
-// ── High Scores (localStorage) ──────────────────────────────────
+// ── High Scores (IndexedDB) ─────────────────────────────────────
 const HIGH_SCORES_KEY = 'speedHighScores';
 const MAX_HIGH_SCORES = 5;
 
-function loadHighScores(): HighScoreEntry[] {
-	if (!browser) return [];
-	try {
-		const raw = localStorage.getItem(HIGH_SCORES_KEY);
-		return raw ? JSON.parse(raw) : [];
-	} catch (err) {
-		console.debug('[speed-game] High scores load failed:', err);
-		return [];
-	}
-}
-
 function saveHighScores(scores: HighScoreEntry[]): void {
 	if (!browser) return;
-	localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(scores));
+	import('$lib/services/idb').then(({ idb }) => {
+		idb.setMeta(HIGH_SCORES_KEY, scores).catch((err) => {
+			console.debug('[speed-game] High scores save failed:', err);
+		});
+	});
 }
 
-export const highScores = writable<HighScoreEntry[]>(loadHighScores());
+export const highScores = writable<HighScoreEntry[]>([]);
+
+// Load from IDB asynchronously on startup
+if (browser) {
+	(async () => {
+		try {
+			const { idb } = await import('$lib/services/idb');
+			const entries = await idb.getMeta<HighScoreEntry[]>(HIGH_SCORES_KEY);
+			if (Array.isArray(entries)) {
+				highScores.set(entries);
+			}
+
+			// One-time migration from localStorage
+			const legacyRaw = localStorage.getItem(HIGH_SCORES_KEY);
+			if (legacyRaw) {
+				const legacy = JSON.parse(legacyRaw);
+				if (Array.isArray(legacy) && legacy.length > 0) {
+					await idb.setMeta(HIGH_SCORES_KEY, legacy);
+					highScores.set(legacy);
+					localStorage.removeItem(HIGH_SCORES_KEY);
+				}
+			}
+		} catch (err) {
+			console.debug('[speed-game] High scores load failed:', err);
+		}
+	})();
+}
 
 export function addHighScore(score: number, cardCount: number, duration: number): boolean {
 	let isNew = false;
