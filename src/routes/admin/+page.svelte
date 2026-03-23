@@ -142,7 +142,7 @@
 			]);
 
 			if (usersRes.data) {
-				users = usersRes.data as UserRow[];
+				users = usersRes.data as unknown as UserRow[];
 				filteredUsers = users;
 				stats.totalUsers = users.length;
 				stats.activeToday = users.filter((u) => {

@@ -18,10 +18,9 @@ export async function lookupCommunityCorrection(
 	if (!client) return null;
 
 	try {
-		const { data } = await (client.rpc as CallableFunction)(
-			'lookup_correction',
-			{ p_ocr_reading: ocrReading.toUpperCase() }
-		) as { data: Array<{ correct_card_number: string }> | null };
+		const { data } = await client.rpc('lookup_correction', {
+			p_ocr_reading: ocrReading.toUpperCase()
+		});
 
 		if (data && data.length > 0) {
 			return data[0].correct_card_number;
@@ -44,7 +43,7 @@ export async function submitCommunityCorrection(
 	if (!client) return;
 
 	try {
-		await (client.rpc as CallableFunction)('submit_correction', {
+		await client.rpc('submit_correction', {
 			p_ocr_reading: ocrReading.toUpperCase(),
 			p_correct_card_number: correctCardNumber.toUpperCase()
 		});

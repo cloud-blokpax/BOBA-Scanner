@@ -174,7 +174,7 @@ export async function loadFeatureFlags(): Promise<void> {
 		}
 
 		const { data: flagsRaw, error: flagErr } = await client.from('feature_flags').select('*');
-		const flags = (flagsRaw || []) as FeatureFlag[];
+		const flags = (flagsRaw || []) as unknown as FeatureFlag[];
 
 		const flagMap = new Map<string, FeatureFlag>();
 

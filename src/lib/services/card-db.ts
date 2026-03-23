@@ -110,7 +110,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				// Cache in IDB for offline use
 				try {
 					await idb.setCards(cards);
-					await idb.setMeta('lastCardSync', new Date().toISOString());
+					await idb.setMeta('cards-last-sync', new Date().toISOString());
 					await idb.setCardsVersion('supabase-' + new Date().toISOString());
 					console.debug(`[card-db] Cached ${cards.length} cards in IDB`);
 				} catch (err) {

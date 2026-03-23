@@ -21,6 +21,8 @@ export interface Database {
 					year: number | null;
 					parallel: string | null;
 					created_at: string;
+					updated_at: string;
+					search_vector: string | null;
 				};
 				Insert: {
 					id?: string;
@@ -37,6 +39,7 @@ export interface Database {
 					image_url?: string | null;
 					year?: number | null;
 					parallel?: string | null;
+					updated_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['cards']['Insert']>;
 				Relationships: [];
@@ -556,7 +559,40 @@ export interface Database {
 			};
 		};
 		Views: Record<string, never>;
-		Functions: Record<string, never>;
+		Functions: {
+			find_similar_hash: {
+				Args: { query_hash: string; max_distance?: number };
+				Returns: Array<{ phash: string; card_id: string; confidence: number; scan_count: number; distance: number; phash_256?: string }>;
+			};
+			upsert_hash_cache: {
+				Args: { p_phash: string; p_card_id: string; p_confidence?: number; p_phash_256?: string };
+				Returns: void;
+			};
+			submit_correction: {
+				Args: { p_ocr_reading: string; p_correct_card_number: string };
+				Returns: void;
+			};
+			lookup_correction: {
+				Args: { p_ocr_reading: string };
+				Returns: Array<{ correct_card_number: string; confirmation_count: number }>;
+			};
+			award_badge_if_new: {
+				Args: { p_user_id: string; p_badge_key: string; p_badge_name?: string; p_description?: string; p_icon?: string };
+				Returns: boolean;
+			};
+			submit_reference_image: {
+				Args: { p_card_id: string; p_image_path: string; p_confidence: number; p_user_id: string; p_user_name: string; p_blur_variance?: number };
+				Returns: { accepted: boolean; is_new_card: boolean; old_confidence?: number; new_confidence?: number; previous_holder?: string };
+			};
+			increment_tournament_usage: {
+				Args: { tid: string };
+				Returns: void;
+			};
+			increment_shared_deck_views: {
+				Args: { deck_id: string };
+				Returns: void;
+			};
+		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
 	};

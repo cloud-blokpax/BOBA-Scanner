@@ -131,6 +131,32 @@ export function validateDeck(
 		});
 	}
 
+	// ── Rule: Hot Dog deck size ──────────────────────────────
+	if (!format.heroOnlyGameplay && format.hotDogDeckSize > 0 && hotDogCards.length > 0) {
+		if (hotDogCards.length !== format.hotDogDeckSize) {
+			violations.push({
+				rule: 'hot_dog_deck_size',
+				message: `Hot Dog deck has ${hotDogCards.length} cards — requires exactly ${format.hotDogDeckSize}`,
+				severity: 'error'
+			});
+		}
+	}
+
+	// ── Rule: Foil Hot Dog requirement (Madness) ────────────
+	if (format.requiresFoilHotDogs && format.requiredFoilHotDogCount > 0 && hotDogCards.length > 0) {
+		const foilHotDogs = hotDogCards.filter(c => {
+			const p = (c.parallel || '').toLowerCase();
+			return p.includes('foil') || p.includes('battlefoil');
+		});
+		if (foilHotDogs.length < format.requiredFoilHotDogCount) {
+			violations.push({
+				rule: 'foil_hot_dog_requirement',
+				message: `${foilHotDogs.length} foil Hot Dogs — ${format.name} requires ${format.requiredFoilHotDogCount} foil Hot Dogs`,
+				severity: 'error'
+			});
+		}
+	}
+
 	// ── Rule 2: SPEC power cap (individual card) ───────────
 	if (format.specPowerCap !== null) {
 		if (format.id === 'apex_madness') {

@@ -21,6 +21,29 @@ function getAnthropicClient(): Anthropic {
 	return _anthropic;
 }
 
+// ── Structured output tool definition ──────────────────────────
+const GRADE_TOOL: Anthropic.Messages.Tool = {
+	name: 'grade_card',
+	description: 'Grade a trading card condition on the PSA 1-10 scale',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			grade: { type: 'number', description: 'PSA grade from 1 to 10 (half grades like 8.5 allowed)' },
+			grade_label: { type: 'string', description: 'Grade name (e.g., NM-MT, Mint, etc.)' },
+			qualifier: { type: 'string', enum: ['OC', 'MC', 'MK', 'ST', 'PD', 'OF'], description: 'Grade qualifier or null' },
+			confidence: { type: 'number', description: '0-100 confidence percentage' },
+			front_centering: { type: 'string', description: 'Front L/R and T/B centering ratios' },
+			back_centering: { type: 'string', description: 'Back centering or not assessed' },
+			corners: { type: 'string', description: 'Corner condition description' },
+			edges: { type: 'string', description: 'Edge condition description' },
+			surface: { type: 'string', description: 'Surface condition description' },
+			summary: { type: 'string', description: '2-3 sentence overall assessment' },
+			submit_recommendation: { type: 'string', enum: ['yes', 'maybe', 'no'], description: 'Should this card be submitted for professional grading?' }
+		},
+		required: ['grade', 'grade_label', 'confidence', 'corners', 'edges', 'surface', 'summary', 'submit_recommendation']
+	}
+};
+
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	// Auth required — grading uses Claude Sonnet which is expensive (~$0.03/call)
 	const { user } = await locals.safeGetSession();
@@ -112,11 +135,13 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		const prompt = buildGradePrompt(!!centeringImageData, !!cornerRegionData, centeringData || null);
 		(contentParts as Anthropic.ContentBlockParam[]).push({ type: 'text', text: prompt });
 
-		let data;
+		let response;
 		try {
-			data = await getAnthropicClient().messages.create({
+			response = await getAnthropicClient().messages.create({
 				model: 'claude-sonnet-4-6-20250514',
 				max_tokens: 1024,
+				tools: [GRADE_TOOL],
+				tool_choice: { type: 'tool' as const, name: 'grade_card' },
 				messages: [{ role: 'user', content: contentParts }]
 			});
 		} catch (err) {
@@ -127,24 +152,18 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			throw err;
 		}
 
-		// Extract and validate the grading JSON from the Claude response
-		const text = data.content[0]?.type === 'text' ? data.content[0].text : '';
-		const jsonMatch = text.match(/\{[\s\S]*\}/);
-		if (!jsonMatch) {
-			return json({ error: 'Could not parse grading response', raw: text }, { status: 422 });
+		// Extract structured tool-use result (guaranteed valid JSON)
+		const toolUse = response.content.find(block => block.type === 'tool_use');
+		if (!toolUse || toolUse.type !== 'tool_use') {
+			console.warn('[api/grade] No tool_use block in Claude response');
+			return json({ error: 'Could not parse grading response' }, { status: 422 });
 		}
 
-		let gradeResult;
-		try {
-			gradeResult = JSON.parse(jsonMatch[0]);
-		} catch (err) {
-			console.debug('[api/grade] Grade JSON parse failed:', err);
-			return json({ error: 'Invalid grading response format', raw: text }, { status: 422 });
-		}
+		const gradeResult = toolUse.input as Record<string, unknown>;
 
 		// Validate expected fields exist
-		if (typeof gradeResult.grade !== 'number' || gradeResult.grade < 1 || gradeResult.grade > 10) {
-			return json({ error: 'Invalid grade value in response', raw: text }, { status: 422 });
+		if (typeof gradeResult.grade !== 'number' || (gradeResult.grade as number) < 1 || (gradeResult.grade as number) > 10) {
+			return json({ error: 'Invalid grade value in response' }, { status: 422 });
 		}
 
 		return json({

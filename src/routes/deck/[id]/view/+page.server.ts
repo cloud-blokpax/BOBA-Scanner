@@ -42,11 +42,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		typedDeck = shared as unknown as SharedDeck;
 	}
 
-	// Increment view count (non-blocking)
-	(locals.supabase.from('shared_decks') as unknown as { update: (val: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> } })
-		.update({ view_count: (typedDeck.view_count || 0) + 1 })
-		.eq('id', id)
-		.then(() => {});
+	// Increment view count atomically (non-blocking)
+	Promise.resolve(locals.supabase.rpc('increment_shared_deck_views', { deck_id: id })).catch(() => {});
 
 	return { deck: typedDeck };
 };

@@ -116,10 +116,14 @@ const imageProcessor = {
 			: sorted[Math.floor(sorted.length / 2)];
 
 		// Generate hash bits: 1 if coefficient > median, else 0
-		// Total bits = hashSize*hashSize (256 for hashSize=16)
+		// Skip DC component at [0][0] and pad to maintain hashSize*hashSize bits
 		let hashBits = '';
 		for (let y = 0; y < hashSize; y++) {
 			for (let x = 0; x < hashSize; x++) {
+				if (y === 0 && x === 0) {
+					hashBits += '0'; // DC component excluded — always 0
+					continue;
+				}
 				hashBits += dctCoeffs[y * DCT_SIZE + x] > median ? '1' : '0';
 			}
 		}

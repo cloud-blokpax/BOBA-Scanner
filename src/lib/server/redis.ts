@@ -106,13 +106,27 @@ export async function setPriceInRedis(
 
 const EBAY_DAILY_LIMIT = 4500; // Leave 500 headroom from eBay's 5,000/day cap
 
+// In-memory fallback when Redis is unavailable
+const _ebayDailyFallback = { count: 0, date: '' };
+
 /**
  * Check and increment the daily eBay API call counter.
  * Returns true if the call is allowed, false if the daily limit is exceeded.
  */
 export async function checkEbayDailyLimit(): Promise<boolean> {
 	const r = getRedis();
-	if (!r) return true; // No Redis = no tracking, allow the call
+	const today = new Date().toISOString().slice(0, 10);
+
+	if (!r) {
+		// In-memory fallback — resets on cold starts, doesn't share across isolates,
+		// but prevents a single isolate from making unlimited calls
+		if (_ebayDailyFallback.date !== today) {
+			_ebayDailyFallback.count = 0;
+			_ebayDailyFallback.date = today;
+		}
+		_ebayDailyFallback.count++;
+		return _ebayDailyFallback.count <= EBAY_DAILY_LIMIT;
+	}
 
 	try {
 		const dailyKey = `ebay-calls:${new Date().toISOString().slice(0, 10)}`;
