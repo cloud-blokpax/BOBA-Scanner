@@ -97,30 +97,23 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// ── Fetch prices from eBay ──────────────────────────────
-	const results: Array<{
-		card_id: string;
-		price_mid: number | null;
-		price_low: number | null;
-		price_high: number | null;
-		listings_count: number;
-	}> = [];
-
 	const token = await getEbayToken();
 
-	for (const cardId of cardIds) {
+	// Batch fetch all card metadata in a single query instead of one per card
+	const { data: cardsData } = await supabase
+		.from('cards')
+		.select('id, hero_name, card_number, set_code')
+		.in('id', cardIds);
+
+	const cardMap = new Map((cardsData || []).map(c => [c.id, c]));
+
+	// Parallelize eBay API calls (up to 10 concurrent)
+	const pricePromises = cardIds.map(async (cardId) => {
+		const card = cardMap.get(cardId);
+		if (!card) return null;
+
 		try {
-			// Get card metadata for eBay search query
-			const { data: card } = await supabase
-				.from('cards')
-				.select('hero_name, card_number, set_code')
-				.eq('id', cardId)
-				.maybeSingle();
-
-			if (!card) continue;
-
-			// Build search query
 			const query = ['BoBA', card.hero_name, card.card_number].filter(Boolean).join(' ');
-
 			const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 			searchUrl.searchParams.set('q', query);
 			searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
@@ -133,14 +126,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				}
 			});
 
-			if (!browseRes.ok) continue;
+			if (!browseRes.ok) return null;
 
 			const data = await browseRes.json();
 			const items = data.itemSummaries || [];
 			const cardNum = (card.card_number || '').toUpperCase();
 			const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 
-			// Filter to relevant listings (normalize spaces/hyphens for variants like "BF 108" vs "BF-108")
 			const relevant = items.filter((item: { title?: string }) => {
 				if (!normalizedCardNum) return false;
 				const normalizedTitle = (item.title || '').toUpperCase().replace(/[-\s]/g, '');
@@ -156,7 +148,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const priceLow = prices.length > 0 ? prices[0] : null;
 			const priceHigh = prices.length > 0 ? prices[prices.length - 1] : null;
 
-			// Update the price cache
 			const priceData = {
 				card_id: cardId,
 				source: 'ebay',
@@ -169,17 +160,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 			await supabase.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
 
-			results.push({
+			return {
 				card_id: cardId,
 				price_mid: priceMid,
 				price_low: priceLow,
 				price_high: priceHigh,
 				listings_count: prices.length
-			});
+			};
 		} catch (err) {
 			console.debug(`[deck/refresh-prices] Failed for ${cardId}:`, err);
+			return null;
 		}
-	}
+	});
+
+	const settled = await Promise.all(pricePromises);
+	const results = settled.filter(Boolean);
 
 	// Log this refresh for rate limiting
 	await supabase.from('deck_shop_refresh_log').insert({

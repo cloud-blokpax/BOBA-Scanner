@@ -60,16 +60,21 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 	if (++recognitionCount > 50) {
 		try {
 			const oldWorker = worker;
-			worker = null;
-			_initPromise = null;
-			await oldWorker!.terminate();
-			await initOcr();
+			// Don't null out worker or _initPromise until new worker is ready
+			const Tesseract = await import('tesseract.js');
+			const newWorker = await Tesseract.createWorker('eng', 1);
+			await newWorker.setParameters({
+				tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+				tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-. '
+			});
+			// Atomic swap — old worker is replaced only after new one is ready
+			worker = newWorker;
 			recognitionCount = 0;
+			// Terminate old worker in background (non-blocking)
+			oldWorker?.terminate().catch(() => {});
 		} catch (err) {
-			console.warn('[ocr] Worker restart failed, reinitializing:', err);
-			worker = null;
-			_initPromise = null;
-			await initOcr();
+			console.warn('[ocr] Worker restart failed:', err);
+			// Keep the existing worker running — better than no worker
 			recognitionCount = 0;
 		}
 	}

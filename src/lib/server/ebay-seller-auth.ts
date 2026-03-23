@@ -6,7 +6,7 @@
  */
 
 import { env } from '$env/dynamic/private';
-import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '$lib/server/supabase-admin';
 
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
@@ -20,12 +20,8 @@ const SELLER_SCOPES = [
 	'https://api.ebay.com/oauth/api_scope/sell.account.readonly'
 ].join(' ');
 
-function getServiceClient() {
-	const url = env.PUBLIC_SUPABASE_URL ?? '';
-	const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-	if (!url || !serviceKey) return null;
-	return createClient(url, serviceKey);
-}
+// Use shared admin client for service-role operations
+const getServiceClient = getAdminClient;
 
 function getBasicAuth(): string {
 	return Buffer.from(`${env.EBAY_CLIENT_ID ?? ''}:${env.EBAY_CLIENT_SECRET ?? ''}`).toString('base64');

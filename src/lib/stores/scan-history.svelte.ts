@@ -56,7 +56,7 @@ function saveToIdb(entries: ScanHistoryEntry[]): void {
 export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp'>): void {
 	const newEntry: ScanHistoryEntry = {
 		...entry,
-		id: Math.random().toString(36).slice(2, 10),
+		id: crypto.randomUUID(),
 		timestamp: Date.now()
 	};
 	const updated = [newEntry, ..._scanHistory].slice(0, MAX_ENTRIES);

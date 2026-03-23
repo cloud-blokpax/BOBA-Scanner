@@ -336,7 +336,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 
 - All tables defined in `supabase/migrations/supabase-full-setup.sql` (canonical schema)
 - Key tables: `users`, `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`
-- RLS is disabled; access control is application-level via the anon key + server-side auth checks
+- RLS is enabled on all tables. The anon key has read-only access to public data (cards, prices, feature flags, tournaments). User-scoped data (collections, decks, badges) is restricted to the owning user via auth.uid(). Server-only tables (ebay_seller_tokens, error_logs) have no client-accessible policies — they are accessed exclusively via the service role key.
 - Card seed data generated via `scripts/generate-card-seed.js` from `src/lib/data/card-database.json`
 
 ## Environment Variables

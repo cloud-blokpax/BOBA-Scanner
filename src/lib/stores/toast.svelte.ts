@@ -18,7 +18,7 @@ export function toasts(): ToastMessage[] { return _toasts; }
 const _toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function showToast(message: string, icon = '', duration = 3000): void {
-	const id = Math.random().toString(36).slice(2, 8);
+	const id = crypto.randomUUID();
 	_toasts = [..._toasts, { id, message, icon, duration }];
 
 	const timer = setTimeout(() => {

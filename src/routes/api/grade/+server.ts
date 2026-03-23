@@ -7,19 +7,11 @@
  */
 
 import { json, error } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
+import { getAnthropicClient } from '$lib/server/anthropic';
 import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
-
-let _anthropic: Anthropic | null = null;
-function getAnthropicClient(): Anthropic {
-	const apiKey = env.ANTHROPIC_API_KEY ?? env.CLAUDE_API_KEY ?? '';
-	if (!apiKey) throw new Error('Anthropic API key not configured');
-	if (!_anthropic) _anthropic = new Anthropic({ apiKey });
-	return _anthropic;
-}
 
 // ── Structured output tool definition ──────────────────────────
 const GRADE_TOOL: Anthropic.Messages.Tool = {

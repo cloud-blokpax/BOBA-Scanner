@@ -6,7 +6,7 @@
  */
 
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
 // Simple IP-based rate limit for unauthenticated error logging (100 per minute)
@@ -77,10 +77,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		// Rate limit: max 50 errors per request
 		const batch = errors.slice(0, 50);
 
-		const supabaseUrl = env.SUPABASE_URL ?? env.PUBLIC_SUPABASE_URL ?? '';
-		const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+		const adminClient = getAdminClient();
 
-		if (supabaseUrl && serviceRoleKey) {
+		if (adminClient) {
 			const rows = batch.map((err) => ({
 				type: (err.type || 'error').slice(0, 50),
 				message: (err.message || '').slice(0, 1000),
@@ -94,18 +93,11 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				created_at: new Date().toISOString()
 			}));
 
-			const logRes = await fetch(`${supabaseUrl}/rest/v1/error_logs`, {
-				method: 'POST',
-				headers: {
-					apikey: serviceRoleKey,
-					Authorization: `Bearer ${serviceRoleKey}`,
-					'Content-Type': 'application/json',
-					Prefer: 'return=minimal'
-				},
-				body: JSON.stringify(rows)
-			});
-			if (!logRes.ok) {
-				console.warn(`[api/log] Supabase insert failed: ${logRes.status}`);
+			const { error: insertError } = await adminClient
+				.from('error_logs')
+				.insert(rows);
+			if (insertError) {
+				console.warn(`[api/log] Supabase insert failed:`, insertError.message);
 			}
 		} else {
 			for (const err of batch) {
