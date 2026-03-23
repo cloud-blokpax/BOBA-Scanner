@@ -1,9 +1,18 @@
 import { json, error } from '@sveltejs/kit';
+import { checkCollectionRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	if (!locals.supabase) {
 		throw error(503, 'Service unavailable');
+	}
+
+	// Rate limit registration requests
+	const { user } = await locals.safeGetSession();
+	const rateLimitKey = user?.id ?? getClientAddress();
+	const rateLimit = await checkCollectionRateLimit(rateLimitKey);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 
 	let body;
