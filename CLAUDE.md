@@ -47,8 +47,16 @@ BOBA-Scanner/
 │   │   ├── +layout.server.ts       # Root server load: session/user from Supabase
 │   │   ├── +page.svelte            # Homepage / dashboard
 │   │   ├── scan/+page.svelte       # Card scanning interface
+│   │   ├── batch/+page.svelte      # Batch scanning interface
+│   │   ├── binder/+page.svelte     # Binder page scanning
 │   │   ├── collection/+page.svelte # Card collection management
-│   │   ├── deck/+page.svelte       # Deck builder
+│   │   ├── deck/                   # Deck builder
+│   │   │   ├── +page.svelte        # Deck list / management
+│   │   │   ├── new/+page.svelte    # Create new deck
+│   │   │   ├── [id]/+page.svelte   # Edit deck by ID
+│   │   │   ├── [id]/view/+page.svelte # View deck (read-only)
+│   │   │   └── shop/+page.svelte   # Deck shop (find missing cards)
+│   │   ├── decks/+page.svelte      # Decks overview page
 │   │   ├── dbs/                    # DBS (Deck Balancing Score) calculator
 │   │   │   ├── +page.svelte        # DBS calculator UI
 │   │   │   └── +page.server.ts     # Serves DBS scores map
@@ -56,12 +64,17 @@ BOBA-Scanner/
 │   │   ├── export/+page.svelte     # Collection export (CSV, etc.)
 │   │   ├── settings/+page.svelte   # User settings page
 │   │   ├── set-completion/         # Set completion tracker
+│   │   ├── speed/+page.svelte      # Speed game challenge
+│   │   ├── leaderboard/+page.svelte # Reference image leaderboard
 │   │   ├── tournaments/            # Tournament management
 │   │   │   ├── +page.svelte        # Tournament list
 │   │   │   ├── detail/+page.svelte # Tournament detail view
-│   │   │   └── enter/+page.svelte  # Tournament entry form
+│   │   │   ├── enter/+page.svelte  # Tournament entry form
+│   │   │   └── timer/+page.svelte  # Tournament timer
 │   │   ├── marketplace/monitor/    # eBay seller monitoring
 │   │   ├── admin/+page.svelte      # Admin dashboard
+│   │   ├── privacy/+page.svelte    # Privacy policy
+│   │   ├── terms/+page.svelte      # Terms of service
 │   │   ├── auth/
 │   │   │   ├── login/+page.svelte  # Login page
 │   │   │   ├── callback/+server.ts # OAuth callback handler
@@ -70,12 +83,19 @@ BOBA-Scanner/
 │   │   └── api/
 │   │       ├── scan/+server.ts     # POST: Claude AI card identification (Tier 3)
 │   │       ├── grade/+server.ts    # POST: AI condition grading (Claude Sonnet)
+│   │       ├── health/+server.ts   # GET: Health check endpoint
+│   │       ├── badges/+server.ts   # POST: Badge award endpoint
 │   │       ├── price/[cardId]/
 │   │       │   ├── +server.ts      # GET: eBay price lookup with caching
 │   │       │   └── history/+server.ts # GET: Price history
-│   │       ├── config/+server.ts   # GET: Public env config endpoint
 │   │       ├── upload/+server.ts   # POST: Image upload
 │   │       ├── log/+server.ts      # POST: Client-side error logging
+│   │       ├── deck/
+│   │       │   ├── validate/+server.ts    # POST: Deck validation
+│   │       │   └── refresh-prices/+server.ts # POST: Deck price refresh
+│   │       ├── reference-image/
+│   │       │   ├── +server.ts             # POST: Reference image upload/submission
+│   │       │   └── leaderboard/+server.ts # GET: Reference image leaderboard
 │   │       ├── tournament/
 │   │       │   ├── [code]/+server.ts    # GET: Tournament info by code
 │   │       │   └── register/+server.ts  # POST: Register for tournament
@@ -92,6 +112,7 @@ BOBA-Scanner/
 │   │   │   ├── BinderScanner.svelte# Binder page scanning
 │   │   │   ├── ScanConfirmation.svelte # Scan result confirmation UI
 │   │   │   ├── ScanEffects.svelte  # Visual effects for scanning
+│   │   │   ├── ScannerErrorBoundary.svelte # Error boundary for scanner components
 │   │   │   ├── CardDetail.svelte   # Card detail view
 │   │   │   ├── CardGrid.svelte     # Grid display for card collections
 │   │   │   ├── CardCorrection.svelte # Manual correction UI
@@ -114,6 +135,7 @@ BOBA-Scanner/
 │   │   │   ├── boba-dbs-scores.ts  # DBS point values for all Play cards (409 entries, maintained manually)
 │   │   │   └── tournament-formats.ts # Machine-readable rules for all 6 competitive formats
 │   │   ├── server/
+│   │   │   ├── admin-guard.ts      # Admin authorization guard for API endpoints
 │   │   │   ├── rate-limit.ts       # Upstash Redis rate limiting + in-memory fallback
 │   │   │   ├── redis.ts            # Redis client singleton
 │   │   │   ├── ebay-auth.ts        # eBay OAuth token management (Browse API)
@@ -129,6 +151,11 @@ BOBA-Scanner/
 │   │   │   ├── sync.ts             # Collection sync (IDB ↔ Supabase)
 │   │   │   ├── collection-service.ts # Collection business logic
 │   │   │   ├── deck-validator.ts   # Deck building rules validation
+│   │   │   ├── deck-service.ts     # Deck business logic (format defaults, deck stats)
+│   │   │   ├── deck-gap-finder.ts  # Analyzes deck gaps and selects cards for price refresh
+│   │   │   ├── badges.ts           # Client-side badge award helper with toast notifications
+│   │   │   ├── community-corrections.ts # Community-verified OCR correction mappings
+│   │   │   ├── reference-images.ts # Reference image handling and leaderboard
 │   │   │   ├── ebay.ts             # eBay client-side price fetching
 │   │   │   ├── listing-generator.ts# eBay listing template generation (titles, descriptions)
 │   │   │   ├── parallel-config.ts  # Parallel/treatment configuration
@@ -145,6 +172,7 @@ BOBA-Scanner/
 │   │   │   ├── tags.ts             # User tags store
 │   │   │   ├── theme.ts            # Theme preference store
 │   │   │   ├── toast.ts            # Toast notification store
+│   │   │   ├── speed-game.ts       # Speed game challenge state
 │   │   │   └── feature-flags.ts    # Feature flag store
 │   │   ├── types/
 │   │   │   ├── index.ts            # App types (Card, ScanResult, PriceData, etc.)
@@ -158,18 +186,20 @@ BOBA-Scanner/
 │   │   └── workers/
 │   │       └── image-processor.ts  # Web Worker: dHash, resize, blur detection, OCR preprocess
 ├── tests/
-│   ├── card-db.test.ts             # Unit: card database operations (18 cases)
-│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction (11 cases)
-│   ├── rate-limit.test.ts          # Unit: rate limiting logic (6 cases)
-│   ├── api-config.integration.test.ts  # Integration: config API (3 cases)
-│   ├── api-price.integration.test.ts   # Integration: price API (7 cases)
-│   ├── api-scan.integration.test.ts    # Integration: scan API (12 cases)
-│   ├── api-grade.integration.test.ts   # Integration: grade API (11 cases)
-│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes (11 cases)
-│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (12 cases)
+│   ├── card-db.test.ts             # Unit: card database operations
+│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction
+│   ├── rate-limit.test.ts          # Unit: rate limiting logic
+│   ├── deck-validator.test.ts      # Unit: deck building rules validation
+│   ├── pricing.test.ts             # Unit: price calculation and formatting
+│   ├── api-price.integration.test.ts   # Integration: price API
+│   ├── api-scan.integration.test.ts    # Integration: scan API
+│   ├── api-grade.integration.test.ts   # Integration: grade API
+│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes
+│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline
+├── src/service-worker.ts            # SvelteKit service worker (differentiated caching)
 ├── static/
 │   ├── manifest.json               # PWA manifest
-│   ├── sw.js                       # Service Worker (differentiated caching)
+│   ├── sw.js                       # Legacy service worker (self-destructs, replaced by src/service-worker.ts)
 │   ├── version.json                # App version metadata
 │   └── robots.txt                  # Disallow all crawlers
 ├── supabase/migrations/
@@ -177,7 +207,7 @@ BOBA-Scanner/
 │   └── README.md                   # Migration documentation
 ├── scripts/
 │   └── generate-card-seed.js       # Generate SQL seed from card-database.json
-├── middleware.js                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
+├── middleware.ts                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
 ├── svelte.config.js                # SvelteKit config (Vercel adapter, path aliases)
 ├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers as ES modules)
 ├── tsconfig.json                   # TypeScript config (strict, bundler resolution, excludes tests/)
@@ -209,23 +239,22 @@ The card database has a layered loading strategy (see `card-db.ts`):
 - Google OAuth via Supabase Auth
 - eBay Seller OAuth via Authorization Code Grant (per-user, managed by `ebay-seller-auth.ts`)
 - Server-side auth via `hooks.server.ts` using `getUser()` (JWT validation, not just session cookies)
-- Protected routes: `/collection`, `/deck`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`
-- Public routes (no auth required): `/scan` (anonymous users get stricter rate limits on Tier 3), `/dbs` (public calculator, no user data)
+- Protected routes: `/collection`, `/deck`, `/decks`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`
+- Public routes (no auth required): `/scan`, `/batch`, `/binder` (anonymous users get stricter rate limits on Tier 3), `/dbs` (public calculator), `/speed`, `/leaderboard`, `/privacy`, `/terms`
 - API routes handle their own auth checks
 
 ### Data Flow
 
 - **Client state**: Svelte stores (`src/lib/stores/`) backed by IndexedDB for offline persistence
 - **Server state**: Supabase PostgreSQL (collections synced via `sync.ts`)
-- **Offline support**: Service Worker caches app shell, card database served stale-while-revalidate, API calls always go to network
+- **Offline support**: SvelteKit service worker (`src/service-worker.ts`) caches app shell, card database served stale-while-revalidate, API calls always go to network
 
 ## Testing
 
-The test suite (~91 test cases across 9 files) uses Vitest with three tiers:
-The test suite (91 test cases across 9 files) uses Vitest with three tiers:
+The test suite (10 files) uses Vitest with three tiers:
 
-- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`
-- **Integration tests**: `api-config`, `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`
+- **Integration tests**: `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
 - **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
 
 Testing patterns:
@@ -305,7 +334,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 ### Security
 
 - Image uploads sanitized via sharp CDR (Content Disarm & Reconstruction): EXIF stripping, pixel bomb protection, re-encoding
-- Bot/scraper protection via Vercel Edge Middleware (`middleware.js`) — blocks bots, missing User-Agent, suspicious headers, and AI training crawlers (GPTBot, ClaudeBot, etc.)
+- Bot/scraper protection via Vercel Edge Middleware (`middleware.ts`) — blocks bots, missing User-Agent, suspicious headers, and AI training crawlers (GPTBot, ClaudeBot, etc.)
 - CSP headers configured in `vercel.json`
 - RLS enabled on all tables via Supabase Auth — policies in `enable-rls-legacy-tables.sql` and `supabase-full-setup.sql`
 - Rate limiting on all mutation endpoints
@@ -339,7 +368,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`:
 3. `npm test` — Run vitest test suite
 4. `npm run build` — Production build
 5. Bundle size check — Two-tier limits:
-   - **App JS** (excluding card database): must be under 550KB
+   - **App JS** (excluding card database): must be under 600KB
    - **Total JS** (including ~2.7MB card database): must be under 4MB
 
 ## Common Tasks
