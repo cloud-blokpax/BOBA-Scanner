@@ -18,6 +18,21 @@ import type { CollectionItem } from '$lib/types';
 let _items = $state<CollectionItem[]>([]);
 let _loading = $state(false);
 
+// Track when items were last locally modified for sync conflict resolution
+const _localModifiedAt = new Map<string, number>();
+
+export function markLocallyModified(cardId: string): void {
+	_localModifiedAt.set(cardId, Date.now());
+}
+
+export function getLocalModifiedAt(cardId: string): number | undefined {
+	return _localModifiedAt.get(cardId);
+}
+
+export function clearLocalModifications(): void {
+	_localModifiedAt.clear();
+}
+
 // ── Public reactive accessors ──────────────────────────────────
 export function collectionItems(): CollectionItem[] { return _items; }
 export function collectionLoading(): boolean { return _loading; }
@@ -87,6 +102,7 @@ export async function addToCollection(
 
 	const promise = (async () => {
 		const item = await upsertCollectionItem(cardId, condition, notes);
+		markLocallyModified(cardId);
 		const idx = _items.findIndex(
 			(i) => i.card_id === cardId && i.condition === condition
 		);
@@ -115,6 +131,8 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 		return;
 	}
 	await updateItemQuantity(itemId, quantity);
+	const cardId = _items.find((i) => i.id === itemId)?.card_id;
+	if (cardId) markLocallyModified(cardId);
 	_items = _items.map((i) => i.id === itemId ? { ...i, quantity } : i);
 }
 
@@ -123,6 +141,7 @@ export async function removeFromCollection(itemId: string): Promise<void> {
 	await deleteCollectionItem(itemId);
 	_items = _items.filter((i) => i.id !== itemId);
 	if (cardId) {
+		markLocallyModified(cardId);
 		await recordDeletion(cardId);
 	}
 }

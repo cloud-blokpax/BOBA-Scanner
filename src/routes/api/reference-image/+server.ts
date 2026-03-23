@@ -9,16 +9,18 @@
 
 import { json, error } from '@sveltejs/kit';
 import sharp from 'sharp';
+import { submitReferenceImageRpc, awardBadgeRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabase = import('@supabase/supabase-js').SupabaseClient<any, any, any>;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to contribute reference images');
 	if (!locals.supabase) throw error(503, 'Storage unavailable');
 
-	// Tables/RPCs not in generated types — use untyped client
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const client = locals.supabase as any;
+	const client = locals.supabase as AnySupabase;
 
 	const formData = await request.formData();
 	const imageFile = formData.get('image');
@@ -48,22 +50,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const displayName = profile?.name || profile?.email?.split('@')[0] || 'Anonymous';
 
 	// Atomic "beat the champion" check via RPC BEFORE uploading
-	// This prevents overwriting the storage image when the submission loses
 	const storagePath = `references/${cardId}.jpg`;
-	const { data: result, error: rpcErr } = await client
-		.rpc('submit_reference_image', {
-			p_card_id: cardId,
-			p_image_path: storagePath,
-			p_confidence: confidence,
-			p_user_id: user.id,
-			p_user_name: displayName,
-			p_blur_variance: isNaN(blurVariance) ? null : blurVariance
-		});
-
-	if (rpcErr) {
-		console.error('[reference-image] RPC failed:', rpcErr);
-		throw error(500, 'Reference image submission failed');
-	}
+	const result = await submitReferenceImageRpc(client, {
+		p_card_id: cardId,
+		p_image_path: storagePath,
+		p_confidence: confidence,
+		p_user_id: user.id,
+		p_user_name: displayName,
+		p_blur_variance: isNaN(blurVariance) ? null : blurVariance
+	});
 
 	// Only upload to storage if the submission was accepted
 	if (result?.accepted) {
@@ -84,15 +79,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const badgesAwarded: string[] = [];
 	if (result?.accepted) {
 		// Shutterbug: first accepted reference image
-		const { data: shutterbug } = await client
-			.rpc('award_badge_if_new', {
+		try {
+			const shutterbug = await awardBadgeRpc(client, {
 				p_user_id: user.id,
 				p_badge_key: 'shutterbug',
 				p_badge_name: 'Shutterbug',
 				p_description: 'Captured the top reference image for a card',
 				p_icon: '📸'
 			});
-		if (shutterbug === true) badgesAwarded.push('shutterbug');
+			if (shutterbug) badgesAwarded.push('shutterbug');
+		} catch { /* badge award is non-critical */ }
 
 		// Milestone badges based on total reference images held
 		const { count: topCount } = await client
@@ -110,15 +106,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (topCount) {
 			for (const m of milestones) {
 				if (topCount >= m.threshold) {
-					const { data: awarded } = await client
-						.rpc('award_badge_if_new', {
+					try {
+						const awarded = await awardBadgeRpc(client, {
 							p_user_id: user.id,
 							p_badge_key: m.key,
 							p_badge_name: m.name,
 							p_description: m.desc,
 							p_icon: m.icon
 						});
-					if (awarded === true) badgesAwarded.push(m.key);
+						if (awarded) badgesAwarded.push(m.key);
+					} catch { /* badge award is non-critical */ }
 				}
 			}
 		}

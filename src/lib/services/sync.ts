@@ -9,9 +9,10 @@
 import { browser } from '$app/environment';
 import { getSupabase } from '$lib/services/supabase';
 import { user } from '$lib/stores/auth.svelte';
-import { collectionItems, setCollectionItems } from '$lib/stores/collection.svelte';
+import { collectionItems, setCollectionItems, getLocalModifiedAt, clearLocalModifications } from '$lib/stores/collection.svelte';
 import { idb } from '$lib/services/idb';
 import { fetchCollection } from '$lib/services/collection-service';
+import type { CollectionItem } from '$lib/types';
 
 const PUSH_DEBOUNCE = 2000;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -119,9 +120,39 @@ export async function fullSync(): Promise<void> {
 	try {
 		// Push first (skipLock=true since we already hold the lock)
 		await pushToCloud(true);
-		// Then pull remote state and update the store directly
-		const items = await fetchCollection();
-		setCollectionItems(items);
+
+		// Pull remote state and merge with local using timestamp-based conflict resolution
+		const remoteItems = await fetchCollection();
+		const localItems = collectionItems();
+
+		const remoteMap = new Map(remoteItems.map(i => [`${i.card_id}:${i.condition}`, i]));
+		const localMap = new Map(localItems.map(i => [`${i.card_id}:${i.condition}`, i]));
+
+		// Merge: for each card, keep the version with the later timestamp
+		const allKeys = new Set([...remoteMap.keys(), ...localMap.keys()]);
+		const mergedItems: CollectionItem[] = [];
+
+		for (const key of allKeys) {
+			const remote = remoteMap.get(key);
+			const local = localMap.get(key);
+			const localModAt = local ? getLocalModifiedAt(local.card_id) : undefined;
+
+			if (remote && !local) {
+				// Only on remote — keep it
+				mergedItems.push(remote);
+			} else if (local && !remote) {
+				// Only on local — keep it (will be pushed next sync)
+				mergedItems.push(local);
+			} else if (remote && local) {
+				// Both exist — keep the one with the later timestamp
+				const remoteTime = new Date(remote.added_at).getTime();
+				const localTime = localModAt || new Date(local.added_at).getTime();
+				mergedItems.push(localTime > remoteTime ? local : remote);
+			}
+		}
+
+		setCollectionItems(mergedItems);
+		clearLocalModifications();
 	} catch (err) {
 		console.warn('Full sync error:', err);
 	} finally {
