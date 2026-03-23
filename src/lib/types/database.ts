@@ -539,6 +539,29 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['card_reference_images']['Insert']>;
 				Relationships: [];
 			};
+			shared_decks: {
+				Row: {
+					id: string;
+					user_id: string;
+					name: string;
+					format_id: string;
+					hero_card_ids: string[];
+					play_entries: unknown[];
+					view_count: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					name: string;
+					format_id: string;
+					hero_card_ids?: string[];
+					play_entries?: unknown[];
+					view_count?: number;
+				};
+				Update: Partial<Database['public']['Tables']['shared_decks']['Insert']>;
+				Relationships: [];
+			};
 			community_corrections: {
 				Row: {
 					id: string;

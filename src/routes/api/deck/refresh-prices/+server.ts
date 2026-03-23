@@ -138,11 +138,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const data = await browseRes.json();
 			const items = data.itemSummaries || [];
 			const cardNum = (card.card_number || '').toUpperCase();
+			const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 
-			// Filter to relevant listings
+			// Filter to relevant listings (normalize spaces/hyphens for variants like "BF 108" vs "BF-108")
 			const relevant = items.filter((item: { title?: string }) => {
-				const t = (item.title || '').toUpperCase();
-				return cardNum && t.includes(cardNum);
+				if (!normalizedCardNum) return false;
+				const normalizedTitle = (item.title || '').toUpperCase().replace(/[-\s]/g, '');
+				return normalizedTitle.includes(normalizedCardNum);
 			});
 
 			const prices = relevant

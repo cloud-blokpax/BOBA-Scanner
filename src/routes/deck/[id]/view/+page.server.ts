@@ -24,7 +24,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	}
 
 	// Try user_decks first, then fall back to shared_decks
-	const { data: deck } = await (locals.supabase as any)  // eslint-disable-line @typescript-eslint/no-explicit-any
+	const { data: deck } = await locals.supabase
 		.from('user_decks')
 		.select('*')
 		.eq('id', id)

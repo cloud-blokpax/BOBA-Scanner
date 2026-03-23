@@ -108,13 +108,16 @@ function roleCheck(flag: FeatureFlag): boolean {
 		}
 		return flag.enabled_for_guest === true;
 	}
-	if (
-		(_userProfileForUserId && _userProfileForUserId !== currentUser.id) ||
-		(Date.now() - _userProfileFetchedAt > PROFILE_MAX_AGE)
-	) {
+	if (_userProfileForUserId && _userProfileForUserId !== currentUser.id) {
+		// Different user signed in — must clear immediately to avoid
+		// granting the new user the old user's admin/member permissions
 		_userProfile = null;
 		_userProfileForUserId = null;
 		_userProfileFetchedAt = 0;
+		_refreshProfile(currentUser.id);
+	} else if (Date.now() - _userProfileFetchedAt > PROFILE_MAX_AGE) {
+		// Same user, stale profile — keep existing profile active while
+		// refreshing to prevent features from flickering off briefly
 		_refreshProfile(currentUser.id);
 	}
 	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
