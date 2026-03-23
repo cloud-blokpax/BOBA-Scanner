@@ -18,7 +18,7 @@ import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
 import { submitReferenceImage } from '$lib/services/reference-images';
-import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
+import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
 // ── Worker instances ────────────────────────────────────────
@@ -41,6 +41,7 @@ let imageWorker: Comlink.Remote<{
  * by a second scan starting before the first one finishes.
  */
 interface ScanContext {
+	traceId: string;
 	lastOcrReading: string | null;
 	lastTier3FailReason: string | null;
 }
@@ -174,7 +175,7 @@ export async function recognizeCard(
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const ctx: ScanContext = { lastOcrReading: null, lastTier3FailReason: null };
+	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null };
 
 	// Convert to ImageBitmap for worker transfer
 	const bitmap =
@@ -234,7 +235,7 @@ export async function recognizeCard(
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
-	const tier1Result = await runTier1(bitmap);
+	const tier1Result = await runTier1(bitmap, ctx);
 	if (tier1Result) {
 		console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
 		return finalize(tier1Result);
@@ -320,7 +321,7 @@ export async function recognizeCard(
 
 // ── Tier 1: Hash Cache Lookup ───────────────────────────────
 
-async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
+async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
 	const hash = await imageWorker!.computeDHash(bitmap);
 
 	// Layer 1: IndexedDB exact match (instant, free)
@@ -397,10 +398,10 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 						// pHash threshold: 256-bit hash, allow up to 20 bits different
 						pHashVerified = pHashDist <= 20;
 						if (!pHashVerified) {
-							console.debug(`[scan:tier1] Fuzzy dHash match rejected by pHash verification (pHash distance=${pHashDist})`);
+							console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy dHash match rejected by pHash verification (pHash distance=${pHashDist})`);
 						}
 					} catch (err) {
-						console.debug('[scan:tier1] pHash computation failed, trusting dHash:', err);
+						console.debug(`[scan:${ctx.traceId}:tier1] pHash computation failed, trusting dHash:`, err);
 						pHashVerified = true;
 					}
 				}
@@ -412,7 +413,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 						const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
 						// Cache the new hash → same card for future exact matches
 						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap);
-						console.debug(`[scan:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
+						console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
 						return {
 							card_id: card.id,
 							card,
@@ -425,7 +426,7 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 			}
 		} catch (err) {
 			// Fuzzy match is non-critical — if the RPC doesn't exist yet, skip
-			console.debug('[scan:tier1] Fuzzy hash lookup unavailable:', err);
+			console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup unavailable:`, err);
 		}
 	}
 
@@ -476,7 +477,7 @@ async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 					const { lookupCommunityCorrection } = await import('$lib/services/community-corrections');
 					correctedNumber = await lookupCommunityCorrection(resolvedNumber);
 				} catch (err) {
-					console.debug('[scan:tier2] Community correction lookup failed:', err);
+					console.debug(`[scan:${ctx.traceId}:tier2] Community correction lookup failed:`, err);
 				}
 			}
 
@@ -508,7 +509,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	try {
 		// Resize for upload
 		const imageBlob = await imageWorker!.resizeForUpload(bitmap, 1024);
-		console.debug(`[scan:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
+		console.debug(`[scan:${ctx.traceId}:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
 
 		const formData = new FormData();
 		formData.append('image', imageBlob, 'scan.jpg');
@@ -518,7 +519,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			body: formData
 		});
 	} catch (err) {
-		console.error('[scan:tier3] Network error calling /api/scan:', err);
+		console.error(`[scan:${ctx.traceId}:tier3] Network error calling /api/scan:`, err);
 		ctx.lastTier3FailReason = 'Network error reaching scan API';
 		return null;
 	}
@@ -526,7 +527,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	if (!response.ok) {
 		let errorBody = '';
 		try { errorBody = await response.text(); } catch { /* ignore */ }
-		console.error(`[scan:tier3] API returned ${response.status}: ${errorBody}`);
+		console.error(`[scan:${ctx.traceId}:tier3] API returned ${response.status}: ${errorBody}`);
 		if (response.status === 401) ctx.lastTier3FailReason = 'Not authenticated — please sign in';
 		else if (response.status === 429) ctx.lastTier3FailReason = 'Rate limited — please wait before scanning again';
 		else if (response.status === 503) ctx.lastTier3FailReason = 'AI service overloaded — try again in a moment';
@@ -538,21 +539,21 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	try {
 		result = await response.json();
 	} catch (err) {
-		console.debug('[scan:tier3] API response JSON parse failed:', err);
-		console.error('[scan:tier3] Invalid JSON in API response');
+		console.debug(`[scan:${ctx.traceId}:tier3] API response JSON parse failed:`, err);
+		console.error(`[scan:${ctx.traceId}:tier3] Invalid JSON in API response`);
 		ctx.lastTier3FailReason = 'Invalid response from scan API';
 		return null;
 	}
 
-	console.debug('[scan:tier3] API response:', JSON.stringify(result, null, 2));
+	console.debug(`[scan:${ctx.traceId}:tier3] API response:`, JSON.stringify(result, null, 2));
 
 	if (!result.success || !result.card) {
-		console.warn('[scan:tier3] API returned success=false or no card data. Raw:', result.raw || '(none)');
+		console.warn(`[scan:${ctx.traceId}:tier3] API returned success=false or no card data. Raw:`, result.raw || '(none)');
 		ctx.lastTier3FailReason = 'AI could not parse card details from image';
 		return null;
 	}
 
-	console.debug(`[scan:tier3] Claude identified: card_number="${result.card.card_number}", hero="${result.card.hero_name}", confidence=${result.card.confidence}`);
+	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: card_number="${result.card.card_number}", hero="${result.card.hero_name}", confidence=${result.card.confidence}`);
 
 	// Match Claude response to local card database (hero-verified)
 	const claudeHero = result.card.hero_name || result.card.card_name || null;
@@ -572,14 +573,14 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 				const powerMatch = heroSearchResults.find(c => c.power === claudePower);
 				if (powerMatch) {
 					card = powerMatch;
-					console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" + power=${claudePower} → ${card.card_number}`);
+					console.debug(`[scan:${ctx.traceId}:tier3] Fallback: matched by hero="${claudeHero}" + power=${claudePower} → ${card.card_number}`);
 				}
 			}
 			// If still no match (or no power info), take the first hero match
 			if (!card) {
 				card = heroSearchResults[0];
 				heroFallbackUsed = true;
-				console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" → ${card.card_number} (hero-only, confidence capped)`);
+				console.debug(`[scan:${ctx.traceId}:tier3] Fallback: matched by hero="${claudeHero}" → ${card.card_number} (hero-only, confidence capped)`);
 			}
 		}
 	}
@@ -601,7 +602,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			const isPartialMatch = matchedHero.includes(expectedHero) || expectedHero.includes(matchedHero);
 			if (!isPartialMatch) {
 				console.warn(
-					`[scan:tier3] Hero mismatch after findCard: Claude said "${claudeHero}" ` +
+					`[scan:${ctx.traceId}:tier3] Hero mismatch after findCard: Claude said "${claudeHero}" ` +
 					`but matched card has hero="${card.hero_name}", name="${card.name}". ` +
 					`Reducing confidence.`
 				);
@@ -609,7 +610,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			}
 		}
 
-		console.debug(`[scan:tier3] Matched to local DB: id=${card.id}, number=${card.card_number}, hero="${card.hero_name}", confidence=${confidence}`);
+		console.debug(`[scan:${ctx.traceId}:tier3] Matched to local DB: id=${card.id}, number=${card.card_number}, hero="${card.hero_name}", confidence=${confidence}`);
 		return {
 			card_id: card.id,
 			card,
@@ -620,7 +621,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 		};
 	}
 
-	console.warn(`[scan:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
+	console.warn(`[scan:${ctx.traceId}:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
 	ctx.lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 
 	// Negative cache: prevent repeated Tier 3 calls for unrecognized cards
@@ -633,7 +634,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 				confidence: 0
 			});
 		} catch (err) {
-			console.debug('[scan:tier3] Failed to write negative cache entry:', err);
+			console.debug(`[scan:${ctx.traceId}:tier3] Failed to write negative cache entry:`, err);
 		}
 	}
 
@@ -684,7 +685,7 @@ async function writeHashToAllLayers(
 	// Automatically submit high-confidence scans as candidate reference images.
 	// The server-side RPC handles the atomic "beat the champion" logic.
 	// This runs in the background — it never blocks the scan result.
-	if (bitmap && imageWorker && confidence >= 0.8) {
+	if (bitmap && imageWorker && confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence) {
 		(async () => {
 			try {
 				// Resize the bitmap to a clean JPEG for upload
@@ -694,7 +695,7 @@ async function writeHashToAllLayers(
 				const { variance: blurVariance } = await imageWorker!.checkBlurry(bitmap, 100);
 
 				// Only submit non-blurry images (variance > 150 means reasonably sharp)
-				if (blurVariance > 150) {
+				if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
 					await submitReferenceImage(cardId, confidence, uploadBlob, blurVariance);
 				}
 			} catch (err) {

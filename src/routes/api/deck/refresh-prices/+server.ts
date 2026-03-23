@@ -12,7 +12,8 @@
  */
 
 import { json, error } from '@sveltejs/kit';
-import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
+import { checkEbayDailyLimit } from '$lib/server/redis';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -97,7 +98,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// ── Fetch prices from eBay ──────────────────────────────
-	const token = await getEbayToken();
+
+	// Check eBay daily API limit before making any calls
+	const withinDailyLimit = await checkEbayDailyLimit();
+	if (!withinDailyLimit) {
+		return json({
+			error: 'eBay daily API limit reached. Try again tomorrow.',
+			results: [],
+			refreshes_remaining: refreshesRemaining - 1,
+			limit: Number(dailyLimit),
+			is_member: isMember
+		}, { status: 503 });
+	}
 
 	// Batch fetch all card metadata in a single query instead of one per card
 	const { data: cardsData } = await supabase
@@ -119,12 +131,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
 			searchUrl.searchParams.set('limit', '50');
 
-			const browseRes = await fetch(searchUrl.toString(), {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-				}
-			});
+			const browseRes = await ebayFetch(searchUrl.toString());
 
 			if (!browseRes.ok) return null;
 

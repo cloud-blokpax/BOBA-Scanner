@@ -56,7 +56,11 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 			const isFirstValid = firstItem && typeof firstItem.id === 'string' && 'card_number' in firstItem && 'name' in firstItem;
 			const isLastValid = lastItem && typeof lastItem.id === 'string' && 'card_number' in lastItem && 'name' in lastItem;
 
-			if (isFirstValid && isLastValid) {
+			// Also verify the count is reasonable — we expect 17,600+ cards.
+			// A very small count indicates a partial write, corruption, or truncation.
+			const countReasonable = cached.length > 100;
+
+			if (isFirstValid && isLastValid && countReasonable) {
 				cards = cached as Card[];
 				buildIndexes();
 				isLoaded = true;
@@ -66,7 +70,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				return cards;
 			}
 
-			console.warn(`[card-db] IDB cache failed validation: count=${cached.length}, firstValid=${String(isFirstValid)}, lastValid=${String(isLastValid)}. Fetching from Supabase.`);
+			console.warn(`[card-db] IDB cache failed validation: count=${cached.length}, firstValid=${String(isFirstValid)}, lastValid=${String(isLastValid)}, countOk=${countReasonable}. Fetching from Supabase.`);
 		}
 	} catch (err) {
 		console.debug('[card-db] IDB cache read failed:', err);

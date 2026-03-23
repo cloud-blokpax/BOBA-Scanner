@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 // ── Hoisted mock data ────────────────────────────────────────
 
 const { MOCK_CARDS, mockImageWorker, mockIdb } = vi.hoisted(() => {
-	const MOCK_CARDS = [
+	const namedCards = [
 		{
 			id: 'card-bf108', name: 'Bo Jackson', hero_name: 'Bo Jackson',
 			athlete_name: 'Bo Jackson', set_code: 'BF', card_number: 'BF-108',
@@ -29,6 +29,16 @@ const { MOCK_CARDS, mockImageWorker, mockIdb } = vi.hoisted(() => {
 			battle_zone: null, image_url: null, created_at: '2024-01-01'
 		}
 	];
+
+	// Generate filler cards to exceed the IDB count reasonableness threshold (>100)
+	const fillerCards = Array.from({ length: 100 }, (_, i) => ({
+		id: `filler-${i}`, name: `Filler ${i}`, hero_name: `Filler ${i}`,
+		athlete_name: null, set_code: 'FILL', card_number: `FIL-${String(i).padStart(3, '0')}`,
+		parallel: null, power: 50, rarity: 'common', weapon_type: null,
+		battle_zone: null, image_url: null, created_at: '2024-01-01'
+	}));
+
+	const MOCK_CARDS = [...namedCards, ...fillerCards];
 
 	const mockImageWorker = {
 		computeDHash: vi.fn().mockResolvedValue('abcdef1234567890'),
@@ -110,6 +120,16 @@ vi.mock('$lib/data/boba-config', () => ({
 		maxFileSize: 10_000_000,
 		maxPixels: 16_000_000,
 		allowedImageTypes: ['image/jpeg', 'image/png', 'image/webp']
+	},
+	BOBA_PIPELINE_CONFIG: {
+		referenceImageMinVariance: 150,
+		maxOcrCorrections: 500,
+		ocrWorkerRestartInterval: 50,
+		referenceImageMaxDimension: 800,
+		referenceImageMinConfidence: 0.8,
+		hashFuzzyMaxDistance: 5,
+		pHashVerifyMaxDistance: 20,
+		hashDistanceConfidencePenalty: 0.015,
 	}
 }));
 

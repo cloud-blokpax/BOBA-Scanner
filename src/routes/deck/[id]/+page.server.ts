@@ -23,8 +23,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		throw error(503, 'Database not available');
 	}
 
-	// user_decks is not yet in generated Database types — cast to any
-	const { data: deck, error: fetchErr } = await (locals.supabase as any)  // eslint-disable-line @typescript-eslint/no-explicit-any
+	// user_decks is not yet in generated Database types — narrowed cast preserves client methods
+	type AnySupabase = import('@supabase/supabase-js').SupabaseClient<any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+	const { data: deck, error: fetchErr } = await (locals.supabase as AnySupabase)
 		.from('user_decks')
 		.select('*')
 		.eq('id', id)

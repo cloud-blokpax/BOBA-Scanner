@@ -6,12 +6,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+type AnySupabase = import('@supabase/supabase-js').SupabaseClient<any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.supabase) return json({ leaderboard: [], user_rank: null });
 
-	// Tables/views not in generated types — use untyped client
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const client = locals.supabase as any;
+	// Tables/views not in generated types — narrowed to AnySupabase for method safety
+	const client = locals.supabase as AnySupabase;
 
 	const userId = url.searchParams.get('user_id');
 

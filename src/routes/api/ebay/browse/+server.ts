@@ -9,7 +9,7 @@
  */
 
 import { json, error } from '@sveltejs/kit';
-import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
+import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { calculatePriceStats } from '$lib/utils/pricing';
@@ -59,18 +59,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			return json({ error: 'API call limit reached for today', avgPrice: null, lowPrice: null, highPrice: null, count: 0 }, { status: 503 });
 		}
 		try {
-			const token = await getEbayToken();
 			const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 			searchUrl.searchParams.set('q', query);
 			searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
 			searchUrl.searchParams.set('limit', '50');
 
-			const browseRes = await fetch(searchUrl.toString(), {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-				}
-			});
+			const browseRes = await ebayFetch(searchUrl.toString());
 
 			if (!browseRes.ok) {
 				throw error(502, `eBay Browse API: ${browseRes.status}`);
@@ -134,18 +128,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	}
 
 	try {
-		const token = await getEbayToken();
 		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 		searchUrl.searchParams.set('q', 'bo jackson');
 		searchUrl.searchParams.set('filter', `sellers:{${sanitizedSeller}}`);
 		searchUrl.searchParams.set('limit', '200');
 
-		const browseRes = await fetch(searchUrl.toString(), {
-			headers: {
-				Authorization: `Bearer ${token}`,
-				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-			}
-		});
+		const browseRes = await ebayFetch(searchUrl.toString());
 
 		if (!browseRes.ok) {
 			throw error(502, `eBay Browse API: ${browseRes.status}`);
