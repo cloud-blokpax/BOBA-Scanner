@@ -190,7 +190,9 @@
 		<div class="shop-empty">
 			<p>Select a deck with hero cards to see gap analysis.</p>
 		</div>
-	{:else}
+	{:else if loading}
+		<div class="shop-loading">Analyzing deck gaps...</div>
+	{:else if gapAnalysis}
 		<!-- Controls bar -->
 		<div class="controls-bar">
 			<select bind:value={selectedDeckId} class="format-select" onchange={() => computeGaps()}>
