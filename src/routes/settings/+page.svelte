@@ -55,7 +55,8 @@
 	async function loadBadges() {
 		const client = getSupabase();
 		if (!client || !user()) return;
-		// Table not in generated types — use untyped query
+		// Tables/views not in generated types — client-side cast is intentional
+		// since server-side typed wrappers can't be imported in .svelte files
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const { data } = await (client as any)
 			.from('user_badges')

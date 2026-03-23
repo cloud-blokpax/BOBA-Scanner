@@ -7,11 +7,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mocks ────────────────────────────────────────────────────
 
-const mockGetEbayToken = vi.fn();
 const mockIsEbayConfigured = vi.fn();
+const mockEbayFetch = vi.fn();
 vi.mock('$lib/server/ebay-auth', () => ({
-	getEbayToken: (...args: unknown[]) => mockGetEbayToken(...args),
-	isEbayConfigured: () => mockIsEbayConfigured()
+	isEbayConfigured: () => mockIsEbayConfigured(),
+	ebayFetch: (...args: unknown[]) => mockEbayFetch(...args)
 }));
 
 const mockFetch = vi.fn();
@@ -53,7 +53,6 @@ describe('GET /api/price/[cardId]', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockIsEbayConfigured.mockReturnValue(true);
-		mockGetEbayToken.mockResolvedValue('test-ebay-token');
 	});
 
 	describe('input validation', () => {
@@ -72,7 +71,7 @@ describe('GET /api/price/[cardId]', () => {
 		});
 
 		it('accepts valid UUID-like card IDs', async () => {
-			mockFetch.mockResolvedValue({
+			mockEbayFetch.mockResolvedValue({
 				ok: true,
 				json: () => Promise.resolve({ itemSummaries: [] })
 			});
@@ -97,7 +96,7 @@ describe('GET /api/price/[cardId]', () => {
 
 	describe('price calculation', () => {
 		it('returns price data from eBay listings', async () => {
-			mockFetch.mockResolvedValue({
+			mockEbayFetch.mockResolvedValue({
 				ok: true,
 				json: () => Promise.resolve({
 					itemSummaries: [
@@ -120,7 +119,7 @@ describe('GET /api/price/[cardId]', () => {
 		});
 
 		it('returns null prices when no listings found', async () => {
-			mockFetch.mockResolvedValue({
+			mockEbayFetch.mockResolvedValue({
 				ok: true,
 				json: () => Promise.resolve({ itemSummaries: [] })
 			});
@@ -136,7 +135,7 @@ describe('GET /api/price/[cardId]', () => {
 		});
 
 		it('sets edge cache headers', async () => {
-			mockFetch.mockResolvedValue({
+			mockEbayFetch.mockResolvedValue({
 				ok: true,
 				json: () => Promise.resolve({ itemSummaries: [] })
 			});

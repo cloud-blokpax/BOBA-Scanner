@@ -11,6 +11,7 @@
 
 // Tesseract types — import type-only so it's erased at build time
 import type { Worker as TesseractWorker } from 'tesseract.js';
+import { BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 
 interface OcrWord {
 	text: string;
@@ -57,7 +58,7 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 	if (!worker) await initOcr();
 
 	// Restart worker every 50 recognitions (WASM memory leak mitigation, reduced from 100 for better mobile memory)
-	if (++recognitionCount > 50) {
+	if (++recognitionCount > BOBA_PIPELINE_CONFIG.ocrWorkerRestartInterval) {
 		try {
 			const oldWorker = worker;
 			// Don't null out worker or _initPromise until new worker is ready

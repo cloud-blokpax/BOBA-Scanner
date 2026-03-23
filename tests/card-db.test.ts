@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 
-const { MOCK_CARDS } = vi.hoisted(() => ({
-	MOCK_CARDS: [
+const { MOCK_CARDS } = vi.hoisted(() => {
+	const namedCards = [
 		{
 			id: '1', name: 'Bo Jackson', hero_name: 'Bo Jackson', athlete_name: 'Bo Jackson',
 			set_code: 'ALPHA', card_number: 'ALP-001', parallel: null, power: 95,
@@ -35,8 +35,18 @@ const { MOCK_CARDS } = vi.hoisted(() => ({
 			rarity: 'common', weapon_type: null, battle_zone: null, image_url: null,
 			created_at: '2024-01-01'
 		}
-	]
-}));
+	];
+
+	// Generate filler cards to exceed the IDB count reasonableness threshold (>100)
+	const fillerCards = Array.from({ length: 100 }, (_, i) => ({
+		id: `filler-${i}`, name: `Filler ${i}`, hero_name: `Filler ${i}`, athlete_name: null,
+		set_code: 'FILL', card_number: `FIL-${String(i).padStart(3, '0')}`, parallel: null,
+		power: 50, rarity: 'common', weapon_type: null, battle_zone: null, image_url: null,
+		created_at: '2024-01-01'
+	}));
+
+	return { MOCK_CARDS: [...namedCards, ...fillerCards] };
+});
 
 // Mock idb to return our test cards
 vi.mock('$lib/services/idb', () => ({
@@ -91,7 +101,7 @@ describe('card-db integration', () => {
 
 	it('loads cards from mock IDB data', () => {
 		const cards = getAllCards();
-		expect(cards.length).toBe(5);
+		expect(cards.length).toBe(105); // 5 named + 100 filler
 	});
 
 	it('findCard returns exact match by card number', () => {

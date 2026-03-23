@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { env as publicEnv } from '$env/dynamic/public';
+import { BOBA_RATE_LIMITS } from '$lib/data/boba-config';
 
 // ── Global rate limiter (100 requests/minute per IP) ─────────
 const globalRateMap = new Map<string, { count: number; windowStart: number }>();
@@ -35,7 +36,7 @@ const globalRateLimit: Handle = async ({ event, resolve }) => {
 	globalRateMap.set(ip, entry);
 
 	// Periodic cleanup to prevent memory leak
-	if (globalRateMap.size > 5000) {
+	if (globalRateMap.size > BOBA_RATE_LIMITS.globalRateLimitMapMaxSize) {
 		for (const [k, v] of globalRateMap) {
 			if (now - v.windowStart > GLOBAL_WINDOW_MS * 2) globalRateMap.delete(k);
 		}

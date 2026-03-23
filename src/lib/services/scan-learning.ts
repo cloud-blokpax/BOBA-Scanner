@@ -8,9 +8,10 @@
 import { browser } from '$app/environment';
 import { findCard } from '$lib/services/card-db';
 import { idb } from '$lib/services/idb';
+import { BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 
 const IDB_KEY = 'ocrCorrections';
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = BOBA_PIPELINE_CONFIG.maxOcrCorrections;
 
 interface CorrectionEntry {
 	confirmed: string; // Confirmed card number
