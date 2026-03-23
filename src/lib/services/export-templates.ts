@@ -1,14 +1,13 @@
 /**
  * Export template management.
  *
- * Replaces legacy src/features/export/templates.js.
- * Templates are stored in localStorage and synced to Supabase.
+ * Templates are stored in IndexedDB via the idb meta store.
  */
 
 import { browser } from '$app/environment';
-import { getSupabase } from '$lib/services/supabase';
+import { idb } from '$lib/services/idb';
 
-const STORAGE_KEY = 'exportTemplates';
+const IDB_KEY = 'exportTemplates';
 
 export interface ExportTemplate {
 	id: string;
@@ -60,26 +59,49 @@ export const EBAY_CONDITION_MAP: Record<string, string> = {
 	Poor: '6000'
 };
 
+// In-memory cache (loaded asynchronously from IDB)
+let _templatesCache: ExportTemplate[] | null = null;
+
 /**
- * Get user templates from localStorage.
+ * Get user templates. Returns cached value or loads from IDB.
  */
-export function getUserTemplates(): ExportTemplate[] {
+export async function getUserTemplates(): Promise<ExportTemplate[]> {
+	if (_templatesCache) return _templatesCache;
 	if (!browser) return [];
+
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw ? JSON.parse(raw) : [];
+		const stored = await idb.getMeta<ExportTemplate[]>(IDB_KEY);
+		if (Array.isArray(stored)) {
+			_templatesCache = stored;
+			return stored;
+		}
 	} catch (err) {
-		console.debug('[export-templates] User templates load failed:', err);
-		return [];
+		console.debug('[export-templates] IDB load failed:', err);
 	}
+
+	// One-time migration from localStorage
+	try {
+		const legacyRaw = localStorage.getItem('exportTemplates');
+		if (legacyRaw) {
+			const legacy = JSON.parse(legacyRaw);
+			if (Array.isArray(legacy)) {
+				await idb.setMeta(IDB_KEY, legacy);
+				_templatesCache = legacy;
+				localStorage.removeItem('exportTemplates');
+				return legacy;
+			}
+		}
+	} catch { /* ignore */ }
+
+	_templatesCache = [];
+	return [];
 }
 
 /**
  * Save a user template.
  */
-export function saveUserTemplate(template: Omit<ExportTemplate, 'isUser' | 'isAdmin'>): void {
-	if (!browser) return;
-	const templates = getUserTemplates();
+export async function saveUserTemplate(template: Omit<ExportTemplate, 'isUser' | 'isAdmin'>): Promise<void> {
+	const templates = await getUserTemplates();
 	const idx = templates.findIndex((t) => t.id === template.id);
 	const entry: ExportTemplate = { ...template, isUser: true, isAdmin: false };
 	if (idx >= 0) {
@@ -87,16 +109,17 @@ export function saveUserTemplate(template: Omit<ExportTemplate, 'isUser' | 'isAd
 	} else {
 		templates.push(entry);
 	}
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+	_templatesCache = templates;
+	await idb.setMeta(IDB_KEY, templates);
 }
 
 /**
  * Delete a user template.
  */
-export function deleteUserTemplate(id: string): void {
-	if (!browser) return;
-	const templates = getUserTemplates().filter((t) => t.id !== id);
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+export async function deleteUserTemplate(id: string): Promise<void> {
+	const templates = (await getUserTemplates()).filter((t) => t.id !== id);
+	_templatesCache = templates;
+	await idb.setMeta(IDB_KEY, templates);
 }
 
 /**
