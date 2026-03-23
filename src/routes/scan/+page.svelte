@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
+	import ScannerErrorBoundary from '$lib/components/ScannerErrorBoundary.svelte';
 	import { initScanner } from '$lib/stores/scanner';
 	import type { ScanResult } from '$lib/types';
 
@@ -48,16 +49,18 @@
 </svelte:head>
 
 <div class="scan-page">
-	<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} />
-	{#if scanResult}
-		<ScanConfirmation
-			result={scanResult}
-			{capturedImageUrl}
-			{isAuthenticated}
-			onScanAnother={handleScanAnother}
-			onClose={handleClose}
-		/>
-	{/if}
+	<ScannerErrorBoundary>
+		<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} />
+		{#if scanResult}
+			<ScanConfirmation
+				result={scanResult}
+				{capturedImageUrl}
+				{isAuthenticated}
+				onScanAnother={handleScanAnother}
+				onClose={handleClose}
+			/>
+		{/if}
+	</ScannerErrorBoundary>
 </div>
 
 <style>
