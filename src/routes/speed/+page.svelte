@@ -3,9 +3,9 @@
 	import { page } from '$app/stores';
 	import { fade } from 'svelte/transition';
 	import Scanner from '$lib/components/Scanner.svelte';
-	import { initScanner } from '$lib/stores/scanner';
+	import { initScanner } from '$lib/stores/scanner.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import {
 		speedGame,
 		gamePhase,
@@ -21,7 +21,7 @@
 		highScores,
 		addHighScore,
 		RARITY_POINTS
-	} from '$lib/stores/speed-game';
+	} from '$lib/stores/speed-game.svelte';
 	import type { ScanResult, CardRarity } from '$lib/types';
 	import { tryAwardBadge } from '$lib/services/badges';
 
@@ -55,8 +55,8 @@
 	let isNewHighScore = $state(false);
 
 	async function shareScore() {
-		const finalScore = $gameScore;
-		const cards = $scanCount;
+		const finalScore = gameScore();
+		const cards = scanCount();
 		const duration = selectedDuration;
 		const text = `I scored ${finalScore} points scanning ${cards} cards in ${duration}s on BOBA Scanner! Can you beat me?`;
 		const url = `${window.location.origin}/speed`;
@@ -113,17 +113,13 @@
 			tickCountdown();
 
 			// Check if we transitioned to playing
-			const unsub = gamePhase.subscribe((phase) => {
-				if (phase === 'playing') {
-					if (countdownInterval !== null) {
-						clearInterval(countdownInterval);
-						countdownInterval = null;
-					}
-					startGameTimer();
+			if (gamePhase() === 'playing') {
+				if (countdownInterval !== null) {
+					clearInterval(countdownInterval);
+					countdownInterval = null;
 				}
-			});
-			// Immediately unsubscribe after check
-			unsub();
+				startGameTimer();
+			}
 		}, 1000);
 	}
 
@@ -150,7 +146,7 @@
 		rafId = null;
 
 		// Animate score count-up
-		const finalScore = $gameScore;
+		const finalScore = gameScore();
 		const startTime = performance.now();
 		const duration = 1000;
 		displayScore = 0;
@@ -171,7 +167,7 @@
 		scoreAnimId = requestAnimationFrame(animateScore);
 
 		// Check for high score
-		isNewHighScore = addHighScore(finalScore, $scanCount, selectedDuration);
+		isNewHighScore = addHighScore(finalScore, scanCount(), selectedDuration);
 		triggerHaptic('success');
 
 		// Award Speed Demon badge for 50+ points
@@ -181,7 +177,7 @@
 	}
 
 	function handleSpeedResult(result: ScanResult, imageUrl?: string) {
-		if ($gamePhase !== 'playing') return;
+		if (gamePhase() !== 'playing') return;
 
 		if (result.card) {
 			const pts = recordScan(result);
@@ -216,27 +212,27 @@
 
 	// Derive timer color
 	const timerColor = $derived.by(() => {
-		const t = $timeRemaining;
+		const t = timeRemaining();
 		if (t > 15) return '#22C55E';
 		if (t > 10) return '#F59E0B';
 		return '#EF4444';
 	});
 
-	const timerPulse = $derived($timeRemaining < 5 && $gamePhase === 'playing');
+	const timerPulse = $derived(timeRemaining() < 5 && gamePhase() === 'playing');
 	const timerPercent = $derived.by(() => {
-		const game = $speedGame;
+		const game = speedGame();
 		return game.duration > 0 ? (game.timeRemaining / game.duration) * 100 : 0;
 	});
 
 	// Results derived values
 	const avgScanTime = $derived.by(() => {
-		const entries = $speedGame.entries;
+		const entries = speedGame().entries;
 		if (entries.length === 0) return 0;
 		return Math.round(entries.reduce((sum, e) => sum + e.processingMs, 0) / entries.length);
 	});
 
 	const tierBreakdown = $derived.by(() => {
-		const entries = $speedGame.entries;
+		const entries = speedGame().entries;
 		return {
 			hash_cache: entries.filter((e) => e.scanMethod === 'hash_cache').length,
 			tesseract: entries.filter((e) => e.scanMethod === 'tesseract').length,
@@ -245,7 +241,7 @@
 	});
 
 	const bestEntry = $derived.by(() => {
-		const entries = $speedGame.entries;
+		const entries = speedGame().entries;
 		if (entries.length === 0) return null;
 		const RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, ultra_rare: 3, legendary: 4 };
 		return entries.reduce((best, e) => {
@@ -268,7 +264,7 @@
 </svelte:head>
 
 <div class="speed-page">
-	{#if $gamePhase === 'idle'}
+	{#if gamePhase() === 'idle'}
 		<!-- Pre-Game Screen -->
 		<div class="idle-screen">
 			<h1 class="speed-title">Speed Scanner</h1>
@@ -299,10 +295,10 @@
 				</div>
 			</div>
 
-			{#if $highScores.length > 0}
+			{#if highScores().length > 0}
 				<div class="high-scores">
 					<h3>High Scores</h3>
-					{#each $highScores as hs, i}
+					{#each highScores() as hs, i}
 						<div class="hs-row">
 							<span class="hs-rank">#{i + 1}</span>
 							<span class="hs-score">{hs.score} pts</span>
@@ -315,12 +311,12 @@
 
 			<button class="start-btn" onclick={handleStart}>Start</button>
 		</div>
-	{:else if $gamePhase === 'countdown'}
+	{:else if gamePhase() === 'countdown'}
 		<!-- Countdown Overlay -->
 		<div class="countdown-overlay">
-			{#key $speedGame.countdownValue}
+			{#key speedGame().countdownValue}
 				<div class="countdown-number">
-					{$speedGame.countdownValue}
+					{speedGame().countdownValue}
 				</div>
 			{/key}
 		</div>
@@ -328,7 +324,7 @@
 		<div class="scanner-bg">
 			<Scanner onResult={handleSpeedResult} {isAuthenticated} paused={true} />
 		</div>
-	{:else if $gamePhase === 'playing'}
+	{:else if gamePhase() === 'playing'}
 		<!-- Active Game -->
 		<div class="game-hud">
 			<!-- Timer bar -->
@@ -339,9 +335,9 @@
 				></div>
 			</div>
 			<div class="hud-stats">
-				<div class="hud-cards">Cards: {$scanCount}</div>
-				<div class="hud-time" style="color: {timerColor};">{Math.ceil($timeRemaining)}s</div>
-				<div class="hud-score">{$gameScore}</div>
+				<div class="hud-cards">Cards: {scanCount()}</div>
+				<div class="hud-time" style="color: {timerColor};">{Math.ceil(timeRemaining())}s</div>
+				<div class="hud-score">{gameScore()}</div>
 			</div>
 		</div>
 
@@ -360,7 +356,7 @@
 		</div>
 
 		<Scanner onResult={handleSpeedResult} {isAuthenticated} paused={false} />
-	{:else if $gamePhase === 'finished'}
+	{:else if gamePhase() === 'finished'}
 		<!-- Results Screen -->
 		<div class="results-overlay">
 			<div class="results-container">
@@ -375,7 +371,7 @@
 
 				<div class="results-stats">
 					<div class="result-stat">
-						<span class="rs-value">{$scanCount}</span>
+						<span class="rs-value">{scanCount()}</span>
 						<span class="rs-label">Cards Scanned</span>
 					</div>
 					{#if bestEntry}
@@ -390,7 +386,7 @@
 					</div>
 				</div>
 
-				{#if $scanCount > 0}
+				{#if scanCount() > 0}
 					<div class="tier-breakdown">
 						<h3>Recognition Breakdown</h3>
 						<div class="tier-bars">
@@ -418,7 +414,7 @@
 					<div class="scan-log">
 						<h3>Scan Log</h3>
 						<div class="log-list">
-							{#each $speedGame.entries as entry, i}
+							{#each speedGame().entries as entry, i}
 								<div class="log-entry">
 									<span class="log-index">{i + 1}.</span>
 									<span class="log-name" style="color: {RARITY_COLORS[entry.rarity ?? 'common']}">{entry.heroName || entry.cardId}</span>

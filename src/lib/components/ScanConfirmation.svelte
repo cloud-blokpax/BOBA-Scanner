@@ -1,16 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
-	import { getPrice } from '$lib/stores/prices';
+	import { addToCollection,ownedCardCounts } from '$lib/stores/collection.svelte';
+	import { getPrice } from '$lib/stores/prices.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
-	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import CardFlipReveal from '$lib/components/CardFlipReveal.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import type { ScanResult, Card } from '$lib/types';
 	import { tryAwardBadge } from '$lib/services/badges';
-	import { get } from 'svelte/store';
 	import type { ActionReturn } from 'svelte/action';
 
 	// Lazy-load the tilt action — it's visual polish, not critical for initial render
@@ -96,7 +95,7 @@
 		confidence: 1.0,
 		failReason: null
 	} : result);
-	const ownedCount = $derived(card ? ($ownedCardCounts.get(card.id) || 0) : 0);
+	const ownedCount = $derived(card ? (ownedCardCounts().get(card.id) || 0) : 0);
 	const isOwned = $derived(ownedCount > 0);
 	const isLowConfidence = $derived(activeResult.confidence < 0.7);
 
@@ -131,7 +130,7 @@
 
 	// Fetch price history for premium users
 	$effect(() => {
-		if (!$hasPriceHistory || !card?.id) return;
+		if (!hasPriceHistory() || !card?.id) return;
 		const controller = new AbortController();
 		historyLoading = true;
 		fetch(`/api/price/${encodeURIComponent(card.id)}/history`, { signal: controller.signal })
@@ -147,7 +146,7 @@
 
 	// Check eBay connection status for scan-to-list users
 	$effect(() => {
-		if (!$hasScanToList || ebayChecked) return;
+		if (!hasScanToList() || ebayChecked) return;
 		const controller = new AbortController();
 		fetch('/api/ebay/status', { signal: controller.signal })
 			.then(res => res.ok ? res.json() : Promise.reject())
@@ -204,7 +203,7 @@
 			setTimeout(() => { showConfetti = false; }, 800);
 
 			// Award Collector badge at 100 unique cards
-			const counts = get(ownedCardCounts);
+			const counts = ownedCardCounts();
 			if (counts.size >= 100) {
 				tryAwardBadge('collector');
 			}
@@ -299,7 +298,7 @@
 				</div>
 
 				<!-- Price sparkline (premium) -->
-				{#if $hasPriceHistory && historyData.length > 1}
+				{#if hasPriceHistory() && historyData.length > 1}
 					{@const prices = historyData.map(d => d.price_mid).filter((p): p is number => p != null)}
 					{@const min = Math.min(...prices)}
 					{@const max = Math.max(...prices)}
@@ -319,7 +318,7 @@
 							<polyline points={points} fill="none" stroke={trend >= 0 ? '#10b981' : '#ef4444'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 						</svg>
 					</div>
-				{:else if $hasPriceHistory && historyLoading}
+				{:else if hasPriceHistory() && historyLoading}
 					<div class="price-sparkline"><div class="price-shimmer" style="width: 100%; height: 40px;"></div></div>
 				{/if}
 
@@ -374,7 +373,7 @@
 
 				<!-- Actions -->
 				<!-- eBay listing (premium) -->
-				{#if $hasScanToList && card}
+				{#if hasScanToList() && card}
 					<div class="ebay-action">
 						{#if listingUrl}
 							<a href={listingUrl} target="_blank" rel="noopener noreferrer" class="btn btn-list btn-listed">View on eBay</a>

@@ -6,9 +6,23 @@
  */
 
 import { getSupabase } from './supabase';
-import { mapParallelToRarity } from '$lib/data/static-cards';
 import { PARALLEL_TYPES } from '$lib/data/boba-parallels';
-import type { CardRarity } from '$lib/types';
+import type { Card, CardRarity } from '$lib/types';
+
+/**
+ * Best-effort mapping from parallel name to rarity.
+ * Paper = common, standard Battlefoil = uncommon, named foils = rare,
+ * Superfoil/Inspired Ink = ultra_rare, Promo = legendary.
+ */
+export function mapParallelToRarity(parallel: string | null): Card['rarity'] {
+	if (!parallel) return 'common';
+	const p = parallel.toLowerCase();
+	if (p === 'paper' || p === 'play' || p === 'bonus play') return 'common';
+	if (p === 'battlefoil') return 'uncommon';
+	if (p.includes('superfoil') || p.includes('inspired ink')) return 'ultra_rare';
+	if (p.includes('battlefoil')) return 'rare';
+	return 'common';
+}
 
 // In-memory cache of parallel→rarity mappings
 let configMap = new Map<string, CardRarity>();

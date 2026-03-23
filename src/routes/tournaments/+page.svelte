@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getSupabase } from '$lib/services/supabase';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 

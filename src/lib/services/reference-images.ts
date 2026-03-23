@@ -10,7 +10,7 @@
 
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
-import { showToast } from '$lib/stores/toast';
+import { showToast } from '$lib/stores/toast.svelte';
 
 export interface ReferenceSubmissionResult {
 	accepted: boolean;

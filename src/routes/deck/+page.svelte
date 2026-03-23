@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { fetchUserDecks, deleteDeck, computeDeckStats, createDeck, updateDeckContents, getFormatDefaults, type UserDeck } from '$lib/services/deck-service';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 
 	const formatOptions = getFormatOptions();
 

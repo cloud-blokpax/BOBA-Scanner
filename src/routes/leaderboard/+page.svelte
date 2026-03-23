@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { user } from '$lib/stores/auth';
+	import { user } from '$lib/stores/auth.svelte';
 	import { myTopImageCount, myRank, loadMyReferenceStats } from '$lib/services/reference-images';
 
 	interface LeaderboardEntry {
@@ -15,7 +15,7 @@
 	let stats = $state<{ total_reference_images: number; total_contributors: number; coverage_percent: string } | null>(null);
 	let loading = $state(true);
 
-	const currentUserId = $derived($user?.id ?? null);
+	const currentUserId = $derived(user()?.id ?? null);
 
 	onMount(async () => {
 		try {

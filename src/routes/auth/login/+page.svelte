@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { signInWithGoogle } from '$lib/stores/auth';
+	import { signInWithGoogle } from '$lib/stores/auth.svelte';
 
 	const redirectTo = $derived($page.url.searchParams.get('redirectTo') ?? '/');
 	const error = $derived($page.url.searchParams.get('error'));

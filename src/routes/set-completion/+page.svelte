@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { collectionItems } from '$lib/stores/collection';
+	import { collectionItems } from '$lib/stores/collection.svelte';
 	import { searchCards } from '$lib/services/card-db';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { buildEbaySoldUrl } from '$lib/services/ebay';
 
 	interface SetProgress {
@@ -22,7 +22,7 @@
 		loading = true;
 		try {
 			// Get all unique set codes from collection
-			const items = $collectionItems;
+			const items = collectionItems();
 			const ownedBySet = new Map<string, Set<string>>();
 
 			for (const item of items) {
@@ -79,11 +79,11 @@
 		return '#6b7280';
 	}
 
-	// Run once on mount; re-run when collectionItems changes
+	// Run once on mount; re-run when collectionItems() changes
 	let _prevItemCount = -1;
 	onMount(() => { analyzeCompletion(); });
 	$effect(() => {
-		const count = $collectionItems.length;
+		const count = collectionItems().length;
 		if (count !== _prevItemCount && _prevItemCount !== -1) {
 			analyzeCompletion();
 		}

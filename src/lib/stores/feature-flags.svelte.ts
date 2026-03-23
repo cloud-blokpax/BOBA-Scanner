@@ -1,15 +1,10 @@
 /**
  * Feature flags store — role-based feature gating backed by Supabase.
- *
- * Replaces legacy src/core/infra/feature-flags.js.
- * Uses Svelte stores for reactive state.
  */
 
-import { writable, derived, get } from 'svelte/store';
 import { getSupabase } from '$lib/services/supabase';
-import { user } from '$lib/stores/auth';
+import { user } from '$lib/stores/auth.svelte';
 
-// Feature definitions (fallback defaults)
 export interface FeatureFlag {
 	feature_key: string;
 	display_name: string;
@@ -45,8 +40,6 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_member: true,
 		enabled_for_admin: true
 	},
-
-	// --- Premium Features ---
 	{
 		feature_key: 'price_history',
 		display_name: 'Price History & Alerts',
@@ -82,14 +75,18 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 	}
 ];
 
-// Stores
-export const featureFlags = writable<Map<string, FeatureFlag>>(
+// ── Private mutable state ──────────────────────────────────
+let _featureFlags = $state<Map<string, FeatureFlag>>(
 	new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f]))
 );
-export const userOverrides = writable<Map<string, boolean>>(new Map());
-export const flagsLoaded = writable(false);
+let _userOverrides = $state<Map<string, boolean>>(new Map());
+let _flagsLoaded = $state(false);
 
-// User role helpers
+// ── Public reactive accessors ──────────────────────────────────
+export function featureFlags(): Map<string, FeatureFlag> { return _featureFlags; }
+export function userOverrides(): Map<string, boolean> { return _userOverrides; }
+export function flagsLoaded(): boolean { return _flagsLoaded; }
+
 interface UserProfile {
 	is_member?: boolean;
 	is_admin?: boolean;
@@ -98,13 +95,12 @@ interface UserProfile {
 let _userProfile: UserProfile | null = null;
 let _userProfileForUserId: string | null = null;
 let _userProfileFetchedAt = 0;
-const PROFILE_MAX_AGE = 60_000; // 60 seconds
+const PROFILE_MAX_AGE = 60_000;
 
 function roleCheck(flag: FeatureFlag): boolean {
 	if (flag.enabled_globally) return true;
-	const currentUser = get(user);
+	const currentUser = user();
 	if (!currentUser) {
-		// User logged out — clear stale profile
 		if (_userProfile) {
 			_userProfile = null;
 			_userProfileForUserId = null;
@@ -112,7 +108,6 @@ function roleCheck(flag: FeatureFlag): boolean {
 		}
 		return flag.enabled_for_guest === true;
 	}
-	// Invalidate if user changed or profile is stale
 	if (
 		(_userProfileForUserId && _userProfileForUserId !== currentUser.id) ||
 		(Date.now() - _userProfileFetchedAt > PROFILE_MAX_AGE)
@@ -120,7 +115,6 @@ function roleCheck(flag: FeatureFlag): boolean {
 		_userProfile = null;
 		_userProfileForUserId = null;
 		_userProfileFetchedAt = 0;
-		// Trigger async profile refresh (non-blocking)
 		_refreshProfile(currentUser.id);
 	}
 	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
@@ -140,55 +134,42 @@ async function _refreshProfile(userId: string): Promise<void> {
 		_userProfile = profile || null;
 		_userProfileForUserId = userId;
 		_userProfileFetchedAt = Date.now();
-		// Force derived stores to recalculate
-		featureFlags.update(f => new Map(f));
+		_featureFlags = new Map(_featureFlags);
 	} catch (err) {
 		console.debug('[feature-flags] Profile refresh failed:', err);
 	}
 }
 
-/**
- * Check if a feature is enabled for the current user.
- */
 export function isFeatureEnabled(featureKey: string): boolean {
-	const overrides = get(userOverrides);
-	if (overrides.has(featureKey)) {
-		return overrides.get(featureKey)!;
+	if (_userOverrides.has(featureKey)) {
+		return _userOverrides.get(featureKey)!;
 	}
-
-	const flags = get(featureFlags);
-	const flag = flags.get(featureKey);
+	const flag = _featureFlags.get(featureKey);
 	if (!flag) return false;
-
 	return roleCheck(flag);
 }
 
 /**
- * Reactive derived store for a specific feature flag.
+ * Reactive check for a specific feature flag.
+ * Returns a function — call in templates: {#if hasPriceHistory()}
  */
-export function featureEnabled(featureKey: string) {
-	return derived([featureFlags, userOverrides, user], ([$flags, $overrides, $user]) => {
-		if ($overrides.has(featureKey)) return $overrides.get(featureKey)!;
-		const flag = $flags.get(featureKey);
+export function featureEnabled(featureKey: string): () => boolean {
+	return () => {
+		const flag = _featureFlags.get(featureKey);
 		if (!flag) return false;
-		// $user is accessed here to ensure the derived store re-evaluates when user changes.
-		// roleCheck() uses get(user) internally for profile data, but reactive tracking
-		// requires the dependency to be read in this callback.
-		void $user;
+		const override = _userOverrides.get(featureKey);
+		if (override !== undefined) return override;
+		void user();
 		return roleCheck(flag);
-	});
+	};
 }
 
-/**
- * Load feature flags from Supabase. Call early in app lifecycle.
- */
 export async function loadFeatureFlags(): Promise<void> {
 	try {
 		const client = getSupabase();
 		if (!client) {
-			// No Supabase — use defaults immediately, skip DB fetch
-			featureFlags.set(new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f])));
-			flagsLoaded.set(true);
+			_featureFlags = new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f]));
+			_flagsLoaded = true;
 			return;
 		}
 
@@ -198,12 +179,10 @@ export async function loadFeatureFlags(): Promise<void> {
 		const flagMap = new Map<string, FeatureFlag>();
 
 		if (flagErr) {
-			// Table may not exist — use defaults
 			for (const def of FEATURE_DEFINITIONS) {
 				flagMap.set(def.feature_key, def);
 			}
 		} else {
-			// Merge DB flags with definitions
 			for (const def of FEATURE_DEFINITIONS) {
 				const dbFlag = flags.find((f) => f.feature_key === def.feature_key);
 				flagMap.set(def.feature_key, dbFlag ? { ...def, ...dbFlag } : { ...def });
@@ -215,12 +194,10 @@ export async function loadFeatureFlags(): Promise<void> {
 			}
 		}
 
-		featureFlags.set(flagMap);
+		_featureFlags = flagMap;
 
-		// Load per-user overrides
-		const currentUser = get(user);
+		const currentUser = user();
 		if (currentUser) {
-			// Fetch user profile for role check
 			const { data: profile } = await client
 				.from('users')
 				.select('is_member, is_admin')
@@ -235,44 +212,33 @@ export async function loadFeatureFlags(): Promise<void> {
 				.select('feature_key, enabled')
 				.eq('user_id', currentUser.id);
 
-			userOverrides.set(
-				new Map(
-					(overrides || []).map((o: { feature_key: string; enabled: boolean }) => [
-						o.feature_key,
-						o.enabled
-					])
-				)
+			_userOverrides = new Map(
+				(overrides || []).map((o: { feature_key: string; enabled: boolean }) => [
+					o.feature_key,
+					o.enabled
+				])
 			);
 		}
 
-		flagsLoaded.set(true);
+		_flagsLoaded = true;
 	} catch (err) {
 		console.warn('Feature flags load error (using defaults):', err);
-		featureFlags.set(new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f])));
-		flagsLoaded.set(true);
+		_featureFlags = new Map(FEATURE_DEFINITIONS.map((f) => [f.feature_key, f]));
+		_flagsLoaded = true;
 	}
 }
 
-/**
- * Admin: save feature flag changes.
- */
 export async function saveFeatureFlag(
 	featureKey: string,
 	updates: Partial<FeatureFlag>
 ): Promise<boolean> {
 	try {
-		const client = getSupabase();
-		if (!client) return false;
-		// Get existing flag to ensure required fields are present for upsert
-		const existing = get(featureFlags).get(featureKey);
-		const displayName = updates.display_name || existing?.display_name || featureKey;
-		// Strip non-DB fields (icon is local-only)
-		const { icon: _icon, ...dbUpdates } = updates;
-		const { error } = await client.from('feature_flags').upsert(
-			{ feature_key: featureKey, display_name: displayName, ...dbUpdates, updated_at: new Date().toISOString() },
-			{ onConflict: 'feature_key' }
-		);
-		if (error) throw error;
+		const res = await fetch('/api/admin/feature-flags', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ feature_key: featureKey, updates })
+		});
+		if (!res.ok) return false;
 		await loadFeatureFlags();
 		return true;
 	} catch (err) {
@@ -281,9 +247,6 @@ export async function saveFeatureFlag(
 	}
 }
 
-/**
- * Get all feature flag definitions (for admin UI).
- */
 export function getAllFeatureFlags(): FeatureFlag[] {
-	return [...get(featureFlags).values()];
+	return [..._featureFlags.values()];
 }

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import { isAuthenticated } from '$lib/stores/auth';
-	import { showToast } from '$lib/stores/toast';
+	import { collectionItems, loadCollection } from '$lib/stores/collection.svelte';
+	import { isAuthenticated } from '$lib/stores/auth.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { analyzeDeckGaps, selectCardsForPriceRefresh, type GapAnalysis, type GapCandidate } from '$lib/services/deck-gap-finder';
 	import { fetchDeck, fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
 	import { loadCardDatabase, getCardById } from '$lib/services/card-db';
@@ -54,7 +54,7 @@
 		}
 
 		const ownedIds = new Set<string>();
-		for (const item of $collectionItems) {
+		for (const item of collectionItems()) {
 			ownedIds.add(item.card_id);
 		}
 
@@ -66,7 +66,7 @@
 	// Recompute when deck or collection changes
 	$effect(() => {
 		const _deck = selectedDeckId;
-		const _items = $collectionItems;
+		const _items = collectionItems();
 		if (_items.length > 0 && _deck) {
 			computeGaps();
 		}
@@ -174,7 +174,7 @@
 		<p class="shop-subtitle">Find cards to fill your deck gaps — sorted by cheapest first</p>
 	</header>
 
-	{#if !$isAuthenticated}
+	{#if !isAuthenticated}
 		<div class="shop-auth-prompt">
 			<p>Sign in to see personalized card recommendations based on your collection and deck.</p>
 			<a href="/auth/login?redirectTo=/deck/shop" class="btn-primary">Sign In</a>

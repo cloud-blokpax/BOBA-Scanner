@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { collectionItems } from '$lib/stores/collection';
+	import { collectionItems } from '$lib/stores/collection.svelte';
 	import { fetchSellerListings, scoreListingMatch, type EbayListing } from '$lib/services/ebay';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { idb } from '$lib/services/idb';
 
 	const SETTINGS_KEY = 'ebayMonitorSettings';
@@ -68,7 +68,7 @@
 
 		try {
 			const listings = await fetchSellerListings(settings.sellerUsername.trim());
-			const items = $collectionItems;
+			const items = collectionItems();
 			const results: MatchResult[] = [];
 
 			for (const listing of listings) {

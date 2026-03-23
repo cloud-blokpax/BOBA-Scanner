@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner';
-	import { addToCollection, ownedCardCounts } from '$lib/stores/collection';
+	import { scanImage,scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
+	import { addToCollection,ownedCardCounts } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import { onMount } from 'svelte';
@@ -26,7 +26,7 @@
 	let tournamentError = $state<string | null>(null);
 
 	const ownedCount = $derived(
-		uploadResult?.card ? ($ownedCardCounts.get(uploadResult.card.id) || 0) : 0
+		uploadResult?.card ? (ownedCardCounts().get(uploadResult.card.id) || 0) : 0
 	);
 	const isOwned = $derived(ownedCount > 0);
 
@@ -53,7 +53,7 @@
 				uploadResult = result;
 			} else {
 				// scanImage returns null on internal errors — surface the error to the user
-				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				const errorMsg = scanState().error || 'Scan failed unexpectedly';
 				uploadResult = {
 					card_id: null,
 					card: null,
@@ -137,7 +137,7 @@
 	}
 
 	const statusText = $derived.by(() => {
-		const state = $scanState;
+		const state = scanState();
 		switch (state.status) {
 			case 'tier1': return 'Checking cache...';
 			case 'tier2': return 'Running OCR...';

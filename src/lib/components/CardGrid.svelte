@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { CollectionItem, CardRarity } from '$lib/types';
-	import { collectionSets, collectionRarities, collectionWeaponTypes } from '$lib/stores/collection';
+	import { collectionSets,collectionRarities,collectionWeaponTypes } from '$lib/stores/collection.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 
 	let {
@@ -150,11 +150,11 @@
 	{#if showFilters}
 		<div class="filter-panel">
 			<!-- Set filter chips -->
-			{#if $collectionSets.length > 0}
+			{#if collectionSets().length > 0}
 				<div class="filter-group">
 					<span class="filter-group-label">Set</span>
 					<div class="filter-chips">
-						{#each $collectionSets as setCode}
+						{#each collectionSets() as setCode}
 							<button
 								class="filter-chip"
 								class:active={filterSet === setCode}
@@ -166,11 +166,11 @@
 			{/if}
 
 			<!-- Rarity filter chips -->
-			{#if $collectionRarities.length > 0}
+			{#if collectionRarities().length > 0}
 				<div class="filter-group">
 					<span class="filter-group-label">Rarity</span>
 					<div class="filter-chips">
-						{#each $collectionRarities as rarity}
+						{#each collectionRarities() as rarity}
 							<button
 								class="filter-chip rarity-chip-{rarity}"
 								class:active={filterRarity === rarity}
@@ -182,11 +182,11 @@
 			{/if}
 
 			<!-- Weapon type filter chips -->
-			{#if $collectionWeaponTypes.length > 0}
+			{#if collectionWeaponTypes().length > 0}
 				<div class="filter-group">
 					<span class="filter-group-label">Weapon</span>
 					<div class="filter-chips">
-						{#each $collectionWeaponTypes as weapon}
+						{#each collectionWeaponTypes() as weapon}
 							<button
 								class="filter-chip"
 								class:active={filterWeapon === weapon}

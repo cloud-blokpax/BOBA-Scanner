@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 
 	let { data } = $props();
 

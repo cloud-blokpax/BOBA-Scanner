@@ -1,28 +1,17 @@
 /**
  * Price Cache Store
- *
- * Fetches eBay prices via server API with three-layer caching:
- *   1. IndexedDB (client, 4-hour TTL)
- *   2. Server price_cache table (4-hour TTL)
- *   3. eBay Browse API (live)
  */
 
-import { writable } from 'svelte/store';
 import { idb } from '$lib/services/idb';
 import type { PriceData } from '$lib/types';
 
-// Map of card_id → price data
-export const priceCache = writable<Map<string, PriceData>>(new Map());
+let _priceCache = $state<Map<string, PriceData>>(new Map());
 
-// Track inflight requests to avoid duplicate fetches
+export function priceCache(): Map<string, PriceData> { return _priceCache; }
+
 const inflightRequests = new Map<string, Promise<PriceData | null>>();
 
-/**
- * Get price for a card. Checks IDB first, then server API.
- * Deduplicates concurrent requests for the same card.
- */
 export async function getPrice(cardId: string): Promise<PriceData | null> {
-	// Deduplicate concurrent requests
 	const inflight = inflightRequests.get(cardId);
 	if (inflight) return inflight;
 
@@ -36,39 +25,34 @@ export async function getPrice(cardId: string): Promise<PriceData | null> {
 }
 
 async function _fetchPrice(cardId: string): Promise<PriceData | null> {
-	// Check IndexedDB cache (4-hour TTL)
 	try {
 		const cached = await idb.getPrice(cardId, 14400_000);
 		if (cached) {
 			const priceData = cached as PriceData;
-			priceCache.update((map) => {
-				map.set(cardId, priceData);
-				return new Map(map);
-			});
+			const newMap = new Map(_priceCache);
+			newMap.set(cardId, priceData);
+			_priceCache = newMap;
 			return priceData;
 		}
 	} catch (err) {
 		console.debug('[prices] IDB cache read failed:', err);
 	}
 
-	// Fetch from server API
 	try {
 		const response = await fetch(`/api/price/${cardId}`);
 		if (!response.ok) return null;
 
 		const priceData = (await response.json()) as PriceData;
 
-		// Cache in IDB
 		try {
 			await idb.setPrice(priceData);
 		} catch (err) {
 			console.debug('[prices] IDB cache write failed:', err);
 		}
 
-		priceCache.update((map) => {
-			map.set(cardId, priceData);
-			return new Map(map);
-		});
+		const newMap = new Map(_priceCache);
+		newMap.set(cardId, priceData);
+		_priceCache = newMap;
 
 		return priceData;
 	} catch (err) {

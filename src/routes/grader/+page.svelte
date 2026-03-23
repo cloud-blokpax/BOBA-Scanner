@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { showToast } from '$lib/stores/toast';
-	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { showToast } from '$lib/stores/toast.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import type { GradeResult } from '$lib/types';
 
 	const hasGrader = featureEnabled('condition_grader');
@@ -97,7 +97,7 @@
 	<title>Card Grader - BOBA Scanner</title>
 </svelte:head>
 
-{#if $hasGrader}
+{#if hasGrader()}
 <div class="grader-page">
 	<header class="page-header">
 		<h1>AI Card Grader</h1>

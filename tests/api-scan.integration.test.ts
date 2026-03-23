@@ -3,6 +3,7 @@
  *
  * Tests the scan endpoint's auth, validation, rate limiting, and Claude API
  * interaction with all external dependencies mocked.
+ * Uses structured output (tool_use) pattern matching the production endpoint.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -92,32 +93,37 @@ function makeImageFile(
 	return new File([buffer], name, { type });
 }
 
+function makeToolUseResponse(input: Record<string, unknown>) {
+	return {
+		content: [{
+			type: 'tool_use',
+			id: 'tool_1',
+			name: 'identify_card',
+			input
+		}]
+	};
+}
+
 // ── Tests ────────────────────────────────────────────────────
 
 describe('POST /api/scan', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockCheckScanRateLimit.mockResolvedValue({
-			success: true,
-			limit: 20,
-			remaining: 19,
-			reset: Date.now() + 60000
+			success: true, limit: 20, remaining: 19, reset: Date.now() + 60000
 		});
 		mockCheckAnonScanRateLimit.mockResolvedValue({
-			success: true,
-			limit: 5,
-			remaining: 4,
-			reset: Date.now() + 60000
+			success: true, limit: 5, remaining: 4, reset: Date.now() + 60000
 		});
 	});
 
 	describe('authentication', () => {
 		it('allows unauthenticated requests with IP-based rate limiting', async () => {
 			const locals = makeLocals(null);
-			mockAnthropicCreate.mockResolvedValue({
-				content: [{ type: 'text', text: '{"card_number":"BF-001","hero_name":"Bo","confidence":0.9}' }]
-			});
-
+			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
+				card_number: 'BF-001', hero_name: 'Bo', confidence: 0.9,
+				rarity: 'common', variant: 'base', card_name: 'Bo'
+			}));
 			const request = makeRequest(makeImageFile());
 			const getClientAddress = () => '127.0.0.1';
 			const response = await POST({ request, locals, getClientAddress } as any);
@@ -128,12 +134,8 @@ describe('POST /api/scan', () => {
 		it('rate limits unauthenticated requests by IP', async () => {
 			const locals = makeLocals(null);
 			mockCheckAnonScanRateLimit.mockResolvedValue({
-				success: false,
-				limit: 5,
-				remaining: 0,
-				reset: Date.now() + 30000
+				success: false, limit: 5, remaining: 0, reset: Date.now() + 30000
 			});
-
 			const request = makeRequest(makeImageFile());
 			const getClientAddress = () => '127.0.0.1';
 			const response = await POST({ request, locals, getClientAddress } as any);
@@ -142,10 +144,10 @@ describe('POST /api/scan', () => {
 
 		it('allows authenticated requests', async () => {
 			const locals = makeLocals({ id: 'user-1' });
-			mockAnthropicCreate.mockResolvedValue({
-				content: [{ type: 'text', text: '{"card_number":"BF-001","hero_name":"Bo","confidence":0.9}' }]
-			});
-
+			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
+				card_number: 'BF-001', hero_name: 'Bo', confidence: 0.9,
+				rarity: 'common', variant: 'base', card_name: 'Bo'
+			}));
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			expect(response.status).toBe(200);
@@ -156,16 +158,11 @@ describe('POST /api/scan', () => {
 		it('returns 429 when rate limited', async () => {
 			const locals = makeLocals({ id: 'user-flood' });
 			mockCheckScanRateLimit.mockResolvedValue({
-				success: false,
-				limit: 20,
-				remaining: 0,
-				reset: Date.now() + 30000
+				success: false, limit: 20, remaining: 0, reset: Date.now() + 30000
 			});
-
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			expect(response.status).toBe(429);
-
 			const body = await response.json();
 			expect(body.error).toContain('Rate limited');
 		});
@@ -173,12 +170,8 @@ describe('POST /api/scan', () => {
 		it('includes rate limit headers on 429', async () => {
 			const locals = makeLocals({ id: 'user-flood' });
 			mockCheckScanRateLimit.mockResolvedValue({
-				success: false,
-				limit: 20,
-				remaining: 0,
-				reset: 1234567890
+				success: false, limit: 20, remaining: 0, reset: 1234567890
 			});
-
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			expect(response.headers.get('X-RateLimit-Limit')).toBe('20');
@@ -190,91 +183,86 @@ describe('POST /api/scan', () => {
 	describe('input validation', () => {
 		it('rejects requests without image file', async () => {
 			const locals = makeLocals();
-			const request = makeRequest(); // no file
-			await expect(
-				POST({ request, locals } as any)
-			).rejects.toMatchObject({ status: 400 });
+			const request = makeRequest();
+			await expect(POST({ request, locals } as any)).rejects.toMatchObject({ status: 400 });
 		});
 
 		it('rejects files exceeding max size', async () => {
 			const locals = makeLocals();
 			const bigFile = makeImageFile(10_000_001);
 			const request = makeRequest(bigFile);
-			await expect(
-				POST({ request, locals } as any)
-			).rejects.toMatchObject({ status: 400 });
+			await expect(POST({ request, locals } as any)).rejects.toMatchObject({ status: 400 });
 		});
 
 		it('rejects invalid image types', async () => {
 			const locals = makeLocals();
 			const gifFile = new File([new ArrayBuffer(100)], 'card.gif', { type: 'image/gif' });
 			const request = makeRequest(gifFile);
-			await expect(
-				POST({ request, locals } as any)
-			).rejects.toMatchObject({ status: 400 });
+			await expect(POST({ request, locals } as any)).rejects.toMatchObject({ status: 400 });
 		});
 	});
 
 	describe('Claude API integration', () => {
 		it('returns parsed card data on successful identification', async () => {
 			const locals = makeLocals();
-			mockAnthropicCreate.mockResolvedValue({
-				content: [{
-					type: 'text',
-					text: '{"card_number":"BF-108","hero_name":"Bo Jackson","confidence":0.95,"rarity":"rare"}'
-				}]
-			});
-
+			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
+				card_number: 'BF-108', hero_name: 'Bo Jackson',
+				confidence: 0.95, rarity: 'rare', variant: 'base', card_name: 'Bo Jackson'
+			}));
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			const body = await response.json();
-
 			expect(body.success).toBe(true);
 			expect(body.method).toBe('claude');
 			expect(body.card.card_number).toBe('BF-108');
 			expect(body.card.hero_name).toBe('Bo Jackson');
 		});
 
-		it('handles JSON embedded in Claude response text', async () => {
+		it('uses tool_choice for structured output', async () => {
 			const locals = makeLocals();
-			mockAnthropicCreate.mockResolvedValue({
-				content: [{
-					type: 'text',
-					text: 'Here is the card info:\n```json\n{"card_number":"PL-46","hero_name":"Speed Demon","confidence":0.8}\n```'
-				}]
-			});
-
+			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
+				card_number: 'PL-46', hero_name: 'Speed Demon',
+				confidence: 0.8, rarity: 'common', variant: 'base', card_name: 'Speed Demon'
+			}));
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			const body = await response.json();
-
 			expect(body.success).toBe(true);
 			expect(body.card.card_number).toBe('PL-46');
+			expect(mockAnthropicCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					tools: expect.arrayContaining([
+						expect.objectContaining({ name: 'identify_card' })
+					]),
+					tool_choice: { type: 'tool', name: 'identify_card' }
+				})
+			);
 		});
 
-		it('returns 422 when Claude response has no JSON', async () => {
+		it('returns 422 when Claude response has no tool_use block', async () => {
 			const locals = makeLocals();
 			mockAnthropicCreate.mockResolvedValue({
 				content: [{ type: 'text', text: 'I cannot identify this card.' }]
 			});
-
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
 			expect(response.status).toBe(422);
-
 			const body = await response.json();
 			expect(body.success).toBe(false);
 		});
 
-		it('returns 422 when Claude response has invalid JSON', async () => {
+		it('detects power-as-card-number and clears card_number', async () => {
 			const locals = makeLocals();
-			mockAnthropicCreate.mockResolvedValue({
-				content: [{ type: 'text', text: '{ invalid json here }' }]
-			});
-
+			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
+				card_number: '200', hero_name: 'BoJax', power: 200,
+				confidence: 0.9, rarity: 'common', variant: 'base', card_name: 'BoJax'
+			}));
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
-			expect(response.status).toBe(422);
+			const body = await response.json();
+			expect(body.success).toBe(true);
+			expect(body.card.card_number).toBeNull();
+			expect(body.card.confidence).toBeLessThanOrEqual(0.6);
 		});
 	});
 });

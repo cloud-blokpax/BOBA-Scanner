@@ -1,11 +1,7 @@
 /**
  * Scan history store — chronological record of scan attempts.
- *
- * Stores up to 100 recent scans in IndexedDB for offline access.
- * Migrates from localStorage on first load.
  */
 
-import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 import { idb } from '$lib/services/idb';
 
@@ -23,33 +19,32 @@ export interface ScanHistoryEntry {
 	processingMs: number;
 }
 
-export const scanHistory = writable<ScanHistoryEntry[]>([]);
+let _scanHistory = $state<ScanHistoryEntry[]>([]);
 
-export const scanHistoryCount = derived(scanHistory, ($history) => $history.length);
-export const successRate = derived(scanHistory, ($history) => {
-	if ($history.length === 0) return 0;
-	const successes = $history.filter((e) => e.success).length;
-	return Math.round((successes / $history.length) * 100);
-});
+export function scanHistory(): ScanHistoryEntry[] { return _scanHistory; }
+export function scanHistoryCount(): number { return _scanHistory.length; }
+export function successRate(): number {
+	if (_scanHistory.length === 0) return 0;
+	const successes = _scanHistory.filter((e) => e.success).length;
+	return Math.round((successes / _scanHistory.length) * 100);
+}
 
-// Load from IDB asynchronously on startup (non-blocking)
 if (browser) {
 	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((entries) => {
 		if (Array.isArray(entries) && entries.length > 0) {
-			scanHistory.set(entries);
+			_scanHistory = entries;
 		}
 	}).catch((err) => {
 		console.debug('[scan-history] IDB load failed:', err);
 	});
 
-	// Migrate from localStorage if present (one-time bridge)
 	try {
 		const legacyRaw = localStorage.getItem('scanHistory');
 		if (legacyRaw) {
 			const legacyEntries = JSON.parse(legacyRaw);
 			if (Array.isArray(legacyEntries) && legacyEntries.length > 0) {
 				idb.setMeta(IDB_KEY, legacyEntries).then(() => {
-					scanHistory.set(legacyEntries);
+					_scanHistory = legacyEntries;
 					localStorage.removeItem('scanHistory');
 				}).catch(() => {});
 			}
@@ -64,33 +59,22 @@ function saveToIdb(entries: ScanHistoryEntry[]): void {
 	});
 }
 
-/**
- * Add a scan to history.
- */
 export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp'>): void {
-	scanHistory.update((history) => {
-		const newEntry: ScanHistoryEntry = {
-			...entry,
-			id: Math.random().toString(36).slice(2, 10),
-			timestamp: Date.now()
-		};
-		const updated = [newEntry, ...history].slice(0, MAX_ENTRIES);
-		saveToIdb(updated);
-		return updated;
-	});
+	const newEntry: ScanHistoryEntry = {
+		...entry,
+		id: Math.random().toString(36).slice(2, 10),
+		timestamp: Date.now()
+	};
+	const updated = [newEntry, ..._scanHistory].slice(0, MAX_ENTRIES);
+	saveToIdb(updated);
+	_scanHistory = updated;
 }
 
-/**
- * Clear all scan history.
- */
 export function clearScanHistory(): void {
-	scanHistory.set([]);
+	_scanHistory = [];
 	saveToIdb([]);
 }
 
-/**
- * Format time ago for display.
- */
 export function timeAgo(timestamp: number): string {
 	const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
 	if (seconds < 60) return `${seconds}s ago`;

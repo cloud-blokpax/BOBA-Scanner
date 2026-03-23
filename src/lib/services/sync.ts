@@ -7,10 +7,9 @@
  */
 
 import { browser } from '$app/environment';
-import { get } from 'svelte/store';
 import { getSupabase } from '$lib/services/supabase';
-import { user } from '$lib/stores/auth';
-import { collectionItems } from '$lib/stores/collection';
+import { user } from '$lib/stores/auth.svelte';
+import { collectionItems, setCollectionItems } from '$lib/stores/collection.svelte';
 import { idb } from '$lib/services/idb';
 import { fetchCollection } from '$lib/services/collection-service';
 
@@ -50,7 +49,8 @@ export function schedulePush(): void {
  * Uses batched upsert (single network call) instead of per-item loops.
  */
 async function pushToCloud(skipLock = false): Promise<void> {
-	const currentUser = get(user);
+	// Read $state variables directly — no get() needed
+	const currentUser = user();
 	const supabase = getSupabase();
 	if (!currentUser || !supabase) return;
 
@@ -58,7 +58,7 @@ async function pushToCloud(skipLock = false): Promise<void> {
 	if (!skipLock && !release) return; // Already locked
 
 	try {
-		const items = get(collectionItems).filter((i) => i.card_id);
+		const items = collectionItems().filter((i) => i.card_id);
 
 		// Batched upsert — one network call for all items
 		if (items.length > 0) {
@@ -71,7 +71,7 @@ async function pushToCloud(skipLock = false): Promise<void> {
 			}));
 
 			const { error } = await supabase
-				.from('collections_v2')
+				.from('collections')
 				.upsert(rows, { onConflict: 'user_id,card_id,condition' });
 
 			if (error) {
@@ -84,7 +84,7 @@ async function pushToCloud(skipLock = false): Promise<void> {
 		if (tombstones.length > 0) {
 			const cardIds = tombstones.map((t) => t.cardId);
 			const { error } = await supabase
-				.from('collections_v2')
+				.from('collections')
 				.delete()
 				.eq('user_id', currentUser.id)
 				.in('card_id', cardIds);
@@ -109,7 +109,7 @@ async function pushToCloud(skipLock = false): Promise<void> {
  * to avoid circular dependency.
  */
 export async function fullSync(): Promise<void> {
-	const currentUser = get(user);
+	const currentUser = user();
 	const supabase = getSupabase();
 	if (!currentUser || !supabase) return;
 
@@ -119,9 +119,9 @@ export async function fullSync(): Promise<void> {
 	try {
 		// Push first (skipLock=true since we already hold the lock)
 		await pushToCloud(true);
-		// Then pull remote state and update the store
+		// Then pull remote state and update the store directly
 		const items = await fetchCollection();
-		collectionItems.set(items);
+		setCollectionItems(items);
 	} catch (err) {
 		console.warn('Full sync error:', err);
 	} finally {

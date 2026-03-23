@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
-	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner';
+	import { scanImage,scanState, resetScanner } from '$lib/stores/scanner.svelte';
 	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance } from '$lib/services/recognition';
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
@@ -92,7 +92,7 @@
 	});
 
 	const statusText = $derived.by(() => {
-		const state = $scanState;
+		const state = scanState();
 		switch (state.status) {
 			case 'tier1':
 				return 'Checking cache...';
@@ -114,7 +114,7 @@
 	});
 
 	const statusType = $derived.by(() => {
-		const state = $scanState;
+		const state = scanState();
 		if (state.status === 'complete' && state.result?.card) return 'success';
 		if (state.status === 'complete' && !state.result?.card) return 'error';
 		if (state.status === 'error') return 'error';
@@ -345,7 +345,7 @@
 			if (scanResult) {
 				handleScanResult(scanResult, imageUrl);
 			} else {
-				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				const errorMsg = scanState().error || 'Scan failed unexpectedly';
 				handleScanResult({
 					card_id: null,
 					card: null,
@@ -387,7 +387,7 @@
 				if (scanResult) {
 					handleScanResult(scanResult, imageUrl);
 				} else {
-					const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+					const errorMsg = scanState().error || 'Scan failed unexpectedly';
 					handleScanResult({
 						card_id: null,
 						card: null,
@@ -425,7 +425,7 @@
 				handleScanResult(result, imageUrl);
 			} else {
 				// scanImage returns null on internal errors — create a fail result
-				const errorMsg = $scanState.error || 'Scan failed unexpectedly';
+				const errorMsg = scanState().error || 'Scan failed unexpectedly';
 				handleScanResult({
 					card_id: null,
 					card: null,

@@ -2,7 +2,8 @@
  * POST /api/scan — Claude API proxy for card identification
  *
  * Only called by Tier 3 of the recognition pipeline.
- * Auth required. Rate limited. Images sanitized via sharp CDR.
+ * Auth optional. Rate limited. Images sanitized via sharp CDR.
+ * Uses structured output (tool use) for guaranteed valid JSON.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -27,6 +28,30 @@ function getAnthropicClient(): Anthropic {
 	}
 	return _anthropic;
 }
+
+// ── Structured output tool definition ──────────────────────────
+const CARD_ID_TOOL: Anthropic.Messages.Tool = {
+	name: 'identify_card',
+	description: 'Identify a BoBA trading card from an image',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			card_name: { type: 'string', description: 'Full card name as printed' },
+			hero_name: { type: 'string', description: 'BoBA hero name' },
+			athlete_name: { type: 'string', description: 'Real athlete name if known, or null' },
+			set_code: { type: 'string', description: 'Set identifier, or null' },
+			card_number: { type: 'string', description: 'PREFIX-NUMBER from BOTTOM-LEFT. Null if unreadable.' },
+			power: { type: 'number', description: 'Large number from TOP-RIGHT corner, or null' },
+			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
+			variant: { type: 'string', enum: ['base', 'foil', 'battlefoil', 'paper', 'inspired_ink'] },
+			parallel: { type: 'string', description: 'Specific parallel name if identifiable, or null' },
+			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super'], description: 'Weapon type or null' },
+			confidence: { type: 'number', description: '0.0 to 1.0' },
+			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection' }
+		},
+		required: ['card_name', 'hero_name', 'confidence', 'rarity', 'variant']
+	}
+};
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	// ── Auth check (optional — anonymous users get stricter rate limits) ──
@@ -105,91 +130,56 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	const base64 = cleanBuffer.toString('base64');
 
-	// ── Claude API call ─────────────────────────────────────
+	// ── Claude API call with structured output ──────────────
 	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user?.id ?? 'anonymous'}`);
 	try {
 		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
-			max_tokens: 256,
-			messages: [
-				{
-					role: 'user',
-					content: [
-						{
-							type: 'image',
-							source: { type: 'base64', media_type: 'image/jpeg', data: base64 }
-						},
-						{
-							type: 'text',
-							text: `Identify this Bo Jackson Battle Arena (BoBA) trading card.
+			max_tokens: 512,
+			system: 'You are a BoBA (Bo Jackson Battle Arena) trading card identification expert. If a field is unclear, return null rather than guessing.',
+			tools: [CARD_ID_TOOL],
+			tool_choice: { type: 'tool' as const, name: 'identify_card' },
+			messages: [{
+				role: 'user',
+				content: [
+					{
+						type: 'image',
+						source: { type: 'base64', media_type: 'image/jpeg', data: base64 }
+					},
+					{
+						type: 'text',
+						text: `<task>Identify this BoBA trading card.</task>
 
-CRITICAL — POWER vs CARD NUMBER:
-- The POWER value is the LARGE number in the TOP-RIGHT corner, often with "POWER" written vertically beside it. Common values: 60, 80, 100, 120, 140, 160, 180, 200. This is NOT the card number. NEVER return the power value as the card_number.
-- The CARD NUMBER is SMALL text in the BOTTOM-LEFT corner, inside a small colored box. It almost always has a letter prefix followed by a dash and digits.
+<critical_rules>
+- POWER is the LARGE number in the TOP-RIGHT. NEVER use it as card_number.
+- CARD NUMBER is SMALL text in the BOTTOM-LEFT box, format PREFIX-NUMBER.
+- If card_number is unreadable, set it to null.
+</critical_rules>
 
-CARD NUMBER PREFIXES (most common):
-BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD
+<known_prefixes>BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD</known_prefixes>
 
-Example card numbers: BF-108, BFA-5, BLBF-84, PL-46, BBF-56, BPL-7, RAD-42, GLBF-100, HTD-15
-Some older cards use plain numbers (35, 76, 155) but these are ALWAYS small text in the bottom-left — never the large power number.
+<weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1</weapons>
 
-CARD LAYOUT GUIDE:
-- Hero name: Large text at the top of the card
-- Power value: Large number in TOP-RIGHT (DO NOT use this as card_number)
-- Card number: Small text in BOTTOM-LEFT box (use the prefix-dash-number format above)
-- Set identifier: Text on the card border or bottom area
-- Serial number: Sometimes shown as "X/Y" (e.g., "1/10") — this is NOT the card number either
-
-WEAPON TYPE (by icon color at bottom-right):
-Fire (red), Ice (blue), Steel (gray), Hex (purple), Glow (yellow-green), Brawl (orange), Gum (pink), Super (gold-on-black 1/1)
-
-PARALLEL/TREATMENT:
-Base Paper (matte), Battlefoil (holographic foil — Silver, Blue, Orange, Green, Pink, Red), Named Inserts (Blizzard, 80s Rad, Headlines, Sepia, Neon, etc.), Inspired Ink (on-card autograph with signature visible)
-
-Return ONLY valid JSON:
-{
-  "card_name": "full card name as printed",
-  "hero_name": "BoBA hero name (e.g., BoJax, Air Jordan, Cutback)",
-  "athlete_name": "real athlete name if known",
-  "set_code": "set identifier",
-  "card_number": "PREFIX-NUMBER from BOTTOM-LEFT (e.g., BFA-5, NOT the power value)",
-  "power": null or the large number from TOP-RIGHT,
-  "rarity": "common/uncommon/rare/ultra_rare/legendary",
-  "variant": "base/foil/battlefoil/paper/inspired_ink",
-  "parallel": "specific parallel name if identifiable",
-  "weapon_type": "Fire/Ice/Steel/Hex/Glow/Brawl/Gum/Super",
-  "confidence": 0.0 to 1.0
-}
-
-IMPORTANT: The card_number field must contain the small text from the BOTTOM-LEFT corner. If you can only see a large number (like 200), that is the POWER — look harder at the bottom-left for the actual card number with a letter prefix.`
-						}
-					]
-				}
-			]
+<examples>
+card_number="BF-108", hero_name="BoJax", power=200, weapon_type="Super"
+card_number="PL-46", hero_name=null (Play card), power=null
+card_number=null (unreadable), hero_name="The Kid", power=180, flags=["foil_reflection"]
+</examples>`
+					}
+				]
+			}]
 		});
 
-		const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
-		console.log(`[api/scan] Claude raw response: ${text.substring(0, 500)}`);
-
-		// Extract JSON from response
-		const jsonMatch = text.match(/\{[\s\S]*\}/);
-		if (!jsonMatch) {
-			console.warn('[api/scan] No JSON found in Claude response');
-			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
+		// ── Extract structured tool-use result (guaranteed valid JSON) ──
+		const toolUse = response.content.find(block => block.type === 'tool_use');
+		if (!toolUse || toolUse.type !== 'tool_use') {
+			console.warn('[api/scan] No tool_use block in Claude response');
+			return json({ success: false, method: 'claude' }, { status: 422 });
 		}
 
-		let cardData;
-		try {
-			cardData = JSON.parse(jsonMatch[0]);
-		} catch (err) {
-			console.debug('[api/scan] Claude response JSON parse failed:', err);
-			console.warn('[api/scan] Failed to parse JSON from Claude response');
-			return json({ success: false, raw: text, method: 'claude' }, { status: 422 });
-		}
+		const cardData = toolUse.input as Record<string, unknown>;
 
 		// ── Validate card_number isn't actually the power value ──────
-		// Common failure mode: Haiku returns the power (large top-right number)
-		// instead of the card number (small bottom-left text with a prefix).
 		const KNOWN_POWER_VALUES = new Set([
 			55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120,
 			125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180,
@@ -199,8 +189,6 @@ IMPORTANT: The card_number field must contain the small text from the BOTTOM-LEF
 		const rawCardNumber = String(cardData.card_number || '').trim();
 		const parsedAsNumber = parseInt(rawCardNumber, 10);
 
-		// If the "card_number" is a bare number that matches a common power value,
-		// and the power field contains the same number, it's almost certainly wrong.
 		if (
 			!rawCardNumber.includes('-') &&
 			!isNaN(parsedAsNumber) &&
@@ -211,10 +199,8 @@ IMPORTANT: The card_number field must contain the small text from the BOTTOM-LEF
 				`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
 				`Clearing card_number to force hero-based fallback.`
 			);
-			// Clear the card_number so the client-side pipeline tries hero-based lookup
 			cardData.card_number = null;
-			// Reduce confidence since we can't trust the identification
-			cardData.confidence = Math.min(cardData.confidence || 0.5, 0.6);
+			cardData.confidence = Math.min((cardData.confidence as number) || 0.5, 0.6);
 		}
 
 		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
@@ -225,7 +211,7 @@ IMPORTANT: The card_number field must contain the small text from the BOTTOM-LEF
 				await locals.supabase.from('scans').insert({
 					user_id: user.id,
 					scan_method: 'claude',
-					confidence: cardData.confidence || null,
+					confidence: (cardData.confidence as number) || null,
 					processing_ms: null
 				});
 			} catch (err) {

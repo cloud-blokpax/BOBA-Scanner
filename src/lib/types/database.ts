@@ -41,7 +41,7 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['cards']['Insert']>;
 				Relationships: [];
 			};
-			collections_v2: {
+			collections: {
 				Row: {
 					id: string;
 					user_id: string;
@@ -59,10 +59,10 @@ export interface Database {
 					condition?: string;
 					notes?: string | null;
 				};
-				Update: Partial<Database['public']['Tables']['collections_v2']['Insert']>;
+				Update: Partial<Database['public']['Tables']['collections']['Insert']>;
 				Relationships: [
 					{
-						foreignKeyName: 'collections_v2_card_id_fkey';
+						foreignKeyName: 'collections_card_id_fkey';
 						columns: ['card_id'];
 						isOneToOne: false;
 						referencedRelation: 'cards';
