@@ -4,10 +4,11 @@
 -- ============================================================
 
 -- ── 1. users ─────────────────────────────────────────────────
--- Core user table — stores Google OAuth identity, limits, and preferences.
+-- Core user table — stores OAuth identity, limits, and preferences.
 CREATE TABLE IF NOT EXISTS users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  google_id       TEXT UNIQUE NOT NULL,
+  google_id       TEXT UNIQUE,  -- Legacy: from pre-Supabase-Auth era. Nullable for non-Google providers.
+  auth_user_id    UUID UNIQUE,  -- Links to auth.users(id) from Supabase Auth
   email           TEXT NOT NULL,
   name            TEXT,
   picture         TEXT,
@@ -95,9 +96,11 @@ CREATE TABLE IF NOT EXISTS themes (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
--- ── 7. collections ───────────────────────────────────────────
--- Cloud-synced card collections (one row per user). Stores all collections,
--- deleted-card tombstones, and user-defined tags as JSON.
+-- ── 7. collections (DEPRECATED) ──────────────────────────────
+-- Legacy JSONB-blob collection storage. Replaced by collections_v2.
+-- Retained only for data migration purposes. Will be dropped after
+-- all users have been migrated to collections_v2.
+-- DO NOT use in new application code.
 CREATE TABLE IF NOT EXISTS collections (
   user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   data            JSONB DEFAULT '[]',
@@ -106,6 +109,24 @@ CREATE TABLE IF NOT EXISTS collections (
   export_templates JSONB DEFAULT '[]',
   updated_at      TIMESTAMPTZ DEFAULT now()
 );
+
+-- ── 7b. collections_v2 ──────────────────────────────────────
+-- Normalized card collection (one row per user+card+condition).
+-- This is the active collection table used by all application code.
+-- The legacy `collections` table (JSONB) is retained for data migration only.
+CREATE TABLE IF NOT EXISTS collections_v2 (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  card_id         TEXT NOT NULL,
+  quantity        INT DEFAULT 1,
+  condition       TEXT DEFAULT 'near_mint',
+  notes           TEXT,
+  added_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, card_id, condition)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collections_v2_user ON collections_v2(user_id);
+CREATE INDEX IF NOT EXISTS idx_collections_v2_card ON collections_v2(card_id);
 
 -- ── 8. tournaments ───────────────────────────────────────────
 -- Tournament definitions with unique join codes.
@@ -190,58 +211,27 @@ CREATE INDEX IF NOT EXISTS idx_admin_actions_created ON admin_actions(created_at
 -- ============================================================
 -- Row Level Security (RLS)
 -- ============================================================
--- This app uses Google OAuth directly (NOT Supabase Auth), so there is no
--- Supabase auth session and auth.uid() is always NULL.  The client connects
--- with the anon key and handles authorization at the application level
--- (Google token verification on the server, is_admin flag in the users table).
+-- This app uses Supabase Auth (Google OAuth via PKCE flow).
+-- RLS is enabled on all tables. The service_role key is used for
+-- privileged server-side operations. The anon key provides limited
+-- public read access where needed (feature flags, settings, etc.).
 --
--- Because auth.uid()-based policies cannot work without Supabase Auth, we
--- disable RLS on all tables.  Access control is enforced by:
---   1. The anon key only being exposed to the browser (read/write via PostgREST).
---   2. Admin operations verified server-side before mutating data.
---   3. The API server using the service_role key for privileged operations.
---
--- If you later migrate to Supabase Auth, re-enable RLS and add proper policies.
+-- Detailed per-table RLS policies are in enable-rls-legacy-tables.sql.
+-- That migration MUST be run after this schema file.
 -- ============================================================
 
--- Drop any existing policies from prior runs so DISABLE doesn't leave orphans
-DO $$ BEGIN
-  DROP POLICY IF EXISTS users_select_own   ON users;
-  DROP POLICY IF EXISTS users_insert_self  ON users;
-  DROP POLICY IF EXISTS users_update_own   ON users;
-  DROP POLICY IF EXISTS settings_select    ON system_settings;
-  DROP POLICY IF EXISTS settings_upsert    ON system_settings;
-  DROP POLICY IF EXISTS logs_insert_own    ON api_call_logs;
-  DROP POLICY IF EXISTS logs_select_admin  ON api_call_logs;
-  DROP POLICY IF EXISTS flags_select       ON feature_flags;
-  DROP POLICY IF EXISTS flags_modify_admin ON feature_flags;
-  DROP POLICY IF EXISTS overrides_select_own   ON user_feature_overrides;
-  DROP POLICY IF EXISTS overrides_modify_admin ON user_feature_overrides;
-  DROP POLICY IF EXISTS themes_select_public ON themes;
-  DROP POLICY IF EXISTS themes_modify_admin  ON themes;
-  DROP POLICY IF EXISTS collections_own ON collections;
-  DROP POLICY IF EXISTS tournaments_select ON tournaments;
-  DROP POLICY IF EXISTS tournaments_insert ON tournaments;
-  DROP POLICY IF EXISTS tournaments_update ON tournaments;
-  DROP POLICY IF EXISTS templates_select       ON admin_templates;
-  DROP POLICY IF EXISTS templates_modify_admin ON admin_templates;
-  DROP POLICY IF EXISTS assignments_select ON user_admin_template_assignments;
-  DROP POLICY IF EXISTS assignments_modify ON user_admin_template_assignments;
-  DROP POLICY IF EXISTS stats_admin ON system_stats;
-  DROP POLICY IF EXISTS actions_admin ON admin_actions;
-END $$;
-
--- Disable RLS on all tables (app-level auth, not Supabase Auth)
-ALTER TABLE users                          DISABLE ROW LEVEL SECURITY;
-ALTER TABLE system_settings                DISABLE ROW LEVEL SECURITY;
-ALTER TABLE api_call_logs                  DISABLE ROW LEVEL SECURITY;
-ALTER TABLE feature_flags                  DISABLE ROW LEVEL SECURITY;
-ALTER TABLE user_feature_overrides         DISABLE ROW LEVEL SECURITY;
-ALTER TABLE themes                         DISABLE ROW LEVEL SECURITY;
-ALTER TABLE collections                    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE tournaments                    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE tournament_registrations       DISABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_templates                DISABLE ROW LEVEL SECURITY;
-ALTER TABLE user_admin_template_assignments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE system_stats                   DISABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_actions                  DISABLE ROW LEVEL SECURITY;
+-- Enable RLS on all tables (policies defined in enable-rls-legacy-tables.sql)
+ALTER TABLE users                          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_call_logs                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feature_flags                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_feature_overrides         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE themes                         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collections                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collections_v2                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tournaments                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tournament_registrations       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_templates                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_admin_template_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_stats                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_actions                  ENABLE ROW LEVEL SECURITY;
