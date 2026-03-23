@@ -56,7 +56,6 @@ BOBA-Scanner/
 │   │   │   ├── [id]/+page.svelte   # Edit deck by ID
 │   │   │   ├── [id]/view/+page.svelte # View deck (read-only)
 │   │   │   └── shop/+page.svelte   # Deck shop (find missing cards)
-│   │   ├── decks/+page.svelte      # Decks overview page
 │   │   ├── dbs/                    # DBS (Deck Balancing Score) calculator
 │   │   │   ├── +page.svelte        # DBS calculator UI
 │   │   │   └── +page.server.ts     # Serves DBS scores map
@@ -69,8 +68,7 @@ BOBA-Scanner/
 │   │   ├── tournaments/            # Tournament management
 │   │   │   ├── +page.svelte        # Tournament list
 │   │   │   ├── detail/+page.svelte # Tournament detail view
-│   │   │   ├── enter/+page.svelte  # Tournament entry form
-│   │   │   └── timer/+page.svelte  # Tournament timer
+│   │   │   └── enter/+page.svelte  # Tournament entry form
 │   │   ├── marketplace/monitor/    # eBay seller monitoring
 │   │   ├── admin/+page.svelte      # Admin dashboard
 │   │   ├── privacy/+page.svelte    # Privacy policy
@@ -122,14 +120,11 @@ BOBA-Scanner/
 │   │   │   ├── PriceTrends.svelte  # Price trend charts (premium)
 │   │   │   ├── ProfilePrompt.svelte# User profile setup prompt
 │   │   │   ├── Toast.svelte        # Toast notification component
-│   │   │   ├── InstallPrompt.svelte# PWA install prompt
 │   │   │   └── UpdateBanner.svelte # App version update banner
 │   │   ├── data/
-│   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards)
+│   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards, dev-only artifact for seed generation)
 │   │   │   ├── play-cards.json     # Play card database (409 cards across 4 releases, with DBS values and hot dog costs)
-│   │   │   ├── static-cards.ts     # Maps raw JSON to Card type
-│   │   │   ├── boba-config.ts      # OCR regions, scan config, rarities, weapons
-│   │   │   ├── boba-heroes.ts      # Hero name → athlete name mappings
+│   │   │   ├── boba-config.ts      # OCR regions, scan config
 │   │   │   ├── boba-weapons.ts     # Weapon hierarchy with rarity and tier rankings
 │   │   │   ├── boba-parallels.ts   # All parallel/treatment types with Madness unlock eligibility
 │   │   │   ├── boba-dbs-scores.ts  # DBS point values for all Play cards (409 entries, maintained manually)
@@ -199,7 +194,6 @@ BOBA-Scanner/
 ├── src/service-worker.ts            # SvelteKit service worker (differentiated caching)
 ├── static/
 │   ├── manifest.json               # PWA manifest
-│   ├── sw.js                       # Legacy service worker (self-destructs, replaced by src/service-worker.ts)
 │   ├── version.json                # App version metadata
 │   └── robots.txt                  # Disallow all crawlers
 ├── supabase/migrations/
@@ -304,8 +298,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
 - `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (409 entries across Alpha, Griffey, Alpha Update, and Alpha Blast releases)
 - `src/lib/data/play-cards.json` — Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
-- `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
-- `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions
+- `src/lib/data/boba-config.ts` — OCR regions, scan config
 
 ## Key Conventions
 

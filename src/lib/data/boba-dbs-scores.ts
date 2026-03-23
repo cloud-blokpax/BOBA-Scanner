@@ -472,7 +472,7 @@ export function getDbs(cardNumber: string, setCode?: string): number | null {
 }
 
 /** Check if DBS data is available (enough cards have scores to be useful) */
-export function isDbsDataAvailable(): boolean {
+function isDbsDataAvailable(): boolean {
 	return Object.keys(DBS_SCORES).length >= 20;
 }
 
@@ -513,28 +513,3 @@ export function getDbsScoresMap(): Record<string, number> {
 
 // ── Supabase overlay (updates without deployment) ──────────
 let _dynamicDbs: Record<string, number> | null = null;
-let _dbsLoaded = false;
-
-/**
- * Load DBS scores from Supabase to overlay on top of hardcoded defaults.
- * Call early in app lifecycle. Non-blocking — hardcoded fallback is always available.
- */
-export async function loadDbsFromSupabase(): Promise<void> {
-	if (_dbsLoaded) return;
-	try {
-		const { getSupabase } = await import('$lib/services/supabase');
-		const client = getSupabase();
-		if (!client) return;
-
-		const { data } = await client.from('dbs_scores').select('set_code, card_number, dbs_score') as { data: Array<{ set_code: string; card_number: string; dbs_score: number }> | null };
-		if (data && data.length > 0) {
-			_dynamicDbs = {};
-			for (const row of data) {
-				_dynamicDbs[`${row.set_code}:${row.card_number}`] = row.dbs_score;
-			}
-		}
-		_dbsLoaded = true;
-	} catch {
-		// Supabase unavailable — hardcoded fallback is fine
-	}
-}

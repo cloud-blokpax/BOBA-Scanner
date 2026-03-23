@@ -22,12 +22,6 @@ export interface ScanHistoryEntry {
 let _scanHistory = $state<ScanHistoryEntry[]>([]);
 
 export function scanHistory(): ScanHistoryEntry[] { return _scanHistory; }
-export function scanHistoryCount(): number { return _scanHistory.length; }
-export function successRate(): number {
-	if (_scanHistory.length === 0) return 0;
-	const successes = _scanHistory.filter((e) => e.success).length;
-	return Math.round((successes / _scanHistory.length) * 100);
-}
 
 if (browser) {
 	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((entries) => {
@@ -70,18 +64,3 @@ export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp
 	_scanHistory = updated;
 }
 
-export function clearScanHistory(): void {
-	_scanHistory = [];
-	saveToIdb([]);
-}
-
-export function timeAgo(timestamp: number): string {
-	const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-	if (seconds < 60) return `${seconds}s ago`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.floor(hours / 24);
-	return `${days}d ago`;
-}

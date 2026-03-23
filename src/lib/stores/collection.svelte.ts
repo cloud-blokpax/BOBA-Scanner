@@ -55,15 +55,6 @@ export function collectionWeaponTypes(): string[] {
 }
 
 /**
- * Get the total quantity of a specific card across all conditions.
- */
-export function getOwnedCount(cardId: string): number {
-	return _items
-		.filter((i) => i.card_id === cardId)
-		.reduce((sum, i) => sum + i.quantity, 0);
-}
-
-/**
  * Set collection items directly (used by sync service).
  */
 export function setCollectionItems(items: CollectionItem[]): void {

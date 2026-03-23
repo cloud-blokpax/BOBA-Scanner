@@ -34,7 +34,7 @@ export interface EbayListing {
 /**
  * Build an eBay search query from card metadata.
  */
-export function buildEbayQuery(card: {
+function buildEbayQuery(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
 	set_code?: string | null;

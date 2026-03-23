@@ -83,9 +83,7 @@ let _userOverrides = $state<Map<string, boolean>>(new Map());
 let _flagsLoaded = $state(false);
 
 // ── Public reactive accessors ──────────────────────────────────
-export function featureFlags(): Map<string, FeatureFlag> { return _featureFlags; }
 export function userOverrides(): Map<string, boolean> { return _userOverrides; }
-export function flagsLoaded(): boolean { return _flagsLoaded; }
 
 interface UserProfile {
 	is_member?: boolean;
@@ -141,15 +139,6 @@ async function _refreshProfile(userId: string): Promise<void> {
 	} catch (err) {
 		console.debug('[feature-flags] Profile refresh failed:', err);
 	}
-}
-
-export function isFeatureEnabled(featureKey: string): boolean {
-	if (_userOverrides.has(featureKey)) {
-		return _userOverrides.get(featureKey)!;
-	}
-	const flag = _featureFlags.get(featureKey);
-	if (!flag) return false;
-	return roleCheck(flag);
 }
 
 /**
