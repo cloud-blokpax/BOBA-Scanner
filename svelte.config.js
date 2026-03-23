@@ -14,7 +14,8 @@ const config = {
 			$services: 'src/lib/services',
 			$stores: 'src/lib/stores',
 			$workers: 'src/lib/workers',
-			$types: 'src/lib/types'
+			$types: 'src/lib/types',
+			$server: 'src/lib/server'
 		}
 	}
 };

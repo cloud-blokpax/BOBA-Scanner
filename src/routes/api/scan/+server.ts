@@ -7,27 +7,14 @@
  */
 
 import { json, error } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
+import { getAnthropicClient } from '$lib/server/anthropic';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { RequestHandler } from './$types';
 
 const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: ALLOWED_TYPES } = BOBA_SCAN_CONFIG;
-
-let _anthropic: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic {
-	const apiKey = env.CLAUDE_API_KEY ?? env.ANTHROPIC_API_KEY ?? '';
-	if (!apiKey) {
-		throw new Error('Anthropic API key not configured');
-	}
-	if (!_anthropic) {
-		_anthropic = new Anthropic({ apiKey });
-	}
-	return _anthropic;
-}
 
 // ── Structured output tool definition ──────────────────────────
 const CARD_ID_TOOL: Anthropic.Messages.Tool = {

@@ -1,8 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth';
-import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
-import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
@@ -62,12 +60,8 @@ const CONDITION_MAP: Record<string, { conditionId: string; conditionDescription:
 	'Poor': { conditionId: '3000', conditionDescription: 'Heavily played condition' }
 };
 
-function getServiceClient() {
-	const url = publicEnv.PUBLIC_SUPABASE_URL ?? '';
-	const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-	if (!url || !serviceKey) return null;
-	return createClient(url, serviceKey);
-}
+// Service-role client is now imported from $lib/server/supabase-admin
+const getServiceClient = getAdminClient;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();

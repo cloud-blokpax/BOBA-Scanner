@@ -61,6 +61,15 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		throw error(400, 'Discord ID is required for this tournament');
 	}
 
+	// If authenticated, enforce that the registration email matches the session email.
+	// This prevents users from squatting on other people's email addresses.
+	if (user && locals.supabase) {
+		const { data: { user: authUser } } = await locals.supabase.auth.getUser();
+		if (authUser?.email && email.trim().toLowerCase() !== authUser.email.toLowerCase()) {
+			throw error(400, 'Registration email must match your account email');
+		}
+	}
+
 	// Auth user id (already fetched for rate limiting above)
 	const userId = user?.id ?? null;
 

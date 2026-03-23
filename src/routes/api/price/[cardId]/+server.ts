@@ -11,19 +11,9 @@ import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
-import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
-import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
-
-// Helper: get a service-role client for cache writes (bypasses RLS)
-function getServiceClient() {
-	const url = publicEnv.PUBLIC_SUPABASE_URL ?? '';
-	const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-	if (!url || !serviceKey) return null;
-	return createClient(url, serviceKey);
-}
 
 export const GET: RequestHandler = async ({ params, locals, getClientAddress }) => {
 	const { cardId } = params;
@@ -63,7 +53,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 	}
 
 	// Check price cache (4-hour freshness) — use service role to bypass RLS
-	const cacheClient = getServiceClient() || locals.supabase;
+	const cacheClient = getAdminClient() || locals.supabase;
 	const { data: cachedRaw } = await cacheClient
 		.from('price_cache')
 		.select('*')
@@ -149,7 +139,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 		// Update cache — use service role to bypass RLS (price_cache is server-managed)
 		try {
-			const adminClient = getServiceClient();
+			const adminClient = getAdminClient();
 			const writeCacheClient = adminClient || locals.supabase;
 			await writeCacheClient.from('price_cache').upsert(priceData, {
 				onConflict: 'card_id,source'
@@ -161,7 +151,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 		// Log price data point to history — only when price actually changed
 		try {
-			const historyClient = getServiceClient() || locals.supabase;
+			const historyClient = getAdminClient() || locals.supabase;
 			const { data: lastEntry } = await historyClient
 				.from('price_history')
 				.select('price_mid')

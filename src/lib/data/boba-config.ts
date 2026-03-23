@@ -25,6 +25,36 @@ export const BOBA_SCAN_CONFIG = {
 	allowedImageTypes: ['image/jpeg', 'image/png', 'image/webp']
 } as const;
 
+// ── Recognition Pipeline Thresholds ─────────────────────────
+export const BOBA_PIPELINE_CONFIG = {
+	/** Minimum blur variance for reference image submission */
+	referenceImageMinVariance: 150,
+	/** Max OCR corrections stored in local learning cache */
+	maxOcrCorrections: 500,
+	/** Tesseract worker restart interval (recognitions before restart) */
+	ocrWorkerRestartInterval: 50,
+	/** Reference image resize max dimension */
+	referenceImageMaxDimension: 800,
+	/** Minimum confidence to submit a reference image */
+	referenceImageMinConfidence: 0.8,
+	/** dHash fuzzy match max Hamming distance */
+	hashFuzzyMaxDistance: 5,
+	/** pHash verification max Hamming distance (256-bit hash) */
+	pHashVerifyMaxDistance: 20,
+	/** Confidence penalty per bit of dHash distance */
+	hashDistanceConfidencePenalty: 0.015,
+} as const;
+
+// ── Rate Limit Config ───────────────────────────────────────
+export const BOBA_RATE_LIMITS = {
+	/** Global rate limit map cleanup threshold */
+	globalRateLimitMapMaxSize: 5000,
+	/** In-memory rate limit map cleanup threshold */
+	inMemoryRateLimitMapMaxSize: 1000,
+	/** Max scan history entries */
+	maxScanHistoryEntries: 100,
+} as const;
+
 /** Maps release letter codes (from play-cards.json) to display set names */
 export const RELEASE_TO_SET_NAME: Record<string, string> = {
 	A: 'Alpha Edition',

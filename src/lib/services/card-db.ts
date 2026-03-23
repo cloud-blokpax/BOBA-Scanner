@@ -19,6 +19,7 @@ const cardIndex = new Map<string, Card[]>();
 const prefixIndex = new Map<string, Card[]>();
 const idIndex = new Map<string, Card>();
 const heroIndex = new Map<string, Card[]>();
+let searchIndex: Array<{ card: Card; searchText: string }> = [];
 let isLoaded = false;
 let _loadPromise: Promise<Card[]> | null = null;
 
@@ -161,17 +162,50 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 				cards = [...cardMap.values()];
 				isIncremental = true;
 			} else if (!error && newCards && newCards.length === 0) {
-				await idb.setCardsVersion('supabase-' + new Date().toISOString());
-				await idb.setMeta('cards-last-sync', new Date().toISOString());
-				_refreshFailCount = 0;
-				return;
+				// No new cards — but check if any cards were deleted
+				const { count: remoteCount } = await supabase
+					.from('cards')
+					.select('*', { count: 'exact', head: true });
+
+				if (remoteCount !== null && cards.length > remoteCount + 10) {
+					console.debug(`[card-db] Local (${cards.length}) exceeds remote (${remoteCount}) — triggering full refresh for cleanup`);
+					// Fall through to full refresh below
+				} else {
+					await idb.setCardsVersion('supabase-' + new Date().toISOString());
+					await idb.setMeta('cards-last-sync', new Date().toISOString());
+					_refreshFailCount = 0;
+					return;
+				}
 			}
 		}
 
 		if (!isIncremental) {
-			const { data, error } = await supabase.from('cards').select('*');
-			if (error || !data || data.length === 0) return;
-			cards = data as unknown as Card[];
+			// Paginated full refresh — Supabase has a default 1,000 row limit.
+			// Without pagination, this would silently truncate 17,600+ cards to 1,000.
+			const BATCH_SIZE = 1000;
+			let allCards: Card[] = [];
+			let offset = 0;
+			let hasMore = true;
+
+			while (hasMore) {
+				const { data, error } = await supabase
+					.from('cards')
+					.select('*')
+					.range(offset, offset + BATCH_SIZE - 1)
+					.order('id');
+
+				if (error) throw error;
+				if (!data || data.length === 0) {
+					hasMore = false;
+				} else {
+					allCards = allCards.concat(data as Card[]);
+					offset += BATCH_SIZE;
+					if (data.length < BATCH_SIZE) hasMore = false;
+				}
+			}
+
+			if (allCards.length === 0) return;
+			cards = allCards;
 		}
 
 		buildIndexes();
@@ -212,6 +246,7 @@ function buildIndexes() {
 	prefixIndex.clear();
 	idIndex.clear();
 	heroIndex.clear();
+	searchIndex = [];
 
 	for (const card of cards) {
 		if (card.id) idIndex.set(card.id, card);
@@ -221,6 +256,15 @@ function buildIndexes() {
 			if (!heroIndex.has(heroKey)) heroIndex.set(heroKey, []);
 			heroIndex.get(heroKey)!.push(card);
 		}
+
+		// Pre-compute lowercased search text for faster searching
+		const searchText = [
+			card.name?.toLowerCase() || '',
+			card.hero_name?.toLowerCase() || '',
+			card.set_code?.toLowerCase() || '',
+			card.card_number?.toLowerCase() || ''
+		].join(' ');
+		searchIndex.push({ card, searchText });
 
 		const num = normalizeCardNum(card.card_number || '');
 		if (!num) continue;
@@ -258,13 +302,16 @@ export function findCard(
 	if (exactMatches.length === 1) {
 		const card = exactMatches[0];
 		if (normalizedHero && !heroMatches(card, normalizedHero)) {
-			console.warn(
-				`[card-db] Card number "${normalized}" found but hero mismatch: ` +
-				`expected="${normalizedHero}", actual name="${card.name}" hero="${card.hero_name}"`
+			// Card number is an exact match but hero name differs.
+			// Trust the card number — hero names from OCR/AI are less reliable
+			// than card numbers. Log for debugging but return the match.
+			console.debug(
+				`[card-db] Card number "${normalized}" exact match, hero mismatch: ` +
+				`expected="${normalizedHero}", actual name="${card.name}" hero="${card.hero_name}". ` +
+				`Returning exact match (card number trusted over hero name).`
 			);
-		} else {
-			return card;
 		}
+		return card;
 	}
 
 	if (exactMatches.length > 1) {
@@ -363,6 +410,10 @@ export function findSimilarCardNumbers(
 /**
  * Full-text search across card name, hero name, set code.
  */
+/**
+ * Full-text search across card name, hero name, set code.
+ * Callers should debounce this if used on keystroke input.
+ */
 export function searchCards(query: string, limit = 20): Card[] {
 	if (!isLoaded) return [];
 
@@ -373,16 +424,16 @@ export function searchCards(query: string, limit = 20): Card[] {
 		return heroMatch.slice(0, limit);
 	}
 
+	// Use pre-computed lowercased search text for faster filtering
 	const lq = query.toLowerCase();
-	return cards
-		.filter(
-			(c) =>
-				c.name?.toLowerCase().includes(lq) ||
-				c.hero_name?.toLowerCase().includes(lq) ||
-				c.set_code?.toLowerCase().includes(lq) ||
-				c.card_number?.toLowerCase().includes(lq)
-		)
-		.slice(0, limit);
+	const results: Card[] = [];
+	for (const entry of searchIndex) {
+		if (entry.searchText.includes(lq)) {
+			results.push(entry.card);
+			if (results.length >= limit) break;
+		}
+	}
+	return results;
 }
 
 export function getAllCards(): Card[] {

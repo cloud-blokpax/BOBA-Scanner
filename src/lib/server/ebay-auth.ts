@@ -47,3 +47,33 @@ export async function getEbayToken(): Promise<string> {
 	_tokenExp = Date.now() + expiresIn * 1000 - 60_000;
 	return _token!;
 }
+
+/**
+ * Execute a fetch against the eBay API with automatic token retry on 401.
+ * Clears the cached token and retries once if eBay returns 401 Unauthorized.
+ */
+export async function ebayFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+	const token = await getEbayToken();
+	const headers = {
+		...init?.headers,
+		Authorization: `Bearer ${token}`,
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+	};
+
+	const response = await fetch(url.toString(), { ...init, headers });
+
+	if (response.status === 401) {
+		// Token was revoked or expired prematurely — clear cache and retry once
+		_token = null;
+		_tokenExp = 0;
+		const freshToken = await getEbayToken();
+		const retryHeaders = {
+			...init?.headers,
+			Authorization: `Bearer ${freshToken}`,
+			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+		};
+		return fetch(url.toString(), { ...init, headers: retryHeaders });
+	}
+
+	return response;
+}

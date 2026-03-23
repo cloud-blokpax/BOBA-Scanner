@@ -74,23 +74,43 @@ export async function upsertCollectionItem(
 	if (authError || !user) throw new Error('Session expired — please sign in again');
 	const userId = user.id;
 
+	// Check if this card+condition already exists for this user
+	const { data: existing } = await supabase
+		.from('collections')
+		.select('id, quantity')
+		.eq('user_id', userId)
+		.eq('card_id', cardId)
+		.eq('condition', condition)
+		.maybeSingle();
+
+	if (existing) {
+		// Increment quantity on existing entry instead of overwriting to 1
+		const newQuantity = (existing.quantity || 1) + 1;
+		const { data, error } = await supabase
+			.from('collections')
+			.update({ quantity: newQuantity, notes })
+			.eq('id', existing.id)
+			.select(`*, card:cards(*)`)
+			.single();
+
+		if (error) throw error;
+		return data as unknown as CollectionItem;
+	}
+
+	// New entry — insert with quantity 1
 	const { data, error } = await supabase
 		.from('collections')
-		.upsert(
-			{
-				user_id: userId,
-				card_id: cardId,
-				condition,
-				notes,
-				quantity: 1
-			},
-			{ onConflict: 'user_id,card_id,condition' }
-		)
+		.insert({
+			user_id: userId,
+			card_id: cardId,
+			condition,
+			notes,
+			quantity: 1
+		})
 		.select(`*, card:cards(*)`)
 		.single();
 
 	if (error) throw error;
-
 	return data as unknown as CollectionItem;
 }
 
