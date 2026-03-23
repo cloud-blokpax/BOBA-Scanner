@@ -63,9 +63,15 @@
 				return;
 			}
 
-			// Resolve users.id (may differ from auth user id for pre-migration users)
+			// The auth callback in /auth/callback/+server.ts ensures users.auth_user_id
+			// is linked on every login. Use the auth user ID directly.
 			if (!resolvedUserId) {
-				resolvedUserId = await resolveUserId(currentUser, sb);
+				const { data: userRow } = await sb
+					.from('users')
+					.select('id')
+					.eq('auth_user_id', currentUser.id)
+					.maybeSingle();
+				resolvedUserId = userRow?.id || currentUser.id;
 			}
 
 			const { data, error } = await sb
@@ -83,54 +89,6 @@
 		loading = false;
 	}
 
-	/**
-	 * Resolve the `users.id` for the current auth user, creating the record if needed.
-	 * The `tournaments.creator_id` FK points to `users.id`, which may differ from the
-	 * Supabase Auth UUID for pre-migration users.
-	 */
-	async function resolveUserId(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }, sb: NonNullable<ReturnType<typeof getSupabase>>): Promise<string> {
-		// Look up by auth_user_id first
-		const { data: byAuth } = await sb
-			.from('users')
-			.select('id')
-			.eq('auth_user_id', authUser.id)
-			.maybeSingle();
-		if (byAuth) return byAuth.id;
-
-		// Fallback: look up by email and link
-		if (authUser.email) {
-			const { data: byEmail } = await sb
-				.from('users')
-				.select('id')
-				.eq('email', authUser.email)
-				.maybeSingle();
-			if (byEmail) {
-				await sb
-					.from('users')
-					.update({ auth_user_id: authUser.id })
-					.eq('id', byEmail.id);
-				return byEmail.id;
-			}
-		}
-
-		// No record at all — create one using the auth UUID as the primary key
-		const googleId =
-			(authUser.user_metadata?.provider_id as string) || authUser.id;
-		const { data: created, error } = await sb
-			.from('users')
-			.insert({
-				id: authUser.id,
-				auth_user_id: authUser.id,
-				google_id: googleId,
-				email: authUser.email ?? '',
-				name: (authUser.user_metadata?.full_name as string) || authUser.email?.split('@')[0] || 'User'
-			})
-			.select('id')
-			.single();
-		if (error) throw error;
-		return created.id;
-	}
-
 	async function createTournament() {
 		if (!newName.trim() || !newCode.trim()) {
 			showToast('Name and code are required', 'x');
@@ -146,8 +104,15 @@
 		try {
 			const sb = getSupabase();
 			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
-			const usersTableId = resolvedUserId ?? await resolveUserId(currentUser, sb);
-			resolvedUserId = usersTableId;
+			if (!resolvedUserId) {
+				const { data: userRow } = await sb
+					.from('users')
+					.select('id')
+					.eq('auth_user_id', currentUser.id)
+					.maybeSingle();
+				resolvedUserId = userRow?.id || currentUser.id;
+			}
+			const usersTableId = resolvedUserId;
 			const { error } = await sb.from('tournaments').insert({
 				creator_id: usersTableId,
 				code: newCode.toUpperCase(),
