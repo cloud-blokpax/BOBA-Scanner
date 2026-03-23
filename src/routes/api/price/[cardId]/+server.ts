@@ -10,6 +10,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getEbayToken, isEbayConfigured } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
+import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { createClient } from '@supabase/supabase-js';
@@ -24,7 +25,7 @@ function getServiceClient() {
 	return createClient(url, serviceKey);
 }
 
-export const GET: RequestHandler = async ({ params, locals }) => {
+export const GET: RequestHandler = async ({ params, locals, getClientAddress }) => {
 	const { cardId } = params;
 
 	// Validate cardId format (UUID or alphanumeric identifier)
@@ -38,6 +39,24 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	// Check auth (optional — prices can be public)
 	const { user } = await locals.safeGetSession();
+
+	// Rate limit anonymous price lookups to prevent eBay API abuse
+	if (!user) {
+		const rateLimit = await checkAnonScanRateLimit(getClientAddress());
+		if (!rateLimit.success) {
+			return json(
+				{ error: 'Rate limited. Please sign in for unlimited price lookups.' },
+				{
+					status: 429,
+					headers: {
+						'X-RateLimit-Limit': String(rateLimit.limit),
+						'X-RateLimit-Remaining': String(rateLimit.remaining),
+						'X-RateLimit-Reset': String(rateLimit.reset)
+					}
+				}
+			);
+		}
+	}
 
 	if (!locals.supabase) {
 		return json({ error: 'Database not available' }, { status: 503 });
