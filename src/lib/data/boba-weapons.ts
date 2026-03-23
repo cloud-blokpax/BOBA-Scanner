@@ -118,20 +118,6 @@ export function getWeaponRank(key: string): number {
 	return getWeapon(key)?.rank ?? Infinity;
 }
 
-/** Check if weapon1 beats weapon2 in a tie (only Super beats everything) */
-export function winsOnTie(weapon1: string, weapon2: string): boolean {
-	const w1 = getWeapon(weapon1);
-	const w2 = getWeapon(weapon2);
-	if (!w1 || !w2) return false;
-	if (w1.tieBreaker && !w2.tieBreaker) return true;
-	return false;
-}
-
-/** Check if a card's power qualifies as "Apex" (165+, used in Madness format) */
-export function isApexPower(power: number): boolean {
-	return power >= 165;
-}
-
 /** Get all weapon type keys as a string array (for validation) */
 export function getAllWeaponKeys(): string[] {
 	return WEAPON_HIERARCHY.map(w => w.key);

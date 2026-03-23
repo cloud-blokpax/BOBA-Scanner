@@ -5,19 +5,6 @@
  */
 
 /**
- * Escape HTML special characters to prevent XSS.
- */
-export function escapeHtml(str: string): string {
-	if (!str) return '';
-	return str
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#039;');
-}
-
-/**
  * Format a number as currency.
  */
 export function formatPrice(price: number | null | undefined): string {
@@ -40,10 +27,3 @@ export function debounce<T extends (...args: any[]) => void>(
 	};
 }
 
-/**
- * Truncate a string with ellipsis.
- */
-export function truncate(str: string, maxLength: number): string {
-	if (str.length <= maxLength) return str;
-	return str.slice(0, maxLength - 1) + '\u2026';
-}

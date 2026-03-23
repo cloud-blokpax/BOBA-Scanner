@@ -35,11 +35,11 @@ if (browser) {
 	});
 }
 
-export function getCardTags(cardId: string): string[] {
+function getCardTags(cardId: string): string[] {
 	return _cardTags.get(cardId) || [];
 }
 
-export function setCardTags(cardId: string, tags: string[]): void {
+function setCardTags(cardId: string, tags: string[]): void {
 	const newMap = new Map(_cardTags);
 	if (tags.length === 0) { newMap.delete(cardId); }
 	else { newMap.set(cardId, tags); }
@@ -54,27 +54,9 @@ export function addTag(cardId: string, tag: string): void {
 	}
 }
 
-export function removeTag(cardId: string, tag: string): void {
-	const current = getCardTags(cardId);
-	setCardTags(cardId, current.filter((t) => t !== tag));
-}
-
-export function getAllUniqueTags(): string[] {
-	const allTags = new Set<string>();
-	for (const tags of _cardTags.values()) {
-		for (const tag of tags) { allTags.add(tag); }
-	}
-	return [...allTags].sort();
-}
-
 export function getAllTags(): Record<string, string[]> {
 	const obj: Record<string, string[]> = {};
 	for (const [key, val] of _cardTags) { obj[key] = val; }
 	return obj;
 }
 
-export function saveAllTags(data: Record<string, string[]>): void {
-	const map = new Map(Object.entries(data));
-	_cardTags = map;
-	saveTags(map);
-}

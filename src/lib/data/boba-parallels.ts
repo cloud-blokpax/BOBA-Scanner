@@ -74,12 +74,3 @@ export function getParallel(key: string): ParallelType | undefined {
 	);
 }
 
-/** Get all Insert types that count for Madness unlock purposes */
-export function getMadnessInsertTypes(): ParallelType[] {
-	return PARALLEL_TYPES.filter(p => p.isMadnessInsert);
-}
-
-/** Check if a parallel is the wild card (Super) */
-export function isWildParallel(key: string): boolean {
-	return getParallel(key)?.isWild ?? false;
-}

@@ -4,7 +4,7 @@
  * Centralizes vibration patterns used across Scanner, BottomSheet, etc.
  */
 
-export const HAPTIC_PATTERNS = {
+const HAPTIC_PATTERNS = {
 	tap: [15],
 	success: [30, 60, 30],
 	successAdd: [30, 50, 30],
@@ -14,7 +14,7 @@ export const HAPTIC_PATTERNS = {
 	error: [50, 30, 50]
 } as const;
 
-export type HapticPattern = keyof typeof HAPTIC_PATTERNS;
+type HapticPattern = keyof typeof HAPTIC_PATTERNS;
 
 /**
  * Trigger haptic feedback if the device supports it.

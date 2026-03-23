@@ -22,13 +22,6 @@ const heroIndex = new Map<string, Card[]>();
 let isLoaded = false;
 let _loadPromise: Promise<Card[]> | null = null;
 
-// ── Loading progress callback (for UI feedback) ──────────────
-type LoadingCallback = (phase: 'idle' | 'idb' | 'network' | 'indexing' | 'ready', count: number) => void;
-let _onLoadingProgress: LoadingCallback | null = null;
-
-export function setLoadingCallback(cb: LoadingCallback | null) {
-	_onLoadingProgress = cb;
-}
 
 /**
  * Load the card database. Guarantees a usable card index is available.
@@ -51,7 +44,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	if (isLoaded && cards.length > 0) return cards;
 
 	// Layer 1: IndexedDB cache
-	_onLoadingProgress?.('idb', 0);
+
 	try {
 		const cached = await idb.getCards();
 		if (cached && cached.length > 0) {
@@ -60,7 +53,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				cards = cached as Card[];
 				buildIndexes();
 				isLoaded = true;
-				_onLoadingProgress?.('ready', cards.length);
+
 				// Background refresh from Supabase (non-blocking)
 				refreshFromSupabaseInBackground();
 				return cards;
@@ -72,7 +65,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	}
 
 	// Layer 2: Full fetch from Supabase (first-time load or corrupt IDB)
-	_onLoadingProgress?.('network', 0);
+
 	try {
 		const { getSupabase } = await import('./supabase');
 		const client = getSupabase();
@@ -95,17 +88,17 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				} else {
 					allCards = allCards.concat(data as Card[]);
 					offset += BATCH_SIZE;
-					_onLoadingProgress?.('network', allCards.length);
+	
 					if (data.length < BATCH_SIZE) hasMore = false;
 				}
 			}
 
 			if (allCards.length > 0) {
 				cards = allCards;
-				_onLoadingProgress?.('indexing', cards.length);
+	
 				buildIndexes();
 				isLoaded = true;
-				_onLoadingProgress?.('ready', cards.length);
+
 
 				// Cache in IDB for offline use
 				try {
@@ -126,7 +119,6 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 
 	// All sources failed — return empty (app runs in degraded mode)
 	console.warn('[card-db] No card data available from any source');
-	_onLoadingProgress?.('ready', 0);
 	isLoaded = true;
 	return [];
 }
