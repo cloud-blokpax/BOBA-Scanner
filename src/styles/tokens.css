@@ -1,0 +1,149 @@
+/* ── Design Tokens ─────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg-base:     #070b14;
+  --bg-surface:  #0d1524;
+  --bg-elevated: #121d34;
+  --bg-hover:    #182540;
+  --bg-input:    #0a1020;
+
+  /* Borders */
+  --border:        rgba(148,163,184,0.10);
+  --border-strong: rgba(148,163,184,0.20);
+  --border-focus:  rgba(245,158,11,0.50);
+
+  /* Gold accent */
+  --gold:       #f59e0b;
+  --gold-dark:  #d97706;
+  --gold-light: rgba(245,158,11,0.12);
+  --gold-glow:  rgba(245,158,11,0.25);
+
+  /* Blue */
+  --primary:       #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-light: rgba(59,130,246,0.12);
+  --primary-lightest: rgba(59,130,246,0.06);
+
+  /* Semantic */
+  --success:       #10b981;
+  --success-light: rgba(16,185,129,0.12);
+  --danger:        #ef4444;
+  --danger-light:  rgba(239,68,68,0.12);
+  --warning:       #f59e0b;
+  --warning-light: rgba(245,158,11,0.12);
+  --info:          #3b82f6;
+  --info-light:    rgba(59,130,246,0.12);
+
+  /* Text */
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+
+  /* Gray scale — keep mapped for admin modal compatibility */
+  --gray-50:  #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a;
+
+  /* Typography */
+  --font-display: 'Syne', -apple-system, sans-serif;
+  --font-sans:    'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+
+  /* Type scale */
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.5rem;
+  --text-3xl:  1.875rem;
+  --text-4xl:  2.25rem;
+
+  /* Weights */
+  --font-normal:   400;
+  --font-medium:   500;
+  --font-semibold: 600;
+  --font-bold:     700;
+
+  /* Spacing */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radius */
+  --radius-sm:   0.375rem;
+  --radius-md:   0.5rem;
+  --radius-lg:   0.75rem;
+  --radius-xl:   1rem;
+  --radius-2xl:  1.5rem;
+  --radius-full: 9999px;
+
+  /* Shadows — dark-optimized */
+  --shadow-xs: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.7);
+  --shadow-2xl:0 25px 60px rgba(0,0,0,0.8);
+  --shadow-gold: 0 4px 20px rgba(245,158,11,0.35);
+  --shadow-gold-lg: 0 8px 32px rgba(245,158,11,0.45);
+  --shadow-blue: 0 4px 20px rgba(59,130,246,0.35);
+
+  /* Rarity glow colors */
+  --glow-common: #9CA3AF;
+  --glow-uncommon: #22C55E;
+  --glow-rare: #3B82F6;
+  --glow-ultra-rare: #A855F7;
+  --glow-legendary: #F59E0B;
+
+  /* Surface elevation (dark mode: lighter bg = higher elevation) */
+  --elevation-0: var(--bg-base);
+  --elevation-1: var(--bg-surface);
+  --elevation-2: var(--bg-elevated);
+  --elevation-3: var(--bg-hover);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4,0,0.2,1);
+  --transition-base: 220ms cubic-bezier(0.4,0,0.2,1);
+  --transition-slow: 350ms cubic-bezier(0.4,0,0.2,1);
+
+  /* Z-index */
+  --z-base:           0;
+  --z-dropdown:    1000;
+  --z-sticky:      1020;
+  --z-fixed:       1030;
+  --z-modal-backdrop:1040;
+  --z-modal:       1050;
+  --z-popover:     1060;
+  --z-tooltip:     1070;
+}
+
+/* ── Light theme override (applied via data-theme attribute) ── */
+[data-theme="light"] {
+  --bg-base:       #f8fafc;
+  --bg-surface:    #ffffff;
+  --bg-elevated:   #f1f5f9;
+  --bg-hover:      #e2e8f0;
+  --bg-input:      #f8fafc;
+  --text-primary:  #0f172a;
+  --text-secondary: #475569;
+  --text-muted:    #64748b;
+  --text-tertiary: #94a3b8;
+  --border:        rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.20);
+  --border-color:  rgba(15, 23, 42, 0.10);
+}

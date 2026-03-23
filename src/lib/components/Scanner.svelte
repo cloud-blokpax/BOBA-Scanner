@@ -445,13 +445,13 @@
 
 <div class="scanner">
 	<div class="viewfinder">
-		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
 			bind:this={videoEl}
 			autoplay
 			playsinline
 			muted
 			class="camera-feed"
+			aria-label="Camera viewfinder"
 		></video>
 
 		<!-- Auto-capture flash overlay -->

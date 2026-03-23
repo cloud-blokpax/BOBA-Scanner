@@ -44,6 +44,11 @@ const globalRateLimit: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
+const requestIdHandle: Handle = async ({ event, resolve }) => {
+	event.locals.requestId = crypto.randomUUID().slice(0, 8);
+	return resolve(event);
+};
+
 const supabaseHandle: Handle = async ({ event, resolve }) => {
 	const supabaseUrl = publicEnv.PUBLIC_SUPABASE_URL ?? '';
 	const supabaseKey = publicEnv.PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -131,4 +136,4 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(globalRateLimit, supabaseHandle, authGuard);
+export const handle = sequence(requestIdHandle, globalRateLimit, supabaseHandle, authGuard);

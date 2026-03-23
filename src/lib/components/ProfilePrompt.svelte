@@ -69,10 +69,9 @@
 </script>
 
 {#if visible}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="prompt-overlay" role="presentation" onclick={dismiss}>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="prompt-card" onclick={(e) => e.stopPropagation()}>
+	<div class="prompt-overlay" role="presentation" onkeydown={(e) => e.key === 'Escape' && dismiss()}>
+		<button class="overlay-dismiss" type="button" aria-label="Close" tabindex="-1" onclick={dismiss}></button>
+		<div class="prompt-card">
 			<h2>Complete Your Profile</h2>
 			<p class="prompt-desc">Add your name and Discord ID so tournament organizers can reach you. Both are optional.</p>
 
@@ -100,12 +99,21 @@
 	.prompt-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
 		z-index: 200;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 1rem;
+	}
+	.overlay-dismiss {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.6);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 	.prompt-card {
 		background: var(--bg-elevated);

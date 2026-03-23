@@ -83,10 +83,9 @@
 </script>
 
 {#if visible}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={onClose}>
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
+	<div class="modal-backdrop" role="presentation" onkeydown={(e) => e.key === 'Escape' && onClose()}>
+		<button class="backdrop-dismiss" type="button" aria-label="Close" tabindex="-1" onclick={onClose}></button>
+		<div class="modal-card">
 			<div class="modal-header">
 				<h2>Deck Settings</h2>
 				<button class="close-btn" onclick={onClose} aria-label="Close">x</button>
@@ -153,11 +152,20 @@
 		position: fixed;
 		inset: 0;
 		z-index: 100;
-		background: rgba(0, 0, 0, 0.6);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 1rem;
+	}
+	.backdrop-dismiss {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.6);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 	.modal-card {
 		width: 100%;
