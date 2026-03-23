@@ -79,13 +79,17 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			const data = await browseRes.json();
 			const all = data.itemSummaries || [];
 
-			// Filter to exact matches
+			// Filter to exact matches (normalize spaces/hyphens for variants like "BF 108" vs "BF-108")
 			const cardNum = (cardNumber || '').toUpperCase();
+			const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 			const heroStr = (hero || '').toUpperCase();
 			const exact = all.filter((item: { title?: string }) => {
 				if (!item.title) return false;
 				const t = item.title.toUpperCase();
-				if (cardNum && t.includes(cardNum)) return true;
+				if (normalizedCardNum) {
+					const normalizedTitle = t.replace(/[-\s]/g, '');
+					if (normalizedTitle.includes(normalizedCardNum)) return true;
+				}
 				if (heroStr && heroStr.length > 2 && t.includes(heroStr)) return true;
 				return false;
 			});
