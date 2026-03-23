@@ -6,6 +6,7 @@
  */
 
 import { json, error } from '@sveltejs/kit';
+import { checkCollectionRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 /** All valid badges and their metadata */
@@ -52,10 +53,16 @@ const BADGE_DEFINITIONS: Record<string, { name: string; description: string; ico
 	}
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to earn badges');
 	if (!locals.supabase) throw error(503, 'Service unavailable');
+
+	// Rate limit badge requests
+	const rateLimit = await checkCollectionRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429 });
+	}
 
 	const body = await request.json();
 	const badgeKey = body.badge_key as string;

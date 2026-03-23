@@ -1,8 +1,12 @@
 -- ============================================================
 -- BOBA Scanner — Full Supabase Setup (Idempotent)
--- Run this entire script in Supabase SQL Editor.
--- Safe to re-run: uses IF NOT EXISTS, ON CONFLICT DO NOTHING,
--- and DROP POLICY IF EXISTS throughout.
+--
+-- This is the CANONICAL schema definition for the BOBA Scanner
+-- database. Run in Supabase SQL Editor for fresh setups.
+-- Safe to re-run: uses IF NOT EXISTS and ON CONFLICT DO NOTHING.
+--
+-- Auth: Supabase Auth (Google OAuth via PKCE)
+-- RLS: Enabled on ALL tables.
 -- ============================================================
 
 -- ── Extensions ──────────────────────────────────────────────
@@ -15,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- ── users ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  google_id       TEXT UNIQUE NOT NULL,
+  google_id       TEXT UNIQUE,  -- Legacy: nullable for non-Google providers
   email           TEXT NOT NULL,
   name            TEXT,
   picture         TEXT,
@@ -262,6 +266,64 @@ CREATE TABLE IF NOT EXISTS public.parallel_rarity_config (
   updated_by      UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- ── price_history (price trend tracking) ────────────────────
+CREATE TABLE IF NOT EXISTS public.price_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id         UUID NOT NULL REFERENCES cards(id),
+  source          TEXT NOT NULL DEFAULT 'ebay',
+  price_low       DECIMAL(10,2),
+  price_mid       DECIMAL(10,2),
+  price_high      DECIMAL(10,2),
+  listings_count  INTEGER,
+  recorded_at     TIMESTAMPTZ DEFAULT now()
+);
+
+-- ── ebay_seller_tokens (per-user eBay OAuth) ────────────────
+CREATE TABLE IF NOT EXISTS public.ebay_seller_tokens (
+  user_id                   UUID PRIMARY KEY,
+  access_token              TEXT NOT NULL,
+  access_token_expires_at   TIMESTAMPTZ NOT NULL,
+  refresh_token             TEXT NOT NULL,
+  refresh_token_expires_at  TIMESTAMPTZ NOT NULL,
+  scopes                    TEXT,
+  created_at                TIMESTAMPTZ DEFAULT now(),
+  updated_at                TIMESTAMPTZ DEFAULT now()
+);
+
+-- ── listing_templates (eBay listing drafts) ─────────────────
+CREATE TABLE IF NOT EXISTS public.listing_templates (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  card_id         UUID REFERENCES cards(id),
+  title           TEXT NOT NULL,
+  description     TEXT,
+  price           DECIMAL(10,2),
+  condition       TEXT,
+  sku             TEXT,
+  status          TEXT DEFAULT 'draft',
+  ebay_listing_id TEXT,
+  ebay_listing_url TEXT,
+  error_message   TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- ── app_config (admin key-value settings) ───────────────────
+CREATE TABLE IF NOT EXISTS public.app_config (
+  key             TEXT PRIMARY KEY,
+  value           JSONB,
+  description     TEXT,
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- ── deck_shop_refresh_log (rate tracking for price refreshes) ─
+CREATE TABLE IF NOT EXISTS public.deck_shop_refresh_log (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  card_count      INTEGER DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+
 -- ============================================================
 -- 3. INDEXES
 -- ============================================================
@@ -295,18 +357,18 @@ CREATE INDEX IF NOT EXISTS idx_prices_freshness ON price_cache(fetched_at);
 CREATE INDEX IF NOT EXISTS idx_metrics_created ON scan_metrics(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_method ON scan_metrics(scan_method);
 
+-- Price history indexes
+CREATE INDEX IF NOT EXISTS idx_price_history_card_date ON price_history(card_id, recorded_at DESC);
+
+-- Deck shop refresh log indexes
+CREATE INDEX IF NOT EXISTS idx_deck_shop_refresh_user_date ON deck_shop_refresh_log(user_id, created_at DESC);
+
 -- ============================================================
 -- 4. ROW LEVEL SECURITY
 -- ============================================================
--- The app uses a hybrid auth approach:
---   - SvelteKit routes use Supabase Auth (auth.uid() works)
---   - Legacy vanilla JS uses Google OAuth directly (no auth.uid())
---
--- For new tables (cards, collections_v2, scans, etc.) we enable
--- RLS with auth.uid() policies for the SvelteKit layer.
---
--- For legacy tables (users, collections, etc.) we disable RLS
--- since the vanilla JS client uses the anon key without Supabase Auth.
+-- The app uses Supabase Auth exclusively (PKCE flow).
+-- RLS is enabled on all tables. Service role is used for
+-- server-side privileged operations.
 -- ============================================================
 
 -- ── Drop ALL existing policies (safe re-run) ────────────────
@@ -372,19 +434,21 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS metrics_manage_service ON scan_metrics;
 END $$;
 
--- ── Legacy tables: DISABLE RLS (vanilla JS + anon key) ──────
-ALTER TABLE users                          DISABLE ROW LEVEL SECURITY;
-ALTER TABLE system_settings                DISABLE ROW LEVEL SECURITY;
-ALTER TABLE api_call_logs                  DISABLE ROW LEVEL SECURITY;
-ALTER TABLE feature_flags                  DISABLE ROW LEVEL SECURITY;
-ALTER TABLE user_feature_overrides         DISABLE ROW LEVEL SECURITY;
-ALTER TABLE themes                         DISABLE ROW LEVEL SECURITY;
-ALTER TABLE collections                    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE tournaments                    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_templates                DISABLE ROW LEVEL SECURITY;
-ALTER TABLE user_admin_template_assignments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE system_stats                   DISABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_actions                  DISABLE ROW LEVEL SECURITY;
+-- ── Legacy tables: ENABLE RLS ──────────────────────────────
+-- All tables now use RLS. Detailed policies for legacy tables
+-- are defined in enable-rls-legacy-tables.sql.
+ALTER TABLE users                          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_call_logs                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feature_flags                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_feature_overrides         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE themes                         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collections                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tournaments                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_templates                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_admin_template_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_stats                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_actions                  ENABLE ROW LEVEL SECURITY;
 
 -- ── New tables: ENABLE RLS (SvelteKit + Supabase Auth) ──────
 
@@ -467,6 +531,53 @@ CREATE POLICY "metrics_insert_authenticated" ON scan_metrics
 
 CREATE POLICY "metrics_manage_service" ON scan_metrics
   FOR ALL TO service_role USING (true);
+
+-- ── price_history: readable by authenticated, managed by service role ─
+ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "price_history_select_authenticated" ON price_history;
+CREATE POLICY "price_history_select_authenticated" ON price_history
+  FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "price_history_manage_service" ON price_history;
+CREATE POLICY "price_history_manage_service" ON price_history
+  FOR ALL TO service_role USING (true);
+
+-- ── ebay_seller_tokens: service role only (sensitive credentials) ─
+ALTER TABLE ebay_seller_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ebay_tokens_service_only" ON ebay_seller_tokens;
+CREATE POLICY "ebay_tokens_service_only" ON ebay_seller_tokens
+  FOR ALL USING (false);
+
+-- ── listing_templates: users own their listings ─
+ALTER TABLE listing_templates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "listing_templates_own" ON listing_templates;
+CREATE POLICY "listing_templates_own" ON listing_templates
+  FOR ALL TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
+
+-- ── app_config: readable by all, managed by service role ─
+ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "app_config_select" ON app_config;
+CREATE POLICY "app_config_select" ON app_config
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "app_config_manage_service" ON app_config;
+CREATE POLICY "app_config_manage_service" ON app_config
+  FOR ALL TO service_role USING (true);
+
+-- ── deck_shop_refresh_log: users see own, service role manages ─
+ALTER TABLE deck_shop_refresh_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "refresh_log_own" ON deck_shop_refresh_log;
+CREATE POLICY "refresh_log_own" ON deck_shop_refresh_log
+  FOR ALL TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 
 -- ============================================================
 -- 5. KEEP-ALIVE CRON (prevents Supabase project pausing)

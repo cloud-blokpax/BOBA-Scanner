@@ -8,6 +8,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { validateDeck, type DeckValidationResult } from '$lib/services/deck-validator';
+import { checkCollectionRateLimit } from '$lib/server/rate-limit';
 import type { Card } from '$lib/types';
 
 interface ValidateRequestBody {
@@ -17,7 +18,15 @@ interface ValidateRequestBody {
 	hotDogCards?: Card[];
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
+	// Rate limit validation requests
+	const { user } = await locals.safeGetSession();
+	const rateLimitKey = user?.id ?? getClientAddress();
+	const rateLimit = await checkCollectionRateLimit(rateLimitKey);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429 });
+	}
+
 	try {
 		const body: ValidateRequestBody = await request.json();
 		const { heroCards, formatId, playCards = [], hotDogCards = [] } = body;

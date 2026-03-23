@@ -98,18 +98,14 @@ BOBA-Scanner/
 │   │   │   ├── CardFlipReveal.svelte # Card flip/reveal animation
 │   │   │   ├── OptimizedCardImage.svelte # Optimized image display with lazy loading
 │   │   │   ├── PriceDisplay.svelte # Price information display
-│   │   │   ├── PriceTrends.svelte  # Price trend charts
-│   │   │   ├── StatsStrip.svelte   # Collection statistics bar
-│   │   │   ├── PremiumGate.svelte  # Premium feature gating component
+│   │   │   ├── PriceTrends.svelte  # Price trend charts (premium)
 │   │   │   ├── ProfilePrompt.svelte# User profile setup prompt
 │   │   │   ├── Toast.svelte        # Toast notification component
-│   │   │   ├── ThemeSwitcher.svelte# Theme toggle
 │   │   │   ├── InstallPrompt.svelte# PWA install prompt
-│   │   │   └── Onboarding.svelte   # New user onboarding flow
+│   │   │   └── UpdateBanner.svelte # App version update banner
 │   │   ├── data/
 │   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards)
-│   │   │   ├── play-cards.json     # Play card master list (409 cards across 4 releases, with DBS values and hot dog costs)
-│   │   │   ├── play-cards.json     # Play card database (409 cards with DBS values, hot dog costs)
+│   │   │   ├── play-cards.json     # Play card database (409 cards across 4 releases, with DBS values and hot dog costs)
 │   │   │   ├── static-cards.ts     # Maps raw JSON to Card type
 │   │   │   ├── boba-config.ts      # OCR regions, scan config, rarities, weapons
 │   │   │   ├── boba-heroes.ts      # Hero name → athlete name mappings
@@ -177,8 +173,8 @@ BOBA-Scanner/
 │   ├── version.json                # App version metadata
 │   └── robots.txt                  # Disallow all crawlers
 ├── supabase/migrations/
-│   ├── supabase-schema.sql         # Full database schema (12+ tables, RLS config)
-│   └── supabase-full-setup.sql     # Complete setup including functions/triggers
+│   ├── supabase-full-setup.sql     # Canonical schema (all tables, indexes, RLS)
+│   └── README.md                   # Migration documentation
 ├── scripts/
 │   └── generate-card-seed.js       # Generate SQL seed from card-database.json
 ├── middleware.js                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
@@ -278,7 +274,6 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/boba-parallels.ts` — All parallel/treatment types with Madness unlock eligibility
 - `src/lib/data/tournament-formats.ts` — Machine-readable rules for all 6 competitive formats
 - `src/lib/data/boba-dbs-scores.ts` — DBS point values for Play cards (409 entries across Alpha, Griffey, Alpha Update, and Alpha Blast releases)
-- `src/lib/data/play-cards.json` — Master Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
 - `src/lib/data/play-cards.json` — Play card database (409 cards across 4 releases, with DBS values and hot dog costs; ability text fields exist but are not yet populated)
 - `src/lib/data/boba-heroes.ts` — Hero name → athlete name mappings
 - `src/lib/data/boba-config.ts` — OCR regions, scan config, field definitions
@@ -312,15 +307,15 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - Image uploads sanitized via sharp CDR (Content Disarm & Reconstruction): EXIF stripping, pixel bomb protection, re-encoding
 - Bot/scraper protection via Vercel Edge Middleware (`middleware.js`) — blocks bots, missing User-Agent, suspicious headers, and AI training crawlers (GPTBot, ClaudeBot, etc.)
 - CSP headers configured in `vercel.json`
-- No direct RLS — auth enforced at application level (hooks + API checks)
+- RLS enabled on all tables via Supabase Auth — policies in `enable-rls-legacy-tables.sql` and `supabase-full-setup.sql`
 - Rate limiting on all mutation endpoints
 
 ### Database
 
-- 12+ tables defined in `supabase/migrations/supabase-schema.sql`
+- All tables defined in `supabase/migrations/supabase-full-setup.sql` (canonical schema)
 - Key tables: `users`, `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`
 - RLS is disabled; access control is application-level via the anon key + server-side auth checks
-- Card seed data generated via `scripts/generate-card-seed.js` from `card-database.json`
+- Card seed data generated via `scripts/generate-card-seed.js` from `src/lib/data/card-database.json`
 
 ## Environment Variables
 

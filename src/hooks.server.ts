@@ -3,6 +3,47 @@ import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { env as publicEnv } from '$env/dynamic/public';
 
+// ── Global rate limiter (100 requests/minute per IP) ─────────
+const globalRateMap = new Map<string, { count: number; windowStart: number }>();
+const GLOBAL_WINDOW_MS = 60_000;
+const GLOBAL_MAX_REQUESTS = 100;
+
+const globalRateLimit: Handle = async ({ event, resolve }) => {
+	// Skip rate limiting for static assets
+	if (event.url.pathname.startsWith('/_app/') || event.url.pathname.startsWith('/icon-')) {
+		return resolve(event);
+	}
+
+	const ip = event.getClientAddress();
+	const now = Date.now();
+	const entry = globalRateMap.get(ip) || { count: 0, windowStart: now };
+
+	if (now - entry.windowStart > GLOBAL_WINDOW_MS) {
+		entry.count = 0;
+		entry.windowStart = now;
+	}
+
+	if (entry.count >= GLOBAL_MAX_REQUESTS) {
+		globalRateMap.set(ip, entry);
+		return new Response(
+			JSON.stringify({ error: 'Too many requests' }),
+			{ status: 429, headers: { 'Content-Type': 'application/json' } }
+		);
+	}
+
+	entry.count++;
+	globalRateMap.set(ip, entry);
+
+	// Periodic cleanup to prevent memory leak
+	if (globalRateMap.size > 5000) {
+		for (const [k, v] of globalRateMap) {
+			if (now - v.windowStart > GLOBAL_WINDOW_MS * 2) globalRateMap.delete(k);
+		}
+	}
+
+	return resolve(event);
+};
+
 const supabaseHandle: Handle = async ({ event, resolve }) => {
 	const supabaseUrl = publicEnv.PUBLIC_SUPABASE_URL ?? '';
 	const supabaseKey = publicEnv.PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -90,4 +131,4 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(supabaseHandle, authGuard);
+export const handle = sequence(globalRateLimit, supabaseHandle, authGuard);

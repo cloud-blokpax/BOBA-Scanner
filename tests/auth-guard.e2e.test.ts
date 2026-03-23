@@ -51,6 +51,7 @@ function makeEvent(pathname: string, overrides: Record<string, unknown> = {}) {
 			set: vi.fn()
 		},
 		locals: {} as Record<string, unknown>,
+		getClientAddress: () => '127.0.0.1',
 		...overrides
 	};
 }

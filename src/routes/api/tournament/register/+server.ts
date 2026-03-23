@@ -1,9 +1,18 @@
 import { json, error } from '@sveltejs/kit';
+import { checkCollectionRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	if (!locals.supabase) {
 		throw error(503, 'Service unavailable');
+	}
+
+	// Rate limit registration requests
+	const { user } = await locals.safeGetSession();
+	const rateLimitKey = user?.id ?? getClientAddress();
+	const rateLimit = await checkCollectionRateLimit(rateLimitKey);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 
 	let body;
@@ -52,8 +61,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Discord ID is required for this tournament');
 	}
 
-	// Get auth user id if logged in
-	const { session, user } = await locals.safeGetSession();
+	// Auth user id (already fetched for rate limiting above)
 	const userId = user?.id ?? null;
 
 	// Upsert registration (update if same tournament + email)

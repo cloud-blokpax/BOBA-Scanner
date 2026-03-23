@@ -140,6 +140,22 @@
   --z-tooltip:     1070;
 }
 
+/* ── Light theme override (applied via data-theme attribute) ── */
+[data-theme="light"] {
+  --bg-base:       #f8fafc;
+  --bg-surface:    #ffffff;
+  --bg-elevated:   #f1f5f9;
+  --bg-hover:      #e2e8f0;
+  --bg-input:      #f8fafc;
+  --text-primary:  #0f172a;
+  --text-secondary: #475569;
+  --text-muted:    #64748b;
+  --text-tertiary: #94a3b8;
+  --border:        rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.20);
+  --border-color:  rgba(15, 23, 42, 0.10);
+}
+
 /* ── View Transitions ──────────────────────────────────── */
 @view-transition { navigation: auto; }
 
