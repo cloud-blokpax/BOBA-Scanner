@@ -44,6 +44,6 @@ export async function getEbayToken(): Promise<string> {
 	const data = await response.json();
 	_token = data.access_token;
 	const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
-	_tokenExp = Date.now() + Math.max(expiresIn - 60, 0) * 1000;
+	_tokenExp = Date.now() + expiresIn * 1000 - 60_000;
 	return _token!;
 }

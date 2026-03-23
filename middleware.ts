@@ -66,18 +66,8 @@ export default function middleware(request: NextRequest): Response | undefined {
     });
   }
 
-  // Block requests with suspicious headers that indicate automated tools
-  const suspiciousHeaders = [
-    'x-forwarded-for-original',  // proxy chains
-  ];
-  for (const header of suspiciousHeaders) {
-    if (request.headers.has(header)) {
-      return new Response(forbidden403Page(), {
-        status: 403,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
-    }
-  }
+  // Suspicious header checks (currently none — x-forwarded-for-original removed
+  // because it's set by legitimate CDNs and corporate proxies)
 
   // Check for missing Accept header on navigation requests (browsers always send it)
   const acceptHeader = request.headers.get('accept');

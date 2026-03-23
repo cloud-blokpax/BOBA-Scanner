@@ -242,6 +242,7 @@ CREATE TABLE IF NOT EXISTS public.cards (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_card_id_legacy ON public.cards(card_id_legacy) WHERE card_id_legacy IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_cards_set_code ON public.cards(set_code);
 CREATE INDEX IF NOT EXISTS idx_cards_card_number ON public.cards(card_number);
 CREATE INDEX IF NOT EXISTS idx_cards_name ON public.cards(name);
@@ -602,7 +603,7 @@ BEGIN
         last_seen  = NOW(),
         phash_256  = COALESCE(EXCLUDED.phash_256, hash_cache.phash_256);
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- ----------------------------------------------------------------------------
@@ -663,6 +664,18 @@ BEGIN
     WHERE id = tid;
 END;
 $$ LANGUAGE plpgsql;
+
+
+-- ----------------------------------------------------------------------------
+-- increment_shared_deck_views(deck_id UUID)
+-- Atomically increments the view_count on a shared deck.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.increment_shared_deck_views(deck_id UUID)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE public.shared_decks SET view_count = view_count + 1 WHERE id = deck_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- ----------------------------------------------------------------------------

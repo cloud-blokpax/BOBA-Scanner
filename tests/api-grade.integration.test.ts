@@ -139,8 +139,10 @@ describe('POST /api/grade', () => {
 			const locals = makeLocals();
 			mockCreate.mockResolvedValue({
 				content: [{
-					type: 'text',
-					text: JSON.stringify({
+					type: 'tool_use',
+					id: 'toolu_01',
+					name: 'grade_card',
+					input: {
 						grade: 8.5,
 						grade_label: 'NM-MT+',
 						confidence: 0.85,
@@ -151,7 +153,7 @@ describe('POST /api/grade', () => {
 						back_centering: '50/50',
 						summary: 'High-grade card with excellent condition',
 						submit_recommendation: 'yes'
-					})
+					}
 				}]
 			});
 
@@ -165,7 +167,7 @@ describe('POST /api/grade', () => {
 			expect(body.submit_recommendation).toBe('yes');
 		});
 
-		it('returns 422 when Claude response has no JSON', async () => {
+		it('returns 422 when Claude response has no tool_use block', async () => {
 			const locals = makeLocals();
 			mockCreate.mockResolvedValue({
 				content: [{ type: 'text', text: 'Sorry, I cannot grade this image.' }]
@@ -180,8 +182,10 @@ describe('POST /api/grade', () => {
 			const locals = makeLocals();
 			mockCreate.mockResolvedValue({
 				content: [{
-					type: 'text',
-					text: '{"grade": 15, "grade_label": "Invalid"}'
+					type: 'tool_use',
+					id: 'toolu_02',
+					name: 'grade_card',
+					input: { grade: 15, grade_label: 'Invalid' }
 				}]
 			});
 
@@ -224,8 +228,21 @@ describe('POST /api/grade', () => {
 			const locals = makeLocals();
 			mockCreate.mockResolvedValue({
 				content: [{
-					type: 'text',
-					text: '{"grade":9,"grade_label":"Mint","confidence":0.9,"corners":"Perfect","edges":"Clean","surface":"Pristine","front_centering":"50/50","back_centering":"50/50","summary":"Gem mint","submit_recommendation":"yes"}'
+					type: 'tool_use',
+					id: 'toolu_03',
+					name: 'grade_card',
+					input: {
+						grade: 9,
+						grade_label: 'Mint',
+						confidence: 0.9,
+						corners: 'Perfect',
+						edges: 'Clean',
+						surface: 'Pristine',
+						front_centering: '50/50',
+						back_centering: '50/50',
+						summary: 'Gem mint',
+						submit_recommendation: 'yes'
+					}
 				}]
 			});
 

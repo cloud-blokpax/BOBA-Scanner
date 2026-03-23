@@ -102,3 +102,11 @@ export const BOBA_FIELD_DEFINITIONS = [
 	{ key: 'variant', label: 'Variant', type: 'select' as const, options: [...BOBA_VARIANTS] },
 	{ key: 'parallel', label: 'Parallel', type: 'text' as const }
 ];
+
+/** Maps release letter codes (from play-cards.json) to display set names */
+export const RELEASE_TO_SET_NAME: Record<string, string> = {
+	A: 'Alpha Edition',
+	G: 'Griffey Edition',
+	U: 'Alpha Update',
+	HTD: 'Alpha Blast'
+};

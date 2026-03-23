@@ -1,8 +1,8 @@
 # Test Coverage Analysis — BOBA Scanner
 
-**Date:** 2026-03-21
-**Tests:** ~101 cases across 9 test files
-**Estimated module coverage:** ~30% (9 of ~30+ significant modules)
+**Date:** 2026-03-23
+**Tests:** ~110 cases across 10 test files
+**Estimated module coverage:** ~30% (10 of ~30+ significant modules)
 
 ---
 
@@ -19,6 +19,7 @@
 | `api-grade.integration.test.ts` | `POST /api/grade` | 12 | Integration |
 | `auth-guard.e2e.test.ts` | `hooks.server.ts` | 13 | E2E |
 | `recognition-pipeline.e2e.test.ts` | `recognition.ts` | 16 | E2E |
+| `deck-validator.test.ts` | `deck-validator.ts` | 9 | Unit |
 
 ### What's Well Covered
 
@@ -34,7 +35,7 @@
 - **No store tests** — all 9 Svelte stores are untested
 - **No utility tests** — `escapeHtml`, `formatPrice`, `debounce`, `truncate` in `utils/index.ts`
 - **No data integrity tests** — sync, IDB, and collection-service are all untested
-- **No business logic tests** — deck-validator (383 LOC of tournament rules) has zero tests
+- **Partially covered** — deck-validator has 9 tests covering SPEC power cap, combined power cap, per-power-level limits, duplicate variation detection, and deck stats; missing: Madness insert-unlock logic, DBS cap validation, Hot Dog count validation, parallel-restricted format validation, and edge cases
 - **No edge middleware tests** — bot-blocking regex logic untested
 
 ---
@@ -43,20 +44,16 @@
 
 ### Priority 1: Critical Business Logic (Data Integrity / Correctness Risk)
 
-#### 1. `deck-validator.ts` (~383 LOC) — Tournament rule engine
+#### 1. `deck-validator.ts` (~450 LOC) — Tournament rule engine (Partially Covered)
 
-The most complex pure-logic module in the codebase, enforcing legality across 6 tournament formats. A validation bug could allow illegal decks or reject valid ones.
+The most complex pure-logic module in the codebase, enforcing legality across 6 tournament formats. Existing tests (9 cases in `deck-validator.test.ts`) cover SPEC power cap, combined power cap, per-power-level limits, duplicate variation detection, and deck stats.
 
-**Recommended tests (~20 cases):**
-- Hero count enforcement (exactly 60)
-- SPEC Power cap (no card > 160 in SPEC format)
-- Combined Power cap (sum ≤ 8,250 in Elite format)
-- Max 6 heroes at same power level
-- Unique variation enforcement (hero + weapon + parallel)
-- All 30 Plays must be unique; no duplicate Plays
-- Hot Dog cards: 10 allowed, duplicates OK
+**Remaining recommended tests (~11 cases):**
+- Hot Dog deck size validation (exact count, too few, too many)
+- Foil Hot Dog requirement (Madness format)
 - DBS budget (total ≤ 1,000)
 - Apex Madness insert-unlock logic (10+ of a type → 1 Apex card)
+- Parallel-restricted format validation
 - Edge cases: exactly at limit, one over, empty deck, no-cap format (Apex Playmaker)
 
 **Testability:** Excellent — pure functions, no external dependencies.

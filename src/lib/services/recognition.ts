@@ -379,10 +379,10 @@ async function runTier1(bitmap: ImageBitmap): Promise<ScanResult | null> {
 	// This catches the same card under different lighting conditions.
 	if (client) {
 		try {
-			const { data: fuzzyMatch } = await (client.rpc as CallableFunction)('find_similar_hash', {
+			const { data: fuzzyMatch } = await client.rpc('find_similar_hash', {
 				query_hash: hash,
 				max_distance: 5
-			}) as { data: Array<{ card_id: string; confidence: number; distance: number; phash_256?: string }> | null };
+			});
 			if (fuzzyMatch && fuzzyMatch.length > 0) {
 				const match = fuzzyMatch[0];
 
@@ -561,6 +561,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	// Fallback: if card_number didn't match (or was null/cleared by server validation),
 	// try searching by hero name alone. This handles cases where the AI misread the
 	// card number but correctly identified the hero.
+	let heroFallbackUsed = false;
 	if (!card && claudeHero) {
 		const heroSearchResults = searchCards(claudeHero, 10);
 		if (heroSearchResults.length > 0) {
@@ -576,7 +577,8 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			// If still no match (or no power info), take the first hero match
 			if (!card) {
 				card = heroSearchResults[0];
-				console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" → ${card.card_number}`);
+				heroFallbackUsed = true;
+				console.debug(`[scan:tier3] Fallback: matched by hero="${claudeHero}" → ${card.card_number} (hero-only, confidence capped)`);
 			}
 		}
 	}
@@ -586,6 +588,12 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 		const matchedHero = (card.hero_name || card.name || '').toUpperCase();
 		const expectedHero = (claudeHero || '').toUpperCase();
 		let confidence = result.card.confidence || 0.9;
+
+		// Hero-only fallback without power verification: cap confidence
+		// to signal to the user that manual verification is recommended
+		if (heroFallbackUsed) {
+			confidence = Math.min(confidence, 0.5);
+		}
 
 		if (expectedHero && matchedHero && expectedHero !== matchedHero) {
 			// Partial match check (e.g. "AIR JORDAN" contains "AIR JORDAN")
@@ -660,11 +668,11 @@ async function writeHashToAllLayers(
 	try {
 		const client = getSupabase();
 		if (client) {
-			await (client.rpc as CallableFunction)('upsert_hash_cache', {
+			await client.rpc('upsert_hash_cache', {
 				p_phash: hash,
 				p_card_id: cardId,
 				p_confidence: confidence,
-				p_phash_256: phash256 || null
+				p_phash_256: phash256 || undefined
 			});
 		}
 	} catch (err) {
