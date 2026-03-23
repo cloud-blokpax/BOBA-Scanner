@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import PriceDisplay from './PriceDisplay.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
-	import { updateQuantity, removeFromCollection } from '$lib/stores/collection';
-	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { updateQuantity, removeFromCollection } from '$lib/stores/collection.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import type { CollectionItem } from '$lib/types';
 	import type { ActionReturn } from 'svelte/action';
 
@@ -128,7 +128,7 @@
 							<h3>eBay Prices</h3>
 							<PriceDisplay cardId={item.card.id} card={item.card} />
 						</div>
-						{#if $hasPriceHistory}
+						{#if hasPriceHistory()}
 							{#await import('$lib/components/PriceTrends.svelte') then PriceTrends}
 								<PriceTrends.default
 									cardNumber={item.card.card_number || ''}

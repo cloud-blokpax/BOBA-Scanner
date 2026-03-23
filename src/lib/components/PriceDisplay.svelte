@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getPrice } from '$lib/stores/prices';
+	import { getPrice } from '$lib/stores/prices.svelte';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import type { PriceData, Card } from '$lib/types';
 

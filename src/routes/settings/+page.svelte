@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { getSupabase } from '$lib/services/supabase';
-	import { user } from '$lib/stores/auth';
-	import { showToast } from '$lib/stores/toast';
-	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { user } from '$lib/stores/auth.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { page } from '$app/stores';
 
 	const hasScanToList = featureEnabled('scan_to_list');
@@ -25,7 +25,7 @@
 
 	async function loadProfile() {
 		loading = true;
-		const currentUser = $user;
+		const currentUser = user();
 		if (!currentUser) {
 			loading = false;
 			return;
@@ -54,19 +54,19 @@
 
 	async function loadBadges() {
 		const client = getSupabase();
-		if (!client || !$user) return;
+		if (!client || !user()) return;
 		// Table not in generated types — use untyped query
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const { data } = await (client as any)
 			.from('user_badges')
 			.select('badge_key, badge_name, badge_description, badge_icon, earned_at')
-			.eq('user_id', $user.id)
+			.eq('user_id', user()!.id)
 			.order('earned_at', { ascending: true });
 		badges = data || [];
 	}
 
 	async function saveProfile() {
-		const currentUser = $user;
+		const currentUser = user();
 		if (!currentUser) return;
 		const client = getSupabase();
 		if (!client) return;
@@ -110,7 +110,7 @@
 
 	// Load eBay status
 	$effect(() => {
-		if (!$hasScanToList) { ebayLoading = false; return; }
+		if (!hasScanToList()) { ebayLoading = false; return; }
 		fetch('/api/ebay/status')
 			.then(res => res.ok ? res.json() : Promise.reject())
 			.then(data => {
@@ -173,7 +173,7 @@
 			</button>
 		</div>
 
-		{#if $hasScanToList}
+		{#if hasScanToList()}
 			<div class="settings-card" style="margin-top: 1rem;">
 				<h2>eBay Seller Account</h2>
 

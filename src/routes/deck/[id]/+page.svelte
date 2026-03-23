@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { get } from 'svelte/store';
 	import DeckHeader from '$lib/components/deck/DeckHeader.svelte';
 	import DeckHeroesTab from '$lib/components/deck/DeckHeroesTab.svelte';
 	import DeckPlaysTab from '$lib/components/deck/DeckPlaysTab.svelte';
@@ -11,8 +10,8 @@
 	import Scanner from '$lib/components/Scanner.svelte';
 	import { updateDeckContents, updateDeckSettings, type PlayEntry } from '$lib/services/deck-service';
 	import { loadCardDatabase, getCardById } from '$lib/services/card-db';
-	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import { showToast } from '$lib/stores/toast';
+	import { collectionItems, loadCollection } from '$lib/stores/collection.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { validateDeck } from '$lib/services/deck-validator';
 	import { recognizeCard } from '$lib/services/recognition';
 	import type { Card, ScanResult } from '$lib/types';
@@ -208,7 +207,7 @@
 {#if activeTab === 'heroes'}
 	<DeckHeroesTab
 		{heroCards}
-		collectionItems={get(collectionItems)}
+		collectionItems={collectionItems()}
 		specPowerCap={data.deck.spec_power_cap}
 		heroDeckMax={data.deck.hero_deck_max}
 		onAddHero={addHeroById}

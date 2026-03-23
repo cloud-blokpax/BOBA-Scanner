@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import BatchScanner from '$lib/components/BatchScanner.svelte';
-	import { initScanner } from '$lib/stores/scanner';
+	import { initScanner } from '$lib/stores/scanner.svelte';
 	import { goto } from '$app/navigation';
 
 	onMount(() => {

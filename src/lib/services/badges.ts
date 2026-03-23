@@ -6,7 +6,7 @@
  */
 
 import { browser } from '$app/environment';
-import { showToast } from '$lib/stores/toast';
+import { showToast } from '$lib/stores/toast.svelte';
 
 const BADGE_LABELS: Record<string, string> = {
 	shutterbug: 'Shutterbug — first top reference image',

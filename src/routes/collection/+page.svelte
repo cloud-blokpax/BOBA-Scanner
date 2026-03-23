@@ -8,7 +8,7 @@
 		collectionCount,
 		uniqueCardCount,
 		loadCollection
-	} from '$lib/stores/collection';
+	} from '$lib/stores/collection.svelte';
 	import type { CollectionItem } from '$lib/types';
 
 	let selectedItem = $state<CollectionItem | null>(null);
@@ -26,13 +26,13 @@
 	<div class="collection-header">
 		<h1>My Collection</h1>
 		<div class="stats">
-			<span class="stat">{$uniqueCardCount} unique</span>
+			<span class="stat">{uniqueCardCount()} unique</span>
 			<span class="stat-divider">/</span>
-			<span class="stat">{$collectionCount} total</span>
+			<span class="stat">{collectionCount()} total</span>
 		</div>
 	</div>
 
-	{#if $collectionLoading}
+	{#if collectionLoading()}
 		<div class="skeleton-grid">
 			{#each Array(8) as _}
 				<div class="skeleton-card">
@@ -43,7 +43,7 @@
 		</div>
 	{:else}
 		<CardGrid
-			items={$collectionItems}
+			items={collectionItems()}
 			onCardClick={(item) => (selectedItem = item)}
 		/>
 	{/if}

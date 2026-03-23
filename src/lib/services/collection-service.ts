@@ -20,7 +20,7 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 	if (supabase) {
 		try {
 			const { data, error } = await supabase
-				.from('collections_v2')
+				.from('collections')
 				.select(`
 					*,
 					card:cards(*)
@@ -75,7 +75,7 @@ export async function upsertCollectionItem(
 	const userId = user.id;
 
 	const { data, error } = await supabase
-		.from('collections_v2')
+		.from('collections')
 		.upsert(
 			{
 				user_id: userId,
@@ -102,7 +102,7 @@ export async function updateItemQuantity(itemId: string, quantity: number): Prom
 	if (!supabase) throw new Error('Supabase is not configured');
 
 	const { error } = await supabase
-		.from('collections_v2')
+		.from('collections')
 		.update({ quantity })
 		.eq('id', itemId);
 
@@ -116,7 +116,7 @@ export async function deleteCollectionItem(itemId: string): Promise<void> {
 	const supabase = getSupabase();
 	if (!supabase) throw new Error('Supabase is not configured');
 
-	const { error } = await supabase.from('collections_v2').delete().eq('id', itemId);
+	const { error } = await supabase.from('collections').delete().eq('id', itemId);
 	if (error) throw error;
 }
 

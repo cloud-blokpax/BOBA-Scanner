@@ -2,8 +2,8 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getSupabase } from '$lib/services/supabase';
-	import { collectionItems, loadCollection } from '$lib/stores/collection';
-	import { showToast } from '$lib/stores/toast';
+	import { collectionItems, loadCollection } from '$lib/stores/collection.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import type { CollectionItem } from '$lib/types';
 
 	interface TournamentInfo {
@@ -31,7 +31,7 @@
 	let step = $state<'info' | 'deck' | 'done'>('info');
 	let deckCards = $state<CollectionItem[]>([]);
 	let submitting = $state(false);
-	let collectionLoading = $state(false);
+	let isCollectionLoading = $state(false);
 
 	const maxDeckSize = $derived(tournament ? tournament.max_heroes : 30);
 
@@ -97,17 +97,17 @@
 	}
 
 	async function reloadCollection() {
-		collectionLoading = true;
+		isCollectionLoading = true;
 		try {
 			await loadCollection();
-			if ($collectionItems.length === 0) {
+			if (collectionItems().length === 0) {
 				showToast('No cards found in collection', 'x');
 			}
 		} catch (err) {
 			console.debug('[tournament-enter] Collection load failed:', err);
 			showToast('Failed to load collection', 'x');
 		}
-		collectionLoading = false;
+		isCollectionLoading = false;
 	}
 
 	function addToDeck(item: CollectionItem) {
@@ -249,7 +249,7 @@
 
 				<h3 class="collection-heading">Your Collection</h3>
 				<div class="available-list">
-					{#each $collectionItems as item (item.id)}
+					{#each collectionItems() as item (item.id)}
 						{@const inDeck = deckCards.some((d) => d.id === item.id)}
 						<button
 							class="available-card"
@@ -269,8 +269,8 @@
 						<div class="empty-collection-actions">
 							<p class="empty-collection-text">No cards in your collection yet.</p>
 							<a href="/scan" class="scan-cards-btn">Scan Cards</a>
-							<button class="load-collection-btn" onclick={reloadCollection} disabled={collectionLoading}>
-								{collectionLoading ? 'Loading...' : 'Load from Collection'}
+							<button class="load-collection-btn" onclick={reloadCollection} disabled={isCollectionLoading}>
+								{isCollectionLoading ? 'Loading...' : 'Load from Collection'}
 							</button>
 						</div>
 					{/each}

@@ -4,10 +4,10 @@
 	import { page } from '$app/stores';
 	import { getSupabase } from '$lib/services/supabase';
 	import { setupAutoSync } from '$lib/services/sync';
-	import { featureEnabled } from '$lib/stores/feature-flags';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 
 	const hasScanToList = featureEnabled('scan_to_list');
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
@@ -105,7 +105,7 @@
 			showToast(`Processing ${queued.length} queued scan(s)...`, 'info');
 
 			const { recognizeCard } = await import('$lib/services/recognition');
-			const { addToCollection } = await import('$lib/stores/collection');
+			const { addToCollection } = await import('$lib/stores/collection.svelte');
 			let successCount = 0;
 
 			for (const item of queued) {
@@ -208,7 +208,7 @@
 				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
 				<a href="/speed" class="more-item" onclick={() => (showMore = false)}>Speed Challenge</a>
 				<a href="/leaderboard" class="more-item" onclick={() => (showMore = false)}>Leaderboard</a>
-				{#if $hasScanToList}
+				{#if hasScanToList()}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>
 						<span class="premium-badge">PRO</span> eBay Listings
 					</a>

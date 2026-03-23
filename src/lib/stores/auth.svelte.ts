@@ -1,47 +1,45 @@
-import { writable, derived } from 'svelte/store';
 import type { User, Session } from '@supabase/supabase-js';
 import { getSupabase } from '$lib/services/supabase';
 
-export const user = writable<User | null>(null);
-export const session = writable<Session | null>(null);
+// ── Private mutable state ──────────────────────────────────
+let _user = $state<User | null>(null);
+let _session = $state<Session | null>(null);
 
-export const isAuthenticated = derived(user, ($user) => $user !== null);
-export const userId = derived(user, ($user) => $user?.id ?? null);
-export const userEmail = derived(user, ($user) => $user?.email ?? null);
+// ── Public reactive accessors (read $state in calling context) ──
+export function user(): User | null { return _user; }
+export function session(): Session | null { return _session; }
+export function isAuthenticated(): boolean { return _user !== null; }
+export function userId(): string | null { return _user?.id ?? null; }
+export function userEmail(): string | null { return _user?.email ?? null; }
 
 /**
  * Initialize auth state from Supabase and listen for changes.
- * Call this once in the root layout's onMount.
- * Returns a no-op cleanup if Supabase is not configured (offline mode).
  */
 export function initAuth() {
 	const client = getSupabase();
 	if (!client) return () => {};
 
-	// Get initial session — validate JWT with getUser() to avoid stale cookie data
 	client.auth.getUser().then(({ data: { user: validatedUser }, error: authErr }) => {
 		if (authErr || !validatedUser) {
-			session.set(null);
-			user.set(null);
+			_session = null;
+			_user = null;
 			return;
 		}
-		// User is validated — now safe to read session for token metadata
 		client.auth.getSession().then(({ data }) => {
-			session.set(data.session);
-			user.set(validatedUser);
+			_session = data.session;
+			_user = validatedUser;
 		});
 	}).catch((err) => {
 		console.warn('Failed to get initial auth session:', err);
-		session.set(null);
-		user.set(null);
+		_session = null;
+		_user = null;
 	});
 
-	// Listen for auth changes
 	const {
 		data: { subscription }
 	} = client.auth.onAuthStateChange((_event, newSession) => {
-		session.set(newSession);
-		user.set(newSession?.user ?? null);
+		_session = newSession;
+		_user = newSession?.user ?? null;
 	});
 
 	return () => subscription.unsubscribe();

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { toasts } from '$lib/stores/toast';
+	import { toasts } from '$lib/stores/toast.svelte';
 </script>
 
-{#if $toasts.length > 0}
+{#if toasts().length > 0}
 	<div class="toast-container">
-		{#each $toasts as toast (toast.id)}
+		{#each toasts() as toast (toast.id)}
 			<div class="toast-item">
 				{#if toast.icon}<span class="toast-icon">{toast.icon}</span>{/if}
 				<span class="toast-message">{toast.message}</span>

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { collectionItems } from '$lib/stores/collection';
-	import { getAllTags } from '$lib/stores/tags';
+	import { collectionItems } from '$lib/stores/collection.svelte';
+	import { getAllTags } from '$lib/stores/tags.svelte';
+	import type { CollectionItem } from '$lib/types';
 	import {
 		EXPORT_FIELDS,
 		EBAY_CONDITION_MAP,
@@ -16,7 +17,7 @@
 		type ExportTemplate,
 		type ExportCard
 	} from '$lib/services/export-templates';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { formatPrice } from '$lib/utils';
 
 	type ExportScope = 'all' | 'current';
@@ -51,7 +52,7 @@
 	let ebayBulkCondition = $state('NM');
 
 	function populateEbayQueue() {
-		ebayQueue = $collectionItems.map(item => ({
+		ebayQueue = collectionItems().map(item => ({
 			id: item.id,
 			heroName: item.card?.hero_name || item.card?.name || '',
 			cardNumber: item.card?.card_number || '',
@@ -103,8 +104,8 @@
 	}
 
 	function getFilteredCards(): Record<string, unknown>[] {
-		return $collectionItems
-			.filter((item) => {
+		return collectionItems()
+			.filter((item: CollectionItem) => {
 				if (filter === 'all') return true;
 				const card = item.card;
 				if (!card) return false;
@@ -150,7 +151,7 @@
 	}
 
 	function runDeckExport() {
-		const items = $collectionItems;
+		const items = collectionItems();
 		const headers = ['Slot', 'Card #', 'Name', 'Cost', 'Ability', 'DBS'];
 		const rows: string[][] = [];
 		let slot = 1;

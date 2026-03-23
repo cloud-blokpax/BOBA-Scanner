@@ -4,7 +4,7 @@
 	import Scanner from '$lib/components/Scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import ScannerErrorBoundary from '$lib/components/ScannerErrorBoundary.svelte';
-	import { initScanner } from '$lib/stores/scanner';
+	import { initScanner } from '$lib/stores/scanner.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let scanResult = $state<ScanResult | null>(null);

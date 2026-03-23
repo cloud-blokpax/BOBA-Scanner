@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Card } from '$lib/types';
 	import { searchCards } from '$lib/services/card-db';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 
 	let { card, onCorrect, onClose }: {
 		card: Partial<Card>;

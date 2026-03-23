@@ -15,7 +15,7 @@ import { getSupabase } from './supabase';
 import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
-import { addToScanHistory } from '$lib/stores/scan-history';
+import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
 import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
@@ -222,7 +222,7 @@ export async function recognizeCard(
 
 		// Auto-tag card with its parallel name
 		if (final.card?.parallel && final.card_id) {
-			import('$lib/stores/tags').then(({ addTag }) => {
+			import('$lib/stores/tags.svelte').then(({ addTag }) => {
 				addTag(final.card_id!, final.card!.parallel!);
 			}).catch(() => {});
 		}

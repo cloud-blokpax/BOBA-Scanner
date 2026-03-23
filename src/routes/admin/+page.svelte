@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getSupabase } from '$lib/services/supabase';
-	import { showToast } from '$lib/stores/toast';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { debounce } from '$lib/utils';
 	import {
 		getAllParallelConfig,
@@ -14,7 +14,7 @@
 		saveFeatureFlag,
 		loadFeatureFlags,
 		type FeatureFlag
-	} from '$lib/stores/feature-flags';
+	} from '$lib/stores/feature-flags.svelte';
 	import type { CardRarity } from '$lib/types';
 
 	interface UserRow {

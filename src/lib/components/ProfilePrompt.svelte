@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getSupabase } from '$lib/services/supabase';
-	import { user } from '$lib/stores/auth';
-	import { showToast } from '$lib/stores/toast';
+	import { user } from '$lib/stores/auth.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
 
 	let visible = $state(false);
 	let profileName = $state('');
@@ -10,7 +10,7 @@
 	let checkedForUserId = $state<string | null>(null);
 
 	$effect(() => {
-		const currentUser = $user;
+		const currentUser = user();
 		if (!currentUser) return;
 		// Re-check when user changes (e.g., sign out and sign in as different user)
 		if (checkedForUserId === currentUser.id) return;
@@ -38,7 +38,7 @@
 	}
 
 	async function save() {
-		const currentUser = $user;
+		const currentUser = user();
 		if (!currentUser) return;
 		const client = getSupabase();
 		if (!client) return;

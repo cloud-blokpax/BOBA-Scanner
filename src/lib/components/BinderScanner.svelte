@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { ScanResult } from '$lib/types';
 	import { recognizeCard } from '$lib/services/recognition';
-	import { addToCollection } from '$lib/stores/collection';
+	import { addToCollection } from '$lib/stores/collection.svelte';
 
 	let { onClose }: { onClose?: () => void } = $props();
 
