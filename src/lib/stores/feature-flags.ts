@@ -97,6 +97,8 @@ interface UserProfile {
 
 let _userProfile: UserProfile | null = null;
 let _userProfileForUserId: string | null = null;
+let _userProfileFetchedAt = 0;
+const PROFILE_MAX_AGE = 60_000; // 60 seconds
 
 function roleCheck(flag: FeatureFlag): boolean {
 	if (flag.enabled_globally) return true;
@@ -106,17 +108,43 @@ function roleCheck(flag: FeatureFlag): boolean {
 		if (_userProfile) {
 			_userProfile = null;
 			_userProfileForUserId = null;
+			_userProfileFetchedAt = 0;
 		}
 		return flag.enabled_for_guest === true;
 	}
-	// If user changed since last profile fetch, profile is stale — treat as authenticated
-	if (_userProfileForUserId && _userProfileForUserId !== currentUser.id) {
+	// Invalidate if user changed or profile is stale
+	if (
+		(_userProfileForUserId && _userProfileForUserId !== currentUser.id) ||
+		(Date.now() - _userProfileFetchedAt > PROFILE_MAX_AGE)
+	) {
 		_userProfile = null;
 		_userProfileForUserId = null;
+		_userProfileFetchedAt = 0;
+		// Trigger async profile refresh (non-blocking)
+		_refreshProfile(currentUser.id);
 	}
 	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
 	if (_userProfile?.is_member) return flag.enabled_for_member !== false;
 	return flag.enabled_for_authenticated !== false;
+}
+
+async function _refreshProfile(userId: string): Promise<void> {
+	try {
+		const client = getSupabase();
+		if (!client) return;
+		const { data: profile } = await client
+			.from('users')
+			.select('is_member, is_admin')
+			.eq('auth_user_id', userId)
+			.single();
+		_userProfile = profile || null;
+		_userProfileForUserId = userId;
+		_userProfileFetchedAt = Date.now();
+		// Force derived stores to recalculate
+		featureFlags.update(f => new Map(f));
+	} catch (err) {
+		console.debug('[feature-flags] Profile refresh failed:', err);
+	}
 }
 
 /**
@@ -200,6 +228,7 @@ export async function loadFeatureFlags(): Promise<void> {
 				.single();
 			_userProfile = profile || null;
 			_userProfileForUserId = currentUser.id;
+			_userProfileFetchedAt = Date.now();
 
 			const { data: overrides } = await client
 				.from('user_feature_overrides')
