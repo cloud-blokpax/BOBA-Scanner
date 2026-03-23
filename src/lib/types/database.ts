@@ -136,7 +136,7 @@ export interface Database {
 			users: {
 				Row: {
 					id: string;
-					google_id: string;
+					google_id: string | null;
 					email: string;
 					name: string | null;
 					picture: string | null;
@@ -152,7 +152,7 @@ export interface Database {
 					created_at: string;
 				};
 				Insert: {
-					google_id: string;
+					google_id?: string | null;
 					email: string;
 					name?: string | null;
 					picture?: string | null;
@@ -464,6 +464,94 @@ export interface Database {
 					created_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['deck_shop_refresh_log']['Insert']>;
+				Relationships: [];
+			};
+
+			user_decks: {
+				Row: {
+					id: string;
+					user_id: string;
+					name: string;
+					format_id: string;
+					is_custom_format: boolean;
+					notes: string | null;
+					hero_deck_min: number;
+					hero_deck_max: number | null;
+					play_deck_size: number;
+					bonus_plays_max: number;
+					hot_dog_deck_size: number;
+					dbs_cap: number;
+					spec_power_cap: number | null;
+					combined_power_cap: number | null;
+					hero_card_ids: string[];
+					play_entries: unknown[];
+					hot_dog_count: number;
+					is_shared: boolean;
+					created_at: string;
+					updated_at: string;
+					last_edited_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					name?: string;
+					format_id?: string;
+					is_custom_format?: boolean;
+					notes?: string | null;
+					hero_deck_min?: number;
+					hero_deck_max?: number | null;
+					play_deck_size?: number;
+					bonus_plays_max?: number;
+					hot_dog_deck_size?: number;
+					dbs_cap?: number;
+					spec_power_cap?: number | null;
+					combined_power_cap?: number | null;
+					hero_card_ids?: string[];
+					play_entries?: unknown[];
+					hot_dog_count?: number;
+					is_shared?: boolean;
+				};
+				Update: Partial<Database['public']['Tables']['user_decks']['Insert']>;
+				Relationships: [];
+			};
+			card_reference_images: {
+				Row: {
+					card_id: string;
+					image_path: string;
+					phash: string | null;
+					phash_256: string | null;
+					confidence: number;
+					contributed_by: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					card_id: string;
+					image_path: string;
+					phash?: string | null;
+					phash_256?: string | null;
+					confidence: number;
+					contributed_by?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['card_reference_images']['Insert']>;
+				Relationships: [];
+			};
+			community_corrections: {
+				Row: {
+					id: string;
+					ocr_reading: string;
+					correct_card_number: string;
+					confirmation_count: number;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					id?: string;
+					ocr_reading: string;
+					correct_card_number: string;
+					confirmation_count?: number;
+				};
+				Update: Partial<Database['public']['Tables']['community_corrections']['Insert']>;
 				Relationships: [];
 			};
 		};

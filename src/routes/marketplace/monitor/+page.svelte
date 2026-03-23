@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 	import { collectionItems } from '$lib/stores/collection';
 	import { fetchSellerListings, scoreListingMatch, type EbayListing } from '$lib/services/ebay';
 	import { showToast } from '$lib/stores/toast';
+	import { idb } from '$lib/services/idb';
 
 	const SETTINGS_KEY = 'ebayMonitorSettings';
 	const LAST_CHECK_KEY = 'ebayMonitorLastCheck';
@@ -19,30 +20,42 @@
 		score: number;
 	}
 
-	let settings = $state<MonitorSettings>(loadSettings());
+	let settings = $state<MonitorSettings>({ enabled: false, sellerUsername: '' });
 	let checking = $state(false);
 	let matches = $state<MatchResult[]>([]);
-	let lastCheck = $state<string | null>(loadLastCheck());
+	let lastCheck = $state<string | null>(null);
 
-	function loadSettings(): MonitorSettings {
-		if (!browser) return { enabled: false, sellerUsername: '' };
+	// Load from IDB on mount
+	onMount(async () => {
 		try {
-			const raw = localStorage.getItem(SETTINGS_KEY);
-			return raw ? JSON.parse(raw) : { enabled: false, sellerUsername: '' };
+			const stored = await idb.getMeta<MonitorSettings>(SETTINGS_KEY);
+			if (stored && typeof stored === 'object') {
+				settings = stored as MonitorSettings;
+			}
+			const storedCheck = await idb.getMeta<string>(LAST_CHECK_KEY);
+			if (storedCheck) lastCheck = storedCheck;
+
+			// One-time localStorage migration
+			const legacySettings = localStorage.getItem('ebayMonitorSettings');
+			if (legacySettings) {
+				const parsed = JSON.parse(legacySettings);
+				settings = parsed;
+				await idb.setMeta(SETTINGS_KEY, parsed);
+				localStorage.removeItem('ebayMonitorSettings');
+			}
+			const legacyCheck = localStorage.getItem('ebayMonitorLastCheck');
+			if (legacyCheck) {
+				lastCheck = legacyCheck;
+				await idb.setMeta(LAST_CHECK_KEY, legacyCheck);
+				localStorage.removeItem('ebayMonitorLastCheck');
+			}
 		} catch (err) {
 			console.debug('[marketplace-monitor] Settings load failed:', err);
-			return { enabled: false, sellerUsername: '' };
 		}
-	}
-
-	function loadLastCheck(): string | null {
-		if (!browser) return null;
-		return localStorage.getItem(LAST_CHECK_KEY);
-	}
+	});
 
 	function saveSettings() {
-		if (!browser) return;
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+		idb.setMeta(SETTINGS_KEY, settings).catch(() => {});
 	}
 
 	async function checkNow() {
@@ -78,7 +91,7 @@
 
 			matches = results.sort((a, b) => b.score - a.score);
 			lastCheck = new Date().toISOString();
-			if (browser) localStorage.setItem(LAST_CHECK_KEY, lastCheck);
+			idb.setMeta(LAST_CHECK_KEY, lastCheck).catch(() => {});
 			showToast(`Found ${matches.length} matches`, 'check');
 		} catch (err) {
 			console.debug('[marketplace-monitor] Listing check failed:', err);

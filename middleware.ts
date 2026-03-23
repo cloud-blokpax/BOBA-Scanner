@@ -1,6 +1,8 @@
 // Vercel Edge Middleware — Bot & Scraper Protection
 // Returns 403 Forbidden for known bots, scrapers, and automated tools
 
+import type { NextRequest } from '@vercel/edge';
+
 const BLOCKED_USER_AGENTS = [
   // Scrapers & crawlers
   'scrapy', 'wget', 'curl', 'httpie', 'python-requests', 'python-urllib',
@@ -27,7 +29,6 @@ const BLOCKED_USER_AGENTS = [
 
 // Paths that should always be accessible (health checks, monitoring, API endpoints)
 const ALLOWED_PATHS = [
-  '/api/config',       // needed for app initialization
   '/api/',             // all API endpoints (they have their own auth/rate limiting)
   '/.well-known/',     // standard well-known paths
 ];
@@ -37,7 +38,7 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
-export default function middleware(request) {
+export default function middleware(request: NextRequest): Response | undefined {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
@@ -91,7 +92,7 @@ export default function middleware(request) {
   return;
 }
 
-function forbidden403Page() {
+function forbidden403Page(): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

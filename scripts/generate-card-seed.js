@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, '..');
 
-const cards = JSON.parse(readFileSync(resolve(rootDir, 'card-database.json'), 'utf8'));
+const cards = JSON.parse(readFileSync(resolve(rootDir, 'src/lib/data/card-database.json'), 'utf8'));
 
 function escapeSQL(str) {
 	if (str === null || str === undefined) return 'NULL';

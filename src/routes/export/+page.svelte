@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { collectionItems } from '$lib/stores/collection';
 	import { getAllTags } from '$lib/stores/tags';
 	import {
@@ -26,9 +27,13 @@
 	);
 	let scope = $state<ExportScope>('all');
 	let filter = $state<ExportFilter>('all');
-	let templates = $state<ExportTemplate[]>(getUserTemplates());
+	let templates = $state<ExportTemplate[]>([]);
 	let newTemplateName = $state('');
 	let activeTab = $state<'csv' | 'deck' | 'ebay'>('csv');
+
+	onMount(async () => {
+		templates = await getUserTemplates();
+	});
 
 	// eBay batch export state
 	interface EbayQueueItem {
@@ -199,18 +204,18 @@
 		showToast(`eBay export: ${cards.length} cards`, 'check');
 	}
 
-	function saveTemplate() {
+	async function saveTemplate() {
 		if (!newTemplateName.trim()) {
 			showToast('Enter a template name', 'x');
 			return;
 		}
-		saveUserTemplate({
+		await saveUserTemplate({
 			id: crypto.randomUUID(),
 			name: newTemplateName.trim(),
 			fields: [...selectedFields],
 			updatedAt: new Date().toISOString()
 		});
-		templates = getUserTemplates();
+		templates = await getUserTemplates();
 		newTemplateName = '';
 		showToast('Template saved', 'check');
 	}
@@ -220,9 +225,9 @@
 		showToast(`Loaded: ${template.name}`, 'check');
 	}
 
-	function removeTemplate(id: string) {
-		deleteUserTemplate(id);
-		templates = getUserTemplates();
+	async function removeTemplate(id: string) {
+		await deleteUserTemplate(id);
+		templates = await getUserTemplates();
 		showToast('Template deleted', 'check');
 	}
 </script>

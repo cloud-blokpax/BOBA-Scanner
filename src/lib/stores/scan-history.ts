@@ -1,14 +1,15 @@
 /**
  * Scan history store — chronological record of scan attempts.
  *
- * Replaces legacy scan-history.js. Stores up to 100 recent scans
- * in localStorage for offline access.
+ * Stores up to 100 recent scans in IndexedDB for offline access.
+ * Migrates from localStorage on first load.
  */
 
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
+import { idb } from '$lib/services/idb';
 
-const STORAGE_KEY = 'scanHistory';
+const IDB_KEY = 'scanHistory';
 const MAX_ENTRIES = 100;
 
 export interface ScanHistoryEntry {
@@ -22,23 +23,7 @@ export interface ScanHistoryEntry {
 	processingMs: number;
 }
 
-function loadFromStorage(): ScanHistoryEntry[] {
-	if (!browser) return [];
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw ? JSON.parse(raw) : [];
-	} catch (err) {
-		console.debug('[scan-history] History load from storage failed:', err);
-		return [];
-	}
-}
-
-function saveToStorage(entries: ScanHistoryEntry[]): void {
-	if (!browser) return;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-export const scanHistory = writable<ScanHistoryEntry[]>(loadFromStorage());
+export const scanHistory = writable<ScanHistoryEntry[]>([]);
 
 export const scanHistoryCount = derived(scanHistory, ($history) => $history.length);
 export const successRate = derived(scanHistory, ($history) => {
@@ -46,6 +31,38 @@ export const successRate = derived(scanHistory, ($history) => {
 	const successes = $history.filter((e) => e.success).length;
 	return Math.round((successes / $history.length) * 100);
 });
+
+// Load from IDB asynchronously on startup (non-blocking)
+if (browser) {
+	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((entries) => {
+		if (Array.isArray(entries) && entries.length > 0) {
+			scanHistory.set(entries);
+		}
+	}).catch((err) => {
+		console.debug('[scan-history] IDB load failed:', err);
+	});
+
+	// Migrate from localStorage if present (one-time bridge)
+	try {
+		const legacyRaw = localStorage.getItem('scanHistory');
+		if (legacyRaw) {
+			const legacyEntries = JSON.parse(legacyRaw);
+			if (Array.isArray(legacyEntries) && legacyEntries.length > 0) {
+				idb.setMeta(IDB_KEY, legacyEntries).then(() => {
+					scanHistory.set(legacyEntries);
+					localStorage.removeItem('scanHistory');
+				}).catch(() => {});
+			}
+		}
+	} catch { /* ignore */ }
+}
+
+function saveToIdb(entries: ScanHistoryEntry[]): void {
+	if (!browser) return;
+	idb.setMeta(IDB_KEY, entries).catch((err) => {
+		console.debug('[scan-history] IDB save failed:', err);
+	});
+}
 
 /**
  * Add a scan to history.
@@ -58,7 +75,7 @@ export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp
 			timestamp: Date.now()
 		};
 		const updated = [newEntry, ...history].slice(0, MAX_ENTRIES);
-		saveToStorage(updated);
+		saveToIdb(updated);
 		return updated;
 	});
 }
@@ -68,7 +85,7 @@ export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp
  */
 export function clearScanHistory(): void {
 	scanHistory.set([]);
-	saveToStorage([]);
+	saveToIdb([]);
 }
 
 /**

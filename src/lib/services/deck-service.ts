@@ -9,14 +9,11 @@
 import { getSupabase } from '$lib/services/supabase';
 import { getFormat } from '$lib/data/tournament-formats';
 
-// ── Supabase helper for untyped table ───────────────────────
-// user_decks is not yet in the generated Database types.
-// Use a typed wrapper to avoid `any` while still bypassing generated type restrictions.
+// ── Supabase helper for user_decks table ────────────────────
 function userDecksTable() {
 	const client = getSupabase();
 	if (!client) return null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return (client as any).from('user_decks') as ReturnType<NonNullable<ReturnType<typeof getSupabase>>['from']>;
+	return client.from('user_decks');
 }
 
 // ── Types ───────────────────────────────────────────────────

@@ -82,6 +82,13 @@
 			navigator.serviceWorker.register('/service-worker.js').catch((err) => {
 				console.warn('SW registration failed:', err);
 			});
+
+			// Listen for legacy SW self-destruction (static/sw.js)
+			navigator.serviceWorker.addEventListener('message', (event) => {
+				if (event.data?.type === 'LEGACY_SW_REMOVED') {
+					showToast('App updated — old cache cleared', 'check');
+				}
+			});
 		}
 
 		// Request persistent storage to prevent browser from evicting cached data
