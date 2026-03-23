@@ -52,14 +52,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					}
 				} else if (!existingUser) {
 					// No user record at all — create one
-					const googleId =
-						user.user_metadata?.provider_id ||
-						user.app_metadata?.provider_id ||
-						user.id;
 					await locals.supabase.from('users').upsert({
 						id: user.id,
 						auth_user_id: user.id,
-						google_id: googleId,
+						google_id: (user.user_metadata?.provider_id as string) || null,
 						email: user.email,
 						name: user.user_metadata?.full_name || user.email.split('@')[0]
 					}, { onConflict: 'id' });
