@@ -5,6 +5,8 @@
 	import { isAuthenticated } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores/toast';
 	import { analyzeDeckGaps, selectCardsForPriceRefresh, type GapAnalysis, type GapCandidate } from '$lib/services/deck-gap-finder';
+	import { fetchDeck, fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
+	import { loadCardDatabase, getCardById } from '$lib/services/card-db';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { getAllWeaponKeys } from '$lib/data/boba-weapons';
 	import type { Card, CollectionItem } from '$lib/types';
@@ -13,7 +15,11 @@
 	const weaponKeys = getAllWeaponKeys();
 
 	// ── State ───────────────────────────────────────────────
-	let selectedFormatId = $state($page.url.searchParams.get('format') || 'spec_playmaker');
+	let availableDecks = $state<UserDeck[]>([]);
+	let selectedDeckId = $state<string | null>($page.url.searchParams.get('deck') || null);
+	let selectedFormatId = $derived(
+		availableDecks.find(d => d.id === selectedDeckId)?.format_id || 'spec_playmaker'
+	);
 	let gapAnalysis = $state<GapAnalysis | null>(null);
 	let loading = $state(true);
 	let refreshing = $state(false);
@@ -26,27 +32,21 @@
 	let sortMode = $state<'cheapest' | 'common' | 'power'>('cheapest');
 	let displayLimit = $state(50);
 
-	// Load deck from localStorage to get current hero cards
-	function loadDeckHeroes(): Card[] {
-		try {
-			const raw = localStorage.getItem('boba-deck-draft');
-			if (!raw) return [];
-			const deck = JSON.parse(raw);
-			const heroIds = new Set<string>(deck.heroCardIds || []);
-			if (heroIds.size === 0) return [];
+	// Load deck hero cards from Supabase via deck service
+	async function loadDeckHeroes(): Promise<Card[]> {
+		if (!selectedDeckId) return [];
+		const deck = await fetchDeck(selectedDeckId);
+		if (!deck || !deck.hero_card_ids?.length) return [];
 
-			const items = $collectionItems;
-			return items
-				.filter((item: CollectionItem) => heroIds.has(item.id))
-				.map((item: CollectionItem) => item.card)
-				.filter((c: Card | null | undefined): c is Card => c !== null && c !== undefined);
-		} catch {
-			return [];
-		}
+		await loadCardDatabase();
+		return deck.hero_card_ids
+			.map((id: string) => getCardById(id))
+			.filter((c): c is Card => c !== undefined && c !== null);
 	}
 
-	function computeGaps() {
-		const heroes = loadDeckHeroes();
+	async function computeGaps() {
+		loading = true;
+		const heroes = await loadDeckHeroes();
 		if (heroes.length === 0) {
 			gapAnalysis = null;
 			loading = false;
@@ -63,18 +63,27 @@
 		loading = false;
 	}
 
-	// Recompute when format changes
+	// Recompute when deck or collection changes
 	$effect(() => {
-		const _format = selectedFormatId;
+		const _deck = selectedDeckId;
 		const _items = $collectionItems;
-		if (_items.length > 0) {
+		if (_items.length > 0 && _deck) {
 			computeGaps();
 		}
 	});
 
-	onMount(() => {
-		loadCollection();
+	onMount(async () => {
+		availableDecks = await fetchUserDecks();
+		if (!selectedDeckId && availableDecks.length > 0) {
+			selectedDeckId = availableDecks[0].id;
+		}
+		await loadCollection();
 	});
+
+	function formatName(formatId: string): string {
+		const fmt = formats.find(f => f.id === formatId);
+		return fmt?.name || formatId;
+	}
 
 	// ── Filtered & sorted candidates ────────────────────────
 	const filteredCandidates = $derived.by(() => {
@@ -170,18 +179,23 @@
 			<p>Sign in to see personalized card recommendations based on your collection and deck.</p>
 			<a href="/auth/login?redirectTo=/deck/shop" class="btn-primary">Sign In</a>
 		</div>
-	{:else if loading}
-		<div class="shop-loading">Loading collection and analyzing gaps...</div>
-	{:else if !gapAnalysis}
+	{:else if loading && availableDecks.length === 0}
+		<div class="shop-loading">Loading decks and collection...</div>
+	{:else if availableDecks.length === 0}
 		<div class="shop-empty">
-			<p>No deck found. <a href="/deck">Build a deck</a> first, then come back to shop for cards.</p>
+			<p>Create a deck first to see gap analysis.</p>
+			<a href="/deck" class="btn-primary">Create Deck</a>
+		</div>
+	{:else if !gapAnalysis && !loading}
+		<div class="shop-empty">
+			<p>Select a deck with hero cards to see gap analysis.</p>
 		</div>
 	{:else}
 		<!-- Controls bar -->
 		<div class="controls-bar">
-			<select bind:value={selectedFormatId} class="format-select">
-				{#each formats as fmt}
-					<option value={fmt.id}>{fmt.name}</option>
+			<select bind:value={selectedDeckId} class="format-select" onchange={() => computeGaps()}>
+				{#each availableDecks as deck}
+					<option value={deck.id}>{deck.name} ({formatName(deck.format_id)})</option>
 				{/each}
 			</select>
 
