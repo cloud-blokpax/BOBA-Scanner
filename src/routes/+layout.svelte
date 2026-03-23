@@ -192,10 +192,9 @@
 	</nav>
 
 	{#if showMore}
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="more-menu" role="presentation" onclick={() => (showMore = false)}>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="more-panel" onclick={(e) => e.stopPropagation()}>
+		<div class="more-menu" role="presentation" onkeydown={(e) => e.key === 'Escape' && (showMore = false)}>
+			<button class="more-menu-dismiss" type="button" aria-label="Close menu" tabindex="-1" onclick={() => (showMore = false)}></button>
+			<div class="more-panel">
 				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
 				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>My Decks</a>
 				<a href="/dbs" class="more-item" onclick={() => (showMore = false)}>DBS Calculator</a>
@@ -235,8 +234,17 @@
 	.more-menu {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
 		z-index: 99;
+	}
+	.more-menu-dismiss {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.4);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 	.more-panel {
 		position: fixed;

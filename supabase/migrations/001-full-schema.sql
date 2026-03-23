@@ -1174,5 +1174,46 @@ CREATE POLICY "admin_actions_service_all" ON public.admin_actions
 
 
 -- ============================================================================
+-- GAME DATA TABLES (Supabase-backed, hardcoded fallback in app code)
+-- ============================================================================
+
+-- DBS scores (changes with every set release and balance update)
+CREATE TABLE IF NOT EXISTS public.dbs_scores (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    set_code        TEXT NOT NULL,
+    card_number     TEXT NOT NULL,
+    dbs_score       INTEGER NOT NULL,
+    card_name       TEXT,
+    updated_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(set_code, card_number)
+);
+
+ALTER TABLE public.dbs_scores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dbs_scores_read" ON public.dbs_scores;
+CREATE POLICY "dbs_scores_read" ON public.dbs_scores FOR SELECT USING (true);
+DROP POLICY IF EXISTS "dbs_scores_service" ON public.dbs_scores;
+CREATE POLICY "dbs_scores_service" ON public.dbs_scores FOR ALL TO service_role USING (true);
+
+-- Play cards (for the DBS calculator)
+CREATE TABLE IF NOT EXISTS public.play_cards (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    card_number     TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    release         TEXT NOT NULL,
+    dbs             INTEGER NOT NULL DEFAULT 0,
+    hot_dog_cost    INTEGER DEFAULT 0,
+    ability_text    TEXT,
+    updated_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(card_number)
+);
+
+ALTER TABLE public.play_cards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "play_cards_read" ON public.play_cards;
+CREATE POLICY "play_cards_read" ON public.play_cards FOR SELECT USING (true);
+DROP POLICY IF EXISTS "play_cards_service" ON public.play_cards;
+CREATE POLICY "play_cards_service" ON public.play_cards FOR ALL TO service_role USING (true);
+
+
+-- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================

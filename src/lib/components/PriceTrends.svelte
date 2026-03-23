@@ -182,9 +182,9 @@
 	</div>
 
 	{#if showAlertModal}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="alert-modal-backdrop" role="presentation" onclick={() => (showAlertModal = false)}>
-			<div class="alert-modal" role="dialog" tabindex="-1" aria-label="Set Price Alert" onclick={(e) => e.stopPropagation()}>
+		<div class="alert-modal-backdrop" role="presentation" onkeydown={(e) => e.key === 'Escape' && (showAlertModal = false)}>
+			<button class="alert-backdrop-dismiss" type="button" aria-label="Close" tabindex="-1" onclick={() => (showAlertModal = false)}></button>
+			<div class="alert-modal" role="dialog" tabindex="-1" aria-label="Set Price Alert">
 				<h4>Set Price Alert</h4>
 				<p class="alert-card-name">{heroName || cardNumber}</p>
 
@@ -281,11 +281,20 @@
 	.alert-modal-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 200;
+	}
+	.alert-backdrop-dismiss {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.5);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 	.alert-modal {
 		background: var(--bg-base);

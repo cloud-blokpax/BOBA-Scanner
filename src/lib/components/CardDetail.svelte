@@ -66,9 +66,8 @@
 </script>
 
 {#if item}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="card-detail-overlay" role="dialog" aria-modal="true" onkeydown={(e) => e.key === 'Escape' && onClose()}>
-		<div class="card-detail-backdrop" onclick={onClose} role="button" tabindex="-1" aria-label="Close detail"></div>
+	<div class="card-detail-overlay" role="dialog" aria-modal="true" tabindex="-1" onkeydown={(e) => e.key === 'Escape' && onClose()}>
+		<button class="card-detail-backdrop" type="button" onclick={onClose} tabindex="-1" aria-label="Close detail"></button>
 		<div class="card-detail-sheet">
 			<button class="close-btn" onclick={onClose} aria-label="Close">x</button>
 
@@ -168,7 +167,12 @@
 	.card-detail-backdrop {
 		position: absolute;
 		inset: 0;
+		width: 100%;
+		height: 100%;
 		background: rgba(0, 0, 0, 0.6);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 
 	.card-detail-sheet {

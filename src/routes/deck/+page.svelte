@@ -136,8 +136,7 @@
 			{#each decks as deck (deck.id)}
 				{@const stats = computeDeckStats(deck)}
 				<div class="deck-card">
-					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-					<div class="deck-card-body" onclick={() => goto(`/deck/${deck.id}`)}>
+					<button class="deck-card-body" type="button" onclick={() => goto(`/deck/${deck.id}`)}>
 						<div class="deck-card-top">
 							<h3 class="deck-card-name">{deck.name}</h3>
 							<span class="format-badge">{formatName(deck.format_id)}</span>
@@ -177,7 +176,7 @@
 								<span class="complete-badge">Complete</span>
 							{/if}
 						</div>
-					</div>
+					</button>
 
 					<!-- Three-dot menu -->
 					<div class="deck-card-menu">
@@ -199,10 +198,9 @@
 
 	<!-- Delete confirmation modal -->
 	{#if deleteConfirmId}
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={() => deleteConfirmId = null}>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div class="modal-overlay" role="presentation" onkeydown={(e) => e.key === 'Escape' && (deleteConfirmId = null)}>
+			<button class="modal-overlay-dismiss" type="button" aria-label="Close" tabindex="-1" onclick={() => deleteConfirmId = null}></button>
+			<div class="modal-content">
 				<h3>Delete Deck?</h3>
 				<p>This action cannot be undone.</p>
 				<div class="modal-actions">
@@ -483,11 +481,20 @@
 	.modal-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
+	}
+	.modal-overlay-dismiss {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.5);
+		border: none;
+		appearance: none;
+		cursor: default;
 	}
 
 	.modal-content {
