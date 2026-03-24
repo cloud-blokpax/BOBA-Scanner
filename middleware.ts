@@ -27,10 +27,12 @@ const BLOCKED_USER_AGENTS = [
   'blackwidow', 'webcopier', 'webzip', 'teleport',
 ];
 
-// Paths that should always be accessible (health checks, monitoring, API endpoints)
+// Paths that bypass bot checks — only endpoints that need external/automated access.
+// All other API routes get bot-checked; legitimate browser requests have real user agents.
 const ALLOWED_PATHS = [
-  '/api/',             // all API endpoints (they have their own auth/rate limiting)
-  '/.well-known/',     // standard well-known paths
+  '/api/health',            // monitoring / uptime checks
+  '/api/auth/',             // OAuth callbacks (redirects from providers)
+  '/.well-known/',          // standard well-known paths
 ];
 
 export const config = {

@@ -65,7 +65,17 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	// ── Global anonymous scan cap (prevents IP rotation abuse) ──
 	if (!user) {
-		const { checkGlobalAnonScanLimit } = await import('$lib/server/redis');
+		const { checkGlobalAnonScanLimit, isRedisAvailable } = await import('$lib/server/redis');
+
+		// Circuit breaker: block anonymous scans when Redis is unavailable
+		// to prevent unmetered Claude API usage
+		if (!isRedisAvailable()) {
+			return json(
+				{ error: 'Service temporarily limited. Please sign in to scan.' },
+				{ status: 503 }
+			);
+		}
+
 		const globalAllowed = await checkGlobalAnonScanLimit();
 		if (!globalAllowed) {
 			return json(

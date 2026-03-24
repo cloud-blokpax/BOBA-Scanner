@@ -115,9 +115,14 @@ export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<Imag
 let _workerInitPromise: Promise<void> | null = null;
 let _ocrAvailable = false;
 let _ocrRetryAttempted = false;
+let _initFailCount = 0;
+const MAX_INIT_RETRIES = 3;
 
 export async function initWorkers(): Promise<void> {
 	if (imageWorker) return;
+	if (_initFailCount >= MAX_INIT_RETRIES) {
+		throw new Error('Image worker failed to initialize after multiple attempts. Please reload the page.');
+	}
 	if (_workerInitPromise) return _workerInitPromise;
 
 	_workerInitPromise = (async () => {
@@ -151,6 +156,10 @@ export async function initWorkers(): Promise<void> {
 
 	try {
 		await _workerInitPromise;
+		_initFailCount = 0;
+	} catch (err) {
+		_initFailCount++;
+		throw err;
 	} finally {
 		_workerInitPromise = null;
 	}
@@ -172,6 +181,20 @@ export async function recognizeCard(
 	const startTime = performance.now();
 	await initWorkers();
 	const loadedCards = await loadCardDatabase();
+
+	// Guard: if card database is empty, don't waste API calls on Tier 3
+	if (loadedCards.length === 0) {
+		console.warn(`[scan:${traceId}] Card database empty — aborting pipeline`);
+		return {
+			card_id: null,
+			card: null,
+			scan_method: 'hash_cache' as ScanMethod,
+			confidence: 0,
+			processing_ms: Math.round(performance.now() - startTime),
+			failReason: 'Card database unavailable — please check your connection and try again'
+		};
+	}
+
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
@@ -446,18 +469,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
+	const TIER2_BUDGET_MS = 12000; // 12 seconds total for all OCR attempts
+	const tier2Start = performance.now();
+
 	for (const region of BOBA_OCR_REGIONS) {
+		const elapsed = performance.now() - tier2Start;
+		const remaining = TIER2_BUDGET_MS - elapsed;
+		if (remaining <= 1000) {
+			console.debug(`[scan:${ctx.traceId}:tier2] Budget exhausted after ${elapsed.toFixed(0)}ms, skipping remaining regions`);
+			break;
+		}
+
 		try {
 			// Preprocess region in image worker
 			const processedBlob = await withTimeout(
 				imageWorker!.preprocessForOCR(bitmap, region),
-				5000, 'OCR preprocess'
+				Math.min(3000, remaining), 'OCR preprocess'
 			);
 
-			// Run OCR (Tesseract manages its own worker internally, timeout at 10s per region)
+			// Run OCR (Tesseract manages its own worker internally)
 			const ocrResult = await withTimeout(
 				recognizeText(processedBlob),
-				10000, 'OCR recognition'
+				Math.min(8000, remaining - 3000), 'OCR recognition'
 			);
 			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
