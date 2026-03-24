@@ -122,7 +122,6 @@ BOBA-Scanner/
 │   │   │   ├── Toast.svelte        # Toast notification component
 │   │   │   └── UpdateBanner.svelte # App version update banner
 │   │   ├── data/
-│   │   │   ├── card-database.json  # Bundled card DB (~17,600+ cards, dev-only artifact for seed generation)
 │   │   │   ├── play-cards.json     # Play card database (409 cards across 4 releases, with DBS values and hot dog costs)
 │   │   │   ├── boba-config.ts      # OCR regions, scan config
 │   │   │   ├── boba-weapons.ts     # Weapon hierarchy with rarity and tier rankings
@@ -336,7 +335,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - All tables defined in `supabase/migrations/supabase-full-setup.sql` (canonical schema)
 - Key tables: `users`, `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`
 - RLS is enabled on all tables. The anon key has read-only access to public data (cards, prices, feature flags, tournaments). User-scoped data (collections, decks, badges) is restricted to the owning user via auth.uid(). Server-only tables (ebay_seller_tokens, error_logs) have no client-accessible policies — they are accessed exclusively via the service role key.
-- Card seed data generated via `scripts/generate-card-seed.js` from `src/lib/data/card-database.json`
+- Card seed data generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo)
 
 ## Environment Variables
 
@@ -382,9 +381,8 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on PRs and pushes to `main`:
 3. Import via `$components/ComponentName.svelte`
 
 ### Modifying the card database
-1. Update `src/lib/data/card-database.json`
-2. Run `npm run generate:card-seed` to regenerate the SQL seed migration
-3. Update Supabase if needed via the SQL editor
+1. Add/update cards directly in Supabase (the `cards` table)
+2. Optionally, update a local `card-database.json` and run `npm run generate:card-seed` to regenerate the SQL seed
 
 ### Working with the recognition pipeline
 - Configuration in `src/lib/data/boba-config.ts` (OCR regions, thresholds)
