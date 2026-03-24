@@ -17,6 +17,7 @@
 		type ExportTemplate,
 		type ExportCard
 	} from '$lib/services/export-templates';
+	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { formatPrice } from '$lib/utils';
 
@@ -302,6 +303,7 @@
 		</div>
 	{:else if activeTab === 'ebay'}
 		<div class="section">
+			<AffiliateNotice />
 			<p class="info-text">Generate an eBay Seller Hub-compatible CSV with optimized titles and pricing.</p>
 
 			{#if ebayQueue.length === 0}
