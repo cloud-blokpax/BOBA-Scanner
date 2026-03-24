@@ -218,7 +218,7 @@ ALTER TABLE public.listing_templates
 -- Immutable admin/member columns — prevent privilege escalation
 -- ============================================================================
 -- Even if RLS policies or application code allow a user to update their own
--- row, these triggers prevent is_admin and is_member from being changed
+-- row, these triggers prevent is_admin and is_pro from being changed
 -- except by a service_role connection.
 -- ============================================================================
 
@@ -235,12 +235,12 @@ BEGIN
         RAISE EXCEPTION 'Cannot modify is_admin — admin changes require service role access';
     END IF;
 
-    IF NEW.is_member IS DISTINCT FROM OLD.is_member THEN
-        RAISE EXCEPTION 'Cannot modify is_member — membership changes require service role access';
+    IF NEW.is_pro IS DISTINCT FROM OLD.is_pro THEN
+        RAISE EXCEPTION 'Cannot modify is_pro — Pro changes require service role access';
     END IF;
 
-    IF NEW.member_until IS DISTINCT FROM OLD.member_until THEN
-        RAISE EXCEPTION 'Cannot modify member_until — membership changes require service role access';
+    IF NEW.pro_until IS DISTINCT FROM OLD.pro_until THEN
+        RAISE EXCEPTION 'Cannot modify pro_until — Pro changes require service role access';
     END IF;
 
     RETURN NEW;

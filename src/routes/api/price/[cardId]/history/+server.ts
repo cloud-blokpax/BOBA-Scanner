@@ -10,11 +10,11 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	// Server-side feature gate
 	if (locals.supabase) {
-		const { data: profile } = await locals.supabase.from('users').select('is_member, is_admin').eq('auth_user_id', user.id).single();
+		const { data: profile } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
 		const { data: override } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'price_history').maybeSingle();
 		if (override) {
 			if (!override.enabled) throw error(403, 'Feature not available');
-		} else if (!profile?.is_member && !profile?.is_admin) {
+		} else if (!profile?.is_pro && !profile?.is_admin) {
 			throw error(403, 'Premium feature — upgrade to access price history');
 		}
 	}

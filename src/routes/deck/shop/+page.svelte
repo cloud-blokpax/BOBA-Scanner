@@ -153,9 +153,9 @@
 				const data = await res.json();
 				refreshesRemaining = 0;
 				refreshLimit = data.limit;
-				showToast(data.is_member
+				showToast(data.is_pro
 					? 'Daily refresh limit reached — resets at midnight UTC'
-					: 'Daily refresh limit reached — upgrade for more refreshes', 'info');
+					: 'Daily refresh limit reached — Go Pro for more refreshes', 'info');
 			}
 		} catch (err) {
 			console.warn('[deck-shop] Price refresh failed:', err);

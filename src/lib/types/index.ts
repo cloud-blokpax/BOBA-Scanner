@@ -5,7 +5,8 @@ export interface AppUser {
 	user_metadata?: Record<string, unknown>;
 	app_metadata?: Record<string, unknown>;
 	is_admin: boolean;
-	is_member: boolean;
+	is_pro: boolean;
+	pro_until: string | null;
 }
 
 // ── Card Types ──────────────────────────────────────────────────

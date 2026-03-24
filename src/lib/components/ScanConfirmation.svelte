@@ -34,6 +34,8 @@
 	const hasPriceHistory = featureEnabled('price_history');
 	const hasScanToList = featureEnabled('scan_to_list');
 
+	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+
 	let {
 		result,
 		capturedImageUrl,
@@ -320,6 +322,18 @@
 					</div>
 				{:else if hasPriceHistory() && historyLoading}
 					<div class="price-sparkline"><div class="price-shimmer" style="width: 100%; height: 40px;"></div></div>
+				{:else if !isPro()}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="pro-preview" onclick={() => setShowGoProModal(true)}>
+						<div class="pro-preview-blur">
+							<svg viewBox="0 0 200 40" class="sparkline-svg">
+								<polyline points="0,30 20,25 40,28 60,20 80,22 100,15 120,18 140,12 160,14 180,10 200,8"
+									fill="none" stroke="var(--gold)" stroke-width="2" opacity="0.3" />
+							</svg>
+						</div>
+						<span class="pro-preview-label">Price trends — available with Pro</span>
+					</div>
 				{/if}
 
 				<!-- Metadata pills -->
@@ -481,6 +495,29 @@
 </div>
 
 <style>
+	.pro-preview {
+		cursor: pointer;
+		position: relative;
+		padding: 0.5rem;
+		border-radius: 8px;
+		background: var(--bg-elevated);
+		text-align: center;
+		margin: 0.5rem 0;
+	}
+	.pro-preview-blur {
+		filter: blur(2px);
+		opacity: 0.5;
+	}
+	.pro-preview-label {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--gold);
+	}
 	.confirmation-overlay {
 		position: fixed;
 		inset: 0;

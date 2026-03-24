@@ -3,9 +3,26 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
+	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { page } from '$app/stores';
 
 	const hasScanToList = featureEnabled('scan_to_list');
+
+	// Donation history
+	let donations = $state<Array<{ tier_key: string; tier_amount: number; time_added: boolean; created_at: string }>>([]);
+
+	async function loadDonations() {
+		const client = getSupabase();
+		if (!client || !user()) return;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data } = await (client as any)
+			.from('donations')
+			.select('tier_key, tier_amount, time_added, created_at')
+			.eq('user_id', user()!.id)
+			.order('created_at', { ascending: false })
+			.limit(20);
+		donations = data || [];
+	}
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -93,6 +110,7 @@
 
 	$effect(() => {
 		loadProfile();
+		loadDonations();
 	});
 
 	// Check eBay OAuth callback params
@@ -150,6 +168,50 @@
 	{#if loading}
 		<div class="loading">Loading profile...</div>
 	{:else}
+		<!-- Pro Status Section -->
+		<div class="settings-card pro-status-card">
+			{#if isPro()}
+				<div class="pro-status-row">
+					<span class="pro-badge-large">PRO</span>
+					<div class="pro-status-info">
+						<span class="pro-until">Pro until {proUntil()?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+						<span class="pro-days">{daysRemaining()} days remaining</span>
+					</div>
+					<button class="renew-btn" onclick={() => setShowGoProModal(true)}>Renew</button>
+				</div>
+				{#if donations.length > 0}
+					<div class="donation-history">
+						<h3>Donation History</h3>
+						<table class="donation-table">
+							<thead><tr><th>Tier</th><th>Date</th><th>Time Added</th></tr></thead>
+							<tbody>
+								{#each donations as d}
+									<tr>
+										<td class="tier-cell">{d.tier_key}</td>
+										<td>{new Date(d.created_at).toLocaleDateString()}</td>
+										<td>{d.time_added ? 'Yes' : 'No'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			{:else if proExpired()}
+				<div class="pro-status-row">
+					<div class="pro-status-info">
+						<span class="pro-expired-text">Your Pro access expired on {proUntil()?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+					</div>
+					<button class="renew-btn" onclick={() => setShowGoProModal(true)}>Renew</button>
+				</div>
+			{:else}
+				<div class="pro-promo">
+					<h2>Go Pro</h2>
+					<p>Unlock AI grading, price trends, eBay listings, and more.</p>
+					<button class="go-pro-btn" onclick={() => setShowGoProModal(true)}>Go Pro</button>
+				</div>
+			{/if}
+		</div>
+
 		<div class="settings-card">
 			<h2>Profile</h2>
 
@@ -308,6 +370,40 @@
 	.ebay-message-success { background: rgba(16, 185, 129, 0.12); color: #10b981; }
 	.ebay-message-error { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
 	.ebay-message-info { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+
+	/* Pro Status */
+	.pro-status-card { margin-bottom: 1rem; }
+	.pro-status-row {
+		display: flex; align-items: center; gap: 0.75rem;
+	}
+	.pro-badge-large {
+		display: inline-block; padding: 4px 10px; border-radius: 6px;
+		font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em;
+		background: var(--gold); color: #000;
+	}
+	.pro-status-info { flex: 1; display: flex; flex-direction: column; }
+	.pro-until { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+	.pro-days { font-size: 0.75rem; color: var(--text-secondary); }
+	.pro-expired-text { font-size: 0.9rem; color: var(--text-secondary); }
+	.renew-btn {
+		padding: 0.375rem 0.75rem; border-radius: 8px; border: none;
+		background: var(--gold); color: #000; font-size: 0.8rem; font-weight: 700;
+		cursor: pointer;
+	}
+	.pro-promo { text-align: center; }
+	.pro-promo h2 { font-size: 1rem; font-weight: 700; color: var(--gold); margin-bottom: 0.25rem; }
+	.pro-promo p { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+	.go-pro-btn {
+		padding: 0.5rem 1.5rem; border-radius: 10px; border: none;
+		background: var(--gold); color: #000; font-size: 0.9rem; font-weight: 700;
+		cursor: pointer; box-shadow: var(--shadow-gold);
+	}
+	.donation-history { margin-top: 1rem; }
+	.donation-history h3 { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem; }
+	.donation-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; }
+	.donation-table th { text-align: left; color: var(--text-tertiary); font-size: 0.7rem; font-weight: 600; padding: 0.25rem 0.5rem; }
+	.donation-table td { padding: 0.25rem 0.5rem; color: var(--text-secondary); }
+	.tier-cell { text-transform: capitalize; }
 
 	.badges-section { margin-top: 2rem; }
 	.badges-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }

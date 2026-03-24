@@ -10,6 +10,12 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
+	import {
+		isPro, daysRemaining, proExpired,
+		showExpiryWarning, showFinalWarning,
+		showGoProModal, setShowGoProModal
+	} from '$lib/stores/pro.svelte';
+	import GoProModal from '$lib/components/GoProModal.svelte';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -17,6 +23,29 @@
 
 	let { children, data } = $props();
 	let showMore = $state(false);
+
+	// Expiry banner dismiss state (persisted in localStorage)
+	let expiryBannerDismissed = $state(false);
+	let finalBannerDismissed = $state(false);
+	let expiredBannerDismissed = $state(false);
+
+	onMount(() => {
+		// Restore dismiss state from localStorage
+		const expiredDismissedAt = localStorage.getItem('proExpiredDismissedAt');
+		if (expiredDismissedAt) {
+			const dismissedAt = parseInt(expiredDismissedAt, 10);
+			if (Date.now() - dismissedAt < 7 * 24 * 60 * 60 * 1000) {
+				expiredBannerDismissed = true;
+			}
+		}
+	});
+
+	function dismissExpiryBanner() { expiryBannerDismissed = true; }
+	function dismissFinalBanner() { finalBannerDismissed = true; }
+	function dismissExpiredBanner() {
+		expiredBannerDismissed = true;
+		localStorage.setItem('proExpiredDismissedAt', Date.now().toString());
+	}
 
 	// View Transitions API for smooth page navigation
 	onNavigate((navigation) => {
@@ -176,6 +205,9 @@
 			</a>
 			<div class="header-actions">
 				{#if data.user}
+					{#if isPro()}
+						<span class="pro-badge-header">PRO</span>
+					{/if}
 					<span class="user-name">{data.user.email}</span>
 					<button class="btn-secondary" onclick={() => getSupabase()?.auth.signOut()}>Sign Out</button>
 				{:else}
@@ -184,6 +216,29 @@
 			</div>
 		</div>
 	</header>
+
+	<!-- Pro expiry banners -->
+	{#if data.user}
+		{#if showExpiryWarning() && !expiryBannerDismissed}
+			<div class="pro-expiry-banner expiry-soon">
+				<span>Your Pro access expires in {daysRemaining()} days</span>
+				<button class="banner-cta" onclick={() => setShowGoProModal(true)}>Renew</button>
+				<button class="banner-dismiss" onclick={dismissExpiryBanner}>&times;</button>
+			</div>
+		{:else if showFinalWarning() && !finalBannerDismissed}
+			<div class="pro-expiry-banner expiry-tomorrow">
+				<span>Your Pro access expires tomorrow</span>
+				<button class="banner-cta" onclick={() => setShowGoProModal(true)}>Renew</button>
+				<button class="banner-dismiss" onclick={dismissFinalBanner}>&times;</button>
+			</div>
+		{:else if proExpired() && !expiredBannerDismissed}
+			<div class="pro-expiry-banner expiry-lapsed">
+				<span>Your Pro access has expired</span>
+				<button class="banner-cta" onclick={() => setShowGoProModal(true)}>Renew</button>
+				<button class="banner-dismiss" onclick={dismissExpiredBanner}>&times;</button>
+			</div>
+		{/if}
+	{/if}
 
 	<main class="app-main">
 		{@render children()}
@@ -224,6 +279,11 @@
 						<span class="premium-badge">PRO</span> eBay Listings
 					</a>
 				{/if}
+				{#if data.user && !isPro()}
+					<button class="more-item go-pro-item" onclick={() => { showMore = false; setShowGoProModal(true); }}>
+						⭐ Go Pro
+					</button>
+				{/if}
 				{#if data.user}
 					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>Settings</a>
 				{/if}
@@ -240,6 +300,7 @@
 
 {#if data.user}
 	<ProfilePrompt />
+	<GoProModal open={showGoProModal()} onclose={() => setShowGoProModal(false)} />
 {/if}
 
 <style>
@@ -278,14 +339,81 @@
 		font-size: 0.9rem;
 		color: var(--text-primary);
 		text-decoration: none;
+		background: none;
+		border: none;
+		text-align: left;
+		cursor: pointer;
+		width: 100%;
 	}
 	.more-item:hover {
 		background: var(--bg-hover);
+	}
+	.go-pro-item {
+		color: var(--gold);
+		font-weight: 600;
 	}
 	.premium-badge {
 		display: inline-block; padding: 1px 5px; border-radius: 3px;
 		font-size: 0.6rem; font-weight: 700;
 		background: var(--gold, #f59e0b); color: #000;
 		margin-right: 4px; vertical-align: middle;
+	}
+
+	/* Pro badge in header */
+	.pro-badge-header {
+		display: inline-block;
+		padding: 1px 6px;
+		border-radius: 4px;
+		font-size: 0.6rem;
+		font-weight: 800;
+		letter-spacing: 0.05em;
+		background: var(--gold);
+		color: #000;
+		vertical-align: middle;
+	}
+
+	/* Expiry banners */
+	.pro-expiry-banner {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 1rem;
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+	.pro-expiry-banner span:first-child {
+		flex: 1;
+	}
+	.expiry-soon {
+		background: var(--bg-elevated);
+		border-left: 3px solid var(--gold);
+	}
+	.expiry-tomorrow {
+		background: rgba(245, 158, 11, 0.08);
+		border-left: 3px solid var(--gold);
+	}
+	.expiry-lapsed {
+		background: var(--bg-elevated);
+		border-left: 3px solid var(--text-tertiary);
+	}
+	.banner-cta {
+		padding: 0.25rem 0.75rem;
+		border-radius: 6px;
+		border: none;
+		background: var(--gold);
+		color: #000;
+		font-size: 0.8rem;
+		font-weight: 700;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.banner-dismiss {
+		background: none;
+		border: none;
+		color: var(--text-tertiary);
+		cursor: pointer;
+		font-size: 1.1rem;
+		padding: 0.25rem;
+		line-height: 1;
 	}
 </style>
