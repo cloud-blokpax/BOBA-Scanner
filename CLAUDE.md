@@ -225,8 +225,7 @@ The core scanning feature uses a waterfall approach to minimize API costs:
 
 The card database has a layered loading strategy (see `card-db.ts`):
 1. IndexedDB cache (may have fresher Supabase data from a previous session)
-2. Static bundled JSON (always available, even offline)
-3. Background Supabase refresh (non-blocking, picks up newly added cards)
+2. Paginated Supabase fetch (first-time load or corrupt IDB), then background refresh
 
 ### Authentication
 
