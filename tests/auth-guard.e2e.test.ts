@@ -153,7 +153,7 @@ describe('Auth Hooks E2E', () => {
 	describe('route protection', () => {
 		const protectedRoutes = [
 			'/collection',
-			'/deck',
+			'/sell',
 			'/admin',
 			'/grader',
 			'/export',

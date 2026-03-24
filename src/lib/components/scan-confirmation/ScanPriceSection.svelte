@@ -9,7 +9,7 @@
 		historyLoading,
 		showPriceHistory
 	}: {
-		priceData: { price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null;
+		priceData: { price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null; buy_now_low?: number | null; buy_now_mid?: number | null; buy_now_count?: number | null } | null;
 		priceLoading: boolean;
 		priceError: boolean;
 		historyData: Array<{ date: string; price_mid: number | null }>;
@@ -25,16 +25,20 @@
 			<div class="price-shimmer"></div>
 			<span class="price-loading-text">Checking prices...</span>
 		</div>
-	{:else if priceData?.price_mid}
-		<div class="price-main">${priceData.price_mid.toFixed(2)}</div>
-		{#if priceData.price_low != null && priceData.price_high != null}
-			<div class="price-range">
-				${priceData.price_low.toFixed(2)} &mdash; ${priceData.price_high.toFixed(2)}
+	{:else if priceData?.buy_now_low}
+		<div class="price-label">Buy Now Price</div>
+		<div class="price-main">${priceData.buy_now_low.toFixed(2)}</div>
+		{#if priceData.buy_now_count && priceData.buy_now_count > 1}
+			<div class="price-source">
+				Lowest of {priceData.buy_now_count} Buy Now listing{priceData.buy_now_count !== 1 ? 's' : ''} on eBay
 			</div>
+		{:else if priceData.buy_now_count === 1}
+			<div class="price-source">1 Buy Now listing on eBay</div>
 		{/if}
-		{#if priceData.listings_count}
-			<div class="price-source">Based on {priceData.listings_count} listing{priceData.listings_count !== 1 ? 's' : ''}</div>
-		{/if}
+	{:else if priceData?.price_mid}
+		<div class="price-label">eBay Price</div>
+		<div class="price-main">${priceData.price_mid.toFixed(2)}</div>
+		<div class="price-source">Based on {priceData.listings_count} listing{priceData.listings_count !== 1 ? 's' : ''} (incl. auctions)</div>
 	{:else if priceError}
 		<div class="price-unavailable">Price unavailable</div>
 	{:else}
@@ -82,17 +86,22 @@
 <style>
 	.price-section { padding: 0.5rem 0; }
 
+	.price-label {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted, #475569);
+		margin-bottom: 0.125rem;
+	}
+
 	.price-main {
 		font-size: 1.75rem;
 		font-weight: 800;
 		color: var(--success, #10b981);
 	}
 
-	.price-range {
-		font-size: 0.85rem;
-		color: var(--text-secondary, #94a3b8);
-		margin-top: 0.125rem;
-	}
+
 
 	.price-source {
 		font-size: 0.75rem;

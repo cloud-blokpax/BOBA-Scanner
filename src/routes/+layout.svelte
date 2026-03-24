@@ -22,7 +22,6 @@
 	import '../styles/index.css';
 
 	let { children, data } = $props();
-	let showMore = $state(false);
 
 	// Expiry banner dismiss state (persisted in localStorage)
 	let expiryBannerDismissed = $state(false);
@@ -107,6 +106,24 @@
 			cleanupSync();
 			if (newSession?.user) {
 				cleanupSync = setupAutoSync();
+			}
+
+			// Process pending card from pre-auth scan (Change 10)
+			if (event === 'SIGNED_IN' && newSession?.user) {
+				const pendingRaw = sessionStorage.getItem('pending_add_card');
+				if (pendingRaw) {
+					sessionStorage.removeItem('pending_add_card');
+					try {
+						const pending = JSON.parse(pendingRaw);
+						if (pending.card_id) {
+							import('$lib/stores/collection.svelte').then(({ addToCollection }) => {
+								addToCollection(pending.card_id).then(() => {
+									showToast(`${pending.hero_name || pending.card_number || 'Card'} added to your collection!`, '✓');
+								});
+							});
+						}
+					} catch { /* ignore parse errors */ }
+				}
 			}
 		});
 
@@ -205,13 +222,14 @@
 			</a>
 			<div class="header-actions">
 				{#if data.user}
-					{#if isPro()}
-						<span class="pro-badge-header">PRO</span>
-					{/if}
-					<span class="user-name">{data.user.email}</span>
-					<button class="btn-secondary" onclick={() => getSupabase()?.auth.signOut()}>Sign Out</button>
+					<a href="/settings" class="header-profile-btn" aria-label="Settings">
+						{#if isPro()}
+							<span class="pro-dot"></span>
+						{/if}
+						<span class="profile-initial">{(data.user.email?.[0] || '?').toUpperCase()}</span>
+					</a>
 				{:else}
-					<a href="/auth/login" class="btn-primary">Sign In</a>
+					<a href="/auth/login" class="btn-primary header-signin">Sign In</a>
 				{/if}
 			</div>
 		</div>
@@ -249,54 +267,22 @@
 	</footer>
 
 	<nav class="bottom-nav">
-		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
-			<span class="bottom-nav-icon">📚</span>
-			<span class="bottom-nav-label">Collection</span>
+		<a href="/" class="bottom-nav-item" class:active={currentPath === '/'}>
+			<span class="bottom-nav-icon">🏠</span>
+			<span class="bottom-nav-label">Home</span>
 		</a>
 		<a href="/scan" class="scan-fab" class:active={currentPath === '/scan'} aria-label="Scan Card">
 			<span class="scan-fab-icon">📷</span>
 		</a>
-		<button class="bottom-nav-item" class:active={showMore} onclick={() => (showMore = !showMore)}>
-			<span class="bottom-nav-icon">👤</span>
-			<span class="bottom-nav-label">More</span>
-		</button>
+		<a href="/deck" class="bottom-nav-item" class:active={currentPath.startsWith('/deck') || currentPath.startsWith('/dbs') || currentPath.startsWith('/tournaments')}>
+			<span class="bottom-nav-icon">🃏</span>
+			<span class="bottom-nav-label">Decks</span>
+		</a>
+		<a href="/sell" class="bottom-nav-item" class:active={currentPath.startsWith('/sell') || currentPath.startsWith('/export') || currentPath.startsWith('/marketplace')}>
+			<span class="bottom-nav-icon">💰</span>
+			<span class="bottom-nav-label">Sell</span>
+		</a>
 	</nav>
-
-	{#if showMore}
-		<div class="more-menu" role="presentation" onkeydown={(e) => e.key === 'Escape' && (showMore = false)}>
-			<button class="more-menu-dismiss" type="button" aria-label="Close menu" tabindex="-1" onclick={() => (showMore = false)}></button>
-			<div class="more-panel">
-				<a href="/" class="more-item" onclick={() => (showMore = false)}>Home</a>
-				<a href="/deck" class="more-item" onclick={() => (showMore = false)}>My Decks</a>
-				<a href="/dbs" class="more-item" onclick={() => (showMore = false)}>DBS Calculator</a>
-				<a href="/grader" class="more-item" onclick={() => (showMore = false)}>Card Grader</a>
-				<a href="/batch" class="more-item" onclick={() => (showMore = false)}>Batch Scanner</a>
-				<a href="/binder" class="more-item" onclick={() => (showMore = false)}>Binder Scanner</a>
-				<a href="/set-completion" class="more-item" onclick={() => (showMore = false)}>Set Completion</a>
-				<a href="/marketplace/monitor" class="more-item" onclick={() => (showMore = false)}>Seller Monitor</a>
-				<a href="/export" class="more-item" onclick={() => (showMore = false)}>Export</a>
-				<a href="/tournaments" class="more-item" onclick={() => (showMore = false)}>Tournaments</a>
-				<a href="/speed" class="more-item" onclick={() => (showMore = false)}>Speed Challenge</a>
-				<a href="/leaderboard" class="more-item" onclick={() => (showMore = false)}>Leaderboard</a>
-				{#if hasScanToList()}
-					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>
-						<span class="premium-badge">PRO</span> eBay Listings
-					</a>
-				{/if}
-				{#if data.user && !isPro()}
-					<button class="more-item go-pro-item" onclick={() => { showMore = false; setShowGoProModal(true); }}>
-						⭐ Go Pro
-					</button>
-				{/if}
-				{#if data.user}
-					<a href="/settings" class="more-item" onclick={() => (showMore = false)}>Settings</a>
-				{/if}
-				{#if data.user?.is_admin}
-					<a href="/admin" class="more-item" onclick={() => (showMore = false)}>Admin</a>
-				{/if}
-			</div>
-		</div>
-	{/if}
 </div>
 
 <UpdateBanner />
@@ -320,72 +306,44 @@
 		text-decoration: underline;
 	}
 
-	.more-menu {
-		position: fixed;
-		inset: 0;
-		z-index: 99;
-	}
-	.more-menu-dismiss {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		background: rgba(0, 0, 0, 0.4);
-		border: none;
-		appearance: none;
-		cursor: default;
-	}
-	.more-panel {
-		position: fixed;
-		bottom: 70px;
-		right: 0.5rem;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border-color);
-		border-radius: 12px;
-		padding: 0.5rem;
+	/* Profile button in header */
+	.header-profile-btn {
 		display: flex;
-		flex-direction: column;
-		min-width: 180px;
-		z-index: 100;
-	}
-	.more-item {
-		display: block;
-		padding: 0.625rem 0.75rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		color: var(--text-primary);
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
 		text-decoration: none;
-		background: none;
-		border: none;
-		text-align: left;
-		cursor: pointer;
-		width: 100%;
+		position: relative;
+		transition: border-color 0.15s;
 	}
-	.more-item:hover {
-		background: var(--bg-hover);
+	.header-profile-btn:hover {
+		border-color: var(--gold, #f59e0b);
 	}
-	.go-pro-item {
-		color: var(--gold);
-		font-weight: 600;
+	.profile-initial {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text-primary, #e2e8f0);
+		line-height: 1;
 	}
-	.premium-badge {
-		display: inline-block; padding: 1px 5px; border-radius: 3px;
-		font-size: 0.6rem; font-weight: 700;
-		background: var(--gold, #f59e0b); color: #000;
-		margin-right: 4px; vertical-align: middle;
+	.pro-dot {
+		position: absolute;
+		top: -1px;
+		right: -1px;
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--gold, #f59e0b);
+		border: 2px solid var(--bg-base, #070b14);
 	}
-
-	/* Pro badge in header */
-	.pro-badge-header {
-		display: inline-block;
-		padding: 1px 6px;
-		border-radius: 4px;
-		font-size: 0.6rem;
-		font-weight: 800;
-		letter-spacing: 0.05em;
-		background: var(--gold);
-		color: #000;
-		vertical-align: middle;
+	.header-signin {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.85rem;
+		border-radius: 8px;
+		text-decoration: none;
 	}
 
 	/* Expiry banners */

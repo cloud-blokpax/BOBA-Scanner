@@ -11,8 +11,15 @@
 	let capturedImageUrl = $state<string | null>(null);
 	const isAuthenticated = $derived(!!$page.data.user);
 
+	// Mode from URL param or default
+	let scanMode = $state<'single' | 'batch' | 'binder'>('single');
+
 	onMount(() => {
 		initScanner();
+		const modeParam = $page.url.searchParams.get('mode');
+		if (modeParam === 'batch' || modeParam === 'binder') {
+			scanMode = modeParam;
+		}
 	});
 
 	// Revoke blob URL on unmount to prevent memory leak from orphaned object URLs
@@ -42,6 +49,10 @@
 			URL.revokeObjectURL(capturedImageUrl);
 		}
 	}
+
+	function handleModeChange(mode: 'single' | 'batch' | 'binder') {
+		scanMode = mode;
+	}
 </script>
 
 <svelte:head>
@@ -50,7 +61,17 @@
 
 <div class="scan-page">
 	<ScannerErrorBoundary>
-		<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} />
+		{#if scanMode === 'single'}
+			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} onModeChange={handleModeChange} />
+		{:else if scanMode === 'batch'}
+			{#await import('$lib/components/BatchScanner.svelte') then { default: BatchScanner }}
+				<BatchScanner />
+			{/await}
+		{:else if scanMode === 'binder'}
+			{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
+				<BinderScanner />
+			{/await}
+		{/if}
 		{#if scanResult}
 			<ScanConfirmation
 				result={scanResult}

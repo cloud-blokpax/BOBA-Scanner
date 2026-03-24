@@ -13,11 +13,15 @@
 	let {
 		onResult,
 		isAuthenticated = true,
-		paused = false
+		paused = false,
+		scanMode = 'single' as const,
+		onModeChange
 	}: {
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 		isAuthenticated?: boolean;
 		paused?: boolean;
+		scanMode?: 'single' | 'batch' | 'binder';
+		onModeChange?: (mode: 'single' | 'batch' | 'binder') => void;
 	} = $props();
 
 	// ── Scanner State Machine ───────────────────────────────
@@ -61,6 +65,8 @@
 	const STABILITY_THRESHOLD = 3;
 
 	let _visibilityHandler: (() => void) | null = null;
+
+	let showFirstRunGuide = $state(false);
 
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
@@ -123,6 +129,13 @@
 				await videoEl.play();
 				phase = 'idle';
 				startAutoAnalyze();
+
+			// First-run check
+			const { idb } = await import('$lib/services/idb');
+			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
+			if (!hasScanned) {
+				showFirstRunGuide = true;
+			}
 			}
 		} catch (err) {
 			console.error('Camera error:', err);
@@ -275,6 +288,13 @@
 			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
 			else triggerHaptic('success');
 			onResult?.(result, imageUrl);
+			// Mark first scan complete
+			if (showFirstRunGuide) {
+				showFirstRunGuide = false;
+				import('$lib/services/idb').then(({ idb }) => {
+					idb.setMeta('has_completed_first_scan', true);
+				});
+			}
 			setTimeout(() => { phase = 'idle'; revealedCard = null; }, 1800);
 		} else {
 			revealedCard = null;
@@ -477,6 +497,18 @@
 		{/if}
 
 		<ScannerStatus {statusText} {statusType} />
+
+		{#if showFirstRunGuide && cameraReady}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="first-run-overlay" onclick={() => { showFirstRunGuide = false; }}>
+				<div class="first-run-card-outline"></div>
+				<div class="first-run-text">
+					<p class="first-run-title">Center your card</p>
+					<p class="first-run-subtitle">Hold still — we'll capture automatically</p>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<ScannerControls
@@ -485,6 +517,8 @@
 		{cameraReady}
 		{scanning}
 		{stabilityProgress}
+		{scanMode}
+		{onModeChange}
 		onTorchToggle={handleTorchToggle}
 		onCapture={handleCapture}
 		onFoilCapture={handleFoilCapture}
@@ -538,5 +572,43 @@
 		background: rgba(245, 158, 11, 0.2);
 		border-color: rgba(245, 158, 11, 0.5);
 		color: #f59e0b;
+	}
+
+	.first-run-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		z-index: 10;
+		cursor: pointer;
+	}
+
+	.first-run-card-outline {
+		width: 60%;
+		aspect-ratio: 2.5/3.5;
+		border: 2px dashed rgba(245, 158, 11, 0.6);
+		border-radius: 12px;
+		pointer-events: none;
+	}
+
+	.first-run-text {
+		text-align: center;
+		margin-top: 1.5rem;
+		pointer-events: none;
+	}
+
+	.first-run-title {
+		font-size: 1.2rem;
+		font-weight: 700;
+		color: white;
+	}
+
+	.first-run-subtitle {
+		font-size: 0.9rem;
+		color: rgba(255, 255, 255, 0.7);
+		margin-top: 0.25rem;
 	}
 </style>
