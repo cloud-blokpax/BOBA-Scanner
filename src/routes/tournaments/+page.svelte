@@ -49,9 +49,6 @@
 		return code;
 	}
 
-	// Cache the resolved users.id so we don't look it up on every load
-	let resolvedUserId = $state<string | null>(null);
-
 	async function loadTournaments() {
 		loading = true;
 		try {
@@ -63,21 +60,14 @@
 				return;
 			}
 
-			// The auth callback in /auth/callback/+server.ts ensures users.auth_user_id
-			// is linked on every login. Use the auth user ID directly.
-			if (!resolvedUserId) {
-				const { data: userRow } = await sb
-					.from('users')
-					.select('id')
-					.eq('auth_user_id', currentUser.id)
-					.maybeSingle();
-				resolvedUserId = userRow?.id || currentUser.id;
-			}
+			// Use the auth UID directly — creator_id references auth.users(id),
+			// and RLS policies check creator_id = auth.uid()
+			const authUid = currentUser.id;
 
 			const { data, error } = await sb
 				.from('tournaments')
 				.select('*')
-				.or(`creator_id.eq.${resolvedUserId},is_active.eq.true`)
+				.or(`creator_id.eq.${authUid},is_active.eq.true`)
 				.order('created_at', { ascending: false });
 
 			if (error) throw error;
@@ -104,17 +94,9 @@
 		try {
 			const sb = getSupabase();
 			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
-			if (!resolvedUserId) {
-				const { data: userRow } = await sb
-					.from('users')
-					.select('id')
-					.eq('auth_user_id', currentUser.id)
-					.maybeSingle();
-				resolvedUserId = userRow?.id || currentUser.id;
-			}
-			const usersTableId = resolvedUserId;
+			// Always use auth UID — matches RLS policy (creator_id = auth.uid())
 			const { error } = await sb.from('tournaments').insert({
-				creator_id: usersTableId,
+				creator_id: currentUser.id,
 				code: newCode.toUpperCase(),
 				name: newName.trim(),
 				max_heroes: newMaxHeroes,
@@ -202,12 +184,14 @@
 		}
 	}
 
+	const currentAuthUid = $derived($page.data.user?.id ?? null);
+
 	const myTournaments = $derived(
-		tournaments.filter((t) => resolvedUserId && t.creator_id === resolvedUserId)
+		tournaments.filter((t) => currentAuthUid && t.creator_id === currentAuthUid)
 	);
 
 	const otherTournaments = $derived(
-		tournaments.filter((t) => !resolvedUserId || t.creator_id !== resolvedUserId)
+		tournaments.filter((t) => !currentAuthUid || t.creator_id !== currentAuthUid)
 	);
 
 	onMount(() => {
