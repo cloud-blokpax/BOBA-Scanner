@@ -18,13 +18,13 @@
 		cameraReady: boolean;
 		scanning: boolean;
 		stabilityProgress: number;
-		scanMode?: 'single' | 'batch' | 'binder';
+		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
 		onTorchToggle: () => void;
 		onCapture: () => void;
 		onFoilCapture: () => void;
 		onFoilToggle: () => void;
 		onFileUpload: (event: Event) => void;
-		onModeChange?: (mode: 'single' | 'batch' | 'binder') => void;
+		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
 </script>
 
@@ -47,6 +47,11 @@
 				class:mode-active={scanMode === 'binder'}
 				onclick={() => onModeChange?.('binder')}
 			>Binder</button>
+			<button
+				class="mode-btn"
+				class:mode-active={scanMode === 'roll'}
+				onclick={() => onModeChange?.('roll')}
+			>Roll</button>
 		</div>
 	{/if}
 

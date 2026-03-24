@@ -20,8 +20,8 @@
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 		isAuthenticated?: boolean;
 		paused?: boolean;
-		scanMode?: 'single' | 'batch' | 'binder';
-		onModeChange?: (mode: 'single' | 'batch' | 'binder') => void;
+		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
+		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
 
 	// ── Scanner State Machine ───────────────────────────────
@@ -65,6 +65,19 @@
 	const STABILITY_THRESHOLD = 3;
 
 	let _visibilityHandler: (() => void) | null = null;
+
+	// AR Price Overlay state
+	let overlayData = $state<{
+		cardName: string;
+		cardNumber: string | null;
+		price: number | null;
+		priceFetchedAt: string | null;
+		source: 'local' | 'community';
+	} | null>(null);
+	let overlayVisible = $state(false);
+	let _overlayTimeout: ReturnType<typeof setTimeout> | null = null;
+	let _overlayLookupInProgress = false;
+	let _lastOverlayHash: string | null = null;
 
 	let showFirstRunGuide = $state(false);
 
@@ -205,6 +218,160 @@
 		guidanceLastChanged = now;
 	}
 
+	function formatOverlayDate(isoDate: string): string {
+		const date = new Date(isoDate);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+		const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+		if (diffHours < 1) return 'just now';
+		if (diffHours < 24) return `${diffHours}h ago`;
+		if (diffDays === 1) return 'yesterday';
+		if (diffDays < 7) return `${diffDays}d ago`;
+		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+
+	async function lookupOverlayPrice(hash: string) {
+		if (hash === _lastOverlayHash || _overlayLookupInProgress) return;
+		_lastOverlayHash = hash;
+		_overlayLookupInProgress = true;
+
+		try {
+			const { idb } = await import('$lib/services/idb');
+			const { getCardById } = await import('$lib/services/card-db');
+
+			// Step 1: Local IndexedDB hash lookup
+			let cardId: string | null = null;
+			let source: 'local' | 'community' = 'local';
+
+			const localEntry = await idb.getHash(hash) as { card_id: string; confidence: number } | undefined;
+			if (localEntry && !localEntry.card_id.startsWith('__unrecognized:')) {
+				cardId = localEntry.card_id;
+				source = 'local';
+			}
+
+			// Step 2: Supabase shared hash lookup (only on local miss + online)
+			if (!cardId && navigator.onLine) {
+				try {
+					const { getSupabase } = await import('$lib/services/supabase');
+					const client = getSupabase();
+					if (client) {
+						// Exact match first
+						const { data: exactMatch } = await client
+							.from('hash_cache')
+							.select('card_id, confidence')
+							.eq('phash', hash)
+							.maybeSingle();
+
+						if (exactMatch && !(exactMatch.card_id as string).startsWith('__unrecognized:')) {
+							cardId = exactMatch.card_id as string;
+							source = 'community';
+							await idb.setHash({
+								phash: hash,
+								card_id: exactMatch.card_id as string,
+								confidence: exactMatch.confidence as number
+							});
+						}
+
+						// Fuzzy match if exact missed
+						if (!cardId) {
+							const { data: fuzzyMatch } = await client.rpc('find_similar_hash', {
+								query_hash: hash,
+								max_distance: 5
+							});
+
+							if (fuzzyMatch && (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>).length > 0) {
+								const match = (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>)[0];
+								if (!match.card_id.startsWith('__unrecognized:')) {
+									cardId = match.card_id;
+									source = 'community';
+									const confidence = match.confidence * (1 - match.distance * 0.015);
+									await idb.setHash({
+										phash: hash,
+										card_id: match.card_id,
+										confidence
+									});
+								}
+							}
+						}
+					}
+				} catch (err) {
+					console.debug('[ar-overlay] Supabase hash lookup failed:', err);
+				}
+			}
+
+			if (!cardId) {
+				overlayData = null;
+				overlayVisible = false;
+				return;
+			}
+
+			const card = getCardById(cardId);
+			if (!card) {
+				overlayData = null;
+				overlayVisible = false;
+				return;
+			}
+
+			// Step 3: Get price — local first, then Supabase
+			let price: number | null = null;
+			let priceFetchedAt: string | null = null;
+
+			// Relax TTL to 7 days for overlay — stale price > no price
+			const OVERLAY_PRICE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+			const localPrice = await idb.getPrice(cardId, OVERLAY_PRICE_MAX_AGE) as Record<string, unknown> | undefined;
+			if (localPrice) {
+				price = (localPrice.buy_now_low as number) ?? (localPrice.price_low as number) ?? (localPrice.price_mid as number) ?? null;
+				priceFetchedAt = (localPrice.fetched_at as string) ?? null;
+			}
+
+			// Supabase price_cache if local miss and online
+			if (price === null && navigator.onLine) {
+				try {
+					const { getSupabase } = await import('$lib/services/supabase');
+					const client = getSupabase();
+					if (client) {
+						const { data: cachedPrice } = await client
+							.from('price_cache')
+							.select('price_low, price_mid, price_high, fetched_at, listings_count')
+							.eq('card_id', cardId)
+							.eq('source', 'ebay')
+							.maybeSingle();
+
+						if (cachedPrice) {
+							const cp = cachedPrice as Record<string, unknown>;
+							price = (cp.buy_now_low as number) ?? (cp.price_low as number) ?? (cp.price_mid as number) ?? null;
+							priceFetchedAt = (cp.fetched_at as string) ?? null;
+							await idb.setPrice({ card_id: cardId, ...cachedPrice });
+						}
+					}
+				} catch (err) {
+					console.debug('[ar-overlay] Supabase price lookup failed:', err);
+				}
+			}
+
+			// Show the overlay
+			overlayData = {
+				cardName: card.hero_name || card.name || 'Unknown',
+				cardNumber: card.card_number || null,
+				price,
+				priceFetchedAt,
+				source
+			};
+			overlayVisible = true;
+
+			if (_overlayTimeout) clearTimeout(_overlayTimeout);
+			_overlayTimeout = setTimeout(() => {
+				overlayVisible = false;
+			}, 4000);
+		} catch (err) {
+			console.debug('[ar-overlay] Lookup failed:', err);
+		} finally {
+			_overlayLookupInProgress = false;
+		}
+	}
+
 	async function runAutoAnalyze() {
 		if (!videoEl || !cameraReady || scanning || paused) {
 			bracketState = 'idle';
@@ -236,6 +403,12 @@
 				}
 				lastFrameHash = frameHash;
 
+				// AR Price Overlay: attempt lookup on first stable frame
+				// to give Supabase round-trip time before auto-capture at frame 4
+				if (stableFrameCount === 1) {
+					lookupOverlayPrice(frameHash).catch(() => {});
+				}
+
 				if (stableFrameCount >= STABLE_FRAMES_REQUIRED) {
 					bracketState = 'locked';
 					stableFrameCount = 0;
@@ -253,6 +426,9 @@
 				stableFrameCount = 0;
 				lastFrameHash = null;
 				cardDetectedSince = null;
+				overlayData = null;
+				overlayVisible = false;
+				_lastOverlayHash = null;
 				if (result.cardDetected && !result.isSharp) {
 					bracketState = 'idle';
 					updateGuidance('Hold steady...');
@@ -269,6 +445,8 @@
 
 	async function triggerAutoCapture() {
 		if (scanning || paused || foilMode) return;
+		overlayData = null;
+		overlayVisible = false;
 		showFlash = true;
 		setTimeout(() => { showFlash = false; }, 150);
 		triggerHaptic('tap');
@@ -484,6 +662,28 @@
 			{cameraError}
 		/>
 
+		<!-- AR Price Overlay -->
+		{#if overlayVisible && overlayData && !scanning && !paused}
+			<div class="ar-price-overlay">
+				<div class="ar-price-badge">
+					<span class="ar-price-name">{overlayData.cardName}</span>
+					{#if overlayData.cardNumber}
+						<span class="ar-price-number">{overlayData.cardNumber}</span>
+					{/if}
+					{#if overlayData.price !== null}
+						<span class="ar-price-value">${overlayData.price.toFixed(2)}</span>
+						{#if overlayData.priceFetchedAt}
+							<span class="ar-price-date">
+								Last recorded eBay price &middot; {formatOverlayDate(overlayData.priceFetchedAt)}
+							</span>
+						{/if}
+					{:else}
+						<span class="ar-price-nodata">No price data</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Torch toggle (top-right of viewfinder) -->
 		{#if cameraReady}
 			<button
@@ -572,6 +772,76 @@
 		background: rgba(245, 158, 11, 0.2);
 		border-color: rgba(245, 158, 11, 0.5);
 		color: #f59e0b;
+	}
+
+	.ar-price-overlay {
+		position: absolute;
+		bottom: 20%;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 8;
+		pointer-events: none;
+		animation: arFadeIn 0.3s ease-out;
+	}
+
+	.ar-price-badge {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1px;
+		padding: 10px 20px 8px;
+		background: rgba(0, 0, 0, 0.8);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border-radius: 14px;
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+		min-width: 140px;
+	}
+
+	.ar-price-name {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.9);
+		max-width: 180px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ar-price-number {
+		font-size: 0.65rem;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.45);
+		font-family: monospace;
+		letter-spacing: 0.03em;
+	}
+
+	.ar-price-value {
+		font-size: 1.6rem;
+		font-weight: 800;
+		color: #10b981;
+		margin-top: 2px;
+		line-height: 1;
+	}
+
+	.ar-price-date {
+		font-size: 0.6rem;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.35);
+		margin-top: 3px;
+		white-space: nowrap;
+	}
+
+	.ar-price-nodata {
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.4);
+		margin-top: 2px;
+	}
+
+	@keyframes arFadeIn {
+		from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+		to { opacity: 1; transform: translateX(-50%) translateY(0); }
 	}
 
 	.first-run-overlay {

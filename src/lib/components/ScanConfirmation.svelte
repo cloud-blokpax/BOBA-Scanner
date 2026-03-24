@@ -211,6 +211,7 @@
 				<!-- Actions first — always visible without scrolling -->
 				<ScanActions
 					{card}
+					{capturedImageUrl}
 					{isAuthenticated}
 					{isOwned}
 					{addSuccess}

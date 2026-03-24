@@ -1,9 +1,11 @@
 <script lang="ts">
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
+	import { shareCardImage } from '$lib/services/share-card';
 	import type { Card } from '$lib/types';
 
 	let {
 		card,
+		capturedImageUrl = null,
 		isAuthenticated,
 		isOwned,
 		addSuccess,
@@ -25,6 +27,7 @@
 		onManualCorrection
 	}: {
 		card: Card;
+		capturedImageUrl?: string | null;
 		isAuthenticated: boolean;
 		isOwned: boolean;
 		addSuccess: boolean;
@@ -47,6 +50,21 @@
 	} = $props();
 
 	let showManualSearch = $state(false);
+	let sharing = $state(false);
+
+	async function handleShare() {
+		if (!card) return;
+		sharing = true;
+		try {
+			await shareCardImage(card, capturedImageUrl);
+		} catch (err) {
+			// User cancelled the share sheet — not an error
+			if (err instanceof DOMException && err.name === 'AbortError') return;
+			console.debug('[share] Share failed:', err);
+		} finally {
+			sharing = false;
+		}
+	}
 
 	function handleSignInToSave() {
 		if (card?.id) {
@@ -124,8 +142,11 @@
 		{/if}
 	</div>
 
-	<!-- Secondary actions row -->
+	<!-- Share + secondary actions row -->
 	<div class="secondary-row">
+		<button class="btn btn-share" onclick={handleShare} disabled={sharing}>
+			{sharing ? 'Generating...' : 'Share'}
+		</button>
 		<button class="btn btn-scan-another" onclick={onScanAnother}>
 			Scan Another
 		</button>
@@ -208,6 +229,18 @@
 	.secondary-row {
 		display: flex;
 		gap: 0.5rem;
+	}
+
+	.btn-share {
+		flex: 1;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid rgba(148,163,184,0.2);
+		color: var(--text-primary, #e2e8f0);
+	}
+
+	.btn-share:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.btn-grade {

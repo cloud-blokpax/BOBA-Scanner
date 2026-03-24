@@ -150,6 +150,9 @@
 					hidden
 				/>
 			</div>
+			<div class="import-strip">
+				<a href="/scan?mode=roll" class="btn-import-photos">Import from Photos</a>
+			</div>
 
 			<!-- Recent Scans -->
 			<div class="recent-scans">
@@ -291,6 +294,33 @@
 	.btn-quick-upload:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.import-strip {
+		margin-top: 0.5rem;
+		max-width: 400px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	.btn-import-photos {
+		display: block;
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		background: transparent;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		color: var(--text-secondary, #94a3b8);
+		font-weight: 600;
+		font-size: 0.85rem;
+		text-align: center;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.btn-import-photos:hover {
+		border-color: var(--gold, #f59e0b);
+		color: var(--gold, #f59e0b);
 	}
 
 	/* Recent scans */

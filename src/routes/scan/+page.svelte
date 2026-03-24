@@ -12,12 +12,12 @@
 	const isAuthenticated = $derived(!!$page.data.user);
 
 	// Mode from URL param or default
-	let scanMode = $state<'single' | 'batch' | 'binder'>('single');
+	let scanMode = $state<'single' | 'batch' | 'binder' | 'roll'>('single');
 
 	onMount(() => {
 		initScanner();
 		const modeParam = $page.url.searchParams.get('mode');
-		if (modeParam === 'batch' || modeParam === 'binder') {
+		if (modeParam === 'batch' || modeParam === 'binder' || modeParam === 'roll') {
 			scanMode = modeParam;
 		}
 	});
@@ -50,7 +50,7 @@
 		}
 	}
 
-	function handleModeChange(mode: 'single' | 'batch' | 'binder') {
+	function handleModeChange(mode: 'single' | 'batch' | 'binder' | 'roll') {
 		scanMode = mode;
 	}
 </script>
@@ -70,6 +70,10 @@
 		{:else if scanMode === 'binder'}
 			{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
 				<BinderScanner />
+			{/await}
+		{:else if scanMode === 'roll'}
+			{#await import('$lib/components/CameraRollImport.svelte') then { default: CameraRollImport }}
+				<CameraRollImport {isAuthenticated} onClose={() => { scanMode = 'single'; }} />
 			{/await}
 		{/if}
 		{#if scanResult}
