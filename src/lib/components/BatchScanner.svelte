@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import type { ScanResult } from '$lib/types';
+	import type { ScanResult, Card } from '$lib/types';
 	import { recognizeCard } from '$lib/services/recognition';
 	import { addToCollection } from '$lib/stores/collection.svelte';
+	import CardCorrection from '$lib/components/CardCorrection.svelte';
 
 	let { onClose }: { onClose?: () => void } = $props();
 
@@ -21,6 +22,8 @@
 	let processing = $state(false);
 	let committed = $state(false);
 	let fileInput = $state<HTMLInputElement>(undefined!);
+	let correctingId = $state<string | null>(null);
+	let showCommitConfirm = $state(false);
 
 	onDestroy(() => {
 		for (const entry of entries) {
@@ -86,6 +89,23 @@
 		processing = false;
 	}
 
+	function handleBatchCorrection(entryId: string, correctedCard: Partial<Card>) {
+		const entry = entries.find(e => e.id === entryId);
+		if (entry && correctedCard.id) {
+			entry.result = {
+				card_id: correctedCard.id,
+				card: correctedCard as Card,
+				scan_method: 'manual',
+				confidence: 1,
+				processing_ms: 0
+			};
+			entry.status = 'done';
+			entry.error = null;
+			entries = entries;
+		}
+		correctingId = null;
+	}
+
 	async function commitBatch() {
 		const successful = entries.filter((e) => e.status === 'done' && e.result?.card_id);
 		for (const entry of successful) {
@@ -136,7 +156,7 @@
 			{/if}
 
 			{#if doneCount > 0 && !processing}
-				<button class="btn-primary commit-btn" onclick={commitBatch}>
+				<button class="btn-primary commit-btn" onclick={() => { showCommitConfirm = true; }}>
 					Add {doneCount} to Collection
 				</button>
 			{/if}
@@ -154,6 +174,7 @@
 							<span class="badge processing">Scanning...</span>
 						{:else if entry.status === 'done'}
 							<span class="badge done">{entry.result?.card?.hero_name || 'Found'}</span>
+							<button class="fix-btn" onclick={(e) => { e.stopPropagation(); correctingId = entry.id; }} title="Wrong card? Fix it">Fix</button>
 						{:else}
 							<span class="badge error">{entry.error || 'Failed'}</span>
 						{/if}
@@ -164,6 +185,42 @@
 				</div>
 			{/each}
 		</div>
+
+		{#if correctingId}
+			{@const entry = entries.find(e => e.id === correctingId)}
+			{#if entry}
+				<div class="manual-search-container">
+					<CardCorrection
+						card={{ card_number: entry.result?.card?.card_number ?? '' }}
+						onCorrect={(corrected) => handleBatchCorrection(correctingId!, corrected)}
+						onClose={() => { correctingId = null; }}
+					/>
+				</div>
+			{/if}
+		{/if}
+
+		{#if showCommitConfirm}
+			<div class="commit-confirm-overlay">
+				<div class="commit-confirm-card">
+					<h3>Add {doneCount} cards to your collection?</h3>
+					<div class="commit-summary">
+						{#each entries.filter(e => e.status === 'done' && e.result?.card) as entry}
+							<div class="commit-item">
+								<span class="commit-name">{entry.result?.card?.hero_name || entry.result?.card?.name || 'Unknown'}</span>
+								<span class="commit-number">{entry.result?.card?.card_number || ''}</span>
+							</div>
+						{/each}
+					</div>
+					{#if errorCount > 0}
+						<p class="commit-warning">{errorCount} card{errorCount !== 1 ? 's' : ''} could not be identified and will be skipped.</p>
+					{/if}
+					<div class="commit-actions">
+						<button class="btn-primary" onclick={commitBatch}>Confirm</button>
+						<button class="btn-secondary" onclick={() => { showCommitConfirm = false; }}>Cancel</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if entries.length === 0}
 			<p class="empty-state">Add up to {MAX_BATCH} card images to scan in batch.</p>
@@ -272,5 +329,81 @@
 		color: var(--text-secondary);
 		font-size: 0.85rem;
 		margin-top: 0.5rem;
+	}
+	.fix-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.65rem;
+		padding: 2px 4px;
+		color: var(--text-secondary);
+		opacity: 0.6;
+	}
+	.fix-btn:hover { opacity: 1; }
+	.manual-search-container {
+		margin-top: 1rem;
+		padding: 1rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #111827);
+		border: 1px solid var(--border-color);
+	}
+	.commit-confirm-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		padding: 1rem;
+	}
+	.commit-confirm-card {
+		background: var(--bg-elevated, #111827);
+		border-radius: 16px;
+		padding: 1.5rem;
+		max-width: 400px;
+		width: 100%;
+		max-height: 70vh;
+		overflow-y: auto;
+	}
+	.commit-confirm-card h3 {
+		font-size: 1.1rem;
+		font-weight: 700;
+		margin-bottom: 1rem;
+	}
+	.commit-summary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 1rem;
+	}
+	.commit-item {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.85rem;
+		padding: 0.25rem 0;
+	}
+	.commit-name { font-weight: 600; }
+	.commit-number { color: var(--text-secondary); font-size: 0.8rem; }
+	.commit-warning {
+		font-size: 0.8rem;
+		color: #f59e0b;
+		margin-bottom: 0.75rem;
+	}
+	.commit-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.commit-actions button {
+		flex: 1;
+		padding: 0.75rem;
+		border-radius: 8px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.btn-secondary {
+		background: transparent;
+		border: 1px solid var(--border-color);
+		color: var(--text-primary);
 	}
 </style>

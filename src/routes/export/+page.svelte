@@ -243,6 +243,13 @@
 		<p class="subtitle">Download your collection data as CSV</p>
 	</header>
 
+	{#if collectionItems().length === 0}
+		<div class="empty-export">
+			<h2>Nothing to Export</h2>
+			<p>Add cards to your collection first, then come back to export them.</p>
+			<a href="/scan" class="export-btn" style="display:inline-block;width:auto;padding:0.75rem 2rem;text-decoration:none;">Scan a Card</a>
+		</div>
+	{:else}
 	<div class="tabs">
 		<button class:active={activeTab === 'csv'} onclick={() => (activeTab = 'csv')}>CSV Export</button>
 		<button class:active={activeTab === 'deck'} onclick={() => (activeTab = 'deck')}>Deck Export</button>
@@ -339,6 +346,7 @@
 				<button class="export-btn" onclick={runEnhancedEbayExport}>Download eBay CSV ({ebayQueue.length} cards)</button>
 			{/if}
 		</div>
+	{/if}
 	{/if}
 </div>
 
@@ -547,4 +555,20 @@
 	}
 
 	.remove-btn-sm:hover { color: var(--danger, #ef4444); }
+
+	.empty-export {
+		text-align: center;
+		padding: 3rem 1rem;
+	}
+	.empty-export h2 {
+		font-size: 1.2rem;
+		font-weight: 700;
+		margin-bottom: 0.5rem;
+		color: var(--text-primary);
+	}
+	.empty-export p {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		margin-bottom: 1.5rem;
+	}
 </style>

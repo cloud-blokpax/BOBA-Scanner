@@ -136,17 +136,22 @@
 							<h3>Missing Cards ({set.missing.length})</h3>
 							<div class="missing-grid">
 								{#each set.missing as card}
-									<a
-										href={buildEbaySoldUrl({ card_number: card.card_number, hero_name: card.hero_name })}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="missing-card"
-									>
-										<span class="missing-number">{card.card_number}</span>
-										{#if card.hero_name}
-											<span class="missing-name">{card.hero_name}</span>
-										{/if}
-									</a>
+									<div class="missing-card-group">
+										<a
+											href={buildEbaySoldUrl({ card_number: card.card_number, hero_name: card.hero_name })}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="missing-card"
+										>
+											<span class="missing-number">{card.card_number}</span>
+											{#if card.hero_name}
+												<span class="missing-name">{card.hero_name}</span>
+											{/if}
+										</a>
+										<a href="/deck/shop?search={encodeURIComponent(card.card_number || card.hero_name || '')}" class="find-btn">
+											Find in Shop
+										</a>
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -246,4 +251,18 @@
 		font-size: 0.7rem;
 		color: var(--text-tertiary);
 	}
+	.missing-card-group {
+		display: inline-flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.find-btn {
+		font-size: 0.65rem;
+		color: var(--accent-primary, #3b82f6);
+		text-decoration: none;
+		text-align: center;
+		padding: 2px 4px;
+		border-radius: 4px;
+	}
+	.find-btn:hover { text-decoration: underline; }
 </style>

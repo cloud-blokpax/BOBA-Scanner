@@ -19,6 +19,16 @@
 	});
 
 	async function checkProfile(authUserId: string) {
+		// Don't show if dismissed within the last 30 days
+		try {
+			const dismissedAt = localStorage.getItem('profilePromptDismissedAt');
+			if (dismissedAt) {
+				const elapsed = Date.now() - Number(dismissedAt);
+				const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+				if (elapsed < THIRTY_DAYS) return;
+			}
+		} catch {}
+
 		const client = getSupabase();
 		if (!client) return;
 		try {
@@ -65,6 +75,9 @@
 
 	function dismiss() {
 		visible = false;
+		try {
+			localStorage.setItem('profilePromptDismissedAt', Date.now().toString());
+		} catch {}
 	}
 </script>
 

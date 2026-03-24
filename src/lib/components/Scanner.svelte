@@ -572,6 +572,13 @@
 				<span class="status-spinner"></span>
 			{/if}
 			<span class="status-text">{statusText}</span>
+			{#if scanState().status === 'tier1' || scanState().status === 'tier2' || scanState().status === 'tier3'}
+				<div class="tier-progress">
+					<div class="tier-dot" class:active={scanState().status === 'tier1'} class:done={['tier2', 'tier3'].includes(scanState().status)}></div>
+					<div class="tier-dot" class:active={scanState().status === 'tier2'} class:done={scanState().status === 'tier3'}></div>
+					<div class="tier-dot" class:active={scanState().status === 'tier3'}></div>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -1073,5 +1080,25 @@
 	.foil-dot-filled {
 		background: #f59e0b;
 		border-color: #f59e0b;
+	}
+
+	.tier-progress {
+		display: flex;
+		gap: 6px;
+		margin-top: 6px;
+	}
+	.tier-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: rgba(255,255,255,0.2);
+		transition: background 0.3s;
+	}
+	.tier-dot.active {
+		background: var(--gold, #f59e0b);
+		box-shadow: 0 0 6px var(--gold-glow, rgba(245, 158, 11, 0.5));
+	}
+	.tier-dot.done {
+		background: var(--success, #22c55e);
 	}
 </style>

@@ -140,6 +140,12 @@
 	<h1>DBS Calculator</h1>
 	<p class="subtitle">Check your Playbook's Deck Balancing Score before tournament registration.</p>
 
+	<p class="page-description">
+		Build your playbook and check the total DBS (Deck Balancing Score).
+		Each Play card has a DBS value — your playbook total must not exceed 1,000.
+		Type a card number or name to add it.
+	</p>
+
 	<div class="set-selector">
 		{#each SETS as set}
 			<button
@@ -225,7 +231,13 @@
 		padding: 1rem;
 	}
 	h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-	.subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; }
+	.subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+	.page-description {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		margin-bottom: 1.5rem;
+		line-height: 1.5;
+	}
 
 	.set-selector {
 		display: flex;
