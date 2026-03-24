@@ -283,6 +283,11 @@
 				</div>
 			{/if}
 		</section>
+
+		<div class="settings-footer">
+			<a href="/privacy">Privacy Policy</a>
+			<a href="/terms">Terms of Service</a>
+		</div>
 	{/if}
 </div>
 
@@ -417,4 +422,22 @@
 	.badge-icon { font-size: 1.5rem; }
 	.badge-name { display: block; font-weight: 600; font-size: 0.9rem; }
 	.badge-desc { display: block; font-size: 0.75rem; color: var(--text-secondary); }
+
+	.settings-footer {
+		display: flex;
+		justify-content: center;
+		gap: 1.5rem;
+		margin-top: 2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border-color);
+	}
+	.settings-footer a {
+		font-size: 0.8rem;
+		color: var(--text-tertiary);
+		text-decoration: none;
+	}
+	.settings-footer a:hover {
+		color: var(--text-secondary);
+		text-decoration: underline;
+	}
 </style>

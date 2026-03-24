@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import type { ScanResult } from '$lib/types';
+	import type { ScanResult, Card } from '$lib/types';
 	import { recognizeCard } from '$lib/services/recognition';
 	import { addToCollection } from '$lib/stores/collection.svelte';
+	import CardCorrection from '$lib/components/CardCorrection.svelte';
 
 	let { onClose }: { onClose?: () => void } = $props();
 
@@ -32,6 +33,8 @@
 	let processing = $state(false);
 	let committed = $state(false);
 	let fileInput = $state<HTMLInputElement>(undefined!);
+	let correctingIdx = $state<number | null>(null);
+	let showCommitConfirm = $state(false);
 
 	onDestroy(() => {
 		if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -69,6 +72,11 @@
 
 	function toggleCell(index: number) {
 		if (processing) return;
+		const cell = grid[index];
+		if (cell.status === 'done') {
+			correctingIdx = index;
+			return;
+		}
 		grid = grid.map((c, i) =>
 			i === index ? { ...c, skipped: !c.skipped } : c
 		);
@@ -141,6 +149,26 @@
 			bitmap.close();
 		}
 		processing = false;
+	}
+
+	function handleCellCorrection(idx: number, correctedCard: Partial<Card>) {
+		if (correctedCard.id) {
+			grid = grid.map((c, i) =>
+				i === idx ? {
+					...c,
+					result: {
+						card_id: correctedCard.id!,
+						card: correctedCard as Card,
+						scan_method: 'manual',
+						confidence: 1,
+						processing_ms: 0
+					},
+					status: 'done' as const,
+					error: null
+				} : c
+			);
+		}
+		correctingIdx = null;
 	}
 
 	async function commitResults() {
@@ -233,7 +261,7 @@
 					{/if}
 
 					{#if doneCells.length > 0 && !processing}
-						<button class="btn-primary commit-btn" onclick={commitResults}>
+						<button class="btn-primary commit-btn" onclick={() => { showCommitConfirm = true; }}>
 							Add {doneCells.length} to Collection
 						</button>
 					{/if}
@@ -244,6 +272,36 @@
 				</div>
 			{/if}
 		</div>
+		{#if correctingIdx !== null}
+			{@const cell = grid[correctingIdx]}
+			<div class="manual-search-container">
+				<CardCorrection
+					card={{ card_number: cell.result?.card?.card_number ?? '' }}
+					onCorrect={(corrected) => handleCellCorrection(correctingIdx!, corrected)}
+					onClose={() => { correctingIdx = null; }}
+				/>
+			</div>
+		{/if}
+
+		{#if showCommitConfirm}
+			<div class="commit-confirm-overlay">
+				<div class="commit-confirm-card">
+					<h3>Add {doneCells.length} cards to your collection?</h3>
+					<div class="commit-summary">
+						{#each doneCells as cell}
+							<div class="commit-item">
+								<span class="commit-name">{cell.result?.card?.hero_name || cell.result?.card?.name || 'Unknown'}</span>
+								<span class="commit-number">{cell.result?.card?.card_number || ''}</span>
+							</div>
+						{/each}
+					</div>
+					<div class="commit-actions">
+						<button class="btn-primary" onclick={commitResults}>Confirm</button>
+						<button class="btn-secondary" onclick={() => { showCommitConfirm = false; }}>Cancel</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 	{:else}
 		<div class="commit-success">
 			<p>Added {doneCells.length} cards to your collection!</p>
@@ -361,5 +419,66 @@
 	.commit-success {
 		text-align: center;
 		padding: 2rem;
+	}
+	.manual-search-container {
+		margin-top: 1rem;
+		padding: 1rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #111827);
+		border: 1px solid var(--border-color);
+	}
+	.commit-confirm-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		padding: 1rem;
+	}
+	.commit-confirm-card {
+		background: var(--bg-elevated, #111827);
+		border-radius: 16px;
+		padding: 1.5rem;
+		max-width: 400px;
+		width: 100%;
+		max-height: 70vh;
+		overflow-y: auto;
+	}
+	.commit-confirm-card h3 {
+		font-size: 1.1rem;
+		font-weight: 700;
+		margin-bottom: 1rem;
+	}
+	.commit-summary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 1rem;
+	}
+	.commit-item {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.85rem;
+		padding: 0.25rem 0;
+	}
+	.commit-name { font-weight: 600; }
+	.commit-number { color: var(--text-secondary); font-size: 0.8rem; }
+	.commit-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.commit-actions button {
+		flex: 1;
+		padding: 0.75rem;
+		border-radius: 8px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.btn-secondary {
+		background: transparent;
+		border: 1px solid var(--border-color);
+		color: var(--text-primary);
 	}
 </style>

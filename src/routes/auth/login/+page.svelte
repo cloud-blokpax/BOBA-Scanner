@@ -37,6 +37,10 @@
 			</svg>
 			Continue with Google
 		</button>
+
+		<p class="legal-links">
+			By signing in, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
+		</p>
 	</div>
 </div>
 
@@ -111,5 +115,16 @@
 	.btn-google:hover {
 		background: var(--surface-secondary, #0d1524);
 		border-color: var(--accent-primary, #3b82f6);
+	}
+
+	.legal-links {
+		font-size: 0.8rem;
+		color: var(--text-tertiary, #64748b);
+		margin-top: 1rem;
+	}
+
+	.legal-links a {
+		color: var(--text-secondary, #94a3b8);
+		text-decoration: underline;
 	}
 </style>

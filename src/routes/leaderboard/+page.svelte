@@ -94,6 +94,11 @@
 			<a href="/scan" class="btn-scan">Start Scanning</a>
 		</div>
 	{:else}
+		<p class="lb-description">
+			Reference images improve scan accuracy for everyone.
+			When you scan a card and the AI identifies it correctly, your scan is automatically
+			submitted as a reference image if it's better than the current one.
+		</p>
 		<div class="lb-table">
 			{#each leaderboard as entry, i}
 				<div
@@ -193,6 +198,13 @@
 		color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;
 	}
 
+	.lb-description {
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		line-height: 1.5;
+		margin-bottom: 1.25rem;
+		text-align: center;
+	}
 	.empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-secondary); }
 	.btn-scan {
 		display: inline-block; margin-top: 1rem; padding: 0.75rem 2rem;

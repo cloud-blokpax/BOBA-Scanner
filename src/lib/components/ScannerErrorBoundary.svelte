@@ -29,6 +29,12 @@
 		hasError = false;
 		errorMessage = null;
 	}
+
+	function handleFallbackUpload() {
+		hasError = false;
+		errorMessage = null;
+		window.location.href = '/';
+	}
 </script>
 
 {#if hasError}
@@ -38,6 +44,15 @@
 			<p>{errorMessage || 'Something went wrong with the scanner.'}</p>
 			<div class="error-actions">
 				<button class="btn-retry" onclick={retry}>Try Again</button>
+				<label class="btn-upload-fallback">
+					Upload Image Instead
+					<input
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						onchange={handleFallbackUpload}
+						hidden
+					/>
+				</label>
 				<a href="/" class="btn-home">Go Home</a>
 			</div>
 		</div>
@@ -90,5 +105,15 @@
 		color: var(--text-primary);
 		text-decoration: none;
 		font-weight: 600;
+	}
+	.btn-upload-fallback {
+		padding: 0.75rem 1.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--gold, #f59e0b);
+		background: transparent;
+		color: var(--gold, #f59e0b);
+		font-weight: 600;
+		cursor: pointer;
+		text-align: center;
 	}
 </style>
