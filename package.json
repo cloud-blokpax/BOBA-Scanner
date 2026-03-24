@@ -13,6 +13,7 @@
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",
     "@types/qrcode": "^1.5.6",
+    "@types/seedrandom": "^3.0.8",
     "svelte-check": "^4.4.5",
     "tslib": "^2.8.1",
     "typescript": "^5.9.3",
@@ -27,11 +28,14 @@
     "@sveltejs/kit": "^2.54.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tanstack/svelte-virtual": "^3.13.22",
+    "@techstark/opencv-js": "^4.12.0-release.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.4",
     "comlink": "^4.4.2",
     "qrcode": "^1.5.4",
+    "seedrandom": "^3.0.5",
     "sharp": "^0.34.5",
+    "ssim.js": "^3.5.0",
     "svelte": "^5.53.10",
     "tesseract.js": "^7.0.0"
   }

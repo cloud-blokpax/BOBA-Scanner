@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
+	import AuthenticityCheck from '$lib/components/AuthenticityCheck.svelte';
 	import { shareCardImage } from '$lib/services/share-card';
 	import type { Card } from '$lib/types';
 
@@ -50,6 +51,7 @@
 	} = $props();
 
 	let showManualSearch = $state(false);
+	let showAuthCheck = $state(false);
 	let sharing = $state(false);
 
 	async function handleShare() {
@@ -155,6 +157,13 @@
 		</a>
 	</div>
 
+	<!-- Verify Authenticity -->
+	{#if card?.id}
+		<button class="btn btn-verify-auth" onclick={() => { showAuthCheck = true; }}>
+			Verify Authenticity
+		</button>
+	{/if}
+
 	<!-- Tertiary -->
 	<button class="btn-text-link" onclick={() => { showManualSearch = true; }}>
 		Wrong Card? Search Manually
@@ -167,6 +176,16 @@
 			card={{ card_number: card?.card_number ?? '' }}
 			onCorrect={onManualCorrection}
 			onClose={() => { showManualSearch = false; }}
+		/>
+	</div>
+{/if}
+
+{#if showAuthCheck && card?.id}
+	<div class="auth-check-container">
+		<AuthenticityCheck
+			cardId={card.id}
+			{capturedImageUrl}
+			onClose={() => { showAuthCheck = false; }}
 		/>
 	</div>
 {/if}
@@ -291,11 +310,22 @@
 	.confetti-dot:nth-child(odd) { background: var(--primary, #3b82f6); }
 	.confetti-dot:nth-child(3n) { background: var(--success, #10b981); }
 
+	.btn-verify-auth {
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid rgba(168, 85, 247, 0.3);
+		color: #a855f7;
+	}
+
 	.manual-search-container {
 		width: 100%;
 		max-width: 400px;
 		margin-top: 0.5rem;
 		text-align: left;
+	}
+
+	.auth-check-container {
+		width: 100%;
+		margin-top: 0.5rem;
 	}
 
 	@keyframes success-pop {
