@@ -111,14 +111,14 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	}
 
 	// Mode 2: seller listing monitor
+	if (!seller?.trim()) {
+		throw error(400, 'Missing seller username or query');
+	}
 	{
 		const withinLimit = await checkEbayDailyLimit();
 		if (!withinLimit) {
 			return json({ error: 'API call limit reached for today', listings: [], total: 0 }, { status: 503 });
 		}
-	}
-	if (!seller?.trim()) {
-		throw error(400, 'Missing seller username or query');
 	}
 
 	// Validate seller username: eBay usernames are alphanumeric with dots, hyphens, underscores (max 64 chars)

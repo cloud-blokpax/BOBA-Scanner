@@ -25,7 +25,7 @@ let _corrections: Map<string, CorrectionEntry> | null = null;
 let _loadPromise: Promise<void> | null = null;
 
 function normalize(text: string): string {
-	return text.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
+	return text.toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
 }
 
 /**

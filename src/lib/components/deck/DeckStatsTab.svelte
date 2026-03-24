@@ -13,7 +13,7 @@
 	} = $props();
 
 	const totalPower = $derived(heroCards.reduce((sum, c) => sum + (c.power || 0), 0));
-	const avgPower = $derived(heroCards.length > 0 ? Math.round(totalPower / heroCards.length) : 0);
+	const avgPower = $derived(heroCards.length > 0 ? Math.round(totalPower / heroCards.length * 10) / 10 : 0);
 
 	const powerLevelCounts = $derived.by(() => {
 		const counts: Record<number, number> = {};

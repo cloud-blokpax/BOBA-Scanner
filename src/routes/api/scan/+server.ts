@@ -161,7 +161,7 @@ card_number=null (unreadable), hero_name="The Kid", power=180, flags=["foil_refl
 		const toolUse = response.content.find(block => block.type === 'tool_use');
 		if (!toolUse || toolUse.type !== 'tool_use') {
 			console.warn('[api/scan] No tool_use block in Claude response');
-			return json({ success: false, method: 'claude' }, { status: 422 });
+			return json({ success: false, method: 'claude' }, { status: 502 });
 		}
 
 		const cardData = toolUse.input as Record<string, unknown>;

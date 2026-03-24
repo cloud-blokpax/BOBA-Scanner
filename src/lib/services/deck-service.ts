@@ -133,7 +133,7 @@ export async function createDeck(params: CreateDeckParams): Promise<string | nul
 			combined_power_cap: params.combined_power_cap,
 			hero_card_ids: [],
 			play_entries: [],
-			hot_dog_count: params.hot_dog_deck_size
+			hot_dog_count: 0
 		})
 		.select('id')
 		.single();

@@ -132,7 +132,7 @@ export function validateDeck(
 	}
 
 	// ── Rule: Hot Dog deck size ──────────────────────────────
-	if (!format.heroOnlyGameplay && format.hotDogDeckSize > 0 && hotDogCards.length > 0) {
+	if (!format.heroOnlyGameplay && format.hotDogDeckSize > 0) {
 		if (hotDogCards.length !== format.hotDogDeckSize) {
 			violations.push({
 				rule: 'hot_dog_deck_size',
@@ -143,7 +143,7 @@ export function validateDeck(
 	}
 
 	// ── Rule: Foil Hot Dog requirement (Madness) ────────────
-	if (format.requiresFoilHotDogs && format.requiredFoilHotDogCount > 0 && hotDogCards.length > 0) {
+	if (format.requiresFoilHotDogs && format.requiredFoilHotDogCount > 0) {
 		const foilHotDogs = hotDogCards.filter(c => {
 			const p = (c.parallel || '').toLowerCase();
 			return p.includes('foil') || p.includes('battlefoil');
