@@ -177,108 +177,45 @@ export async function getAllParallelConfig(): Promise<ParallelConfigEntry[]> {
 
 /**
  * Update the rarity assignment for a parallel.
+ * Routes through the admin API endpoint which uses the service-role client.
  */
 export async function updateParallelRarity(
 	parallelName: string,
 	rarity: CardRarity
 ): Promise<boolean> {
-	const supabase = getSupabase();
-	if (!supabase) return false;
-
-	const { error } = await supabase
-		.from('parallel_rarity_config')
-		.upsert(
-			{
-				parallel_name: parallelName,
-				rarity,
-				updated_at: new Date().toISOString()
-			},
-			{ onConflict: 'parallel_name' }
-		);
-
-	if (error) return false;
-
-	// Update local cache
-	configMap.set(parallelName.toLowerCase(), rarity);
-	return true;
-}
-
-/**
- * Discover all distinct parallel values from the cards table.
- */
-export async function discoverParallels(): Promise<string[]> {
-	const supabase = getSupabase();
-	if (!supabase) return [];
-
-	const { data, error } = await supabase
-		.from('cards')
-		.select('parallel')
-		.not('parallel', 'is', null);
-
-	if (error || !data) return [];
-
-	const uniqueParallels = new Set<string>();
-	for (const row of data) {
-		if (row.parallel) uniqueParallels.add(row.parallel);
+	try {
+		const res = await fetch('/api/admin/parallels', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ parallel_name: parallelName, rarity })
+		});
+		if (!res.ok) return false;
+		// Update local cache
+		configMap.set(parallelName.toLowerCase(), rarity);
+		return true;
+	} catch {
+		return false;
 	}
-
-	return [...uniqueParallels].sort();
 }
+
 
 /**
  * Seed missing parallels into the config table.
- * Seeds from PARALLEL_TYPES (canonical list) plus any discovered from the cards table.
+ * Routes through the admin API endpoint which uses the service-role client.
  */
 export async function seedMissingParallels(): Promise<number> {
-	const supabase = getSupabase();
-	if (!supabase) return 0;
-
-	// Get already-configured parallels from Supabase
-	const { data: existingData } = await supabase
-		.from('parallel_rarity_config')
-		.select('parallel_name');
-	const existingNames = new Set((existingData || []).map((e: { parallel_name: string }) => e.parallel_name.toLowerCase()));
-
-	// Collect all parallels to seed: from PARALLEL_TYPES + discovered from cards table
-	const toSeed = new Map<string, { name: string; rarity: CardRarity }>();
-
-	// Add all from PARALLEL_TYPES
-	for (const pt of PARALLEL_TYPES) {
-		if (!existingNames.has(pt.name.toLowerCase()) && !existingNames.has(pt.key)) {
-			toSeed.set(pt.name.toLowerCase(), {
-				name: pt.name,
-				rarity: defaultRarityForParallel(pt.key, pt.name)
-			});
+	try {
+		const res = await fetch('/api/admin/parallels', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' }
+		});
+		if (!res.ok) return 0;
+		const data = await res.json();
+		if (data.seeded > 0) {
+			await reloadParallelConfig();
 		}
+		return data.seeded ?? 0;
+	} catch {
+		return 0;
 	}
-
-	// Also discover from cards table
-	const discovered = await discoverParallels();
-	for (const p of discovered) {
-		if (!existingNames.has(p.toLowerCase()) && !toSeed.has(p.toLowerCase())) {
-			toSeed.set(p.toLowerCase(), {
-				name: p,
-				rarity: mapParallelToRarity(p) || 'common'
-			});
-		}
-	}
-
-	if (toSeed.size === 0) return 0;
-
-	const baseOrder = (existingData || []).length;
-	const rows = [...toSeed.values()].map((entry, i) => ({
-		parallel_name: entry.name,
-		rarity: entry.rarity,
-		sort_order: baseOrder + i
-	}));
-
-	const { error } = await supabase
-		.from('parallel_rarity_config')
-		.insert(rows);
-
-	if (error) return 0;
-
-	// Reload cache
-	await reloadParallelConfig();
-	return rows.length;
 }

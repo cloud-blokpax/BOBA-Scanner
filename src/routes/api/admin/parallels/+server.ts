@@ -1,0 +1,133 @@
+/**
+ * Admin API for parallel rarity configuration.
+ *
+ * PUT  /api/admin/parallels — upsert a single parallel's rarity
+ * POST /api/admin/parallels — seed missing parallels into the config table
+ *
+ * Both endpoints require admin auth and write via service-role client
+ * to bypass RLS (the parallel_rarity_config table no longer allows
+ * writes from the authenticated role).
+ */
+
+import { json, error } from '@sveltejs/kit';
+import { requireAdmin } from '$lib/server/admin-guard';
+import { getAdminClient } from '$lib/server/supabase-admin';
+import { PARALLEL_TYPES } from '$lib/data/boba-parallels';
+import { mapParallelToRarity } from '$lib/services/parallel-config';
+import type { CardRarity } from '$lib/types';
+import type { RequestHandler } from './$types';
+
+const VALID_RARITIES: CardRarity[] = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'];
+
+function defaultRarityForParallel(key: string): CardRarity {
+	if (key === 'base' || key === 'foil') return 'common';
+	if (key === 'super_parallel') return 'legendary';
+	if (key === 'inspired_ink') return 'ultra_rare';
+	if (key.includes('battlefoil')) return 'rare';
+	return 'uncommon';
+}
+
+/** PUT — update a single parallel's rarity */
+export const PUT: RequestHandler = async ({ request, locals }) => {
+	await requireAdmin(locals);
+
+	const body = await request.json();
+	const { parallel_name, rarity } = body;
+
+	if (!parallel_name || !rarity) {
+		throw error(400, 'parallel_name and rarity are required');
+	}
+
+	if (!VALID_RARITIES.includes(rarity)) {
+		throw error(400, `Invalid rarity. Must be one of: ${VALID_RARITIES.join(', ')}`);
+	}
+
+	const adminClient = getAdminClient();
+	if (!adminClient) throw error(503, 'Admin client not configured');
+
+	const { error: dbError } = await adminClient
+		.from('parallel_rarity_config')
+		.upsert(
+			{
+				parallel_name,
+				rarity,
+				updated_at: new Date().toISOString()
+			},
+			{ onConflict: 'parallel_name' }
+		);
+
+	if (dbError) {
+		console.error('[admin/parallels] Upsert error:', dbError);
+		throw error(500, 'Failed to update parallel config');
+	}
+
+	return json({ success: true });
+};
+
+/** POST — seed missing parallels from PARALLEL_TYPES + cards table */
+export const POST: RequestHandler = async ({ locals }) => {
+	await requireAdmin(locals);
+
+	const adminClient = getAdminClient();
+	if (!adminClient) throw error(503, 'Admin client not configured');
+
+	// Get already-configured parallels
+	const { data: existingData } = await adminClient
+		.from('parallel_rarity_config')
+		.select('parallel_name');
+	const existingNames = new Set(
+		(existingData || []).map((e: { parallel_name: string }) => e.parallel_name.toLowerCase())
+	);
+
+	const toSeed = new Map<string, { name: string; rarity: CardRarity }>();
+
+	// Add all from PARALLEL_TYPES
+	for (const pt of PARALLEL_TYPES) {
+		if (!existingNames.has(pt.name.toLowerCase()) && !existingNames.has(pt.key)) {
+			toSeed.set(pt.name.toLowerCase(), {
+				name: pt.name,
+				rarity: defaultRarityForParallel(pt.key)
+			});
+		}
+	}
+
+	// Discover from cards table
+	const { data: cardData } = await adminClient
+		.from('cards')
+		.select('parallel')
+		.not('parallel', 'is', null);
+
+	if (cardData) {
+		for (const row of cardData) {
+			const p = row.parallel as string;
+			if (p && !existingNames.has(p.toLowerCase()) && !toSeed.has(p.toLowerCase())) {
+				toSeed.set(p.toLowerCase(), {
+					name: p,
+					rarity: mapParallelToRarity(p) || 'common'
+				});
+			}
+		}
+	}
+
+	if (toSeed.size === 0) {
+		return json({ success: true, seeded: 0 });
+	}
+
+	const baseOrder = (existingData || []).length;
+	const rows = [...toSeed.values()].map((entry, i) => ({
+		parallel_name: entry.name,
+		rarity: entry.rarity,
+		sort_order: baseOrder + i
+	}));
+
+	const { error: insertError } = await adminClient
+		.from('parallel_rarity_config')
+		.insert(rows);
+
+	if (insertError) {
+		console.error('[admin/parallels] Seed error:', insertError);
+		throw error(500, 'Failed to seed parallels');
+	}
+
+	return json({ success: true, seeded: rows.length });
+};
