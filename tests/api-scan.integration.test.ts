@@ -246,7 +246,7 @@ describe('POST /api/scan', () => {
 			});
 			const request = makeRequest(makeImageFile());
 			const response = await POST({ request, locals } as any);
-			expect(response.status).toBe(422);
+			expect(response.status).toBe(502);
 			const body = await response.json();
 			expect(body.success).toBe(false);
 		});

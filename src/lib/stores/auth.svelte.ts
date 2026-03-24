@@ -25,9 +25,11 @@ export function initAuth() {
 			_user = null;
 			return;
 		}
+		_user = validatedUser;
 		client.auth.getSession().then(({ data }) => {
 			_session = data.session;
-			_user = validatedUser;
+		}).catch(() => {
+			_session = null;
 		});
 	}).catch((err) => {
 		console.warn('Failed to get initial auth session:', err);

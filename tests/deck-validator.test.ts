@@ -51,10 +51,23 @@ function makeHeroDeck(count: number, overrides: Partial<Card> = {}): Card[] {
 	);
 }
 
+function makeHotDogDeck(count: number): Card[] {
+	return Array.from({ length: count }, (_, i) =>
+		makeCard({
+			id: `hotdog-${i}`,
+			hero_name: `Hot Dog ${i}`,
+			card_number: `HD-${i}`,
+			power: 0,
+			weapon_type: null as unknown as string,
+		})
+	);
+}
+
 describe('validateDeck', () => {
 	it('passes a valid 60-card SPEC Playmaker deck', () => {
 		const heroes = makeHeroDeck(60);
-		const result = validateDeck(heroes, 'spec_playmaker');
+		const hotDogs = makeHotDogDeck(10);
+		const result = validateDeck(heroes, 'spec_playmaker', [], hotDogs);
 		expect(result.isValid).toBe(true);
 		expect(result.violations).toHaveLength(0);
 	});
@@ -103,6 +116,13 @@ describe('validateDeck', () => {
 		const result = validateDeck([], 'nonexistent_format');
 		expect(result.isValid).toBe(false);
 		expect(result.violations[0].rule).toBe('format');
+	});
+
+	it('fails when hot dog deck is empty but format requires 10', () => {
+		const heroes = makeHeroDeck(60);
+		const result = validateDeck(heroes, 'spec_playmaker', [], []);
+		expect(result.isValid).toBe(false);
+		expect(result.violations.some(v => v.rule === 'hot_dog_deck_size')).toBe(true);
 	});
 
 	it('computes correct deck stats', () => {

@@ -123,7 +123,7 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	}
 	await adminClient.from('ebay_seller_tokens').update({
 		access_token: data.access_token,
-		access_token_expires_at: new Date(Date.now() + (data.expires_in || 7200) * 1000).toISOString(),
+		access_token_expires_at: new Date(Date.now() + Math.max(data.expires_in ?? 7200, 60) * 1000).toISOString(),
 		updated_at: new Date().toISOString()
 	}).eq('user_id', userId);
 
