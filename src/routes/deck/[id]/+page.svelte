@@ -21,11 +21,26 @@
 	let { data } = $props();
 
 	// ── State ─────────────────────────────────────────────────
-	let deckName = $state(data.deck.name);
-	let notes = $state(data.deck.notes || '');
-	let heroCardIds = $state<string[]>([...(data.deck.hero_card_ids || [])]);
-	let playEntries = $state<PlayEntry[]>([...(data.deck.play_entries || [])]);
-	let hotDogCount = $state(data.deck.hot_dog_count || 10);
+	// Initialized from page data and reset when navigating to a different deck
+	let deckName = $state('');
+	let notes = $state('');
+	let heroCardIds = $state<string[]>([]);
+	let playEntries = $state<PlayEntry[]>([]);
+	let hotDogCount = $state(10);
+
+	// Reset editable state when the deck changes (e.g. navigating to a different [id])
+	let _lastDeckId = '';
+	$effect(() => {
+		const deck = data.deck;
+		if (deck.id === _lastDeckId) return;
+		_lastDeckId = deck.id;
+		deckName = deck.name;
+		notes = deck.notes || '';
+		heroCardIds = [...(deck.hero_card_ids || [])];
+		playEntries = [...(deck.play_entries || [])];
+		hotDogCount = deck.hot_dog_count || 10;
+		_skipNextSave = true;
+	});
 	let activeTab = $state<'heroes' | 'plays' | 'stats' | 'shop'>('heroes');
 	let showScanner = $state(false);
 	let showSettings = $state(false);
@@ -50,7 +65,7 @@
 
 	// ── Auto-save ─────────────────────────────────────────────
 	let _saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let _initialLoad = true;
+	let _skipNextSave = true;
 
 	$effect(() => {
 		// Read tracked values
@@ -60,8 +75,8 @@
 		void deckName;
 		void notes;
 
-		if (_initialLoad) {
-			_initialLoad = false;
+		if (_skipNextSave) {
+			_skipNextSave = false;
 			return;
 		}
 
