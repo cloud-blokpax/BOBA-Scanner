@@ -149,8 +149,8 @@ export interface Database {
 					api_calls_used: number;
 					cards_in_collection: number;
 					is_admin: boolean;
-					is_member: boolean;
-					member_until: string | null;
+					is_pro: boolean;
+					pro_until: string | null;
 					discord_id: string | null;
 					created_at: string;
 				};
@@ -185,7 +185,7 @@ export interface Database {
 					enabled_globally: boolean;
 					enabled_for_guest: boolean;
 					enabled_for_authenticated: boolean;
-					enabled_for_member: boolean;
+					enabled_for_pro: boolean;
 					enabled_for_admin: boolean;
 					updated_at: string;
 				};
@@ -196,7 +196,7 @@ export interface Database {
 					enabled_globally?: boolean;
 					enabled_for_guest?: boolean;
 					enabled_for_authenticated?: boolean;
-					enabled_for_member?: boolean;
+					enabled_for_pro?: boolean;
 					enabled_for_admin?: boolean;
 					updated_at?: string;
 				};
@@ -614,6 +614,19 @@ export interface Database {
 			increment_shared_deck_views: {
 				Args: { deck_id: string };
 				Returns: void;
+			};
+			activate_pro: {
+				Args: {
+					p_user_id: string;
+					p_tier_key: string;
+					p_tier_amount: number;
+					p_payment_method: string;
+				};
+				Returns: {
+					pro_until: string;
+					time_added: boolean;
+					cooldown_active: boolean;
+				};
 			};
 		};
 		Enums: Record<string, never>;

@@ -22,7 +22,7 @@
 		email: string;
 		name: string | null;
 		is_admin: boolean;
-		is_member: boolean;
+		is_pro: boolean;
 		scan_count: number;
 		created_at: string;
 	}
@@ -400,8 +400,8 @@
 									<td>
 										{#if user.is_admin}
 											<span class="badge admin">Admin</span>
-										{:else if user.is_member}
-											<span class="badge member">Member</span>
+										{:else if user.is_pro}
+											<span class="badge member">Pro</span>
 										{:else}
 											<span class="badge">User</span>
 										{/if}

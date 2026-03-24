@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     api_calls_used  INT NOT NULL DEFAULT 0,
     cards_in_collection INT NOT NULL DEFAULT 0,
     is_admin        BOOLEAN NOT NULL DEFAULT FALSE,
-    is_member       BOOLEAN NOT NULL DEFAULT FALSE,
-    member_until    TIMESTAMPTZ,
+    is_pro          BOOLEAN NOT NULL DEFAULT FALSE,
+    pro_until       TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
     enabled_globally          BOOLEAN NOT NULL DEFAULT FALSE,
     enabled_for_guest         BOOLEAN NOT NULL DEFAULT FALSE,
     enabled_for_authenticated BOOLEAN NOT NULL DEFAULT FALSE,
-    enabled_for_member        BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled_for_pro        BOOLEAN NOT NULL DEFAULT FALSE,
     enabled_for_admin         BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -54,12 +54,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// 2. Check if user is a member
 	const { data: profile } = await supabase
 		.from('users')
-		.select('is_member, is_admin')
+		.select('is_pro, is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
-	const isMember = profile?.is_member || profile?.is_admin || false;
-	let dailyLimit: number = isMember
+	const isPro = profile?.is_pro || profile?.is_admin || false;
+	let dailyLimit: number = isPro
 		? Number(memberLimit?.value ?? 10)
 		: Number(freeLimit?.value ?? 3);
 
@@ -93,7 +93,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			limit: Number(dailyLimit),
 			used: refreshesUsed,
 			resets_at: new Date(todayStart.getTime() + 86400_000).toISOString(),
-			is_member: isMember
+			is_pro: isPro
 		}, { status: 429 });
 	}
 
@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			results: [],
 			refreshes_remaining: refreshesRemaining - 1,
 			limit: Number(dailyLimit),
-			is_member: isMember
+			is_pro: isPro
 		}, { status: 503 });
 	}
 
@@ -194,6 +194,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		results,
 		refreshes_remaining: refreshesRemaining - 1,
 		limit: Number(dailyLimit),
-		is_member: isMember
+		is_pro: isPro
 	});
 };

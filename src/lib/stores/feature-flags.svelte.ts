@@ -13,7 +13,7 @@ export interface FeatureFlag {
 	enabled_globally: boolean;
 	enabled_for_guest: boolean;
 	enabled_for_authenticated: boolean;
-	enabled_for_member: boolean;
+	enabled_for_pro: boolean;
 	enabled_for_admin: boolean;
 }
 
@@ -26,7 +26,7 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: false,
-		enabled_for_member: true,
+		enabled_for_pro: true,
 		enabled_for_admin: true
 	},
 	{
@@ -37,7 +37,7 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: true,
-		enabled_for_member: true,
+		enabled_for_pro: true,
 		enabled_for_admin: true
 	},
 	{
@@ -48,7 +48,7 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: false,
-		enabled_for_member: true,
+		enabled_for_pro: true,
 		enabled_for_admin: true
 	},
 	{
@@ -59,7 +59,7 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: false,
-		enabled_for_member: true,
+		enabled_for_pro: true,
 		enabled_for_admin: true
 	},
 	{
@@ -70,7 +70,7 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: false,
-		enabled_for_member: true,
+		enabled_for_pro: true,
 		enabled_for_admin: true
 	}
 ];
@@ -86,7 +86,7 @@ let _flagsLoaded = $state(false);
 export function userOverrides(): Map<string, boolean> { return _userOverrides; }
 
 interface UserProfile {
-	is_member?: boolean;
+	is_pro?: boolean;
 	is_admin?: boolean;
 }
 
@@ -119,7 +119,7 @@ function roleCheck(flag: FeatureFlag): boolean {
 		_refreshProfile(currentUser.id);
 	}
 	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
-	if (_userProfile?.is_member) return flag.enabled_for_member !== false;
+	if (_userProfile?.is_pro) return flag.enabled_for_pro !== false;
 	return flag.enabled_for_authenticated !== false;
 }
 
@@ -129,7 +129,7 @@ async function _refreshProfile(userId: string): Promise<void> {
 		if (!client) return;
 		const { data: profile } = await client
 			.from('users')
-			.select('is_member, is_admin')
+			.select('is_pro, is_admin')
 			.eq('auth_user_id', userId)
 			.single();
 		_userProfile = profile || null;
@@ -192,7 +192,7 @@ export async function loadFeatureFlags(): Promise<void> {
 		if (currentUser) {
 			const { data: profile } = await client
 				.from('users')
-				.select('is_member, is_admin')
+				.select('is_pro, is_admin')
 				.eq('auth_user_id', currentUser.id)
 				.single();
 			_userProfile = profile || null;

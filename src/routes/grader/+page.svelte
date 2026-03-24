@@ -190,16 +190,16 @@
 	{/if}
 </div>
 {:else}
-<div class="premium-block">
-	<div class="premium-icon">+</div>
+<div class="pro-gate">
+	<div class="pro-gate-icon">🔬</div>
 	<h2>AI Card Grader</h2>
-	<p>The AI condition grader estimates PSA/BGS grades from card photos.</p>
-	<p class="premium-note">This feature is available to members. Contact the admin for access.</p>
+	<p>Get instant PSA-scale grade estimates with AI-powered analysis of corners, edges, surface, and centering.</p>
+	<button class="btn-gold" onclick={() => { import('$lib/stores/pro.svelte').then(m => m.setShowGoProModal(true)); }}>Go Pro</button>
 </div>
 {/if}
 
 <style>
-	.premium-block {
+	.pro-gate {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -208,16 +208,29 @@
 		padding: 3rem 1.5rem;
 		min-height: 50vh;
 	}
-	.premium-icon { font-size: 3rem; margin-bottom: 1rem; }
-	.premium-block h2 {
+	.pro-gate-icon { font-size: 3rem; margin-bottom: 1rem; }
+	.pro-gate h2 {
 		font-family: 'Syne', sans-serif;
 		font-weight: 700;
 		margin-bottom: 0.5rem;
 	}
-	.premium-note {
-		color: var(--text-tertiary);
-		font-size: 0.85rem;
-		margin-top: 0.5rem;
+	.pro-gate p {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		margin-bottom: 1.5rem;
+		max-width: 300px;
+		line-height: 1.4;
+	}
+	.btn-gold {
+		padding: 0.75rem 2rem;
+		border-radius: 10px;
+		border: none;
+		background: var(--gold);
+		color: #000;
+		font-size: 1rem;
+		font-weight: 700;
+		cursor: pointer;
+		box-shadow: var(--shadow-gold);
 	}
 	.grader-page {
 		max-width: 500px;
