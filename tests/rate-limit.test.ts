@@ -5,9 +5,9 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock $env/dynamic/private to have no Redis config (forces in-memory fallback)
-vi.mock('$env/dynamic/private', () => ({
-	env: {}
+// Mock the shared Redis client to return null (forces in-memory fallback)
+vi.mock('$lib/server/redis', () => ({
+	getRedis: () => null
 }));
 
 // Mock @upstash/ratelimit
@@ -17,11 +17,6 @@ vi.mock('@upstash/ratelimit', () => ({
 			return {};
 		}
 	}
-}));
-
-// Mock @upstash/redis
-vi.mock('@upstash/redis', () => ({
-	Redis: class {}
 }));
 
 import { checkScanRateLimit, checkCollectionRateLimit } from '$lib/server/rate-limit';

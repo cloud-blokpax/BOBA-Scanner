@@ -90,7 +90,7 @@ interface UserProfile {
 	is_admin?: boolean;
 }
 
-let _userProfile: UserProfile | null = null;
+let _userProfile = $state<UserProfile | null>(null);
 let _userProfileForUserId: string | null = null;
 let _userProfileFetchedAt = 0;
 const PROFILE_MAX_AGE = 60_000;
@@ -135,7 +135,6 @@ async function _refreshProfile(userId: string): Promise<void> {
 		_userProfile = profile || null;
 		_userProfileForUserId = userId;
 		_userProfileFetchedAt = Date.now();
-		_featureFlags = new Map(_featureFlags);
 	} catch (err) {
 		console.debug('[feature-flags] Profile refresh failed:', err);
 	}

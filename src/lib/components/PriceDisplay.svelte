@@ -55,18 +55,18 @@
 		<span class="price-loading">Loading prices...</span>
 	{:else if priceData && priceData.listings_count && priceData.listings_count > 0}
 		<div class="price-row">
-			<span class="price-label">Low</span>
+			<span class="price-label">Ask Low</span>
 			<span class="price-value">{formatPrice(priceData.price_low)}</span>
 		</div>
 		<div class="price-row primary">
-			<span class="price-label">Mid</span>
+			<span class="price-label">Ask Mid</span>
 			<span class="price-value">{formatPrice(priceData.price_mid)}</span>
 		</div>
 		<div class="price-row">
-			<span class="price-label">High</span>
+			<span class="price-label">Ask High</span>
 			<span class="price-value">{formatPrice(priceData.price_high)}</span>
 		</div>
-		<span class="price-count">{priceData.listings_count} active listings</span>
+		<span class="price-count">Based on {priceData.listings_count} active eBay listings</span>
 		{#if ebayUrl}
 			<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="ebay-link">
 				View on eBay →

@@ -16,6 +16,11 @@ vi.mock('$lib/server/rate-limit', () => ({
 	checkAnonScanRateLimit: (...args: unknown[]) => mockCheckAnonScanRateLimit(...args)
 }));
 
+vi.mock('$lib/server/redis', () => ({
+	checkGlobalAnonScanLimit: vi.fn().mockResolvedValue(true),
+	isRedisAvailable: vi.fn().mockReturnValue(true)
+}));
+
 const mockSharp = vi.fn();
 vi.mock('sharp', () => {
 	const sharpInstance = {

@@ -14,37 +14,52 @@ export function userEmail(): string | null { return _user?.email ?? null; }
 
 /**
  * Initialize auth state from Supabase and listen for changes.
+ * Returns a cleanup function. The returned promise resolves once the
+ * initial auth state is determined, preventing race conditions between
+ * getUser() and onAuthStateChange.
  */
-export function initAuth() {
+let _initPromise: Promise<void> | null = null;
+
+export function initAuth(): { ready: Promise<void>; cleanup: () => void } {
 	const client = getSupabase();
-	if (!client) return () => {};
+	if (!client) return { ready: Promise.resolve(), cleanup: () => {} };
 
-	client.auth.getUser().then(({ data: { user: validatedUser }, error: authErr }) => {
-		if (authErr || !validatedUser) {
-			_session = null;
-			_user = null;
-			return;
-		}
-		_user = validatedUser;
-		client.auth.getSession().then(({ data }) => {
-			_session = data.session;
-		}).catch(() => {
-			_session = null;
-		});
-	}).catch((err) => {
-		console.warn('Failed to get initial auth session:', err);
-		_session = null;
-		_user = null;
-	});
+	// Resolve initial auth state BEFORE registering the listener
+	// to prevent onAuthStateChange from overwriting getUser() results
+	if (!_initPromise) {
+		_initPromise = (async () => {
+			try {
+				const { data: { user: validatedUser }, error: authErr } = await client.auth.getUser();
+				if (authErr || !validatedUser) {
+					_session = null;
+					_user = null;
+					return;
+				}
+				_user = validatedUser;
+				const { data } = await client.auth.getSession();
+				_session = data.session;
+			} catch (err) {
+				console.warn('Failed to get initial auth session:', err);
+				_session = null;
+				_user = null;
+			}
+		})();
+	}
 
+	// Register listener AFTER initial state is set to avoid race
 	const {
 		data: { subscription }
-	} = client.auth.onAuthStateChange((_event, newSession) => {
+	} = client.auth.onAuthStateChange((event, newSession) => {
+		// Skip INITIAL_SESSION — we handle it above via getUser()
+		if (event === 'INITIAL_SESSION') return;
 		_session = newSession;
 		_user = newSession?.user ?? null;
 	});
 
-	return () => subscription.unsubscribe();
+	return {
+		ready: _initPromise,
+		cleanup: () => subscription.unsubscribe()
+	};
 }
 
 /**

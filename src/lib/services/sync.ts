@@ -128,6 +128,12 @@ export async function fullSync(): Promise<void> {
 		const remoteMap = new Map(remoteItems.map(i => [`${i.card_id}:${i.condition}`, i]));
 		const localMap = new Map(localItems.map(i => [`${i.card_id}:${i.condition}`, i]));
 
+		// Load keys from last successful sync to detect remote deletions.
+		// If a key was synced previously but is now missing from remote,
+		// it was deleted on another device — don't resurrect it.
+		const lastSyncedKeys = await idb.getMeta<string[]>('last-synced-remote-keys') || [];
+		const lastSyncedSet = new Set(lastSyncedKeys);
+
 		// Merge: for each card, keep the version with the later timestamp
 		const allKeys = new Set([...remoteMap.keys(), ...localMap.keys()]);
 		const mergedItems: CollectionItem[] = [];
@@ -141,8 +147,13 @@ export async function fullSync(): Promise<void> {
 				// Only on remote — keep it
 				mergedItems.push(remote);
 			} else if (local && !remote) {
-				// Only on local — keep it (will be pushed next sync)
-				mergedItems.push(local);
+				if (lastSyncedSet.has(key)) {
+					// Was previously synced from server but now missing → remote deletion
+					// Don't add to merged items — effectively delete locally
+				} else {
+					// Never synced — locally added, keep it (will be pushed next sync)
+					mergedItems.push(local);
+				}
 			} else if (remote && local) {
 				// Both exist — keep the one with the later timestamp
 				const remoteTime = new Date(remote.added_at).getTime();
@@ -150,6 +161,9 @@ export async function fullSync(): Promise<void> {
 				mergedItems.push(localTime > remoteTime ? local : remote);
 			}
 		}
+
+		// Save current remote keys for next sync comparison
+		await idb.setMeta('last-synced-remote-keys', [...remoteMap.keys()]);
 
 		setCollectionItems(mergedItems);
 		clearLocalModifications();

@@ -15,7 +15,7 @@ import type { HashCacheEntry } from '$lib/types';
 
 let redis: Redis | null = null;
 
-function getRedis(): Redis | null {
+export function getRedis(): Redis | null {
 	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
 	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
 	if (!upstashUrl || !upstashToken) return null;
@@ -148,6 +148,15 @@ const GLOBAL_ANON_SCAN_DAILY_LIMIT = 500;
  * Returns true if the scan is allowed, false if the daily global cap is exceeded.
  * This prevents IP-rotation attacks from running up Claude API costs.
  */
+/**
+ * Check whether Redis is available for rate limiting.
+ * Used as a circuit breaker: anonymous scans are blocked when Redis is down
+ * to prevent unmetered Claude API usage.
+ */
+export function isRedisAvailable(): boolean {
+	return getRedis() !== null;
+}
+
 export async function checkGlobalAnonScanLimit(): Promise<boolean> {
 	const r = getRedis();
 	if (!r) return true; // No Redis = no tracking, allow the call

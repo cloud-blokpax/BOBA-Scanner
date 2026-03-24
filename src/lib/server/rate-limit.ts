@@ -8,8 +8,7 @@
  */
 
 import { Ratelimit } from '@upstash/ratelimit';
-import { Redis } from '@upstash/redis';
-import { env } from '$env/dynamic/private';
+import { getRedis } from './redis';
 
 // ── Upstash Rate Limiters ───────────────────────────────────
 
@@ -20,14 +19,11 @@ let collectionLimiter: Ratelimit | null = null;
 function initLimiters() {
 	if (scanLimiter) return;
 
-	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
-	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
-	if (!upstashUrl || !upstashToken) {
+	const redis = getRedis();
+	if (!redis) {
 		console.warn('[rate-limit] Upstash Redis not configured — using in-memory fallback. Rate limiting will reset on every cold start and is ineffective across concurrent Vercel function instances.');
 		return;
 	}
-
-	const redis = new Redis({ url: upstashUrl, token: upstashToken });
 
 	// 20 scans per 60 seconds per authenticated user
 	scanLimiter = new Ratelimit({
