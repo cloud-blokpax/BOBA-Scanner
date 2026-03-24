@@ -113,22 +113,34 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		const data = await browseRes.json();
 		const items = data.itemSummaries || [];
 
-		// Calculate price statistics with IQR outlier filtering
-		const rawPrices = items
+		// Separate fixed price from auction
+		const fixedPriceItems = items.filter((item: { buyingOptions?: string[] }) =>
+			item.buyingOptions?.includes('FIXED_PRICE')
+		);
+
+		const allPrices = items
 			.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value || '0'))
 			.filter((p: number) => p > 0);
 
-		const stats = calculatePriceStats(rawPrices);
+		const fixedPrices = fixedPriceItems
+			.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value || '0'))
+			.filter((p: number) => p > 0);
+
+		const allStats = calculatePriceStats(allPrices);
+		const fixedStats = calculatePriceStats(fixedPrices);
 
 		const priceData = {
 			card_id: cardId,
 			source: 'ebay_active',
-			price_low: stats?.low ?? null,
-			price_mid: stats?.median ?? null,
-			price_high: stats?.high ?? null,
-			listings_count: rawPrices.length,
-			filtered_count: stats?.filteredCount ?? rawPrices.length,
-			confidence_score: stats?.confidenceScore ?? 0,
+			price_low: allStats?.low ?? null,
+			price_mid: allStats?.median ?? null,
+			price_high: allStats?.high ?? null,
+			listings_count: allPrices.length,
+			buy_now_low: fixedStats?.low ?? null,
+			buy_now_mid: fixedStats?.median ?? null,
+			buy_now_count: fixedPrices.length,
+			filtered_count: allStats?.filteredCount ?? allPrices.length,
+			confidence_score: allStats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
 

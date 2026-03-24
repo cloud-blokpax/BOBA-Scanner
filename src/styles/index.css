@@ -298,42 +298,6 @@ body {
   color: var(--text-muted);
 }
 
-.btn-sign-out {
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.btn-sign-out:hover {
-  background: var(--bg-elevated);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.btn-header-settings {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.btn-header-settings:hover {
-  background: var(--bg-elevated);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
 /* ── Main Content ─────────────────────────────────────── */
 .app-main {
   flex: 1;
@@ -348,9 +312,6 @@ body {
   display: flex;
   flex-direction: column;
 }
-#statsContainer { order: 1; }
-#uploadArea     { order: 2; }
-#exportSection  { order: 3; }
 
 /* ── Stats Bar ────────────────────────────────────────── */
 .stats-container {
@@ -1870,11 +1831,8 @@ body {
 .card-select-btn.active { background: #1d4ed8; border-color: #1d4ed8; color: white; }
 .collection-card.selected { outline: 2.5px solid #1d4ed8; outline-offset: 1px; }
 
-#bulkActionBar { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
-
 @media (max-width: 480px) {
   .tag-filter-bar { gap: 5px; }
-  #bulkActionBar  { flex-wrap: wrap; gap: 6px; }
 }
 
 /* ═══════════════════════════════════════════
@@ -2177,11 +2135,6 @@ a.listing-badge:hover { opacity: .85; }
 .stats-bar-fill  { height: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); border-radius: 99px; transition: width .4s ease; min-width: 2px; }
 .stats-bar-count { font-size: 12px; font-weight: 700; color: #374151; min-width: 24px; text-align: right; }
 
-/* eBay monitor */
-#ebayMonitorSettings { margin-top: 14px; }
-#ebayMonitorSettings h3 { font-size: 13px; font-weight: 700; margin: 0 0 5px; }
-#settingsVersionInfo p  { font-size: 12px; color: #6b7280; }
-
 /* Print */
 @media print {
   .app-header, .fab-container, .upload-section, .button-group { display: none; }
@@ -2349,150 +2302,6 @@ a.listing-badge:hover { opacity: .85; }
     padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px) !important;
 }
 
-/* ── More Sheet ────────────────────────────────────────────────────────── */
-.more-sheet-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    z-index: calc(var(--z-sticky) + 22);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-base);
-}
-
-.more-sheet-backdrop.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.more-sheet {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--bg-surface);
-    border-radius: 24px 24px 0 0;
-    border: 1px solid rgba(148, 163, 184, 0.15);
-    border-bottom: none;
-    z-index: calc(var(--z-sticky) + 23);
-    transform: translateY(100%);
-    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-    padding-bottom: calc(var(--safe-bottom) + 20px);
-    max-height: 82vh;
-    overflow-y: auto;
-    box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.7);
-}
-
-.more-sheet.active {
-    transform: translateY(0);
-}
-
-.more-sheet-handle {
-    width: 40px;
-    height: 4px;
-    background: rgba(148, 163, 184, 0.25);
-    border-radius: 99px;
-    margin: 14px auto 4px;
-    flex-shrink: 0;
-}
-
-/* Sheet title row */
-.more-sheet-title {
-    font-family: var(--font-display);
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 4px 24px 12px;
-}
-
-.more-sheet-body {
-    padding: 0;
-}
-
-.more-sheet-item {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 14px 24px;
-    border: none;
-    background: transparent;
-    font-family: var(--font-sans);
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
-    cursor: pointer;
-    text-align: left;
-    transition: background var(--transition-fast);
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-user-select: none;
-    user-select: none;
-    letter-spacing: -0.01em;
-}
-
-.more-sheet-item:hover,
-.more-sheet-item:active,
-.more-sheet-item.tapped {
-    background: var(--bg-elevated);
-}
-
-.more-sheet-item--danger {
-    color: var(--danger);
-}
-
-.more-sheet-icon {
-    font-size: 20px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-elevated);
-    border-radius: 10px;
-    flex-shrink: 0;
-    text-align: center;
-}
-
-.more-sheet-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 8px 24px;
-}
-
-.more-sheet-section-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    padding: 8px 24px 6px;
-}
-
-.more-sheet-disclosure {
-    font-size: 11px;
-    color: var(--text-muted);
-    padding: 12px 24px 4px;
-    line-height: 1.5;
-}
-
-.more-sheet-badge {
-    margin-left: auto;
-    background: var(--accent);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 10px;
-    min-width: 20px;
-    text-align: center;
-}
-.more-sheet-badge:empty { display: none; }
-
 /* ── Stats Strip ───────────────────────────────────────────────────────── */
 .stats-strip {
     margin: 14px 0 4px;
@@ -2513,29 +2322,6 @@ a.listing-badge:hover { opacity: .85; }
     color: var(--text-secondary);
     letter-spacing: 0.02em;
 }
-
-/* ── Tab Visibility System ─────────────────────────────────────────────── */
-
-/* Elements always hidden — replaced by new UI */
-#statsContainer          { display: none !important; }
-#exportSection           { display: none !important; }
-#tournamentToolsRow      { display: none !important; } /* moved to More sheet */
-
-/* Scan tab: hide collection grid area */
-body.tab-scan #collectionSliderWrap { display: none !important; }
-body.tab-scan #emptyState           { display: none !important; }
-body.tab-scan #cardSearchBar        { display: none !important; }
-body.tab-scan #cardControlsBar      { display: none !important; }
-body.tab-scan #cardsGrid            { display: none !important; }
-body.tab-scan #fabContainer         { display: none !important; }
-
-/* Collection tab: hide scan area */
-body.tab-collection #uploadArea  { display: none !important; }
-body.tab-collection #statsStrip  { display: none !important; }
-
-/* Header: hide old settings + sign-out buttons (kept in DOM for JS compatibility) */
-.btn-header-settings { display: none !important; }
-.btn-sign-out        { display: none !important; }
 
 /* Icon-only sync button in header */
 .btn-icon-only {
@@ -2560,75 +2346,9 @@ body.tab-collection #statsStrip  { display: none !important; }
     bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px) !important;
 }
 
-/* Scan buttons: full width on scan tab */
-body.tab-scan .scan-actions-row {
-    flex-direction: column;
-    max-width: 100%;
-}
-
-body.tab-scan .btn-scan-primary,
-body.tab-scan .btn-scan-secondary {
-    max-width: 100%;
-    flex-direction: row;
-    padding: 20px 24px;
-    gap: 14px;
-    font-size: 18px;
-    justify-content: center;
-    min-height: 64px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-
-body.tab-scan .btn-scan-primary .btn-icon,
-body.tab-scan .btn-scan-secondary .btn-icon {
-    font-size: 28px;
-}
-
-body.tab-scan .btn-scan-primary:active {
-    transform: scale(0.97);
-    opacity: 0.9;
-    transition: transform 0.08s, opacity 0.08s;
-}
-body.tab-scan .btn-scan-secondary:active {
-    transform: scale(0.97);
-    opacity: 0.9;
-    transition: transform 0.08s, opacity 0.08s;
-}
-
-/* Tool row buttons: bigger on mobile */
-body.tab-scan .scan-tools-row .btn-tool-item {
-    padding: 14px 16px;
-    font-size: 15px;
-    min-height: 52px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-body.tab-scan .scan-tools-row .btn-tool-item .btn-icon {
-    font-size: 20px;
-}
-body.tab-scan .scan-tools-row .btn-tool-item:active {
-    transform: scale(0.97);
-    opacity: 0.85;
-    transition: transform 0.08s, opacity 0.08s;
-}
-
 /* ── WCAG: touch-action fix (replaces user-scalable=no) ─────── */
 button, a, input, select, textarea, [role="button"] {
     touch-action: manipulation;
-}
-
-/* ── Quick-nav row: hide when not on scan tab ──────────────── */
-body.tab-collection .collection-nav-row { display: none !important; }
-
-/* ── Scan tab: upload section full-bleed polish ────────────── */
-body.tab-scan .upload-section {
-    border-radius: 20px;
-    margin-bottom: 0;
-}
-
-/* Scan tab: tighten stats strip top spacing */
-body.tab-scan .stats-strip {
-    margin-top: 10px;
 }
 
 /* ── Quick-nav row: tap feedback ───────────────────────────── */
@@ -2723,16 +2443,6 @@ body.tab-scan .stats-strip {
     100% { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Continuous Scanner styles ──────────────────────────────── */
-#continuousScanModal .modal-content {
-    border-radius: 16px;
-    overflow: hidden;
-}
-
-#continuousScanVideo {
-    background: #000;
-}
-
 @media (max-width: 480px) {
     .skeleton-stats {
         grid-template-columns: 1fr 1fr;
@@ -2740,113 +2450,6 @@ body.tab-scan .stats-strip {
     .skeleton-stats .skeleton-card:last-child {
         display: none;
     }
-}
-
-/* ── Collection Slider (extracted from inline styles) ───────────────── */
-#collectionSliderWrap {
-    padding: 12px 16px 0;
-}
-
-#collectionSlider {
-    display: flex;
-    position: relative;
-    background: rgba(13,21,36,0.8);
-    border-radius: 999px;
-    padding: 4px;
-    gap: 0;
-    width: 100%;
-    max-width: 600px;
-    margin: 0 auto;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.4);
-    border: 1px solid var(--border);
-}
-
-#sliderThumb {
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
-    width: calc(33.333% - 4px);
-    background: rgba(255,255,255,0.06);
-    border-radius: 999px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
-    transition: left .22s cubic-bezier(.4,0,.2,1);
-    pointer-events: none;
-    border: 1px solid rgba(245,158,11,0.2);
-}
-
-#collectionSlider button {
-    flex: 1;
-    padding: 10px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 700;
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    transition: color .2s;
-}
-
-#sliderBtnCollection { color: var(--text-primary); }
-#sliderBtnPriceCheck,
-#sliderBtnDeckBuilder { color: var(--text-muted); }
-
-.slider-count-badge {
-    border-radius: 999px;
-    padding: 1px 6px;
-    font-size: 11px;
-    font-weight: 700;
-}
-#sliderCountCollection {
-    background: rgba(245,158,11,0.85);
-    color: #0d1524;
-}
-#sliderCountPriceCheck,
-#sliderCountDeckBuilder {
-    background: rgba(148,163,184,0.15);
-    color: var(--text-secondary);
-}
-
-/* ── Card Search Bar ──────────────────────────────────────────────── */
-#cardSearchBar {
-    padding: 0 4px 12px;
-}
-
-#cardSearchInput {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 36px 10px 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--bg-input);
-    color: var(--text-primary);
-    font-family: inherit;
-}
-
-#cardSearchClear {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    font-size: 16px;
-    cursor: pointer;
-    color: var(--text-muted);
-}
-
-#cardSearchCount {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 5px;
-    text-align: right;
 }
 
 /* ── Accessibility: Reduced Motion ──────────────────── */

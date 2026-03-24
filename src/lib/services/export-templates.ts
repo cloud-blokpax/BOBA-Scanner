@@ -9,6 +9,47 @@ import { idb } from '$lib/services/idb';
 
 const IDB_KEY = 'exportTemplates';
 
+/** Built-in export templates — always available, not editable. */
+export const BUILT_IN_TEMPLATES: ExportTemplate[] = [
+	{
+		id: '__builtin_general',
+		name: 'General Export',
+		fields: ['hero', 'athlete', 'cardNumber', 'set', 'year', 'rarity', 'weapon', 'power', 'condition', 'ebayLowPrice'],
+		updatedAt: '2026-01-01T00:00:00Z',
+		isUser: false,
+		isAdmin: false
+	},
+	{
+		id: '__builtin_ebay',
+		name: 'eBay Seller Hub',
+		fields: ['hero', 'cardNumber', 'set', 'weapon', 'rarity', 'condition', 'ebayAvgPrice', 'ebaySearchUrl'],
+		updatedAt: '2026-01-01T00:00:00Z',
+		isUser: false,
+		isAdmin: false
+	},
+	{
+		id: '__builtin_tcgplayer',
+		name: 'TCGPlayer',
+		fields: ['hero', 'cardNumber', 'set', 'rarity', 'condition', 'notes'],
+		updatedAt: '2026-01-01T00:00:00Z',
+		isUser: false,
+		isAdmin: false
+	},
+	{
+		id: '__builtin_insurance',
+		name: 'Insurance / Inventory',
+		fields: ['hero', 'athlete', 'cardNumber', 'set', 'year', 'rarity', 'weapon', 'power', 'condition', 'ebayAvgPrice', 'ebayLowPrice', 'tags', 'notes'],
+		updatedAt: '2026-01-01T00:00:00Z',
+		isUser: false,
+		isAdmin: false
+	}
+];
+
+/** Get a built-in template by ID. */
+export function getBuiltInTemplate(id: string): ExportTemplate | undefined {
+	return BUILT_IN_TEMPLATES.find(t => t.id === id);
+}
+
 export interface ExportTemplate {
 	id: string;
 	name: string;
@@ -37,8 +78,9 @@ export const EXPORT_FIELDS: ExportField[] = [
 	{ key: 'condition', label: 'Condition', default: false },
 	{ key: 'notes', label: 'Notes', default: false },
 	{ key: 'tags', label: 'Tags', default: false },
-	{ key: 'ebayAvgPrice', label: 'eBay Avg Price', default: false },
+	{ key: 'ebayAvgPrice', label: 'Recommended Listing Price (Median)', default: false },
 	{ key: 'ebayLowPrice', label: 'eBay Low Price', default: false },
+	{ key: 'ebayBuyNowPrice', label: 'Buy Now Price (Lowest)', default: false },
 	{ key: 'listingPrice', label: 'Listing Price', default: false },
 	{ key: 'ebaySearchUrl', label: 'eBay Search URL', default: false },
 	{ key: 'rarity', label: 'Rarity', default: false }
@@ -66,8 +108,8 @@ let _templatesCache: ExportTemplate[] | null = null;
  * Get user templates. Returns cached value or loads from IDB.
  */
 export async function getUserTemplates(): Promise<ExportTemplate[]> {
-	if (_templatesCache) return _templatesCache;
-	if (!browser) return [];
+	if (_templatesCache) return [...BUILT_IN_TEMPLATES, ..._templatesCache];
+	if (!browser) return [...BUILT_IN_TEMPLATES];
 
 	try {
 		const stored = await idb.getMeta<ExportTemplate[]>(IDB_KEY);
@@ -94,7 +136,7 @@ export async function getUserTemplates(): Promise<ExportTemplate[]> {
 	} catch { /* ignore */ }
 
 	_templatesCache = [];
-	return [];
+	return [...BUILT_IN_TEMPLATES];
 }
 
 /**

@@ -72,8 +72,6 @@
 	async function loadBadges() {
 		const client = getSupabase();
 		if (!client || !user()) return;
-		// Tables/views not in generated types — client-side cast is intentional
-		// since server-side typed wrappers can't be imported in .svelte files
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const { data } = await (client as any)
 			.from('user_badges')
@@ -106,6 +104,11 @@
 			showToast('Failed to save profile', 'x');
 		}
 		saving = false;
+	}
+
+	async function handleSignOut() {
+		const client = getSupabase();
+		await client?.auth.signOut();
 	}
 
 	$effect(() => {
@@ -153,6 +156,8 @@
 		}
 		ebayDisconnecting = false;
 	}
+
+	const isAdmin = $derived(!!$page.data.user?.is_admin);
 </script>
 
 <svelte:head>
@@ -162,7 +167,7 @@
 <div class="settings-page">
 	<header class="page-header">
 		<h1>Settings</h1>
-		<p class="subtitle">Manage your profile information</p>
+		<p class="subtitle">Manage your profile and preferences</p>
 	</header>
 
 	{#if loading}
@@ -284,10 +289,39 @@
 			{/if}
 		</section>
 
-		<div class="settings-footer">
-			<a href="/privacy">Privacy Policy</a>
-			<a href="/terms">Terms of Service</a>
-		</div>
+		<!-- Scanning Tools -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Scanning Tools</h3>
+			<a href="/grader" class="settings-link">Card Grader</a>
+			<a href="/scan?mode=batch" class="settings-link">Batch Scanner</a>
+			<a href="/scan?mode=binder" class="settings-link">Binder Scanner</a>
+			<a href="/set-completion" class="settings-link">Set Completion</a>
+		</section>
+
+		<!-- Community -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Community</h3>
+			<a href="/speed" class="settings-link">Speed Challenge</a>
+			<a href="/leaderboard" class="settings-link">Leaderboard</a>
+			<a href="/marketplace/monitor" class="settings-link">Seller Monitor</a>
+		</section>
+
+		{#if isAdmin}
+			<section class="settings-section">
+				<h3 class="settings-section-title">Admin</h3>
+				<a href="/admin" class="settings-link">Admin Dashboard</a>
+			</section>
+		{/if}
+
+		<!-- Legal -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Legal</h3>
+			<a href="/privacy" class="settings-link">Privacy Policy</a>
+			<a href="/terms" class="settings-link">Terms of Service</a>
+		</section>
+
+		<!-- Sign Out -->
+		<button class="sign-out-btn" onclick={handleSignOut}>Sign Out</button>
 	{/if}
 </div>
 
@@ -423,21 +457,45 @@
 	.badge-name { display: block; font-weight: 600; font-size: 0.9rem; }
 	.badge-desc { display: block; font-size: 0.75rem; color: var(--text-secondary); }
 
-	.settings-footer {
-		display: flex;
-		justify-content: center;
-		gap: 1.5rem;
-		margin-top: 2rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--border-color);
+	/* Settings sections */
+	.settings-section {
+		margin-top: 1.5rem;
 	}
-	.settings-footer a {
-		font-size: 0.8rem;
-		color: var(--text-tertiary);
+	.settings-section-title {
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+		margin-bottom: 0.5rem;
+	}
+	.settings-link {
+		display: block;
+		padding: 0.625rem 0.75rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		color: var(--text-primary);
 		text-decoration: none;
 	}
-	.settings-footer a:hover {
+	.settings-link:hover {
+		background: var(--bg-hover);
+	}
+
+	/* Sign out */
+	.sign-out-btn {
+		width: 100%;
+		padding: 0.75rem;
+		margin-top: 2rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-color);
+		background: transparent;
 		color: var(--text-secondary);
-		text-decoration: underline;
+		font-size: 0.95rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.sign-out-btn:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 </style>

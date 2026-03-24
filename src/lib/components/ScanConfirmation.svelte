@@ -208,22 +208,7 @@
 					showPriceHistory={hasPriceHistory()}
 				/>
 
-				<ScanMetaPills
-					setCode={card.set_code ?? null}
-					parallel={card.parallel ?? null}
-					weaponType={card.weapon_type ?? null}
-					power={card.power ?? null}
-					battleZone={card.battle_zone ?? null}
-					rarity={card.rarity ?? null}
-				/>
-
-				<ScanStats
-					scanMethod={activeResult.scan_method}
-					confidence={activeResult.confidence}
-					processingMs={activeResult.processing_ms}
-					{isLowConfidence}
-				/>
-
+				<!-- Actions first — always visible without scrolling -->
 				<ScanActions
 					{card}
 					{isAuthenticated}
@@ -239,12 +224,35 @@
 					{listingInProgress}
 					{listingError}
 					{priceData}
+					{isLowConfidence}
 					onAdd={handleAdd}
 					onListOnEbay={handleListOnEbay}
 					{onScanAnother}
 					{onClose}
 					onManualCorrection={handleManualCorrection}
 				/>
+
+				<!-- Details section — collapsed by default -->
+				<details class="scan-details-disclosure">
+					<summary class="scan-details-toggle">Card Details</summary>
+					<div class="scan-details-content">
+						<ScanMetaPills
+							setCode={card.set_code ?? null}
+							parallel={card.parallel ?? null}
+							weaponType={card.weapon_type ?? null}
+							power={card.power ?? null}
+							battleZone={card.battle_zone ?? null}
+							rarity={card.rarity ?? null}
+						/>
+
+						<ScanStats
+							scanMethod={activeResult.scan_method}
+							confidence={activeResult.confidence}
+							processingMs={activeResult.processing_ms}
+							{isLowConfidence}
+						/>
+					</div>
+				</details>
 			</div>
 		{:else}
 			<ScanFailState
@@ -312,5 +320,35 @@
 	@keyframes sheet-slide-up {
 		from { transform: translateY(100%); }
 		to { transform: translateY(0); }
+	}
+
+	.scan-details-disclosure {
+		border-top: 1px solid var(--border, rgba(148,163,184,0.1));
+		margin-top: 0.5rem;
+	}
+
+	.scan-details-toggle {
+		padding: 0.75rem 0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-secondary, #94a3b8);
+		cursor: pointer;
+		list-style: none;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.scan-details-toggle::before {
+		content: '▸';
+		transition: transform 0.2s;
+	}
+
+	details[open] .scan-details-toggle::before {
+		transform: rotate(90deg);
+	}
+
+	.scan-details-content {
+		padding-bottom: 0.5rem;
 	}
 </style>

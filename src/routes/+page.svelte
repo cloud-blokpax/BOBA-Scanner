@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { scanImage,scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
+	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { onMount } from 'svelte';
+	import { scanHistory } from '$lib/stores/scan-history.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let { data } = $props();
@@ -106,6 +107,8 @@
 			default: return '';
 		}
 	});
+
+	const recentScans = $derived(scanHistory().filter(s => s.success).slice(0, 5));
 </script>
 
 <svelte:head>
@@ -115,9 +118,9 @@
 <div class="dashboard">
 	<section class="hero-section">
 		<h1>BOBA Scanner</h1>
-		<p class="hero-subtitle">AI-Powered Bo Jackson Trading Card Recognition</p>
 
 		{#if data.user}
+			<!-- Authenticated dashboard -->
 			{#if uploadResult}
 				<ScanConfirmation
 					result={uploadResult}
@@ -133,16 +136,11 @@
 				</div>
 			{/if}
 
-			<div class="quick-actions">
-				<a href="/scan" class="action-card primary">
-					<span class="action-icon">📷</span>
-					<span class="action-label">Scan Cards</span>
-					<span class="action-desc">Use camera to identify</span>
-				</a>
-				<button class="action-card upload" onclick={handleUploadClick} disabled={uploading}>
-					<span class="action-icon">📁</span>
-					<span class="action-label">Upload Image</span>
-					<span class="action-desc">Identify from a photo</span>
+			<!-- Quick-scan strip -->
+			<div class="quick-scan-strip">
+				<a href="/scan" class="btn-quick-scan">Scan Card</a>
+				<button class="btn-quick-upload" onclick={handleUploadClick} disabled={uploading}>
+					Upload Photo
 				</button>
 				<input
 					bind:this={fileInput}
@@ -151,94 +149,95 @@
 					onchange={handleFileSelected}
 					hidden
 				/>
-				<a href="/collection" class="action-card">
-					<span class="action-icon">📚</span>
-					<span class="action-label">My Collection</span>
-					<span class="action-desc">View and manage your cards</span>
-				</a>
-				<a href="/deck" class="action-card">
-					<span class="action-icon">🃏</span>
-					<span class="action-label">Deck Builder</span>
-					<span class="action-desc">Build competitive decks</span>
+			</div>
+
+			<!-- Recent Scans -->
+			<div class="recent-scans">
+				<h2 class="section-heading">Recent Scans</h2>
+				{#if recentScans.length > 0}
+					<div class="recent-scans-strip">
+						{#each recentScans as scan}
+							<div class="recent-scan-card">
+								<div class="recent-scan-placeholder">🎴</div>
+								<span class="recent-scan-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="recent-scans-empty">Scan your first card to see it here.</p>
+				{/if}
+			</div>
+
+			<!-- Deck summary -->
+			<div class="deck-summary">
+				<a href="/deck" class="deck-summary-link">
+					<span class="deck-summary-icon">🃏</span>
+					<span>My Decks</span>
+					<span class="deck-summary-arrow">&rarr;</span>
 				</a>
 			</div>
 		{:else}
+			<!-- Unauthenticated landing -->
+			<p class="hero-subtitle">Scan any BoBA card. See what it's worth instantly.</p>
+
 			<div class="cta-section">
-				<p>Scan and identify Bo Jackson Battle Arena cards instantly.</p>
-				<a href="/scan" class="btn-primary btn-large">Try Scanning Now</a>
-				<a href="/auth/login" class="btn-secondary btn-large cta-signin">Sign in for Full Features</a>
+				<a href="/scan" class="btn-scan-cta">Scan a Card</a>
+				<p class="cta-note">No sign-in required — try it free.</p>
 			</div>
 		{/if}
 	</section>
 
-	{#if !data.user}
-		<section class="synopsis-section">
-			<div class="synopsis-grid">
-				<div class="synopsis-card">
-					<span class="synopsis-icon">📷</span>
-					<h3>Scan</h3>
-					<p>Scan cards with your camera</p>
-				</div>
-				<div class="synopsis-card">
-					<span class="synopsis-icon">📚</span>
-					<h3>Collect</h3>
-					<p>Build and manage your collection</p>
-				</div>
-				<div class="synopsis-card">
-					<span class="synopsis-icon">🏆</span>
-					<h3>Compete</h3>
-					<p>Enter tournaments and build decks</p>
-				</div>
-			</div>
-		</section>
+	<!-- Tournament code entry (available for all users) -->
+	<section class="tournament-lookup-section">
+		<h2>Entering a Tournament?</h2>
+		<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
+			<input
+				type="text"
+				class="tournament-code-input"
+				bind:value={tournamentCode}
+				placeholder="ABCD1234"
+				maxlength="8"
+				autocapitalize="characters"
+				spellcheck="false"
+			/>
+			<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+				{tournamentLoading ? 'Looking up...' : 'Look Up'}
+			</button>
+		</form>
 
-		<section class="tournament-lookup-section">
-			<h2>Enter Tournament Code</h2>
-			<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
-				<input
-					type="text"
-					class="tournament-code-input"
-					bind:value={tournamentCode}
-					placeholder="ABCD1234"
-					maxlength="8"
-					autocapitalize="characters"
-					spellcheck="false"
-				/>
-				<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
-					{tournamentLoading ? 'Looking up...' : 'Look Up'}
-				</button>
-			</form>
+		{#if tournamentError}
+			<p class="tournament-error">{tournamentError}</p>
+		{/if}
 
-			{#if tournamentError}
-				<p class="tournament-error">{tournamentError}</p>
-			{/if}
-
-			{#if tournamentResult}
-				<div class="tournament-result">
-					<div class="tournament-result-name">{tournamentResult.name}</div>
-					<div class="tournament-result-code">{tournamentResult.code}</div>
-					<div class="tournament-result-params">
-						<span>Heroes: {tournamentResult.max_heroes}</span>
-						<span>Plays: {tournamentResult.max_plays}</span>
-						<span>Bonus: {tournamentResult.max_bonus}</span>
-					</div>
+		{#if tournamentResult}
+			<div class="tournament-result">
+				<div class="tournament-result-name">{tournamentResult.name}</div>
+				<div class="tournament-result-code">{tournamentResult.code}</div>
+				<div class="tournament-result-params">
+					<span>Heroes: {tournamentResult.max_heroes}</span>
+					<span>Plays: {tournamentResult.max_plays}</span>
+					<span>Bonus: {tournamentResult.max_bonus}</span>
+				</div>
+				{#if data.user}
+					<a href="/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Enter Tournament</a>
+				{:else}
 					<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Sign in to Enter</a>
-				</div>
-			{/if}
-		</section>
-	{/if}
+				{/if}
+			</div>
+		{/if}
+	</section>
 </div>
 
 <style>
 	.dashboard {
 		max-width: 800px;
 		margin: 0 auto;
-		padding: 2rem 1rem;
+		padding: 1.5rem 1rem;
 	}
 
 	.hero-section {
 		text-align: center;
-		margin-bottom: 3rem;
+		margin-bottom: 2rem;
 	}
 
 	.hero-section h1 {
@@ -251,120 +250,185 @@
 	.hero-subtitle {
 		color: var(--text-secondary, #94a3b8);
 		font-size: 1.1rem;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 
-	.quick-actions {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: 1rem;
-		margin-top: 2rem;
-	}
-
-	.action-card {
+	/* Quick-scan strip (authenticated) */
+	.quick-scan-strip {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		padding: 1.5rem;
-		border-radius: 12px;
-		background: var(--surface-secondary, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
-		text-decoration: none;
-		color: inherit;
-		transition: transform 0.2s, border-color 0.2s;
+		gap: 0.75rem;
+		margin: 1.5rem auto 0;
+		max-width: 400px;
 	}
 
-	.action-card:hover {
-		transform: translateY(-2px);
-		border-color: var(--accent-primary, #3b82f6);
-	}
-
-	.action-card.primary {
-		border-color: var(--accent-primary, #3b82f6);
-		background: var(--accent-primary-dim, rgba(59, 130, 246, 0.1));
-	}
-
-	.action-icon {
-		font-size: 2rem;
-		margin-bottom: 0.5rem;
-	}
-
-	.action-label {
-		font-weight: 600;
-		font-size: 1rem;
-	}
-
-	.action-desc {
-		font-size: 0.85rem;
-		color: var(--text-secondary, #94a3b8);
-		margin-top: 0.25rem;
-	}
-
-	.cta-section {
-		margin-top: 2rem;
-	}
-
-	.cta-section p {
-		color: var(--text-secondary, #94a3b8);
-		margin-bottom: 1rem;
-	}
-
-	.btn-large {
-		padding: 0.75rem 2rem;
-		font-size: 1.1rem;
-		display: inline-block;
-		text-decoration: none;
-	}
-
-	.cta-signin {
-		margin-top: 0.75rem;
-		font-size: 0.95rem;
-	}
-
-	.synopsis-section {
-		margin-top: 3rem;
-	}
-
-	.synopsis-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
-	}
-
-	.synopsis-card {
-		text-align: center;
-		padding: 1.25rem;
-		border-radius: 12px;
-		background: var(--surface-secondary, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
-	}
-
-	.synopsis-icon {
-		font-size: 1.5rem;
-		display: block;
-		margin-bottom: 0.5rem;
-	}
-
-	.synopsis-card h3 {
-		font-size: 1rem;
+	.btn-quick-scan {
+		flex: 1;
+		padding: 0.75rem;
+		border-radius: 10px;
+		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
+		color: #0d1524;
 		font-weight: 700;
-		margin-bottom: 0.25rem;
+		font-size: 0.95rem;
+		text-align: center;
+		text-decoration: none;
+		border: none;
+		cursor: pointer;
+		box-shadow: 0 4px 16px rgba(245,158,11,0.3);
 	}
 
-	.synopsis-card p {
+	.btn-quick-upload {
+		flex: 1;
+		padding: 0.75rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		color: var(--text-primary, #e2e8f0);
+		font-weight: 600;
+		font-size: 0.95rem;
+		cursor: pointer;
+	}
+
+	.btn-quick-upload:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Recent scans */
+	.recent-scans {
+		margin-top: 1.5rem;
+		text-align: left;
+	}
+
+	.section-heading {
 		font-size: 0.85rem;
-		color: var(--text-secondary, #94a3b8);
-		line-height: 1.4;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-muted, #475569);
+		margin-bottom: 0.75rem;
 	}
 
+	.recent-scans-strip {
+		display: flex;
+		gap: 0.75rem;
+		overflow-x: auto;
+		scroll-snap-type: x mandatory;
+		padding-bottom: 0.5rem;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.recent-scan-card {
+		flex-shrink: 0;
+		scroll-snap-align: start;
+		width: 80px;
+		text-align: center;
+	}
+
+	.recent-scan-placeholder {
+		width: 64px;
+		height: 80px;
+		margin: 0 auto 0.25rem;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.5rem;
+	}
+
+	.recent-scan-name {
+		font-size: 0.7rem;
+		color: var(--text-secondary, #94a3b8);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		display: block;
+	}
+
+	.recent-scans-empty {
+		font-size: 0.85rem;
+		color: var(--text-muted, #475569);
+		text-align: center;
+		padding: 1rem;
+	}
+
+	/* Deck summary */
+	.deck-summary {
+		margin-top: 1rem;
+	}
+
+	.deck-summary-link {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.875rem 1rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		text-decoration: none;
+		color: var(--text-primary, #e2e8f0);
+		font-weight: 600;
+		font-size: 0.95rem;
+		transition: border-color 0.15s;
+	}
+
+	.deck-summary-link:hover {
+		border-color: var(--gold, #f59e0b);
+	}
+
+	.deck-summary-icon {
+		font-size: 1.25rem;
+	}
+
+	.deck-summary-arrow {
+		margin-left: auto;
+		color: var(--text-muted, #475569);
+	}
+
+	/* CTA section (unauthenticated) */
+	.cta-section {
+		margin-top: 1.5rem;
+	}
+
+	.btn-scan-cta {
+		display: block;
+		width: 100%;
+		max-width: 320px;
+		margin: 0 auto;
+		padding: 1rem 2rem;
+		border-radius: 12px;
+		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
+		color: #0d1524;
+		font-size: 1.15rem;
+		font-weight: 800;
+		text-align: center;
+		text-decoration: none;
+		box-shadow: 0 4px 20px rgba(245,158,11,0.35);
+		transition: transform 0.15s, box-shadow 0.15s;
+	}
+
+	.btn-scan-cta:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 32px rgba(245,158,11,0.45);
+	}
+
+	.cta-note {
+		font-size: 0.85rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.75rem;
+	}
+
+	/* Tournament lookup */
 	.tournament-lookup-section {
-		margin-top: 2.5rem;
+		margin-top: 2rem;
 		text-align: center;
 	}
 
 	.tournament-lookup-section h2 {
 		font-family: 'Syne', sans-serif;
-		margin-bottom: 1rem;
+		font-size: 1.1rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.tournament-lookup-form {
@@ -450,12 +514,6 @@
 		border: none;
 	}
 
-	.btn-secondary {
-		background: transparent;
-		border: 1px solid var(--border-color, #1e293b);
-		color: var(--text-primary, #f1f5f9);
-	}
-
 	.upload-status {
 		display: flex;
 		align-items: center;
@@ -482,17 +540,7 @@
 		to { transform: rotate(360deg); }
 	}
 
-	.action-card.upload:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-		transform: none;
-	}
-
 	@media (max-width: 600px) {
-		.synopsis-grid {
-			grid-template-columns: 1fr;
-		}
-
 		.hero-section h1 {
 			font-size: 2rem;
 		}
