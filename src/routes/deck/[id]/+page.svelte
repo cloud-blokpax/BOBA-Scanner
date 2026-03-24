@@ -28,6 +28,15 @@
 	let playEntries = $state<PlayEntry[]>([]);
 	let hotDogCount = $state(10);
 
+	// Tournament lock state
+	let showQrModal = $state(false);
+	let qrImageSrc = $state<string | null>(null);
+	let verifyCode = $state<string | null>(null);
+	let verifyUrl = $state<string | null>(null);
+	let lockIsValid = $state(false);
+	let locking = $state(false);
+	let lockError = $state<string | null>(null);
+
 	// Reset editable state when the deck changes (e.g. navigating to a different [id])
 	let _lastDeckId = '';
 	$effect(() => {
@@ -186,6 +195,84 @@
 		playEntries = playEntries.filter((_, i) => i !== index);
 	}
 
+	// ── Tournament Lock ──────────────────────────────────────
+	async function lockDeck() {
+		locking = true;
+		lockError = null;
+		try {
+			const res = await fetch('/api/deck/lock', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ deck_id: data.deck.id, format_id: data.deck.format_id })
+			});
+			const result = await res.json();
+			if (!res.ok) {
+				lockError = result.message || 'Failed to lock deck';
+				return;
+			}
+
+			const QRCode = (await import('qrcode')).default;
+			const qrDataUrl = await QRCode.toDataURL(result.verify_url, {
+				width: 280,
+				margin: 2,
+				color: { dark: '#e2e8f0', light: '#070b14' }
+			});
+
+			// Store for offline display
+			const { idb } = await import('$lib/services/idb');
+			await idb.setMeta(`deck-qr-${data.deck.id}`, {
+				qrDataUrl,
+				verifyUrl: result.verify_url,
+				code: result.code,
+				lockedAt: new Date().toISOString(),
+				isValid: result.is_valid
+			});
+
+			qrImageSrc = qrDataUrl;
+			verifyCode = result.code;
+			verifyUrl = result.verify_url;
+			lockIsValid = result.is_valid;
+			showQrModal = true;
+		} catch (err) {
+			lockError = err instanceof Error ? err.message : 'Lock failed';
+		} finally {
+			locking = false;
+		}
+	}
+
+	async function loadCachedQr() {
+		try {
+			const { idb } = await import('$lib/services/idb');
+			const cached = await idb.getMeta<{
+				qrDataUrl: string;
+				verifyUrl: string;
+				code: string;
+				lockedAt: string;
+				isValid: boolean;
+			}>(`deck-qr-${data.deck.id}`);
+			if (cached) {
+				qrImageSrc = cached.qrDataUrl;
+				verifyCode = cached.code;
+				verifyUrl = cached.verifyUrl;
+				lockIsValid = cached.isValid;
+				showQrModal = true;
+			}
+		} catch {
+			// No cached QR
+		}
+	}
+
+	async function shareVerifyUrl() {
+		if (!verifyUrl) return;
+		try {
+			if ('share' in navigator) {
+				await navigator.share({ text: verifyUrl });
+			}
+		} catch {
+			// User cancelled
+		}
+	}
+
 	// ── Settings ──────────────────────────────────────────────
 	async function handleSettingsSave(settings: Parameters<typeof updateDeckSettings>[1] & { name: string; notes: string }) {
 		const { name, notes: newNotes, ...rest } = settings;
@@ -211,6 +298,23 @@
 	onSettings={() => showSettings = true}
 	onNameChange={(name) => deckName = name}
 />
+
+<!-- Tournament Lock -->
+<div class="tournament-lock-section">
+	<button
+		class="btn-lock"
+		onclick={lockDeck}
+		disabled={locking || heroCardIds.length === 0}
+	>
+		{locking ? 'Locking...' : 'Lock for Tournament'}
+	</button>
+	{#if verifyCode}
+		<button class="btn-show-qr" onclick={loadCachedQr}>Show QR Code</button>
+	{/if}
+	{#if lockError}
+		<p class="lock-error">{lockError}</p>
+	{/if}
+</div>
 
 <div class="tab-nav">
 	<button class:active={activeTab === 'heroes'} onclick={() => activeTab = 'heroes'}>Heroes ({heroCardIds.length})</button>
@@ -253,6 +357,32 @@
 	<div class="scanner-overlay">
 		<button class="scanner-close" onclick={() => showScanner = false}>Close</button>
 		<Scanner onResult={handleScanResult} isAuthenticated={true} paused={false} />
+	</div>
+{/if}
+
+{#if showQrModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="qr-modal-backdrop" onclick={() => showQrModal = false}>
+		<div class="qr-modal" onclick={(e) => e.stopPropagation()}>
+			<div class="qr-modal-status" class:qr-valid={lockIsValid} class:qr-invalid={!lockIsValid}>
+				{lockIsValid ? 'LEGAL' : 'ILLEGAL'}
+			</div>
+			<h2 class="qr-modal-title">{deckName}</h2>
+			{#if qrImageSrc}
+				<img src={qrImageSrc} alt="Tournament QR Code" class="qr-image" />
+			{/if}
+			{#if verifyUrl}
+				<p class="qr-url">{verifyUrl}</p>
+			{/if}
+			<p class="qr-code-label">Code: <strong>{verifyCode}</strong></p>
+			<div class="qr-modal-actions">
+				{#if 'share' in globalThis.navigator}
+					<button class="btn-share-code" onclick={shareVerifyUrl}>Share Code</button>
+				{/if}
+				<button class="btn-close-qr" onclick={() => showQrModal = false}>Close</button>
+			</div>
+		</div>
 	</div>
 {/if}
 
@@ -310,6 +440,140 @@
 		padding: 0.5rem 1rem;
 		border-radius: 8px;
 		font-size: 0.9rem;
+		cursor: pointer;
+	}
+
+	.tournament-lock-section {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1rem;
+	}
+
+	.btn-lock {
+		flex: 1;
+		padding: 0.6rem;
+		border-radius: 8px;
+		border: 1px solid rgba(168, 85, 247, 0.3);
+		background: var(--bg-elevated, #1e293b);
+		color: #a855f7;
+		font-weight: 600;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.btn-lock:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	.btn-show-qr {
+		padding: 0.6rem 1rem;
+		border-radius: 8px;
+		border: 1px solid var(--border, rgba(148,163,184,0.1));
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.lock-error {
+		font-size: 0.8rem;
+		color: #ef4444;
+		margin: 0;
+	}
+
+	.qr-modal-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 300;
+		background: rgba(0, 0, 0, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.qr-modal {
+		background: var(--bg-base, #070b14);
+		border-radius: 16px;
+		padding: 1.5rem;
+		max-width: 340px;
+		width: 90%;
+		text-align: center;
+		border: 1px solid var(--border, rgba(148,163,184,0.1));
+	}
+
+	.qr-modal-status {
+		display: inline-block;
+		padding: 0.25rem 1rem;
+		border-radius: 12px;
+		font-weight: 800;
+		font-size: 0.85rem;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.5rem;
+	}
+
+	.qr-valid {
+		background: rgba(16, 185, 129, 0.15);
+		color: #10b981;
+	}
+
+	.qr-invalid {
+		background: rgba(239, 68, 68, 0.15);
+		color: #ef4444;
+	}
+
+	.qr-modal-title {
+		font-size: 1rem;
+		font-weight: 700;
+		margin: 0 0 0.75rem;
+	}
+
+	.qr-image {
+		width: 200px;
+		height: 200px;
+		margin: 0 auto 0.75rem;
+		border-radius: 8px;
+	}
+
+	.qr-url {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		word-break: break-all;
+		margin: 0 0 0.25rem;
+	}
+
+	.qr-code-label {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin: 0 0 1rem;
+		font-family: monospace;
+		letter-spacing: 0.1em;
+	}
+
+	.qr-modal-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.btn-share-code {
+		flex: 1;
+		padding: 0.6rem;
+		border-radius: 8px;
+		border: none;
+		background: var(--primary, #3b82f6);
+		color: white;
+		font-weight: 600;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.btn-close-qr {
+		flex: 1;
+		padding: 0.6rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-strong, rgba(148,163,184,0.2));
+		background: transparent;
+		color: var(--text-primary, #e2e8f0);
+		font-weight: 600;
+		font-size: 0.85rem;
 		cursor: pointer;
 	}
 </style>
