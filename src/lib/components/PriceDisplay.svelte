@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getPrice } from '$lib/stores/prices.svelte';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import type { PriceData, Card } from '$lib/types';
 
 	let {
@@ -70,6 +71,7 @@
 			<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="ebay-link">
 				View on eBay →
 			</a>
+			<AffiliateNotice compact />
 		{/if}
 	{:else}
 		<span class="price-empty">No listings found</span>

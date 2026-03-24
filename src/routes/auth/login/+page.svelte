@@ -4,6 +4,7 @@
 
 	const redirectTo = $derived($page.url.searchParams.get('redirectTo') ?? '/');
 	const error = $derived($page.url.searchParams.get('error'));
+	let ageConfirmed = $state(false);
 
 	async function handleGoogleLogin() {
 		await signInWithGoogle(redirectTo);
@@ -28,7 +29,15 @@
 			</div>
 		{/if}
 
-		<button class="btn-google" onclick={handleGoogleLogin}>
+		<label class="age-confirm">
+			<input type="checkbox" bind:checked={ageConfirmed} />
+			<span>I confirm that I am at least 18 years old and agree to the
+				<a href="/terms" target="_blank">Terms of Service</a> and
+				<a href="/privacy" target="_blank">Privacy Policy</a>.
+			</span>
+		</label>
+
+		<button class="btn-google" onclick={handleGoogleLogin} disabled={!ageConfirmed}>
 			<svg width="18" height="18" viewBox="0 0 48 48">
 				<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
 				<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
@@ -37,10 +46,6 @@
 			</svg>
 			Continue with Google
 		</button>
-
-		<p class="legal-links">
-			By signing in, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
-		</p>
 	</div>
 </div>
 
@@ -112,19 +117,34 @@
 		transition: background 0.2s, border-color 0.2s;
 	}
 
-	.btn-google:hover {
+	.btn-google:hover:not(:disabled) {
 		background: var(--surface-secondary, #0d1524);
 		border-color: var(--accent-primary, #3b82f6);
 	}
 
-	.legal-links {
-		font-size: 0.8rem;
-		color: var(--text-tertiary, #64748b);
-		margin-top: 1rem;
+	.btn-google:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
-	.legal-links a {
-		color: var(--text-secondary, #94a3b8);
+	.age-confirm {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		margin-bottom: 1rem;
+		cursor: pointer;
+		line-height: 1.5;
+		text-align: left;
+	}
+	.age-confirm input[type="checkbox"] {
+		margin-top: 0.25rem;
+		flex-shrink: 0;
+		accent-color: var(--primary, #3b82f6);
+	}
+	.age-confirm a {
+		color: var(--primary, #3b82f6);
 		text-decoration: underline;
 	}
 </style>

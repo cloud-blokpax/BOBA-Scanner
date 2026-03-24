@@ -244,6 +244,10 @@
 		{@render children()}
 	</main>
 
+	<footer class="affiliate-footer">
+		eBay Partner: we may earn from qualifying purchases. <a href="/privacy#6-ebay-affiliate-links">Learn more</a>
+	</footer>
+
 	<nav class="bottom-nav">
 		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
 			<span class="bottom-nav-icon">📚</span>
@@ -304,6 +308,18 @@
 {/if}
 
 <style>
+	.affiliate-footer {
+		text-align: center;
+		font-size: 0.65rem;
+		color: var(--text-muted, #475569);
+		padding: 0.5rem 1rem;
+		opacity: 0.7;
+	}
+	.affiliate-footer a {
+		color: var(--text-muted, #475569);
+		text-decoration: underline;
+	}
+
 	.more-menu {
 		position: fixed;
 		inset: 0;

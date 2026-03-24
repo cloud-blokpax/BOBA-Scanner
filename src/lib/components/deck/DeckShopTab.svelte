@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import type { GapAnalysis } from '$lib/services/deck-gap-finder';
 
 	let {
@@ -53,6 +54,8 @@
 				<span class="refresh-budget">{refreshesRemaining}/{refreshLimit} refreshes today</span>
 			{/if}
 		</div>
+
+		<AffiliateNotice />
 
 		<div class="candidate-list">
 			{#each displayCandidates as candidate (candidate.card.id)}
