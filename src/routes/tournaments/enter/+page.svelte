@@ -2,9 +2,11 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getSupabase } from '$lib/services/supabase';
-	import { collectionItems, loadCollection } from '$lib/stores/collection.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
-	import type { CollectionItem } from '$lib/types';
+	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
+	import { validateDeck } from '$lib/services/deck-validator';
+	import { fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
+	import type { Card } from '$lib/types';
 
 	interface TournamentInfo {
 		id: string;
@@ -16,33 +18,103 @@
 		require_email: boolean;
 		require_name: boolean;
 		require_discord: boolean;
+		format_id: string | null;
+		description: string | null;
+		venue: string | null;
+		event_date: string | null;
+		entry_fee: string | null;
+		prize_pool: string | null;
+		max_players: number | null;
+		submission_deadline: string | null;
+		registration_closed: boolean;
+	}
+
+	interface HeroCardEntry {
+		card_id: string;
+		card_number: string;
+		hero_name: string;
+		power: number;
+		weapon_type: string;
+		parallel: string;
+		set_code: string;
+	}
+
+	interface PlayCardEntry {
+		card_number: string;
+		name: string;
+		set_code: string;
+		dbs_score: number;
 	}
 
 	let tournament = $state<TournamentInfo | null>(null);
 	let loading = $state(true);
 	let fetchError = $state<string | null>(null);
 
-	// Registration fields
-	let regEmail = $state('');
+	// Step navigation
+	let step = $state<'code' | 'info' | 'deck' | 'confirm' | 'done'>('code');
+	let codeInput = $state('');
+
+	// Player info
 	let regName = $state('');
+	let regEmail = $state('');
 	let regDiscord = $state('');
 
-	// Deck building
-	let step = $state<'info' | 'deck' | 'done'>('info');
-	let deckCards = $state<CollectionItem[]>([]);
-	let submitting = $state(false);
-	let isCollectionLoading = $state(false);
+	// Deck selection
+	let deckSource = $state<'existing' | 'csv' | null>(null);
+	let userDecks = $state<UserDeck[]>([]);
+	let selectedDeckId = $state<string | null>(null);
+	let csvInput = $state('');
+	let heroCards = $state<HeroCardEntry[]>([]);
+	let playCards = $state<PlayCardEntry[]>([]);
+	let hotDogCount = $state(10);
+	let foilHotDogCount = $state(0);
+	let sourceDeckId = $state<string | null>(null);
 
-	const maxDeckSize = $derived(tournament ? tournament.max_heroes : 30);
+	// Validation
+	let validationResult = $state<ReturnType<typeof validateDeck> | null>(null);
+
+	// Submission
+	let submitting = $state(false);
+	let submissionResult = $state<{
+		verification_code: string;
+		verify_url: string;
+		is_valid: boolean;
+	} | null>(null);
+
+	// Existing submission
+	let existingSubmission = $state<Record<string, unknown> | null>(null);
+
+	const formatInfo = $derived(tournament?.format_id ? getFormat(tournament.format_id) : null);
+	const isRegistrationOpen = $derived(() => {
+		if (!tournament) return false;
+		if (tournament.registration_closed) return false;
+		if (tournament.submission_deadline && new Date(tournament.submission_deadline) < new Date()) return false;
+		return true;
+	});
+	const deadlineCountdown = $derived(() => {
+		if (!tournament?.submission_deadline) return null;
+		const diff = new Date(tournament.submission_deadline).getTime() - Date.now();
+		if (diff <= 0) return 'Deadline passed';
+		const days = Math.floor(diff / 86400000);
+		const hours = Math.floor((diff % 86400000) / 3600000);
+		if (days > 0) return `${days}d ${hours}h remaining`;
+		const mins = Math.floor((diff % 3600000) / 60000);
+		return `${hours}h ${mins}m remaining`;
+	});
 
 	onMount(async () => {
 		const code = $page.url.searchParams.get('code');
-		if (!code) {
-			fetchError = 'No tournament code provided';
+		if (code) {
+			codeInput = code.toUpperCase();
+			await loadTournament(codeInput);
+		} else {
 			loading = false;
-			return;
 		}
+	});
 
+	async function loadTournament(code: string) {
+		loading = true;
+		fetchError = null;
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code.toUpperCase())}`);
 			if (!res.ok) {
@@ -51,118 +123,271 @@
 				return;
 			}
 			tournament = await res.json();
-		} catch (err) {
-			console.debug('[tournament-enter] Tournament fetch failed:', err);
+			step = 'info';
+
+			// Pre-fill user info
+			const currentUser = $page.data.user;
+			if (currentUser) {
+				regEmail = currentUser.email || '';
+				const client = getSupabase();
+				if (client) {
+					const { data: profile } = await client
+						.from('users')
+						.select('name, discord_id')
+						.eq('auth_user_id', currentUser.id)
+						.single();
+					if (profile) {
+						regName = profile.name || '';
+						regDiscord = profile.discord_id || '';
+					}
+
+					// Check for existing submission
+					const { data: existing } = await client
+						.from('deck_submissions')
+						.select('*')
+						.eq('tournament_id', tournament!.id)
+						.eq('user_id', currentUser.id)
+						.maybeSingle();
+					if (existing) {
+						existingSubmission = existing;
+						heroCards = (existing.hero_cards || []) as HeroCardEntry[];
+						playCards = (existing.play_entries || []) as PlayCardEntry[];
+						hotDogCount = existing.hot_dog_count || 10;
+						foilHotDogCount = existing.foil_hot_dog_count || 0;
+						regName = existing.player_name || regName;
+						regEmail = existing.player_email || regEmail;
+						regDiscord = existing.player_discord || regDiscord;
+						runValidation();
+					}
+				}
+			}
+		} catch {
 			fetchError = 'Network error';
-			loading = false;
+		}
+		loading = false;
+	}
+
+	function proceedToCode() {
+		if (!codeInput.trim()) {
+			showToast('Enter a tournament code', 'x');
 			return;
 		}
+		loadTournament(codeInput.trim().toUpperCase());
+	}
 
-		// Pre-fill from user profile if logged in
-		const currentUser = $page.data.user;
-		if (currentUser) {
-			regEmail = currentUser.email || '';
-			const client = getSupabase();
-			const { data: profile } = client ? await client
-				.from('users')
-				.select('name, discord_id')
-				.eq('auth_user_id', currentUser.id)
-				.single() : { data: null };
-			if (profile) {
-				regName = profile.name || '';
-				regDiscord = profile.discord_id || '';
-			}
-		}
-
-		await loadCollection();
-		loading = false;
-	});
-
-	function validateInfo(): string | null {
-		if (!tournament) return 'No tournament loaded';
-		if (!regEmail.trim()) return 'Email is required';
-		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) return 'Invalid email format';
-		if (tournament.require_name && !regName.trim()) return 'Name is required for this tournament';
-		if (tournament.require_discord && !regDiscord.trim()) return 'Discord ID is required for this tournament';
-		return null;
+	function proceedToInfo() {
+		step = 'info';
 	}
 
 	function proceedToDeck() {
-		const err = validateInfo();
-		if (err) {
-			showToast(err, 'x');
+		if (!regEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) {
+			showToast('Valid email is required', 'x');
+			return;
+		}
+		if (tournament?.require_name && !regName.trim()) {
+			showToast('Name is required', 'x');
+			return;
+		}
+		if (tournament?.require_discord && !regDiscord.trim()) {
+			showToast('Discord ID is required', 'x');
 			return;
 		}
 		step = 'deck';
+		loadUserDecks();
 	}
 
-	async function reloadCollection() {
-		isCollectionLoading = true;
-		try {
-			await loadCollection();
-			if (collectionItems().length === 0) {
-				showToast('No cards found in collection', 'x');
+	async function loadUserDecks() {
+		if (!tournament?.format_id) return;
+		userDecks = await fetchUserDecks(tournament.format_id);
+	}
+
+	async function selectExistingDeck(deck: UserDeck) {
+		selectedDeckId = deck.id;
+		sourceDeckId = deck.id;
+		deckSource = 'existing';
+
+		// Load the full card data for this deck
+		const client = getSupabase();
+		if (!client) return;
+
+		// Fetch hero card details
+		if (deck.hero_card_ids?.length > 0) {
+			const { data: cards } = await client
+				.from('cards')
+				.select('*')
+				.in('id', deck.hero_card_ids);
+
+			if (cards) {
+				heroCards = cards.map((c) => ({
+					card_id: c.id,
+					card_number: c.card_number || '',
+					hero_name: c.hero_name || c.name || '',
+					power: c.power || 0,
+					weapon_type: c.weapon_type || '',
+					parallel: c.parallel || 'base',
+					set_code: c.set_code || ''
+				}));
 			}
-		} catch (err) {
-			console.debug('[tournament-enter] Collection load failed:', err);
-			showToast('Failed to load collection', 'x');
-		}
-		isCollectionLoading = false;
-	}
-
-	function addToDeck(item: CollectionItem) {
-		if (deckCards.length >= maxDeckSize) return;
-		if (deckCards.some((d) => d.id === item.id)) return;
-		deckCards = [...deckCards, item];
-	}
-
-	function removeFromDeck(itemId: string) {
-		deckCards = deckCards.filter((d) => d.id !== itemId);
-	}
-
-	function generateDeckCsv(): string {
-		const headers = ['Slot', 'Card #', 'Name', 'Cost', 'Ability', 'DBS'];
-		const rows: string[][] = [];
-		let slot = 1;
-
-		for (const item of deckCards) {
-			const card = item.card;
-			if (!card) continue;
-			const label = slot <= (tournament?.max_plays ?? 30) ? String(slot) : `B${slot - (tournament?.max_plays ?? 30)}`;
-			rows.push([label, card.card_number || '', card.hero_name || card.name, String(card.power ?? ''), '', '']);
-			slot++;
 		}
 
-		return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+		// Map play entries
+		if (deck.play_entries?.length > 0) {
+			playCards = deck.play_entries.map((p) => ({
+				card_number: p.cardNumber,
+				name: p.name,
+				set_code: p.setCode,
+				dbs_score: p.dbs || 0
+			}));
+		}
+
+		hotDogCount = deck.hot_dog_count || 10;
+		runValidation();
 	}
 
-	async function submitRegistration() {
+	function parseCsvInput() {
+		deckSource = 'csv';
+		const lines = csvInput
+			.split(/[\n,]/)
+			.map((l) => l.trim())
+			.filter(Boolean);
+
+		if (lines.length === 0) {
+			showToast('No card numbers found', 'x');
+			return;
+		}
+
+		// Resolve card numbers against the database
+		resolveCardNumbers(lines);
+	}
+
+	async function resolveCardNumbers(numbers: string[]) {
+		const client = getSupabase();
+		if (!client) {
+			showToast('Database not available', 'x');
+			return;
+		}
+
+		const { data: cards } = await client
+			.from('cards')
+			.select('*')
+			.in('card_number', numbers);
+
+		if (!cards || cards.length === 0) {
+			showToast('No matching cards found', 'x');
+			return;
+		}
+
+		// Separate hero vs play cards based on card type
+		const heroes: HeroCardEntry[] = [];
+		const plays: PlayCardEntry[] = [];
+
+		for (const card of cards as Card[]) {
+			// Check if it's a play card (has no power or power is 0)
+			if (!card.power) {
+				plays.push({
+					card_number: card.card_number || '',
+					name: card.hero_name || card.name || '',
+					set_code: card.set_code || '',
+					dbs_score: 0
+				});
+			} else {
+				heroes.push({
+					card_id: card.id,
+					card_number: card.card_number || '',
+					hero_name: card.hero_name || card.name || '',
+					power: card.power,
+					weapon_type: card.weapon_type || '',
+					parallel: card.parallel || 'base',
+					set_code: card.set_code || ''
+				});
+			}
+		}
+
+		heroCards = heroes;
+		playCards = plays;
+		runValidation();
+		showToast(`Loaded ${heroes.length} heroes, ${plays.length} plays`, 'check');
+	}
+
+	function runValidation() {
+		if (!tournament?.format_id || heroCards.length === 0) {
+			validationResult = null;
+			return;
+		}
+
+		const heroCardsAsCards = heroCards.map((c) => ({
+			id: c.card_id,
+			card_number: c.card_number,
+			hero_name: c.hero_name,
+			name: c.hero_name,
+			power: c.power,
+			weapon_type: c.weapon_type,
+			parallel: c.parallel,
+			set_code: c.set_code,
+			rarity: null,
+			athlete_name: null,
+			battle_zone: null,
+			image_url: null,
+			created_at: ''
+		}));
+
+		const playCardsAsCards = playCards.map((p) => ({
+			id: '',
+			card_number: p.card_number,
+			hero_name: null,
+			name: p.name,
+			power: null,
+			weapon_type: null,
+			parallel: null,
+			set_code: p.set_code,
+			rarity: null,
+			athlete_name: null,
+			battle_zone: null,
+			image_url: null,
+			created_at: ''
+		}));
+
+		validationResult = validateDeck(heroCardsAsCards, tournament.format_id, playCardsAsCards);
+	}
+
+	function proceedToConfirm() {
+		if (heroCards.length === 0) {
+			showToast('Add hero cards to your deck first', 'x');
+			return;
+		}
+		runValidation();
+		step = 'confirm';
+	}
+
+	async function submitDeck() {
 		if (!tournament) return;
 		submitting = true;
-
 		try {
-			const deckCsv = generateDeckCsv();
-			const res = await fetch('/api/tournament/register', {
+			const res = await fetch('/api/tournament/submit-deck', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					tournament_id: tournament.id,
-					email: regEmail.trim(),
-					name: regName.trim() || null,
-					discord_id: regDiscord.trim() || null,
-					deck_csv: deckCsv
+					player_name: regName.trim(),
+					player_email: regEmail.trim(),
+					player_discord: regDiscord.trim() || null,
+					hero_cards: heroCards,
+					play_entries: playCards,
+					hot_dog_count: hotDogCount,
+					foil_hot_dog_count: foilHotDogCount,
+					source_deck_id: sourceDeckId
 				})
 			});
-
 			if (!res.ok) {
-				const data = await res.json().catch(() => ({}));
-				throw new Error(data.message || 'Registration failed');
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.message || 'Submission failed');
 			}
-
+			const result = await res.json();
+			submissionResult = result;
 			step = 'done';
-			showToast('Registered successfully!', 'check');
+			showToast('Deck submitted!', 'check');
 		} catch (err) {
-			showToast(err instanceof Error ? err.message : 'Registration failed', 'x');
+			showToast(err instanceof Error ? err.message : 'Submission failed', 'x');
 		}
 		submitting = false;
 	}
@@ -180,30 +405,90 @@
 			<p>{fetchError}</p>
 			<a href="/tournaments" class="back-link">Back to Tournaments</a>
 		</div>
-	{:else if tournament}
+
+	{:else if step === 'code'}
+		<div class="step-card">
+			<h1>Enter Tournament</h1>
+			<p class="step-desc">Enter the tournament code to register your deck.</p>
+			<div class="form-group">
+				<label for="code-input">Tournament Code</label>
+				<input
+					id="code-input"
+					type="text"
+					bind:value={codeInput}
+					placeholder="e.g. ABCD1234"
+					maxlength="8"
+					class="code-input"
+					onkeydown={(e) => e.key === 'Enter' && proceedToCode()}
+				/>
+			</div>
+			<button class="primary-btn" onclick={proceedToCode}>Look Up Tournament</button>
+		</div>
+
+	{:else if tournament && step === 'info'}
 		<header class="page-header">
 			<h1>{tournament.name}</h1>
 			<span class="tournament-code-badge">{tournament.code}</span>
 		</header>
 
-		<div class="tournament-params">
-			<span>Heroes: {tournament.max_heroes}</span>
-			<span>Plays: {tournament.max_plays}</span>
-			<span>Bonus: {tournament.max_bonus}</span>
+		<!-- Tournament info display -->
+		<div class="tournament-info-card">
+			{#if formatInfo}
+				<div class="info-row">
+					<span class="info-label">Format</span>
+					<span class="info-value">{formatInfo.name}</span>
+				</div>
+				<div class="info-row">
+					<span class="info-label">Rules</span>
+					<span class="info-value">{formatInfo.description}</span>
+				</div>
+			{/if}
+			{#if tournament.event_date}
+				<div class="info-row">
+					<span class="info-label">Date</span>
+					<span class="info-value">{new Date(tournament.event_date).toLocaleDateString()}</span>
+				</div>
+			{/if}
+			{#if tournament.venue}
+				<div class="info-row">
+					<span class="info-label">Venue</span>
+					<span class="info-value">{tournament.venue}</span>
+				</div>
+			{/if}
+			{#if tournament.entry_fee}
+				<div class="info-row">
+					<span class="info-label">Entry Fee</span>
+					<span class="info-value">{tournament.entry_fee}</span>
+				</div>
+			{/if}
+			{#if tournament.submission_deadline}
+				<div class="info-row deadline">
+					<span class="info-label">Deadline</span>
+					<span class="info-value">
+						{new Date(tournament.submission_deadline).toLocaleString()}
+						{#if deadlineCountdown()}
+							<span class="countdown">({deadlineCountdown()})</span>
+						{/if}
+					</span>
+				</div>
+			{/if}
 		</div>
 
-		{#if step === 'info'}
+		{#if !isRegistrationOpen()}
+			<div class="closed-banner">Registration is closed for this tournament.</div>
+		{:else}
+			{#if existingSubmission}
+				<div class="existing-banner">
+					You already have a submission for this tournament. You can update it below.
+				</div>
+			{/if}
+
 			<div class="step-card">
 				<h2>Your Information</h2>
-				<p class="step-desc">Enter your details to register for this tournament.</p>
-
 				<div class="form-group">
-					<label for="reg-email">
-						Email <span class="required">*</span>
-					</label>
+					<label for="reg-email">Email <span class="required">*</span></label>
 					<input id="reg-email" type="email" bind:value={regEmail} placeholder="you@example.com" />
 				</div>
-
 				<div class="form-group">
 					<label for="reg-name">
 						Name
@@ -211,7 +496,6 @@
 					</label>
 					<input id="reg-name" type="text" bind:value={regName} placeholder="Your name" />
 				</div>
-
 				<div class="form-group">
 					<label for="reg-discord">
 						Discord ID
@@ -219,81 +503,223 @@
 					</label>
 					<input id="reg-discord" type="text" bind:value={regDiscord} placeholder="username#1234" />
 				</div>
-
-				<button class="primary-btn" onclick={proceedToDeck}>Next: Build Deck</button>
-			</div>
-		{:else if step === 'deck'}
-			<div class="step-card">
-				<h2>Build Your Deck ({deckCards.length}/{maxDeckSize})</h2>
-				<p class="step-desc">Select cards from your collection for this tournament.</p>
-
-				{#if deckCards.length > 0}
-					<div class="deck-list">
-						{#each deckCards as item, i (item.id)}
-							<div class="deck-item">
-								<span class="deck-slot">{i + 1}</span>
-								<span class="deck-card-name">{item.card?.hero_name || item.card?.name}</span>
-								{#if item.card?.card_number}
-									<span class="deck-card-num">#{item.card.card_number}</span>
-								{/if}
-								{#if item.card?.power}
-									<span class="deck-card-power">PWR {item.card.power}</span>
-								{/if}
-								<button class="remove-btn" onclick={() => removeFromDeck(item.id)}>x</button>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<p class="empty-deck">No cards added yet. Select from your collection below.</p>
-				{/if}
-
-				<h3 class="collection-heading">Your Collection</h3>
-				<div class="available-list">
-					{#each collectionItems() as item (item.id)}
-						{@const inDeck = deckCards.some((d) => d.id === item.id)}
-						<button
-							class="available-card"
-							class:in-deck={inDeck}
-							onclick={() => addToDeck(item)}
-							disabled={inDeck || deckCards.length >= maxDeckSize}
-						>
-							<span>{item.card?.hero_name || item.card?.name}</span>
-							{#if item.card?.card_number}
-								<span class="avail-num">#{item.card.card_number}</span>
-							{/if}
-							{#if item.card?.power}
-								<span class="avail-power">{item.card.power}</span>
-							{/if}
-						</button>
-					{:else}
-						<div class="empty-collection-actions">
-							<p class="empty-collection-text">No cards in your collection yet.</p>
-							<a href="/scan" class="scan-cards-btn">Scan Cards</a>
-							<button class="load-collection-btn" onclick={reloadCollection} disabled={isCollectionLoading}>
-								{isCollectionLoading ? 'Loading...' : 'Load from Collection'}
-							</button>
-						</div>
-					{/each}
-				</div>
-
-				<div class="deck-actions">
-					<button class="secondary-btn" onclick={() => (step = 'info')}>Back</button>
-					<button
-						class="primary-btn"
-						onclick={submitRegistration}
-						disabled={submitting || deckCards.length === 0}
-					>
-						{submitting ? 'Submitting...' : 'Submit Registration'}
-					</button>
-				</div>
-			</div>
-		{:else if step === 'done'}
-			<div class="done-card">
-				<h2>You're Registered!</h2>
-				<p>You've been registered for <strong>{tournament.name}</strong> with {deckCards.length} cards in your deck.</p>
-				<a href="/tournaments" class="primary-btn done-link">Back to Tournaments</a>
+				<button class="primary-btn" onclick={proceedToDeck}>Next: Select Deck</button>
 			</div>
 		{/if}
+
+	{:else if tournament && step === 'deck'}
+		<header class="page-header">
+			<h1>{tournament.name}</h1>
+			<span class="tournament-code-badge">{tournament.code}</span>
+		</header>
+
+		<div class="step-card">
+			<h2>Select Your Deck</h2>
+
+			<!-- Deck source options -->
+			<div class="deck-options">
+				<button
+					class="option-btn"
+					class:active={deckSource === 'existing'}
+					onclick={() => { deckSource = 'existing'; loadUserDecks(); }}
+				>
+					Select Existing Deck
+				</button>
+				<a
+					href="/deck/new?format={tournament.format_id || ''}&tournament={tournament.code}"
+					class="option-btn"
+				>
+					Build New Deck
+				</a>
+				<button
+					class="option-btn"
+					class:active={deckSource === 'csv'}
+					onclick={() => (deckSource = 'csv')}
+				>
+					Import from CSV
+				</button>
+			</div>
+
+			{#if deckSource === 'existing'}
+				<div class="deck-list">
+					{#if userDecks.length === 0}
+						<p class="empty-deck">No saved decks found for this format.</p>
+					{:else}
+						{#each userDecks as deck}
+							<button
+								class="deck-option"
+								class:selected={selectedDeckId === deck.id}
+								onclick={() => selectExistingDeck(deck)}
+							>
+								<span class="deck-name">{deck.name}</span>
+								<span class="deck-meta">
+									{deck.hero_card_ids?.length || 0} heroes,
+									{deck.play_entries?.length || 0} plays
+								</span>
+							</button>
+						{/each}
+					{/if}
+				</div>
+			{:else if deckSource === 'csv'}
+				<div class="csv-section">
+					<textarea
+						bind:value={csvInput}
+						placeholder="Paste card numbers, one per line or comma-separated"
+						rows="8"
+						class="csv-input"
+					></textarea>
+					<button class="secondary-btn" onclick={parseCsvInput}>Resolve Cards</button>
+				</div>
+			{/if}
+
+			<!-- Validation Panel -->
+			{#if heroCards.length > 0}
+				<div class="validation-panel" class:valid={validationResult?.isValid} class:invalid={validationResult && !validationResult.isValid}>
+					<div class="val-header">
+						{#if validationResult?.isValid}
+							<span class="val-badge valid">VALID</span>
+						{:else if validationResult}
+							<span class="val-badge invalid">INVALID</span>
+						{/if}
+						<span class="val-format">{formatInfo?.name || 'Custom'}</span>
+					</div>
+
+					<div class="val-stats">
+						<div class="val-stat">
+							<span class="val-num">{heroCards.length}</span>
+							<span class="val-label">Heroes</span>
+						</div>
+						<div class="val-stat">
+							<span class="val-num">{validationResult?.stats.totalPower.toLocaleString() || 0}</span>
+							<span class="val-label">Total PWR</span>
+						</div>
+						<div class="val-stat">
+							<span class="val-num">{validationResult?.stats.averagePower || 0}</span>
+							<span class="val-label">Avg PWR</span>
+						</div>
+						<div class="val-stat">
+							<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
+							<span class="val-label">DBS</span>
+						</div>
+					</div>
+
+					{#if validationResult?.violations.length}
+						<div class="val-violations">
+							{#each validationResult.violations as v}
+								<p class="violation">{v.message}</p>
+							{/each}
+						</div>
+					{/if}
+
+					{#if validationResult?.warnings.length}
+						<div class="val-warnings">
+							{#each validationResult.warnings as w}
+								<p class="warning">{w}</p>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Hot dog count -->
+				<div class="form-group hot-dog-row">
+					<label for="hot-dogs">Hot Dog Cards</label>
+					<input id="hot-dogs" type="number" bind:value={hotDogCount} min="0" max="20" class="narrow-input" />
+					{#if formatInfo?.requiresFoilHotDogs}
+						<label for="foil-hd" class="foil-label">Foil Hot Dogs</label>
+						<input id="foil-hd" type="number" bind:value={foilHotDogCount} min="0" max="10" class="narrow-input" />
+					{/if}
+				</div>
+			{/if}
+
+			<div class="deck-actions">
+				<button class="secondary-btn" onclick={proceedToInfo}>Back</button>
+				<button
+					class="primary-btn"
+					onclick={proceedToConfirm}
+					disabled={heroCards.length === 0}
+				>
+					Review & Submit
+				</button>
+			</div>
+		</div>
+
+	{:else if tournament && step === 'confirm'}
+		<header class="page-header">
+			<h1>{tournament.name}</h1>
+		</header>
+
+		<div class="step-card">
+			<h2>Confirm Submission</h2>
+
+			<div class="confirm-section">
+				<h3>Player</h3>
+				<p>{regName} &mdash; {regEmail}</p>
+			</div>
+
+			<div class="confirm-section">
+				<h3>Deck Summary</h3>
+				<div class="val-stats">
+					<div class="val-stat">
+						<span class="val-num">{heroCards.length}</span>
+						<span class="val-label">Heroes</span>
+					</div>
+					<div class="val-stat">
+						<span class="val-num">{playCards.length}</span>
+						<span class="val-label">Plays</span>
+					</div>
+					<div class="val-stat">
+						<span class="val-num">{hotDogCount}</span>
+						<span class="val-label">Hot Dogs</span>
+					</div>
+					<div class="val-stat">
+						<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
+						<span class="val-label">DBS</span>
+					</div>
+				</div>
+			</div>
+
+			{#if validationResult}
+				<div class="confirm-validation" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
+					{validationResult.isValid ? 'Deck is valid for ' + validationResult.formatName : 'Deck has validation errors'}
+				</div>
+			{/if}
+
+			<div class="deck-actions">
+				<button class="secondary-btn" onclick={() => (step = 'deck')}>Back</button>
+				<button
+					class="primary-btn"
+					onclick={submitDeck}
+					disabled={submitting}
+				>
+					{submitting ? 'Submitting...' : existingSubmission ? 'Update Submission' : 'Submit Deck'}
+				</button>
+			</div>
+		</div>
+
+	{:else if step === 'done' && submissionResult}
+		<div class="done-card">
+			<h2>Deck Submitted!</h2>
+			<p>Your deck has been submitted for <strong>{tournament?.name}</strong>.</p>
+
+			<div class="verify-section">
+				<p class="verify-label">Verification Code</p>
+				<p class="verify-code">{submissionResult.verification_code}</p>
+				<a href={submissionResult.verify_url} class="verify-link">View Verification Page</a>
+			</div>
+
+			{#if !submissionResult.is_valid}
+				<p class="warn-text">Note: Your deck has validation issues. You may want to resubmit with a valid deck.</p>
+			{/if}
+
+			<div class="done-actions">
+				<a href="/tournaments" class="primary-btn done-link">Back to Tournaments</a>
+				{#if isRegistrationOpen()}
+					<button class="secondary-btn" onclick={() => { step = 'deck'; existingSubmission = {}; }}>
+						Modify Deck
+					</button>
+				{/if}
+			</div>
+		</div>
 	{/if}
 </div>
 
@@ -318,7 +744,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.75rem;
 	}
 	.page-header h1 {
 		font-size: 1.4rem;
@@ -333,12 +759,49 @@
 		color: var(--accent-primary);
 		letter-spacing: 0.05em;
 	}
-	.tournament-params {
+
+	/* Tournament info */
+	.tournament-info-card {
+		background: var(--bg-elevated);
+		border-radius: 12px;
+		padding: 1rem;
+		margin-bottom: 1rem;
+	}
+	.info-row {
 		display: flex;
-		gap: 1rem;
-		font-size: 0.8rem;
+		gap: 0.75rem;
+		padding: 0.375rem 0;
+		font-size: 0.85rem;
+	}
+	.info-label {
+		font-weight: 600;
 		color: var(--text-secondary);
-		margin-bottom: 1.5rem;
+		min-width: 80px;
+		flex-shrink: 0;
+	}
+	.info-value { color: var(--text-primary); }
+	.countdown {
+		font-size: 0.8rem;
+		color: var(--accent-primary);
+		font-weight: 600;
+	}
+	.closed-banner {
+		background: #ef444420;
+		color: #ef4444;
+		border-radius: 8px;
+		padding: 0.75rem;
+		text-align: center;
+		font-weight: 600;
+		margin-bottom: 1rem;
+	}
+	.existing-banner {
+		background: #2563eb20;
+		color: #2563eb;
+		border-radius: 8px;
+		padding: 0.75rem;
+		text-align: center;
+		font-size: 0.85rem;
+		margin-bottom: 1rem;
 	}
 
 	/* Step cards */
@@ -347,7 +810,7 @@
 		border-radius: 12px;
 		padding: 1.25rem;
 	}
-	.step-card h2 {
+	.step-card h1, .step-card h2 {
 		font-size: 1.1rem;
 		font-weight: 700;
 		margin-bottom: 0.25rem;
@@ -368,11 +831,8 @@
 		margin-bottom: 4px;
 	}
 	.required { color: #ef4444; }
-	.optional {
-		font-weight: 400;
-		color: var(--text-tertiary);
-	}
-	.form-group input {
+	.optional { font-weight: 400; color: var(--text-tertiary); }
+	.form-group input, .form-group textarea {
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		border-radius: 8px;
@@ -380,6 +840,13 @@
 		background: var(--bg-base);
 		color: var(--text-primary);
 		font-size: 0.9rem;
+	}
+	.code-input {
+		font-family: monospace;
+		font-size: 1.2rem;
+		text-align: center;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
 	}
 	.primary-btn {
 		width: 100%;
@@ -391,12 +858,12 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 		cursor: pointer;
-		margin-top: 0.75rem;
+		margin-top: 0.5rem;
 		text-align: center;
 		text-decoration: none;
 		display: block;
 	}
-	.primary-btn:disabled { opacity: 0.6; }
+	.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 	.secondary-btn {
 		flex: 1;
 		padding: 0.75rem;
@@ -407,143 +874,173 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 		cursor: pointer;
+		text-align: center;
 	}
 
-	/* Deck */
+	/* Deck selection */
+	.deck-options {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+	.option-btn {
+		flex: 1;
+		min-width: 120px;
+		padding: 0.6rem 0.75rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+		text-align: center;
+		text-decoration: none;
+	}
+	.option-btn.active, .option-btn:hover {
+		border-color: var(--accent-primary);
+		color: var(--accent-primary);
+	}
+
 	.deck-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.375rem;
+		gap: 0.5rem;
 		margin-bottom: 1rem;
 	}
-	.deck-item {
+	.deck-option {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.375rem 0.625rem;
+		padding: 0.6rem 0.75rem;
 		border-radius: 8px;
+		border: 1px solid var(--border-color);
 		background: var(--bg-base);
-		font-size: 0.85rem;
-	}
-	.deck-slot {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--text-tertiary);
-		min-width: 1.5rem;
-	}
-	.deck-card-name { flex: 1; }
-	.deck-card-num {
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-	}
-	.deck-card-power {
-		font-size: 0.75rem;
-		color: var(--accent-gold, #f59e0b);
-		font-weight: 600;
-	}
-	.remove-btn {
-		background: none;
-		border: none;
-		color: var(--text-tertiary);
+		color: var(--text-primary);
 		cursor: pointer;
-		padding: 0.125rem 0.375rem;
-		font-size: 0.85rem;
+		text-align: left;
 	}
+	.deck-option.selected {
+		border-color: var(--accent-primary);
+		background: var(--accent-primary);
+		background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-base));
+	}
+	.deck-name { font-weight: 600; font-size: 0.9rem; }
+	.deck-meta { font-size: 0.75rem; color: var(--text-tertiary); }
 	.empty-deck {
 		text-align: center;
 		color: var(--text-tertiary);
 		font-size: 0.85rem;
 		padding: 1rem;
 	}
-	.collection-heading {
+
+	.csv-section { margin-bottom: 1rem; }
+	.csv-input {
+		width: 100%;
+		font-family: monospace;
 		font-size: 0.85rem;
-		font-weight: 600;
-		color: var(--text-secondary);
 		margin-bottom: 0.5rem;
 	}
-	.available-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		max-height: 300px;
-		overflow-y: auto;
-		margin-bottom: 1rem;
+
+	/* Validation panel */
+	.validation-panel {
+		background: var(--bg-base);
+		border-radius: 10px;
+		padding: 1rem;
+		margin: 1rem 0;
+		border: 1px solid var(--border-color);
 	}
-	.available-card {
+	.validation-panel.valid { border-color: #16a34a40; }
+	.validation-panel.invalid { border-color: #ef444440; }
+	.val-header {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.375rem 0.625rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-base);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.85rem;
-		text-align: left;
+		margin-bottom: 0.75rem;
 	}
-	.available-card:hover:not(:disabled) {
-		border-color: var(--accent-primary);
-	}
-	.available-card.in-deck { opacity: 0.4; }
-	.available-card:disabled { cursor: not-allowed; }
-	.avail-num {
+	.val-badge {
+		padding: 2px 10px;
+		border-radius: 4px;
 		font-size: 0.75rem;
-		color: var(--text-secondary);
+		font-weight: 700;
 	}
-	.avail-power {
-		font-size: 0.75rem;
-		color: var(--accent-gold, #f59e0b);
+	.val-badge.valid { background: #16a34a20; color: #16a34a; }
+	.val-badge.invalid { background: #ef444420; color: #ef4444; }
+	.val-format { font-size: 0.85rem; color: var(--text-secondary); }
+	.val-stats {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
 	}
-	.empty-collection-actions {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 1.5rem 1rem;
-	}
-	.empty-collection-text {
-		text-align: center;
-		color: var(--text-tertiary);
-		font-size: 0.85rem;
-	}
-	.scan-cards-btn {
+	.val-stat { text-align: center; }
+	.val-num {
 		display: block;
-		width: 100%;
-		padding: 0.75rem;
-		border-radius: 10px;
-		border: none;
-		background: var(--accent-primary);
-		color: #fff;
-		font-size: 0.95rem;
-		font-weight: 600;
-		cursor: pointer;
-		text-align: center;
-		text-decoration: none;
+		font-size: 1.1rem;
+		font-weight: 700;
 	}
-	.load-collection-btn {
-		width: 100%;
-		padding: 0.6rem;
-		border-radius: 10px;
-		border: 1px solid var(--border-color);
-		background: transparent;
-		color: var(--text-secondary);
-		font-size: 0.85rem;
-		cursor: pointer;
+	.val-label {
+		font-size: 0.7rem;
+		color: var(--text-tertiary);
 	}
-	.load-collection-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
+	.val-violations { margin-top: 0.5rem; }
+	.violation {
+		font-size: 0.8rem;
+		color: #ef4444;
+		padding: 2px 0;
 	}
+	.val-warnings { margin-top: 0.25rem; }
+	.warning {
+		font-size: 0.8rem;
+		color: #f59e0b;
+		padding: 2px 0;
+	}
+
+	.hot-dog-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.narrow-input { width: 70px !important; }
+	.foil-label {
+		margin-left: 0.5rem;
+	}
+
 	.deck-actions {
 		display: flex;
 		gap: 0.75rem;
+		margin-top: 0.75rem;
 	}
 	.deck-actions .primary-btn {
 		flex: 2;
 		margin-top: 0;
 	}
+
+	/* Confirm */
+	.confirm-section {
+		margin-bottom: 1rem;
+	}
+	.confirm-section h3 {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text-secondary);
+		margin-bottom: 0.25rem;
+	}
+	.confirm-section p {
+		font-size: 0.9rem;
+	}
+	.confirm-validation {
+		padding: 0.625rem;
+		border-radius: 8px;
+		text-align: center;
+		font-weight: 600;
+		font-size: 0.9rem;
+		margin-bottom: 0.75rem;
+	}
+	.confirm-validation.valid { background: #16a34a20; color: #16a34a; }
+	.confirm-validation.invalid { background: #ef444420; color: #ef4444; }
 
 	/* Done */
 	.done-card {
@@ -562,8 +1059,39 @@
 		font-size: 0.9rem;
 		margin-bottom: 1rem;
 	}
-	.done-link {
-		max-width: 250px;
-		margin: 0 auto;
+	.verify-section {
+		background: var(--bg-base);
+		border-radius: 10px;
+		padding: 1rem;
+		margin-bottom: 1rem;
 	}
+	.verify-label {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		margin-bottom: 0.25rem;
+	}
+	.verify-code {
+		font-family: monospace;
+		font-size: 1.5rem;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		color: var(--accent-primary);
+		margin-bottom: 0.5rem;
+	}
+	.verify-link {
+		font-size: 0.85rem;
+		color: var(--accent-primary);
+	}
+	.warn-text {
+		color: #f59e0b;
+		font-size: 0.85rem;
+	}
+	.done-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-width: 300px;
+		margin: 1rem auto 0;
+	}
+	.done-link { text-align: center; }
 </style>

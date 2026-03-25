@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const { data, error: dbError } = await locals.supabase
 		.from('tournaments')
-		.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord')
+		.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord, format_id, description, venue, event_date, entry_fee, prize_pool, max_players, submission_deadline, registration_closed, deadline_mode')
 		.eq('code', code)
 		.eq('is_active', true)
 		.single();
