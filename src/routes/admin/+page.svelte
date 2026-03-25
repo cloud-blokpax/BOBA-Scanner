@@ -8,8 +8,9 @@
 	import AdminStatsTab from './AdminStatsTab.svelte';
 	import AdminFeaturesTab from './AdminFeaturesTab.svelte';
 	import AdminConfigTab from './AdminConfigTab.svelte';
+	import AdminPacksTab from './AdminPacksTab.svelte';
 
-	let activeTab = $state<'users' | 'logs' | 'stats' | 'parallels' | 'features' | 'config'>('users');
+	let activeTab = $state<'users' | 'logs' | 'stats' | 'parallels' | 'features' | 'config' | 'packs'>('users');
 	let loading = $state(true);
 
 	let stats = $state({
@@ -97,6 +98,7 @@
 			<button class:active={activeTab === 'stats'} onclick={() => (activeTab = 'stats')}>Stats</button>
 			<button class:active={activeTab === 'features'} onclick={() => (activeTab = 'features')}>Features</button>
 			<button class:active={activeTab === 'config'} onclick={() => (activeTab = 'config')}>Config</button>
+			<button class:active={activeTab === 'packs'} onclick={() => (activeTab = 'packs')}>Packs</button>
 		</div>
 
 		{#if activeTab === 'users'}
@@ -111,6 +113,8 @@
 			<AdminFeaturesTab />
 		{:else if activeTab === 'config'}
 			<AdminConfigTab />
+		{:else if activeTab === 'packs'}
+			<AdminPacksTab />
 		{/if}
 	{/if}
 </div>
