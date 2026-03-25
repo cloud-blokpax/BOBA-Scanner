@@ -150,6 +150,7 @@ export interface Database {
 					cards_in_collection: number;
 					is_admin: boolean;
 					is_pro: boolean;
+					is_organizer: boolean;
 					pro_until: string | null;
 					discord_id: string | null;
 					created_at: string;
@@ -161,6 +162,7 @@ export interface Database {
 					picture?: string | null;
 					auth_user_id?: string | null;
 					discord_id?: string | null;
+					is_organizer?: boolean;
 				};
 				Update: Partial<Database['public']['Tables']['users']['Insert']>;
 				Relationships: [];
@@ -218,6 +220,19 @@ export interface Database {
 					require_name: boolean;
 					require_discord: boolean;
 					created_at: string;
+					format_id: string | null;
+					description: string | null;
+					venue: string | null;
+					event_date: string | null;
+					entry_fee: string | null;
+					prize_pool: string | null;
+					max_players: number | null;
+					submission_deadline: string | null;
+					registration_closed: boolean;
+					deadline_mode: string;
+					results_entered: boolean;
+					results_entered_at: string | null;
+					results_entered_by: string | null;
 				};
 				Insert: {
 					creator_id: string;
@@ -231,6 +246,19 @@ export interface Database {
 					require_email?: boolean;
 					require_name?: boolean;
 					require_discord?: boolean;
+					format_id?: string | null;
+					description?: string | null;
+					venue?: string | null;
+					event_date?: string | null;
+					entry_fee?: string | null;
+					prize_pool?: string | null;
+					max_players?: number | null;
+					submission_deadline?: string | null;
+					registration_closed?: boolean;
+					deadline_mode?: string;
+					results_entered?: boolean;
+					results_entered_at?: string | null;
+					results_entered_by?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['tournaments']['Insert']>;
 				Relationships: [];
@@ -561,6 +589,110 @@ export interface Database {
 				};
 				Update: Partial<Database['public']['Tables']['shared_decks']['Insert']>;
 				Relationships: [];
+			};
+			deck_submissions: {
+				Row: {
+					id: string;
+					tournament_id: string;
+					user_id: string;
+					player_name: string;
+					player_email: string;
+					player_discord: string | null;
+					hero_cards: unknown[];
+					play_entries: unknown[];
+					hot_dog_count: number;
+					foil_hot_dog_count: number;
+					format_id: string;
+					format_name: string;
+					is_valid: boolean;
+					validation_violations: unknown[];
+					validation_warnings: unknown[];
+					validation_stats: Record<string, unknown>;
+					dbs_total: number | null;
+					hero_count: number;
+					total_power: number;
+					avg_power: number | null;
+					source_deck_id: string | null;
+					status: string;
+					submitted_at: string;
+					last_updated_at: string;
+					locked_at: string | null;
+					verification_code: string | null;
+				};
+				Insert: {
+					tournament_id: string;
+					user_id: string;
+					player_name: string;
+					player_email: string;
+					player_discord?: string | null;
+					hero_cards?: unknown[];
+					play_entries?: unknown[];
+					hot_dog_count?: number;
+					foil_hot_dog_count?: number;
+					format_id: string;
+					format_name: string;
+					is_valid?: boolean;
+					validation_violations?: unknown[];
+					validation_warnings?: unknown[];
+					validation_stats?: Record<string, unknown>;
+					dbs_total?: number | null;
+					hero_count?: number;
+					total_power?: number;
+					avg_power?: number | null;
+					source_deck_id?: string | null;
+					status?: string;
+					submitted_at?: string;
+					last_updated_at?: string;
+					verification_code?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['deck_submissions']['Insert']>;
+				Relationships: [
+					{
+						foreignKeyName: 'deck_submissions_tournament_id_fkey';
+						columns: ['tournament_id'];
+						isOneToOne: false;
+						referencedRelation: 'tournaments';
+						referencedColumns: ['id'];
+					}
+				];
+			};
+			tournament_results: {
+				Row: {
+					id: string;
+					tournament_id: string;
+					submission_id: string | null;
+					player_name: string;
+					player_user_id: string | null;
+					final_standing: number;
+					placement_label: string | null;
+					match_wins: number | null;
+					match_losses: number | null;
+					match_draws: number | null;
+					entered_at: string;
+					entered_by: string;
+				};
+				Insert: {
+					tournament_id: string;
+					submission_id?: string | null;
+					player_name: string;
+					player_user_id?: string | null;
+					final_standing: number;
+					placement_label?: string | null;
+					match_wins?: number | null;
+					match_losses?: number | null;
+					match_draws?: number | null;
+					entered_by: string;
+				};
+				Update: Partial<Database['public']['Tables']['tournament_results']['Insert']>;
+				Relationships: [
+					{
+						foreignKeyName: 'tournament_results_tournament_id_fkey';
+						columns: ['tournament_id'];
+						isOneToOne: false;
+						referencedRelation: 'tournaments';
+						referencedColumns: ['id'];
+					}
+				];
 			};
 			community_corrections: {
 				Row: {

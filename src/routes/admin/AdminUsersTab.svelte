@@ -5,10 +5,12 @@
 
 	interface UserRow {
 		id: string;
+		auth_user_id: string;
 		email: string;
 		name: string | null;
 		is_admin: boolean;
 		is_pro: boolean;
+		is_organizer: boolean;
 		scan_count: number;
 		created_at: string;
 	}
@@ -17,6 +19,7 @@
 	let filteredUsers = $state<UserRow[]>([]);
 	let loading = $state(true);
 	let searchQuery = $state('');
+	let togglingOrganizer = $state<string | null>(null);
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', {
@@ -70,6 +73,32 @@
 		}
 		loading = false;
 	}
+
+	async function toggleOrganizer(user: UserRow) {
+		togglingOrganizer = user.auth_user_id;
+		try {
+			const res = await fetch('/api/admin/set-organizer', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					user_id: user.auth_user_id,
+					is_organizer: !user.is_organizer
+				})
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				throw new Error(data.message || 'Failed to update');
+			}
+			user.is_organizer = !user.is_organizer;
+			showToast(
+				user.is_organizer ? `${user.name || user.email} is now an organizer` : `Organizer role removed`,
+				'check'
+			);
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : 'Failed to update organizer status', 'x');
+		}
+		togglingOrganizer = null;
+	}
 </script>
 
 <div class="tab-content">
@@ -89,6 +118,7 @@
 						<th>Name</th>
 						<th>Email</th>
 						<th>Role</th>
+						<th>Organizer</th>
 						<th>Scans</th>
 						<th>Joined</th>
 					</tr>
@@ -106,6 +136,16 @@
 								{:else}
 									<span class="badge">User</span>
 								{/if}
+							</td>
+							<td>
+								<button
+									class="organizer-toggle"
+									class:active={user.is_organizer}
+									onclick={() => toggleOrganizer(user)}
+									disabled={togglingOrganizer === user.auth_user_id}
+								>
+									{user.is_organizer ? 'Yes' : 'No'}
+								</button>
 							</td>
 							<td>{user.scan_count}</td>
 							<td>{formatDate(user.created_at)}</td>
@@ -173,5 +213,24 @@
 	.badge.member {
 		background: #2563eb20;
 		color: #2563eb;
+	}
+	.organizer-toggle {
+		padding: 2px 10px;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		border: 1px solid var(--border-color);
+		background: var(--bg-base);
+		color: var(--text-secondary);
+		cursor: pointer;
+	}
+	.organizer-toggle.active {
+		background: #16a34a20;
+		color: #16a34a;
+		border-color: #16a34a40;
+	}
+	.organizer-toggle:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>
