@@ -167,7 +167,10 @@
 		{:else}
 			<div class="page-header">
 				<h1>My Decks</h1>
-				<a href="/deck/new" class="btn-create">+ New Deck</a>
+				<div class="header-actions">
+					<a href="/deck/architect" class="btn-architect">Playbook Architect</a>
+					<a href="/deck/new" class="btn-create">+ New Deck</a>
+				</div>
 			</div>
 
 			{#if showLegacyImportPrompt}
@@ -387,6 +390,24 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--text-primary, #f1f5f9);
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.btn-architect {
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		background: rgba(245, 158, 11, 0.12);
+		color: var(--gold, #f59e0b);
+		font-size: 0.85rem;
+		font-weight: 600;
+		text-decoration: none;
+		border: 1px solid rgba(245, 158, 11, 0.3);
+		cursor: pointer;
 	}
 
 	.btn-create {
