@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import ScannerErrorBoundary from '$lib/components/ScannerErrorBoundary.svelte';
-	import { initScanner } from '$lib/stores/scanner.svelte';
+	import CloseButton from '$lib/components/CloseButton.svelte';
+	import { initScanner, setScannerActive } from '$lib/stores/scanner.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let scanResult = $state<ScanResult | null>(null);
@@ -15,6 +17,7 @@
 	let scanMode = $state<'single' | 'batch' | 'binder' | 'roll'>('single');
 
 	onMount(() => {
+		setScannerActive(true);
 		initScanner();
 		const modeParam = $page.url.searchParams.get('mode');
 		if (modeParam === 'batch' || modeParam === 'binder' || modeParam === 'roll') {
@@ -24,6 +27,7 @@
 
 	// Revoke blob URL on unmount to prevent memory leak from orphaned object URLs
 	onDestroy(() => {
+		setScannerActive(false);
 		cleanupImageUrl();
 	});
 
@@ -53,6 +57,11 @@
 	function handleModeChange(mode: 'single' | 'batch' | 'binder' | 'roll') {
 		scanMode = mode;
 	}
+
+	function exitScanner() {
+		setScannerActive(false);
+		goto('/');
+	}
 </script>
 
 <svelte:head>
@@ -60,6 +69,9 @@
 </svelte:head>
 
 <div class="scan-page">
+	<!-- Close button (top left, always visible) -->
+	<CloseButton onclick={exitScanner} position="top-left" variant="dark" />
+
 	<ScannerErrorBoundary>
 		{#if scanMode === 'single'}
 			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} onModeChange={handleModeChange} />
@@ -90,14 +102,13 @@
 
 <style>
 	.scan-page {
-		/* Fill available space between header and bottom nav */
-		height: calc(100svh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
-		/* Fallback for browsers that don't support svh */
-		height: calc(100dvh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
-		max-height: calc(100dvh - var(--header-height, 56px) - var(--bottom-nav-height, 68px) - var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
+		/* Full-screen: fill entire viewport */
+		position: fixed;
+		inset: 0;
+		z-index: 9999;
 		display: flex;
 		flex-direction: column;
-		position: relative;
+		background: #000;
 		overflow: hidden;
 	}
 

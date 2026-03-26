@@ -3,12 +3,14 @@
 		name,
 		heroName,
 		cardNumber,
+		parallel,
 		isOwned,
 		ownedCount
 	}: {
 		name: string;
 		heroName: string | null;
 		cardNumber: string | null;
+		parallel: string | null;
 		isOwned: boolean;
 		ownedCount: number;
 	} = $props();
@@ -25,6 +27,9 @@
 	</div>
 	{#if heroName && heroName !== name}
 		<p class="hero-name">{heroName}</p>
+	{/if}
+	{#if parallel}
+		<span class="parallel-badge">{parallel}</span>
 	{/if}
 	{#if cardNumber}
 		<span class="card-number">#{cardNumber}</span>
@@ -59,10 +64,22 @@
 		margin: 0;
 	}
 
+	.parallel-badge {
+		display: inline-block;
+		padding: 0.15rem 0.625rem;
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		border-radius: 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #fff;
+		align-self: flex-start;
+	}
+
 	.card-number {
 		font-size: 0.875rem;
 		color: var(--text-muted, #475569);
 		font-weight: 500;
+		font-family: monospace;
 	}
 
 	.badge {
