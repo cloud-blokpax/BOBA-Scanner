@@ -48,6 +48,8 @@ export interface CollectionItem {
 
 export type ScanMethod = 'hash_cache' | 'tesseract' | 'claude' | 'manual';
 
+export type ValidationMethod = 'exact_match' | 'fuzzy_match' | 'name_only_fallback' | 'unvalidated';
+
 export interface ScanResult {
 	id?: string;
 	card_id: string | null;
@@ -60,6 +62,10 @@ export interface ScanResult {
 	failReason?: string | null;
 	/** Trace ID for correlating logs across tiers */
 	traceId?: string;
+	/** How the card number was validated against the database (Tier 3 only) */
+	validationMethod?: ValidationMethod | null;
+	/** Warnings from cross-validation (e.g., fuzzy match, name mismatch) */
+	validationWarnings?: string[];
 }
 
 export interface ScanPipelineState {
