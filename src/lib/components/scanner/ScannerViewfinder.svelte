@@ -51,6 +51,9 @@
 <!-- Dark overlay outside scanning zone -->
 <div class="viewfinder-overlay"></div>
 
+<!-- Invisible guide rect for crop calculations -->
+<div class="scanner-guide-rect"></div>
+
 <!-- Corner brackets -->
 {#each ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as corner}
 	<div
@@ -122,6 +125,17 @@
 {/if}
 
 <style>
+	/* Invisible guide rect — matches the viewfinder cut-out for crop calculations */
+	.scanner-guide-rect {
+		position: absolute;
+		top: 15%;
+		left: 10%;
+		right: 10%;
+		bottom: 15%;
+		z-index: 0;
+		pointer-events: none;
+	}
+
 	/* Dark overlay outside scanning zone */
 	.viewfinder-overlay {
 		position: absolute;

@@ -101,9 +101,14 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.5rem 1.5rem 0.75rem;
-		background: var(--surface-primary, #070b14);
+		padding: 0.5rem 1.5rem calc(env(safe-area-inset-bottom, 8px) + 0.5rem);
+		background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
 		flex-shrink: 0;
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 8;
 	}
 
 	.mode-switcher {

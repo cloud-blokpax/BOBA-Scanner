@@ -1,7 +1,5 @@
 <script lang="ts">
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
-	import AuthenticityCheck from '$lib/components/AuthenticityCheck.svelte';
-	import { shareCardImage } from '$lib/services/share-card';
 	import type { Card } from '$lib/types';
 
 	let {
@@ -51,22 +49,6 @@
 	} = $props();
 
 	let showManualSearch = $state(false);
-	let showAuthCheck = $state(false);
-	let sharing = $state(false);
-
-	async function handleShare() {
-		if (!card) return;
-		sharing = true;
-		try {
-			await shareCardImage(card, capturedImageUrl);
-		} catch (err) {
-			// User cancelled the share sheet — not an error
-			if (err instanceof DOMException && err.name === 'AbortError') return;
-			console.debug('[share] Share failed:', err);
-		} finally {
-			sharing = false;
-		}
-	}
 
 	function handleSignInToSave() {
 		if (card?.id) {
@@ -103,70 +85,56 @@
 {/if}
 
 <div class="actions-stacked">
-	<!-- Primary action -->
-	<div class="add-btn-wrapper">
-		{#if isAuthenticated}
-			{#if isLowConfidence}
-				<button class="btn btn-add btn-verify" onclick={onAdd} disabled={adding || addSuccess}>
-					{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
-				</button>
+	<!-- Primary actions row -->
+	<div class="primary-row">
+		<div class="add-btn-wrapper">
+			{#if isAuthenticated}
+				{#if isLowConfidence}
+					<button class="btn btn-add btn-verify" onclick={onAdd} disabled={adding || addSuccess}>
+						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
+					</button>
+				{:else}
+					<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding || addSuccess}>
+						{#if adding}
+							Adding...
+						{:else if addSuccess}
+							Added!
+						{:else if isOwned}
+							Add Another Copy
+						{:else}
+							Add to Collection
+						{/if}
+					</button>
+				{/if}
 			{:else}
-				<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding || addSuccess}>
-					{#if adding}
-						Adding...
-					{:else if addSuccess}
-						Added!
-					{:else if isOwned}
-						Add Another Copy
-					{:else}
-						Add to Collection
-					{/if}
+				<button class="btn btn-add" onclick={handleSignInToSave}>
+					Sign in to Save
 				</button>
 			{/if}
-		{:else}
-			<button class="btn btn-add" onclick={handleSignInToSave}>
-				Sign in to Save
-			</button>
-		{/if}
-		{#if showConfetti}
-			<div class="confetti-burst">
-				{#each [
-					{ x: 1, y: 0, dist: 22 },
-					{ x: 0.5, y: 0.866, dist: 22 },
-					{ x: -0.5, y: 0.866, dist: 22 },
-					{ x: -1, y: 0, dist: 26 },
-					{ x: -0.5, y: -0.866, dist: 22 },
-					{ x: 0.5, y: -0.866, dist: 22 }
-				] as dot}
-					<span class="confetti-dot" style="--dx: {dot.x}; --dy: {dot.y}; --dist: {dot.dist}px"></span>
-				{/each}
-			</div>
-		{/if}
-	</div>
+			{#if showConfetti}
+				<div class="confetti-burst">
+					{#each [
+						{ x: 1, y: 0, dist: 22 },
+						{ x: 0.5, y: 0.866, dist: 22 },
+						{ x: -0.5, y: 0.866, dist: 22 },
+						{ x: -1, y: 0, dist: 26 },
+						{ x: -0.5, y: -0.866, dist: 22 },
+						{ x: 0.5, y: -0.866, dist: 22 }
+					] as dot}
+						<span class="confetti-dot" style="--dx: {dot.x}; --dy: {dot.y}; --dist: {dot.dist}px"></span>
+					{/each}
+				</div>
+			{/if}
+		</div>
 
-	<!-- Share + secondary actions row -->
-	<div class="secondary-row">
-		<button class="btn btn-share" onclick={handleShare} disabled={sharing}>
-			{sharing ? 'Generating...' : 'Share'}
-		</button>
 		<button class="btn btn-scan-another" onclick={onScanAnother}>
 			Scan Another
 		</button>
-		<a href="/grader" class="btn btn-grade" onclick={onClose}>
-			Grade Card
-		</a>
 	</div>
 
-	<!-- Verify Authenticity -->
-	{#if card?.id}
-		<button class="btn btn-verify-auth" onclick={() => { showAuthCheck = true; }}>
-			Verify Authenticity
-		</button>
-	{/if}
-
-	<!-- Tertiary -->
+	<!-- Wrong card link -->
 	<button class="btn-text-link" onclick={() => { showManualSearch = true; }}>
-		Wrong Card? Search Manually
+		Wrong card? Search manually
 	</button>
 </div>
 
@@ -176,16 +144,6 @@
 			card={{ card_number: card?.card_number ?? '' }}
 			onCorrect={onManualCorrection}
 			onClose={() => { showManualSearch = false; }}
-		/>
-	</div>
-{/if}
-
-{#if showAuthCheck && card?.id}
-	<div class="auth-check-container">
-		<AuthenticityCheck
-			cardId={card.id}
-			{capturedImageUrl}
-			onClose={() => { showAuthCheck = false; }}
 		/>
 	</div>
 {/if}
@@ -213,7 +171,7 @@
 
 	.btn {
 		padding: 0.875rem;
-		border-radius: 8px;
+		border-radius: 12px;
 		font-weight: 600;
 		font-size: 0.95rem;
 		cursor: pointer;
@@ -226,8 +184,8 @@
 	.btn:active { opacity: 0.85; }
 
 	.btn-add {
-		background: var(--primary, #3b82f6);
-		color: white;
+		background: #4ade80;
+		color: #000;
 	}
 
 	.btn-add:disabled {
@@ -245,50 +203,32 @@
 		color: #000;
 	}
 
-	.secondary-row {
+	.primary-row {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.625rem;
 	}
 
-	.btn-share {
+	.add-btn-wrapper {
+		position: relative;
 		flex: 1;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid rgba(148,163,184,0.2);
-		color: var(--text-primary, #e2e8f0);
-	}
-
-	.btn-share:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-grade {
-		flex: 1;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid rgba(168, 85, 247, 0.3);
-		color: #a855f7;
-		text-decoration: none;
 	}
 
 	.btn-scan-another {
-		flex: 1;
-		background: transparent;
-		border: 1px solid var(--border-strong, rgba(148,163,184,0.2));
-		color: var(--text-primary, #e2e8f0);
+		flex: 0 0 auto;
+		background: rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		color: #fff;
 	}
 
 	.btn-text-link {
 		background: none;
 		border: none;
-		color: var(--text-muted, #475569);
-		font-size: 0.8rem;
+		color: rgba(255, 255, 255, 0.6);
+		font-size: 0.85rem;
 		cursor: pointer;
 		text-decoration: underline;
-		padding: 0.25rem 0;
-	}
-
-	.add-btn-wrapper {
-		position: relative;
+		padding: 0.5rem 0;
+		text-align: center;
 	}
 
 	.confetti-burst {
@@ -310,22 +250,11 @@
 	.confetti-dot:nth-child(odd) { background: var(--primary, #3b82f6); }
 	.confetti-dot:nth-child(3n) { background: var(--success, #10b981); }
 
-	.btn-verify-auth {
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid rgba(168, 85, 247, 0.3);
-		color: #a855f7;
-	}
-
 	.manual-search-container {
 		width: 100%;
 		max-width: 400px;
 		margin-top: 0.5rem;
 		text-align: left;
-	}
-
-	.auth-check-container {
-		width: 100%;
-		margin-top: 0.5rem;
 	}
 
 	@keyframes success-pop {

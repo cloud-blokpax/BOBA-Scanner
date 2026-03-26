@@ -14,6 +14,7 @@
 	import ScanStats from './scan-confirmation/ScanStats.svelte';
 	import ScanActions from './scan-confirmation/ScanActions.svelte';
 	import ScanFailState from './scan-confirmation/ScanFailState.svelte';
+	import CloseButton from '$lib/components/CloseButton.svelte';
 
 	const hasPriceHistory = featureEnabled('price_history');
 	const hasScanToList = featureEnabled('scan_to_list');
@@ -181,6 +182,7 @@
 <div class="confirmation-overlay">
 	<div class="confirmation-backdrop"></div>
 	<div class="confirmation-container">
+		<CloseButton onclick={onClose} position="top-right" variant="dark" />
 		<div class="sheet-handle"></div>
 		{#if card}
 			<ScanCardImage
@@ -195,6 +197,7 @@
 					name={card.name}
 					heroName={card.hero_name ?? null}
 					cardNumber={card.card_number ?? null}
+					parallel={card.parallel ?? activeResult.variant ?? null}
 					{isOwned}
 					{ownedCount}
 				/>
@@ -233,27 +236,93 @@
 					onManualCorrection={handleManualCorrection}
 				/>
 
-				<!-- Details section — collapsed by default -->
+				<!-- All Details — collapsed by default -->
 				<details class="scan-details-disclosure">
-					<summary class="scan-details-toggle">Card Details</summary>
+					<summary class="scan-details-toggle">All Details</summary>
 					<div class="scan-details-content">
-						<ScanMetaPills
-							setCode={card.set_code ?? null}
-							parallel={card.parallel ?? null}
-							weaponType={card.weapon_type ?? null}
-							power={card.power ?? null}
-							battleZone={card.battle_zone ?? null}
-							rarity={card.rarity ?? null}
-						/>
+						<div class="details-grid">
+							{#if card.card_number}
+								<div class="detail-row">
+									<span class="detail-label">Card Number</span>
+									<span class="detail-value">{card.card_number}</span>
+								</div>
+							{/if}
+							{#if card.hero_name}
+								<div class="detail-row">
+									<span class="detail-label">Hero Name</span>
+									<span class="detail-value">{card.hero_name}</span>
+								</div>
+							{/if}
+							{#if card.athlete_name}
+								<div class="detail-row">
+									<span class="detail-label">Athlete</span>
+									<span class="detail-value">{card.athlete_name}</span>
+								</div>
+							{/if}
+							{#if card.set_code}
+								<div class="detail-row">
+									<span class="detail-label">Set / Release</span>
+									<span class="detail-value">{card.set_code}</span>
+								</div>
+							{/if}
+							<div class="detail-row">
+								<span class="detail-label">Parallel / Variant</span>
+								<span class="detail-value">{card.parallel ?? activeResult.variant ?? 'Base'}</span>
+							</div>
+							{#if card.power}
+								<div class="detail-row">
+									<span class="detail-label">Power</span>
+									<span class="detail-value">{card.power}</span>
+								</div>
+							{/if}
+							{#if card.rarity}
+								<div class="detail-row">
+									<span class="detail-label">Rarity</span>
+									<span class="detail-value detail-rarity rarity-{card.rarity}">{card.rarity.replace('_', ' ')}</span>
+								</div>
+							{/if}
+							{#if card.weapon_type}
+								<div class="detail-row">
+									<span class="detail-label">Weapon Type</span>
+									<span class="detail-value">{card.weapon_type}</span>
+								</div>
+							{/if}
+							{#if card.battle_zone}
+								<div class="detail-row">
+									<span class="detail-label">Battle Zone</span>
+									<span class="detail-value">{card.battle_zone}</span>
+								</div>
+							{/if}
+							<div class="detail-row">
+								<span class="detail-label">Scan Confidence</span>
+								<span class="detail-value">{Math.round(activeResult.confidence * 100)}%</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Match Method</span>
+								<span class="detail-value">{activeResult.scan_method === 'hash_cache' ? 'Instant (cached)' : activeResult.scan_method === 'tesseract' ? 'OCR Match' : activeResult.scan_method === 'claude' ? 'AI Identified' : activeResult.scan_method === 'manual' ? 'Manual Search' : activeResult.scan_method}</span>
+							</div>
+							{#if activeResult.validationMethod}
+								<div class="detail-row">
+									<span class="detail-label">Validation</span>
+									<span class="detail-value">{activeResult.validationMethod === 'exact_match' ? 'Verified' : activeResult.validationMethod === 'fuzzy_match' ? 'Fuzzy matched' : activeResult.validationMethod === 'name_only_fallback' ? 'Name match only' : activeResult.validationMethod}</span>
+								</div>
+							{/if}
+							<div class="detail-row">
+								<span class="detail-label">Processing Time</span>
+								<span class="detail-value">{activeResult.processing_ms}ms</span>
+							</div>
+						</div>
 
-						<ScanStats
-							scanMethod={activeResult.scan_method}
-							confidence={activeResult.confidence}
-							processingMs={activeResult.processing_ms}
-							{isLowConfidence}
-							validationMethod={activeResult.validationMethod ?? null}
-							validationWarnings={activeResult.validationWarnings ?? []}
-						/>
+						{#if activeResult.validationWarnings && activeResult.validationWarnings.length > 0}
+							<ScanStats
+								scanMethod={activeResult.scan_method}
+								confidence={activeResult.confidence}
+								processingMs={activeResult.processing_ms}
+								{isLowConfidence}
+								validationMethod={activeResult.validationMethod ?? null}
+								validationWarnings={activeResult.validationWarnings ?? []}
+							/>
+						{/if}
 					</div>
 				</details>
 			</div>
@@ -354,4 +423,41 @@
 	.scan-details-content {
 		padding-bottom: 0.5rem;
 	}
+
+	.details-grid {
+		padding: 0.25rem 0;
+	}
+
+	.detail-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.5rem 0;
+		border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+	}
+
+	.detail-row:last-child {
+		border-bottom: none;
+	}
+
+	.detail-label {
+		color: rgba(255, 255, 255, 0.5);
+		font-size: 0.8rem;
+	}
+
+	.detail-value {
+		color: rgba(255, 255, 255, 0.9);
+		font-size: 0.8rem;
+		font-weight: 500;
+		text-align: right;
+	}
+
+	.detail-rarity {
+		text-transform: capitalize;
+		font-weight: 600;
+	}
+	.detail-rarity.rarity-common { color: #9CA3AF; }
+	.detail-rarity.rarity-uncommon { color: #22C55E; }
+	.detail-rarity.rarity-rare { color: #3B82F6; }
+	.detail-rarity.rarity-ultra_rare { color: #A855F7; }
+	.detail-rarity.rarity-legendary { color: #F59E0B; }
 </style>

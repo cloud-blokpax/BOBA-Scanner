@@ -10,6 +10,30 @@
 
 let currentStream: MediaStream | null = null;
 
+/**
+ * Check camera permission state without triggering a prompt.
+ * Returns 'granted', 'denied', or 'prompt' (unknown / first-time).
+ */
+export async function checkCameraPermission(): Promise<'granted' | 'denied' | 'prompt'> {
+	try {
+		const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
+		return result.state;
+	} catch {
+		// Permissions API not supported (some iOS browsers)
+		return 'prompt';
+	}
+}
+
+/**
+ * Get the current active stream (for reuse across navigations).
+ */
+export function getActiveStream(): MediaStream | null {
+	if (currentStream && currentStream.active) {
+		return currentStream;
+	}
+	return null;
+}
+
 export interface CameraConfig {
 	facingMode?: 'environment' | 'user';
 	width?: number;

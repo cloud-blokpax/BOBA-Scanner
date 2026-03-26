@@ -139,6 +139,7 @@ CRITICAL INSTRUCTIONS FOR READING THE CARD:
 1. CARD NUMBER: Look at the BOTTOM LEFT corner of the card. Read the EXACT text printed there. This is the card number (format: PREFIX-NUMBER like "AB-123", "HW-567", "GR-042"). Do NOT guess this from memory. Do NOT use the power value (top right number) as the card number.
 2. HERO NAME: Read the large title text at the TOP LEFT of the card. This is the hero name.
 3. POWER: Read the number in the TOP RIGHT corner. This is the power value.
+4. PARALLEL/VARIANT: Look for any special text, treatment indicators, or visual cues that identify this as a parallel variant. Common BoBA parallels include: Inspired Ink Battlefoil, 80's Rad Battlefoil, Grandma's Linoleum Battlefoil, Blizzard Battlefoil, Color Battlefoil (Orange/Blue/Green/Pink), Bubblegum Battlefoil, Mixtape Battlefoil, Miami Ice Battlefoil, Fire Tracks Battlefoil. Also look for foil/holo treatments, special borders, or alternate art indicators.
 
 If a field is unclear, return null rather than guessing. It is MUCH better to return null for card_number than to fabricate one you are not certain about.`,
 			tools: [CARD_ID_TOOL],

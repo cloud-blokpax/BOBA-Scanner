@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { startCamera, stopCamera, toggleTorch, captureFrame } from '$lib/services/camera';
+	import { startCamera, stopCamera, toggleTorch, captureFrame, checkCameraPermission, getActiveStream } from '$lib/services/camera';
+	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
 	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance } from '$lib/services/recognition';
 	import { triggerHaptic } from '$lib/utils/haptics';
@@ -80,6 +81,8 @@
 	let _lastOverlayHash: string | null = null;
 
 	let showFirstRunGuide = $state(false);
+	let showCameraExplainer = $state(false);
+	let showPermissionBlocked = $state(false);
 
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
@@ -134,27 +137,35 @@
 		return 'idle';
 	});
 
-	onMount(async () => {
+	async function initCamera() {
 		try {
-			const stream = await startCamera();
+			// Reuse existing active stream if available (avoids re-prompt on iOS)
+			const existing = getActiveStream();
+			let stream: MediaStream;
+			if (existing) {
+				stream = existing;
+			} else {
+				stream = await startCamera();
+			}
 			if (videoEl) {
 				videoEl.srcObject = stream;
 				await videoEl.play();
 				phase = 'idle';
 				startAutoAnalyze();
 
-			// First-run check
-			const { idb } = await import('$lib/services/idb');
-			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
-			if (!hasScanned) {
-				showFirstRunGuide = true;
-			}
+				// First-run check
+				const { idb } = await import('$lib/services/idb');
+				const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
+				if (!hasScanned) {
+					showFirstRunGuide = true;
+				}
 			}
 		} catch (err) {
 			console.error('Camera error:', err);
 			phase = 'error';
 			if (err instanceof DOMException) {
 				if (err.name === 'NotAllowedError') {
+					showPermissionBlocked = true;
 					cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
 				} else if (err.name === 'NotFoundError') {
 					cameraError = 'No camera found on this device. Try uploading a photo instead.';
@@ -166,6 +177,24 @@
 			} else {
 				cameraError = 'Camera failed to start. Please reload the page.';
 			}
+		}
+	}
+
+	onMount(async () => {
+		// Check permission state before prompting
+		const permission = await checkCameraPermission();
+
+		if (permission === 'granted') {
+			// Already granted — go straight to camera
+			await initCamera();
+		} else if (permission === 'denied') {
+			// Blocked — show help to re-enable
+			phase = 'error';
+			showPermissionBlocked = true;
+			cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
+		} else {
+			// First time or unknown — show pre-prompt explainer
+			showCameraExplainer = true;
 		}
 
 		_visibilityHandler = () => {
@@ -493,6 +522,30 @@
 		return canvas.toDataURL('image/jpeg', 0.85);
 	}
 
+	/**
+	 * Try to crop the captured image to just the card area using
+	 * the scanner guide rect as reference. Falls back to full frame.
+	 */
+	function getCroppedImageUrl(): string | null {
+		if (!videoEl) return null;
+		try {
+			const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
+			if (!guideEl) return null;
+			const guideRect = guideEl.getBoundingClientRect();
+			const videoRect = videoEl.getBoundingClientRect();
+			if (guideRect.width < 10 || guideRect.height < 10) return null;
+			const region = cropToCardRegion(
+				videoEl.videoWidth,
+				videoEl.videoHeight,
+				guideRect,
+				videoRect
+			);
+			return cropFrame(videoEl, region);
+		} catch {
+			return null;
+		}
+	}
+
 	async function handleCapture() {
 		if (!videoEl || scanning || paused) return;
 		phase = 'capturing';
@@ -518,7 +571,9 @@
 			}
 
 			phase = 'processing';
-			const imageUrl = bitmapToDataUrl(bitmap);
+			// Use cropped image for display (cleaner), full frame for AI recognition
+			const croppedUrl = getCroppedImageUrl();
+			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
 			let scanResult;
 			try {
 				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
@@ -631,7 +686,7 @@
 </script>
 
 <div class="scanner">
-	<div class="viewfinder">
+	<div class="viewfinder" style="flex:1">
 		<video
 			bind:this={videoEl}
 			autoplay
@@ -709,22 +764,44 @@
 				</div>
 			</div>
 		{/if}
-	</div>
 
-	<ScannerControls
-		{torchOn}
-		{foilMode}
-		{cameraReady}
-		{scanning}
-		{stabilityProgress}
-		{scanMode}
-		{onModeChange}
-		onTorchToggle={handleTorchToggle}
-		onCapture={handleCapture}
-		onFoilCapture={handleFoilCapture}
-		onFoilToggle={handleFoilToggle}
-		onFileUpload={handleFileUpload}
-	/>
+		<!-- Camera permission pre-prompt explainer -->
+		{#if showCameraExplainer}
+			<div class="permission-explainer">
+				<div class="permission-explainer-content">
+					<div class="permission-icon">
+						<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+							<circle cx="12" cy="13" r="4" />
+						</svg>
+					</div>
+					<h3 class="permission-title">Camera Access Needed</h3>
+					<p class="permission-desc">BOBA Scanner uses your camera to identify cards instantly. We never store photos without your permission.</p>
+					<button class="permission-continue" onclick={() => { showCameraExplainer = false; initCamera(); }}>
+						Continue to Scan
+					</button>
+					<p class="permission-tip">
+						Tip: When your browser asks, tap <strong>Allow</strong> to avoid being asked again.
+					</p>
+				</div>
+			</div>
+		{/if}
+
+		<ScannerControls
+			{torchOn}
+			{foilMode}
+			{cameraReady}
+			{scanning}
+			{stabilityProgress}
+			{scanMode}
+			{onModeChange}
+			onTorchToggle={handleTorchToggle}
+			onCapture={handleCapture}
+			onFoilCapture={handleFoilCapture}
+			onFoilToggle={handleFoilToggle}
+			onFileUpload={handleFileUpload}
+		/>
+	</div>
 </div>
 
 <style>
@@ -732,6 +809,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		height: 100dvh;
 		background: black;
 	}
 
@@ -750,8 +828,8 @@
 
 	.torch-btn {
 		position: absolute;
-		top: 1rem;
-		right: 1rem;
+		top: calc(env(safe-area-inset-top, 0px) + 12px);
+		right: 12px;
 		width: 36px;
 		height: 36px;
 		border-radius: 50%;
@@ -842,6 +920,70 @@
 	@keyframes arFadeIn {
 		from { opacity: 0; transform: translateX(-50%) translateY(8px); }
 		to { opacity: 1; transform: translateX(-50%) translateY(0); }
+	}
+
+	/* Camera permission pre-prompt */
+	.permission-explainer {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.85);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 20;
+		padding: 2rem;
+	}
+
+	.permission-explainer-content {
+		text-align: center;
+		max-width: 320px;
+	}
+
+	.permission-icon {
+		color: var(--gold, #f59e0b);
+		margin-bottom: 1rem;
+	}
+
+	.permission-title {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: white;
+		margin: 0 0 0.75rem;
+	}
+
+	.permission-desc {
+		font-size: 0.9rem;
+		color: rgba(255, 255, 255, 0.7);
+		line-height: 1.5;
+		margin: 0 0 1.5rem;
+	}
+
+	.permission-continue {
+		width: 100%;
+		padding: 0.875rem;
+		border-radius: 12px;
+		border: none;
+		background: var(--primary, #3b82f6);
+		color: white;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		margin-bottom: 1rem;
+	}
+
+	.permission-continue:active {
+		opacity: 0.85;
+	}
+
+	.permission-tip {
+		font-size: 0.8rem;
+		color: rgba(255, 255, 255, 0.5);
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.permission-tip strong {
+		color: rgba(255, 255, 255, 0.8);
 	}
 
 	.first-run-overlay {

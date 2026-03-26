@@ -42,7 +42,10 @@
 	{:else if priceError}
 		<div class="price-unavailable">Price unavailable</div>
 	{:else}
-		<div class="price-unavailable">No pricing data found</div>
+		<div class="price-unavailable">
+			<span>No pricing data available</span>
+			<span class="price-unavailable-sub">This card may be too new or rare for market data</span>
+		</div>
 	{/if}
 </div>
 
@@ -110,8 +113,22 @@
 	}
 
 	.price-unavailable {
-		font-size: 0.85rem;
+		text-align: center;
+		padding: 0.25rem 0;
+	}
+
+	.price-unavailable span:first-child {
+		display: block;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.price-unavailable-sub {
+		display: block;
+		font-size: 0.75rem;
 		color: var(--text-muted, #475569);
+		margin-top: 0.25rem;
 	}
 
 	.price-loading {

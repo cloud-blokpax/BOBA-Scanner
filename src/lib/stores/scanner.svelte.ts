@@ -14,6 +14,11 @@ const initialState: ScanPipelineState = {
 
 let _scanState = $state<ScanPipelineState>({ ...initialState });
 
+// Full-screen scanner overlay mode — hides top nav and bottom tab bar
+let _scannerActive = $state(false);
+export function scannerActive(): boolean { return _scannerActive; }
+export function setScannerActive(active: boolean): void { _scannerActive = active; }
+
 export function scanState(): ScanPipelineState { return _scanState; }
 export function isScanning(): boolean {
 	return ['capturing', 'processing', 'tier1', 'tier2', 'tier3'].includes(_scanState.status);

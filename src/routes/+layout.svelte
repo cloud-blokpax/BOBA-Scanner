@@ -15,6 +15,7 @@
 		showExpiryWarning, showFinalWarning,
 		showGoProModal, setShowGoProModal
 	} from '$lib/stores/pro.svelte';
+	import { scannerActive } from '$lib/stores/scanner.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -210,7 +211,8 @@
 	const currentPath = $derived($page.url.pathname);
 </script>
 
-<div class="app-container">
+<div class="app-container" class:scanner-fullscreen={scannerActive()}>
+	{#if !scannerActive()}
 	<header class="app-header">
 		<div class="header-content">
 			<a href="/" class="app-logo">
@@ -234,9 +236,10 @@
 			</div>
 		</div>
 	</header>
+	{/if}
 
 	<!-- Pro expiry banners -->
-	{#if data.user}
+	{#if data.user && !scannerActive()}
 		{#if showExpiryWarning() && !expiryBannerDismissed}
 			<div class="pro-expiry-banner expiry-soon">
 				<span>Your Pro access expires in {daysRemaining()} days</span>
@@ -262,6 +265,7 @@
 		{@render children()}
 	</main>
 
+	{#if !scannerActive()}
 	<footer class="affiliate-footer">
 		eBay Partner: we may earn from qualifying purchases. <a href="/privacy#6-ebay-affiliate-links">Learn more</a>
 	</footer>
@@ -283,6 +287,7 @@
 			<span class="bottom-nav-label">Sell</span>
 		</a>
 	</nav>
+	{/if}
 </div>
 
 <UpdateBanner />
@@ -294,6 +299,17 @@
 {/if}
 
 <style>
+	/* Full-screen scanner mode — no header/footer chrome */
+	.app-container.scanner-fullscreen {
+		display: flex;
+		flex-direction: column;
+	}
+	.app-container.scanner-fullscreen .app-main {
+		padding: 0 !important;
+		max-width: 100% !important;
+		overflow: hidden !important;
+	}
+
 	.affiliate-footer {
 		text-align: center;
 		font-size: 0.65rem;
