@@ -47,6 +47,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// Generate unique code (retry up to 5 times for collision)
 	let code = '';
+	let codeIsUnique = false;
 	for (let attempt = 0; attempt < 5; attempt++) {
 		code = generateCode();
 		const { data: existing } = await supabase
@@ -54,7 +55,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.select('id')
 			.eq('code', code)
 			.maybeSingle();
-		if (!existing) break;
+		if (!existing) {
+			codeIsUnique = true;
+			break;
+		}
+	}
+	if (!codeIsUnique) {
+		throw error(500, 'Could not generate unique tournament code. Please try again.');
 	}
 
 	const { data: tournament, error: insertErr } = await supabase

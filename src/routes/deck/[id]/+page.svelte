@@ -102,6 +102,8 @@
 			});
 			saveState = ok ? 'saved' : 'unsaved';
 		}, 1000);
+
+		return () => clearTimeout(_saveTimer);
 	});
 
 	// ── Validation ────────────────────────────────────────────
@@ -123,6 +125,8 @@
 			}
 			validating = false;
 		}, 300);
+
+		return () => clearTimeout(_validateTimer);
 	});
 
 	// ── Hero Operations ───────────────────────────────────────

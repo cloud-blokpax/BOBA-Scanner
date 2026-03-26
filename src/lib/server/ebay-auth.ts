@@ -42,10 +42,14 @@ export async function getEbayToken(): Promise<string> {
 
 	if (!response.ok) throw new Error(`eBay auth failed: ${response.status}`);
 	const data = await response.json();
-	_token = data.access_token;
+	const accessToken = data.access_token;
+	if (!accessToken || typeof accessToken !== 'string') {
+		throw new Error('eBay token response missing access_token');
+	}
+	_token = accessToken;
 	const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
 	_tokenExp = Date.now() + expiresIn * 1000 - 60_000;
-	return _token!;
+	return _token;
 }
 
 /**

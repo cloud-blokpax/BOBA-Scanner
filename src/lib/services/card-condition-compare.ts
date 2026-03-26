@@ -112,16 +112,37 @@ export async function compareCards(
 		const dilated = track(new cv.Mat());
 		cv.dilate(thresholded, dilated, kernel, new cv.Point(-1, -1), 2);
 
-		// Step 6: Segment into regions and score
-		const regions = scoreRegions(cv, dilated);
+		// Step 6: Compute directional diffs to distinguish A's defects from B's
+		// diffA = where A is worse (B brighter than A → defect on A)
+		// diffB = where B is worse (A brighter than B → defect on B)
+		const diffA = track(new cv.Mat());
+		const diffB = track(new cv.Mat());
+		cv.subtract(lB, lA, diffA);
+		cv.subtract(lA, lB, diffB);
 
-		// Step 7: Generate heat overlay using JET colormap
-		const heatmap = track(new cv.Mat());
-		cv.applyColorMap(diff, heatmap, cv.COLORMAP_JET);
+		// Threshold each directional diff
+		const threshA = track(new cv.Mat());
+		const threshB = track(new cv.Mat());
+		cv.threshold(diffA, threshA, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+		cv.threshold(diffB, threshB, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+
+		const dilatedA = track(new cv.Mat());
+		const dilatedB = track(new cv.Mat());
+		cv.dilate(threshA, dilatedA, kernel, new cv.Point(-1, -1), 2);
+		cv.dilate(threshB, dilatedB, kernel, new cv.Point(-1, -1), 2);
+
+		// Step 6: Segment into regions and score each card separately
+		const regions = scoreRegionsSeparate(cv, dilatedA, dilatedB);
+
+		// Step 7: Generate directional heat overlays using JET colormap
+		const heatmapA = track(new cv.Mat());
+		const heatmapB = track(new cv.Mat());
+		cv.applyColorMap(diffA, heatmapA, cv.COLORMAP_JET);
+		cv.applyColorMap(diffB, heatmapB, cv.COLORMAP_JET);
 
 		// Convert results to data URLs
-		const heatOverlayA = matToDataUrl(cv, heatmap);
-		const heatOverlayB = matToDataUrl(cv, heatmap);
+		const heatOverlayA = matToDataUrl(cv, heatmapA);
+		const heatOverlayB = matToDataUrl(cv, heatmapB);
 		const alignedAUrl = matToDataUrl(cv, alignedA);
 		const alignedBUrl = matToDataUrl(cv, alignedB);
 
@@ -325,6 +346,56 @@ function scoreRegions(cv: any, diffMat: any): ComparisonResult['regions'] {
 	const score = (x: number, y: number, rw: number, rh: number) => {
 		const s = regionScore(x, y, rw, rh);
 		return { a: s, b: s };
+	};
+
+	return {
+		topLeftCorner: score(0, 0, cornerSize, cornerSize),
+		topRightCorner: score(w - cornerSize, 0, cornerSize, cornerSize),
+		bottomLeftCorner: score(0, h - cornerSize, cornerSize, cornerSize),
+		bottomRightCorner: score(
+			w - cornerSize,
+			h - cornerSize,
+			cornerSize,
+			cornerSize
+		),
+		topEdge: score(cornerSize, 0, w - 2 * cornerSize, edgeWidth),
+		bottomEdge: score(cornerSize, h - edgeWidth, w - 2 * cornerSize, edgeWidth),
+		leftEdge: score(0, cornerSize, edgeWidth, h - 2 * cornerSize),
+		rightEdge: score(w - edgeWidth, cornerSize, edgeWidth, h - 2 * cornerSize),
+		center: score(
+			Math.round(w * 0.2),
+			Math.round(h * 0.2),
+			Math.round(w * 0.6),
+			Math.round(h * 0.6)
+		)
+	};
+}
+
+/**
+ * Score defect density in each card region using separate directional diff matrices.
+ * diffMatA shows defects on card A, diffMatB shows defects on card B.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scoreRegionsSeparate(cv: any, diffMatA: any, diffMatB: any): ComparisonResult['regions'] {
+	const h = diffMatA.rows;
+	const w = diffMatA.cols;
+	const cornerSize = Math.round(Math.min(w, h) * 0.12);
+	const edgeWidth = Math.round(Math.min(w, h) * 0.06);
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	function regionScore(mat: any, x: number, y: number, rw: number, rh: number): number {
+		const roi = mat.roi(new cv.Rect(x, y, rw, rh));
+		const nonZero = cv.countNonZero(roi);
+		const total = rw * rh;
+		roi.delete();
+		return Math.round((nonZero / total) * 100);
+	}
+
+	const score = (x: number, y: number, rw: number, rh: number) => {
+		return {
+			a: regionScore(diffMatA, x, y, rw, rh),
+			b: regionScore(diffMatB, x, y, rw, rh)
+		};
 	};
 
 	return {
