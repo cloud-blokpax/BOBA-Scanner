@@ -131,7 +131,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 		const priceData = {
 			card_id: cardId,
-			source: 'ebay_active',
+			source: 'ebay',
 			price_low: allStats?.low ?? null,
 			price_mid: allStats?.median ?? null,
 			price_high: allStats?.high ?? null,

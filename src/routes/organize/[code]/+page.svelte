@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { getFormat } from '$lib/data/tournament-formats';
 
@@ -45,6 +46,12 @@
 	let activeTab = $state<'overview' | 'submissions' | 'results' | 'share'>('overview');
 	let submissions = $state<DeckSubmission[]>(data.submissions as DeckSubmission[]);
 	let results = $state<TournamentResult[]>(data.results as TournamentResult[]);
+
+	// Re-sync from page data when it changes (e.g. after invalidation)
+	$effect(() => {
+		submissions = data.submissions as DeckSubmission[];
+		results = data.results as TournamentResult[];
+	});
 	let expandedSubmission = $state<string | null>(null);
 	let closingRegistration = $state(false);
 	let savingResults = $state(false);
@@ -108,7 +115,7 @@
 				body: JSON.stringify({ tournament_id: tournament.id })
 			});
 			if (!res.ok) throw new Error('Failed to close registration');
-			tournament.registration_closed = true;
+			await invalidateAll();
 			showToast('Registration closed', 'check');
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : 'Failed', 'x');

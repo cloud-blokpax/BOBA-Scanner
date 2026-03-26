@@ -43,7 +43,7 @@ export function getOptimizedImageUrls(src: string, size: ImageSize = 'medium'): 
 } {
 	const width = IMAGE_SIZES[size];
 
-	if (!isSupabaseStorageUrl(src)) {
+	if (!src || !isSupabaseStorageUrl(src)) {
 		return { avif: null, webp: null, fallback: src, width };
 	}
 

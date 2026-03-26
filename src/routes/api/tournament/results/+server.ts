@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Mark tournament as having results
-	await supabase
+	const { error: updateErr } = await supabase
 		.from('tournaments')
 		.update({
 			results_entered: true,
@@ -115,6 +115,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			results_entered_by: user.id
 		})
 		.eq('id', tournamentId);
+
+	if (updateErr) {
+		console.error('[tournament/results] Tournament status update failed:', updateErr);
+	}
 
 	return json({ success: true, count: enrichedResults.length });
 };

@@ -190,7 +190,7 @@ card_number=null (unreadable), hero_name="The Kid", power=180, flags=["foil_refl
 			!rawCardNumber.includes('-') &&
 			!isNaN(parsedAsNumber) &&
 			KNOWN_POWER_VALUES.has(parsedAsNumber) &&
-			(cardData.power === parsedAsNumber || cardData.power === rawCardNumber)
+			cardData.power === parsedAsNumber
 		) {
 			console.warn(
 				`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
