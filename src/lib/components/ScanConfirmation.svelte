@@ -251,6 +251,8 @@
 							confidence={activeResult.confidence}
 							processingMs={activeResult.processing_ms}
 							{isLowConfidence}
+							validationMethod={activeResult.validationMethod ?? null}
+							validationWarnings={activeResult.validationWarnings ?? []}
 						/>
 					</div>
 				</details>

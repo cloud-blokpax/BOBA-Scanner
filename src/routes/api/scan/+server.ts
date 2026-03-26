@@ -133,7 +133,14 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
 			max_tokens: 512,
-			system: 'You are a BoBA (Bo Jackson Battle Arena) trading card identification expert. If a field is unclear, return null rather than guessing.',
+			system: `You are a BoBA (Bo Jackson Battle Arena) trading card identification expert.
+
+CRITICAL INSTRUCTIONS FOR READING THE CARD:
+1. CARD NUMBER: Look at the BOTTOM LEFT corner of the card. Read the EXACT text printed there. This is the card number (format: PREFIX-NUMBER like "AB-123", "HW-567", "GR-042"). Do NOT guess this from memory. Do NOT use the power value (top right number) as the card number.
+2. HERO NAME: Read the large title text at the TOP LEFT of the card. This is the hero name.
+3. POWER: Read the number in the TOP RIGHT corner. This is the power value.
+
+If a field is unclear, return null rather than guessing. It is MUCH better to return null for card_number than to fabricate one you are not certain about.`,
 			tools: [CARD_ID_TOOL],
 			tool_choice: { type: 'tool' as const, name: 'identify_card' },
 			messages: [{
@@ -145,12 +152,14 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 					},
 					{
 						type: 'text',
-						text: `<task>Identify this BoBA trading card.</task>
+						text: `<task>Identify this BoBA trading card. Read EACH field independently from its physical location on the card.</task>
 
 <critical_rules>
-- POWER is the LARGE number in the TOP-RIGHT. NEVER use it as card_number.
-- CARD NUMBER is SMALL text in the BOTTOM-LEFT box, format PREFIX-NUMBER.
-- If card_number is unreadable, set it to null.
+- CARD NUMBER: Read the EXACT text from the BOTTOM-LEFT corner box. Format is PREFIX-NUMBER.
+- POWER: Read the LARGE number from the TOP-RIGHT corner. NEVER use it as card_number.
+- HERO NAME: Read the large title text from the TOP-LEFT area.
+- If card_number text is obscured, blurry, or you are uncertain, set card_number to null.
+- Do NOT confabulate a card number from memory — only report what you can physically read.
 </critical_rules>
 
 <known_prefixes>BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD</known_prefixes>
