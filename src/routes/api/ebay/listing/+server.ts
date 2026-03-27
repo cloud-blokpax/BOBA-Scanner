@@ -1,5 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth';
+import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
+import { parseJsonBody, requireString, requireNumber } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
@@ -78,14 +80,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
+	const rateLimit = await checkHeavyMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many listing requests' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
+	}
+
 	const connected = await isSellerConnected(user.id);
 	if (!connected) throw error(403, 'eBay account not connected. Please connect your eBay seller account in Settings.');
 
-	const body = await request.json();
-	const { card_id, title, description, price, condition = 'Near Mint' } = body;
-
-	if (!card_id || !title || !price) throw error(400, 'Missing required fields: card_id, title, price');
-	if (typeof price !== 'number' || price <= 0) throw error(400, 'Price must be a positive number');
+	const body = await parseJsonBody(request);
+	const card_id = requireString(body.card_id, 'card_id');
+	const title = requireString(body.title, 'title', 500);
+	const description = body.description as string || '';
+	const price = requireNumber(body.price, 'price', 0.01);
+	const condition = (body.condition as string) || 'Near Mint';
 
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Please reconnect your eBay account.');

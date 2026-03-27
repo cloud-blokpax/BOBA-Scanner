@@ -9,6 +9,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import sharp from 'sharp';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import { submitReferenceImageRpc, awardBadgeRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
 
@@ -19,6 +20,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to contribute reference images');
 	if (!locals.supabase) throw error(503, 'Storage unavailable');
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
+	}
 
 	const client = locals.supabase as AnySupabase;
 

@@ -32,7 +32,7 @@ const CARD_ID_TOOL: Anthropic.Messages.Tool = {
 			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
 			variant: { type: 'string', enum: ['base', 'foil', 'battlefoil', 'paper', 'inspired_ink'] },
 			parallel: { type: 'string', description: 'Specific parallel name if identifiable, or null' },
-			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super'], description: 'Weapon type or null' },
+			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null' },
 			confidence: { type: 'number', description: '0.0 to 1.0' },
 			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection' }
 		},
@@ -165,7 +165,7 @@ If a field is unclear, return null rather than guessing. It is MUCH better to re
 
 <known_prefixes>BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD</known_prefixes>
 
-<weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1</weapons>
+<weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1, Alt=purple alternate art, Cyber=cyan/teal digital circuit</weapons>
 
 <examples>
 card_number="BF-108", hero_name="BoJax", power=200, weapon_type="Super"

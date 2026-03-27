@@ -12,6 +12,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { validateDeck, type DeckValidationResult } from '$lib/services/deck-validator';
 import { checkCollectionRateLimit } from '$lib/server/rate-limit';
+import { parseJsonBody } from '$lib/server/validate';
 import type { Card } from '$lib/types';
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
@@ -24,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	}
 
 	try {
-		const body = await request.json();
+		const body = await parseJsonBody(request);
 		const { heroCardIds, formatId, playCardIds = [], hotDogCount = 0 } = body as {
 			heroCardIds: string[];
 			formatId: string;

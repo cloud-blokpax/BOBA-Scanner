@@ -436,6 +436,67 @@ export function validateDeck(
 		}
 	}
 
+	// ── Rule 10: Playbook size (exactly 30 standard plays) ──
+	if (playCards.length > 0) {
+		const standardPlays = playCards.filter(c => !c.is_bonus_play);
+		const bonusPlays = playCards.filter(c => c.is_bonus_play);
+
+		if (standardPlays.length !== 30) {
+			violations.push({
+				rule: 'playbook_size',
+				message: `Playbook has ${standardPlays.length} standard Plays — exactly 30 required`,
+				severity: 'error'
+			});
+		}
+
+		// Bonus plays (up to 25) are allowed beyond the 30
+		if (bonusPlays.length > 25) {
+			violations.push({
+				rule: 'bonus_play_limit',
+				message: `${bonusPlays.length} Bonus Plays — maximum 25 allowed`,
+				severity: 'error'
+			});
+		}
+	}
+
+	// ── Rule 11: Play uniqueness (including variant dedup) ──
+	if (playCards.length > 0) {
+		const playDupes = new Map<string, Card[]>();
+		for (const c of playCards) {
+			// Use base_play_name for deduplication if available, otherwise card name
+			const key = (c.base_play_name || c.name || '').toLowerCase().trim();
+			if (!key) continue;
+			if (!playDupes.has(key)) playDupes.set(key, []);
+			playDupes.get(key)!.push(c);
+		}
+		for (const [, cards] of playDupes) {
+			if (cards.length > 1) {
+				violations.push({
+					rule: 'play_uniqueness',
+					message: `Duplicate Play: "${cards[0].name}" appears ${cards.length} times — all 30 Plays must be unique (variants of the same play count as duplicates)`,
+					severity: 'error',
+					cardIds: cards.map(c => c.id)
+				});
+			}
+		}
+	}
+
+	// ── Game mode component warnings ────────────────────────
+	if (format.gameMode === 'rookie') {
+		if (hotDogCards.length > 0) {
+			warnings.push(`${format.name} uses Rookie mode — Hot Dog cards are not used in this format`);
+		}
+		if (playCards.length > 0) {
+			warnings.push(`${format.name} uses Rookie mode — Play cards are not used in this format`);
+		}
+	}
+
+	if (format.gameMode === 'substitution') {
+		if (playCards.length > 0) {
+			warnings.push(`${format.name} uses Substitution mode — Play cards are not used in this format`);
+		}
+	}
+
 	// ── Build stats ────────────────────────────────────────
 	const stats: DeckStats = {
 		totalHeroes: heroCards.length,

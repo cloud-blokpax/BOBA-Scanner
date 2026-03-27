@@ -11,6 +11,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
+import { parseJsonBody, requireString } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { PARALLEL_TYPES } from '$lib/data/boba-parallels';
 import { mapParallelToRarity } from '$lib/services/parallel-config';
@@ -31,12 +32,9 @@ function defaultRarityForParallel(key: string): CardRarity {
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);
 
-	const body = await request.json();
-	const { parallel_name, rarity } = body;
-
-	if (!parallel_name || !rarity) {
-		throw error(400, 'parallel_name and rarity are required');
-	}
+	const body = await parseJsonBody(request);
+	const parallel_name = requireString(body.parallel_name, 'parallel_name', 100);
+	const rarity = requireString(body.rarity, 'rarity', 20) as CardRarity;
 
 	if (!VALID_RARITIES.includes(rarity)) {
 		throw error(400, `Invalid rarity. Must be one of: ${VALID_RARITIES.join(', ')}`);

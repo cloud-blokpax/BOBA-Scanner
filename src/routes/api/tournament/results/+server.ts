@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { parseJsonBody, requireString } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string }> {
@@ -23,6 +24,19 @@ async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireOrganizerOrAdmin(locals);
 	const supabase = locals.supabase!;
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
+	}
+
 	const body = await parseJsonBody(request);
 
 	const tournamentId = requireString(body.tournament_id, 'tournament_id');

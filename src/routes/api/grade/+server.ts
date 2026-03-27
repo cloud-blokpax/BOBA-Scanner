@@ -10,6 +10,7 @@ import { json, error } from '@sveltejs/kit';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { getAnthropicClient } from '$lib/server/anthropic';
+import { parseJsonBody } from '$lib/server/validate';
 import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
 
@@ -60,13 +61,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		);
 	}
 
-	let body: Record<string, unknown>;
-	try {
-		body = await request.json();
-	} catch (err) {
-		console.debug('[api/grade] JSON parse failed:', err);
-		throw error(400, 'Invalid JSON body');
-	}
+	const body = await parseJsonBody(request);
 
 	try {
 		const { imageData, cornerRegionData, centeringData, centeringImageData } = body as {

@@ -12,6 +12,7 @@ import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
+import { parseJsonBody } from '$lib/server/validate';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
@@ -40,13 +41,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		return json({ error: 'eBay API not configured' }, { status: 503 });
 	}
 
-	let body: Record<string, unknown>;
-	try {
-		body = await request.json();
-	} catch (err) {
-		console.debug('[api/ebay/browse] JSON parse failed:', err);
-		throw error(400, 'Invalid JSON body');
-	}
+	const body = await parseJsonBody(request);
 	const seller = typeof body.seller === 'string' ? body.seller : undefined;
 	const query = typeof body.query === 'string' ? body.query.slice(0, 200) : undefined;
 	const cardNumber = typeof body.cardNumber === 'string' ? body.cardNumber.slice(0, 20) : undefined;

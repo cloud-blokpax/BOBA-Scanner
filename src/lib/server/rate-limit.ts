@@ -15,6 +15,8 @@ import { getRedis } from './redis';
 let scanLimiter: Ratelimit | null = null;
 let anonScanLimiter: Ratelimit | null = null;
 let collectionLimiter: Ratelimit | null = null;
+let mutationLimiter: Ratelimit | null = null;
+let heavyMutationLimiter: Ratelimit | null = null;
 
 function initLimiters() {
 	if (scanLimiter) return;
@@ -45,6 +47,20 @@ function initLimiters() {
 		limiter: Ratelimit.slidingWindow(60, '60 s'),
 		prefix: 'rl:col'
 	});
+
+	// 10 mutations per 60 seconds per user (tournament ops, organizer actions, go-pro, etc.)
+	mutationLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(10, '60 s'),
+		prefix: 'rl:mut'
+	});
+
+	// 3 heavy mutations per 60 seconds per user (deck lock, deck submit, upload, eBay listing)
+	heavyMutationLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(3, '60 s'),
+		prefix: 'rl:hmut'
+	});
 }
 
 // ── In-Memory Fallback ──────────────────────────────────────
@@ -54,6 +70,8 @@ const WINDOW_MS = 60_000;
 const MAX_SCAN_REQUESTS = 20;
 const MAX_ANON_SCAN_REQUESTS = 5;
 const MAX_COLLECTION_REQUESTS = 60;
+const MAX_MUTATION_REQUESTS = 10;
+const MAX_HEAVY_MUTATION_REQUESTS = 3;
 
 function checkInMemory(key: string, maxRequests: number): boolean {
 	const now = Date.now();
@@ -184,6 +202,68 @@ export async function checkCollectionRateLimit(userId: string): Promise<RateLimi
 		success,
 		limit: MAX_COLLECTION_REQUESTS,
 		remaining: Math.max(0, MAX_COLLECTION_REQUESTS - count),
+		reset: Date.now() + WINDOW_MS
+	};
+}
+
+/**
+ * Check mutation rate limit (10/min) for tournament ops, organizer actions, go-pro, etc.
+ */
+export async function checkMutationRateLimit(userId: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (mutationLimiter) {
+		try {
+			const result = await mutationLimiter.limit(userId);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
+		}
+	}
+
+	const key = `mut:${userId}`;
+	const success = checkInMemory(key, MAX_MUTATION_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
+	return {
+		success,
+		limit: MAX_MUTATION_REQUESTS,
+		remaining: Math.max(0, MAX_MUTATION_REQUESTS - count),
+		reset: Date.now() + WINDOW_MS
+	};
+}
+
+/**
+ * Check heavy mutation rate limit (3/min) for deck lock, deck submit, upload, eBay listing.
+ */
+export async function checkHeavyMutationRateLimit(userId: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (heavyMutationLimiter) {
+		try {
+			const result = await heavyMutationLimiter.limit(userId);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
+		}
+	}
+
+	const key = `hmut:${userId}`;
+	const success = checkInMemory(key, MAX_HEAVY_MUTATION_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
+	return {
+		success,
+		limit: MAX_HEAVY_MUTATION_REQUESTS,
+		remaining: Math.max(0, MAX_HEAVY_MUTATION_REQUESTS - count),
 		reset: Date.now() + WINDOW_MS
 	};
 }
