@@ -4,7 +4,28 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import { personaWeights, togglePersona, personaLoaded, type PersonaId } from '$lib/stores/persona.svelte';
 	import { page } from '$app/stores';
+
+	const personaOptions: { id: PersonaId; icon: string; name: string }[] = [
+		{ id: 'collector', icon: '\u{1F4E6}', name: 'Collector' },
+		{ id: 'deck_builder', icon: '\u{1F3D7}', name: 'Deck Builder' },
+		{ id: 'seller', icon: '\u{1F4B0}', name: 'Seller' },
+		{ id: 'tournament', icon: '\u{1F3C6}', name: 'Tournament Player' }
+	];
+
+	let personaSaving = $state(false);
+
+	async function toggleAndSave(id: PersonaId) {
+		personaSaving = true;
+		try {
+			await togglePersona(id);
+		} catch (err) {
+			console.debug('[settings] Persona save failed:', err);
+			showToast('Failed to save persona', 'x');
+		}
+		personaSaving = false;
+	}
 
 	const hasScanToList = featureEnabled('scan_to_list');
 
@@ -240,6 +261,27 @@
 				{saving ? 'Saving...' : 'Save Changes'}
 			</button>
 		</div>
+
+		{#if personaLoaded()}
+			<div class="settings-card" style="margin-top: 1rem;">
+				<h2>My Persona</h2>
+				<p class="field-hint" style="margin-bottom: 0.75rem;">Controls what you see first on the home screen</p>
+				<div class="persona-grid">
+					{#each personaOptions as p}
+						<button
+							class="persona-chip"
+							class:selected={personaWeights()[p.id] > 0}
+							onclick={() => toggleAndSave(p.id)}
+							disabled={personaSaving}
+							type="button"
+						>
+							<span class="persona-chip-icon">{p.icon}</span>
+							<span class="persona-chip-name">{p.name}</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		{#if hasScanToList()}
 			<div class="settings-card" style="margin-top: 1rem;">
@@ -517,6 +559,32 @@
 	.settings-link:hover {
 		background: var(--bg-hover);
 	}
+
+	/* Persona grid */
+	.persona-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.persona-chip {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 10px;
+		border: 2px solid var(--border-color, rgba(148,163,184,0.15));
+		background: var(--bg-base);
+		cursor: pointer;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.persona-chip:hover { border-color: var(--text-secondary); }
+	.persona-chip.selected {
+		border-color: var(--accent-primary, #3b82f6);
+		background: rgba(59, 130, 246, 0.08);
+	}
+	.persona-chip:disabled { opacity: 0.6; }
+	.persona-chip-icon { font-size: 1.15rem; }
+	.persona-chip-name { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
 
 	/* Sign out */
 	.sign-out-btn {

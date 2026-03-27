@@ -153,6 +153,7 @@ export interface Database {
 					is_organizer: boolean;
 					pro_until: string | null;
 					discord_id: string | null;
+					persona: Record<string, number> | null;
 					created_at: string;
 				};
 				Insert: {
@@ -162,6 +163,7 @@ export interface Database {
 					picture?: string | null;
 					auth_user_id?: string | null;
 					discord_id?: string | null;
+					persona?: Record<string, number> | null;
 					is_organizer?: boolean;
 				};
 				Update: Partial<Database['public']['Tables']['users']['Insert']>;

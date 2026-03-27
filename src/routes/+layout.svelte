@@ -16,6 +16,7 @@
 		showGoProModal, setShowGoProModal
 	} from '$lib/stores/pro.svelte';
 	import { scannerActive } from '$lib/stores/scanner.svelte';
+	import { loadPersona, resetPersona } from '$lib/stores/persona.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -96,6 +97,7 @@
 		let cleanupSync = () => {};
 		if (data.user) {
 			cleanupSync = setupAutoSync();
+			loadPersona();
 		}
 
 		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {
@@ -107,6 +109,9 @@
 			cleanupSync();
 			if (newSession?.user) {
 				cleanupSync = setupAutoSync();
+				loadPersona();
+			} else {
+				resetPersona();
 			}
 
 			// Process pending card from pre-auth scan (Change 10)

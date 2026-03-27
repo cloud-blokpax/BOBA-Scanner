@@ -2,17 +2,46 @@
 	import { getSupabase } from '$lib/services/supabase';
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { loadPersona, type PersonaId } from '$lib/stores/persona.svelte';
+
+	const personaOptions: { id: PersonaId; icon: string; name: string; description: string }[] = [
+		{
+			id: 'collector',
+			icon: '\u{1F4E6}',
+			name: 'Collector',
+			description: 'I scan cards, track my collection, and watch prices'
+		},
+		{
+			id: 'deck_builder',
+			icon: '\u{1F3D7}',
+			name: 'Deck Builder',
+			description: 'I build decks, optimize playbooks, and brew strategies'
+		},
+		{
+			id: 'seller',
+			icon: '\u{1F4B0}',
+			name: 'Seller',
+			description: 'I sell cards on eBay and need pricing & listing tools'
+		},
+		{
+			id: 'tournament',
+			icon: '\u{1F3C6}',
+			name: 'Tournament Player',
+			description: 'I compete in tournaments and submit decks'
+		}
+	];
 
 	let visible = $state(false);
+	let step = $state<1 | 2>(1);
 	let profileName = $state('');
 	let discordId = $state('');
+	let selectedPersonas = $state<PersonaId[]>([]);
 	let saving = $state(false);
 	let checkedForUserId = $state<string | null>(null);
 
 	$effect(() => {
 		const currentUser = user();
 		if (!currentUser) return;
-		// Re-check when user changes (e.g., sign out and sign in as different user)
 		if (checkedForUserId === currentUser.id) return;
 		checkedForUserId = currentUser.id;
 		checkProfile(currentUser.id);
@@ -34,17 +63,30 @@
 		try {
 			const { data } = await client
 				.from('users')
-				.select('name, discord_id')
+				.select('name, discord_id, persona')
 				.eq('auth_user_id', authUserId)
 				.single();
 
 			// Show prompt if user has no name and no discord_id set
 			if (data && !data.name && !data.discord_id) {
 				visible = true;
+				step = 1;
 			}
 		} catch (err) {
 			console.debug('[profile-prompt] Profile check failed:', err);
 		}
+	}
+
+	function togglePersona(id: PersonaId) {
+		if (selectedPersonas.includes(id)) {
+			selectedPersonas = selectedPersonas.filter((p) => p !== id);
+		} else {
+			selectedPersonas = [...selectedPersonas, id];
+		}
+	}
+
+	function goToStep2() {
+		step = 2;
 	}
 
 	async function save() {
@@ -55,16 +97,29 @@
 
 		saving = true;
 		try {
+			// Build persona weights
+			const weights: Record<string, number> = {
+				collector: 0,
+				deck_builder: 0,
+				seller: 0,
+				tournament: 0
+			};
+			const selected = selectedPersonas.length > 0 ? selectedPersonas : ['collector'];
+			for (const id of selected) weights[id] = 1.0;
+
 			const { error } = await client
 				.from('users')
 				.update({
 					name: profileName.trim() || null,
-					discord_id: discordId.trim() || null
-				})
+					discord_id: discordId.trim() || null,
+					persona: weights
+				} as Record<string, unknown>)
 				.eq('auth_user_id', currentUser.id);
 
 			if (error) throw error;
 			showToast('Profile updated', 'check');
+			// Reload persona store with new weights
+			await loadPersona();
 		} catch (err) {
 			console.debug('[ProfilePrompt] Profile save failed:', err);
 			showToast('Failed to save', 'x');
@@ -85,25 +140,53 @@
 	<div class="prompt-overlay" role="presentation" onkeydown={(e) => e.key === 'Escape' && dismiss()}>
 		<button class="overlay-dismiss" type="button" aria-label="Close" tabindex="-1" onclick={dismiss}></button>
 		<div class="prompt-card">
-			<h2>Complete Your Profile</h2>
-			<p class="prompt-desc">Add your name and Discord ID so tournament organizers can reach you. Both are optional.</p>
+			{#if step === 1}
+				<h2>Complete Your Profile</h2>
+				<p class="prompt-desc">Add your name and Discord ID so tournament organizers can reach you. Both are optional.</p>
 
-			<div class="form-group">
-				<label for="pp-name">Name</label>
-				<input id="pp-name" type="text" bind:value={profileName} placeholder="Your name" />
-			</div>
+				<div class="form-group">
+					<label for="pp-name">Name</label>
+					<input id="pp-name" type="text" bind:value={profileName} placeholder="Your name" />
+				</div>
 
-			<div class="form-group">
-				<label for="pp-discord">Discord ID</label>
-				<input id="pp-discord" type="text" bind:value={discordId} placeholder="username#1234" />
-			</div>
+				<div class="form-group">
+					<label for="pp-discord">Discord ID</label>
+					<input id="pp-discord" type="text" bind:value={discordId} placeholder="username#1234" />
+				</div>
 
-			<div class="prompt-actions">
-				<button class="save-btn" onclick={save} disabled={saving}>
-					{saving ? 'Saving...' : 'Save'}
-				</button>
-				<button class="skip-btn" onclick={dismiss}>Skip for now</button>
-			</div>
+				<div class="prompt-actions">
+					<button class="save-btn" onclick={goToStep2}>Next</button>
+					<button class="skip-btn" onclick={dismiss}>Skip for now</button>
+				</div>
+			{:else}
+				<h2>How do you use BoBA cards?</h2>
+				<p class="prompt-desc">This personalizes your home screen. Select all that apply.</p>
+
+				<div class="persona-grid">
+					{#each personaOptions as p}
+						<button
+							class="persona-card"
+							class:selected={selectedPersonas.includes(p.id)}
+							onclick={() => togglePersona(p.id)}
+							type="button"
+						>
+							<span class="persona-icon">{p.icon}</span>
+							<div class="persona-text">
+								<span class="persona-name">{p.name}</span>
+								<span class="persona-desc">{p.description}</span>
+							</div>
+						</button>
+					{/each}
+				</div>
+				<p class="persona-hint">You can change this anytime in Settings</p>
+
+				<div class="prompt-actions">
+					<button class="save-btn" onclick={save} disabled={saving}>
+						{saving ? 'Saving...' : 'Save'}
+					</button>
+					<button class="skip-btn" onclick={() => { step = 1; }}>Back</button>
+				</div>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -132,8 +215,10 @@
 		background: var(--bg-elevated);
 		border-radius: 16px;
 		padding: 1.5rem;
-		max-width: 400px;
+		max-width: 420px;
 		width: 100%;
+		position: relative;
+		z-index: 1;
 	}
 	.prompt-card h2 {
 		font-size: 1.15rem;
@@ -191,4 +276,55 @@
 		cursor: pointer;
 	}
 	.skip-btn:hover { color: var(--text-primary); }
+
+	/* Persona picker */
+	.persona-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.persona-card {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		border-radius: 10px;
+		border: 2px solid var(--border-color, rgba(148,163,184,0.15));
+		background: var(--bg-base);
+		cursor: pointer;
+		text-align: left;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.persona-card:hover {
+		border-color: var(--text-secondary);
+	}
+	.persona-card.selected {
+		border-color: var(--accent-primary, #3b82f6);
+		background: rgba(59, 130, 246, 0.08);
+	}
+	.persona-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+	.persona-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.persona-name {
+		font-weight: 600;
+		font-size: 0.9rem;
+		color: var(--text-primary);
+	}
+	.persona-desc {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		line-height: 1.3;
+	}
+	.persona-hint {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		text-align: center;
+		margin-top: 0.75rem;
+	}
 </style>

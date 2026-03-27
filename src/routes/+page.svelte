@@ -3,6 +3,7 @@
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { onMount } from 'svelte';
 	import { scanHistory } from '$lib/stores/scan-history.svelte';
+	import { personaWeights, personaLoaded, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let { data } = $props();
@@ -109,6 +110,64 @@
 	});
 
 	const recentScans = $derived(scanHistory().filter(s => s.success).slice(0, 5));
+
+	// ── Content Block Ordering ──────────────────────────────────
+
+	interface HomeBlock {
+		id: string;
+		personaAffinity: Partial<PersonaWeights>;
+		/** Minimum persona weight to show (0 = always) */
+		threshold: number;
+		/** Tiebreak sort order */
+		basePriority: number;
+	}
+
+	const HOME_BLOCKS: HomeBlock[] = [
+		// Universal
+		{ id: 'scan_upload', personaAffinity: { collector: 1, deck_builder: 0.5, seller: 0.8, tournament: 0.3 }, threshold: 0, basePriority: 0 },
+
+		// Collector
+		{ id: 'recent_scans', personaAffinity: { collector: 0.8, deck_builder: 0.3, seller: 0.3, tournament: 0.2 }, threshold: 0, basePriority: 10 },
+		{ id: 'collection_summary', personaAffinity: { collector: 1, seller: 0.5 }, threshold: 0.3, basePriority: 20 },
+
+		// Deck Builder
+		{ id: 'active_decks', personaAffinity: { deck_builder: 1, tournament: 0.7, collector: 0.3 }, threshold: 0, basePriority: 15 },
+
+		// Seller
+		{ id: 'sell_link', personaAffinity: { seller: 1, collector: 0.2 }, threshold: 0.3, basePriority: 25 },
+
+		// Tournament
+		{ id: 'tournament_lookup', personaAffinity: { tournament: 1, deck_builder: 0.3 }, threshold: 0, basePriority: 30 },
+	];
+
+	function sortBlocksForUser(blocks: HomeBlock[], persona: PersonaWeights): string[] {
+		return blocks
+			.filter((block) => {
+				if (block.threshold === 0) return true;
+				for (const [personaId, affinity] of Object.entries(block.personaAffinity)) {
+					const userWeight = persona[personaId as PersonaId] || 0;
+					if (userWeight >= block.threshold && (affinity as number) > 0) return true;
+				}
+				return false;
+			})
+			.sort((a, b) => {
+				const scoreA = Object.entries(a.personaAffinity).reduce(
+					(sum, [pid, aff]) => sum + (persona[pid as PersonaId] || 0) * ((aff as number) || 0), 0
+				);
+				const scoreB = Object.entries(b.personaAffinity).reduce(
+					(sum, [pid, aff]) => sum + (persona[pid as PersonaId] || 0) * ((aff as number) || 0), 0
+				);
+				if (scoreB !== scoreA) return scoreB - scoreA;
+				return a.basePriority - b.basePriority;
+			})
+			.map((b) => b.id);
+	}
+
+	const orderedBlocks = $derived(
+		data.user && personaLoaded()
+			? sortBlocksForUser(HOME_BLOCKS, personaWeights())
+			: HOME_BLOCKS.map((b) => b.id)
+	);
 </script>
 
 <svelte:head>
@@ -136,49 +195,126 @@
 				</div>
 			{/if}
 
-			<!-- Quick-scan strip -->
-			<div class="quick-scan-strip">
-				<a href="/scan" class="btn-quick-scan">Scan Card</a>
-				<button class="btn-quick-upload" onclick={handleUploadClick} disabled={uploading}>
-					Upload Photo
-				</button>
-				<input
-					bind:this={fileInput}
-					type="file"
-					accept="image/jpeg,image/png,image/webp"
-					onchange={handleFileSelected}
-					hidden
-				/>
-			</div>
-			<div class="import-strip">
-				<a href="/scan?mode=roll" class="btn-import-photos">Import from Photos</a>
-			</div>
-
-			<!-- Recent Scans -->
-			<div class="recent-scans">
-				<h2 class="section-heading">Recent Scans</h2>
-				{#if recentScans.length > 0}
-					<div class="recent-scans-strip">
-						{#each recentScans as scan}
-							<div class="recent-scan-card">
-								<div class="recent-scan-placeholder">🎴</div>
-								<span class="recent-scan-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
-							</div>
-						{/each}
+			<!-- Persona-ordered content blocks -->
+			{#each orderedBlocks as blockId (blockId)}
+				{#if blockId === 'scan_upload'}
+					<div class="quick-scan-strip">
+						<a href="/scan" class="btn-quick-scan">Scan Card</a>
+						<button class="btn-quick-upload" onclick={handleUploadClick} disabled={uploading}>
+							Upload Photo
+						</button>
+						<input
+							bind:this={fileInput}
+							type="file"
+							accept="image/jpeg,image/png,image/webp"
+							onchange={handleFileSelected}
+							hidden
+						/>
 					</div>
-				{:else}
-					<p class="recent-scans-empty">Scan your first card to see it here.</p>
-				{/if}
-			</div>
+					<div class="import-strip">
+						<a href="/scan?mode=roll" class="btn-import-photos">Import from Photos</a>
+					</div>
 
-			<!-- Deck summary -->
-			<div class="deck-summary">
-				<a href="/deck" class="deck-summary-link">
-					<span class="deck-summary-icon">🃏</span>
-					<span>My Decks</span>
-					<span class="deck-summary-arrow">&rarr;</span>
-				</a>
-			</div>
+				{:else if blockId === 'recent_scans'}
+					<div class="recent-scans">
+						<h2 class="section-heading">Recent Scans</h2>
+						{#if recentScans.length > 0}
+							<div class="recent-scans-strip">
+								{#each recentScans as scan}
+									<div class="recent-scan-card">
+										<div class="recent-scan-placeholder">{'\u{1F3B4}'}</div>
+										<span class="recent-scan-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="recent-scans-empty">Scan your first card to see it here.</p>
+						{/if}
+					</div>
+
+				{:else if blockId === 'collection_summary'}
+					<div class="block-link-card">
+						<a href="/collection" class="block-link">
+							<span class="block-link-icon">{'\u{1F4E6}'}</span>
+							<span>My Collection</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+						<a href="/set-completion" class="block-link sub-link">
+							<span class="block-link-icon">{'\u{1F4CA}'}</span>
+							<span>Set Completion</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+					</div>
+
+				{:else if blockId === 'active_decks'}
+					<div class="block-link-card">
+						<a href="/deck" class="block-link">
+							<span class="block-link-icon">{'\u{1F0CF}'}</span>
+							<span>My Decks</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+						<a href="/deck/architect" class="block-link sub-link">
+							<span class="block-link-icon">{'\u{1F9E0}'}</span>
+							<span>Playbook Architect</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+					</div>
+
+				{:else if blockId === 'sell_link'}
+					<div class="block-link-card">
+						<a href="/sell" class="block-link">
+							<span class="block-link-icon">{'\u{1F4B0}'}</span>
+							<span>Sell Cards</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+						<a href="/export" class="block-link sub-link">
+							<span class="block-link-icon">{'\u{1F4E4}'}</span>
+							<span>Export Collection</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+					</div>
+
+				{:else if blockId === 'tournament_lookup'}
+					<div class="tournament-block">
+						<h2 class="section-heading">Tournaments</h2>
+						<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
+							<input
+								type="text"
+								class="tournament-code-input"
+								bind:value={tournamentCode}
+								placeholder="Enter code"
+								maxlength="8"
+								autocapitalize="characters"
+								spellcheck="false"
+							/>
+							<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+								{tournamentLoading ? '...' : 'Look Up'}
+							</button>
+						</form>
+						{#if tournamentError}
+							<p class="tournament-error">{tournamentError}</p>
+						{/if}
+						{#if tournamentResult}
+							<div class="tournament-result">
+								<div class="tournament-result-name">{tournamentResult.name}</div>
+								<div class="tournament-result-code">{tournamentResult.code}</div>
+								<div class="tournament-result-params">
+									<span>Heroes: {tournamentResult.max_heroes}</span>
+									<span>Plays: {tournamentResult.max_plays}</span>
+									<span>Bonus: {tournamentResult.max_bonus}</span>
+								</div>
+								<a href="/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Enter Tournament</a>
+							</div>
+						{/if}
+						<a href="/tournaments" class="block-link sub-link" style="margin-top: 0.5rem;">
+							<span class="block-link-icon">{'\u{1F3C6}'}</span>
+							<span>Browse Tournaments</span>
+							<span class="block-link-arrow">&rarr;</span>
+						</a>
+					</div>
+				{/if}
+			{/each}
+
 		{:else}
 			<!-- Unauthenticated landing -->
 			<p class="hero-subtitle">Scan any BoBA card. See what it's worth instantly.</p>
@@ -187,46 +323,42 @@
 				<a href="/scan" class="btn-scan-cta">Scan a Card</a>
 				<p class="cta-note">No sign-in required — try it free.</p>
 			</div>
-		{/if}
-	</section>
 
-	<!-- Tournament code entry (available for all users) -->
-	<section class="tournament-lookup-section">
-		<h2>Entering a Tournament?</h2>
-		<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
-			<input
-				type="text"
-				class="tournament-code-input"
-				bind:value={tournamentCode}
-				placeholder="ABCD1234"
-				maxlength="8"
-				autocapitalize="characters"
-				spellcheck="false"
-			/>
-			<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
-				{tournamentLoading ? 'Looking up...' : 'Look Up'}
-			</button>
-		</form>
+			<!-- Tournament code entry for guests -->
+			<section class="tournament-lookup-section">
+				<h2>Entering a Tournament?</h2>
+				<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
+					<input
+						type="text"
+						class="tournament-code-input"
+						bind:value={tournamentCode}
+						placeholder="ABCD1234"
+						maxlength="8"
+						autocapitalize="characters"
+						spellcheck="false"
+					/>
+					<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+						{tournamentLoading ? 'Looking up...' : 'Look Up'}
+					</button>
+				</form>
 
-		{#if tournamentError}
-			<p class="tournament-error">{tournamentError}</p>
-		{/if}
-
-		{#if tournamentResult}
-			<div class="tournament-result">
-				<div class="tournament-result-name">{tournamentResult.name}</div>
-				<div class="tournament-result-code">{tournamentResult.code}</div>
-				<div class="tournament-result-params">
-					<span>Heroes: {tournamentResult.max_heroes}</span>
-					<span>Plays: {tournamentResult.max_plays}</span>
-					<span>Bonus: {tournamentResult.max_bonus}</span>
-				</div>
-				{#if data.user}
-					<a href="/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Enter Tournament</a>
-				{:else}
-					<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Sign in to Enter</a>
+				{#if tournamentError}
+					<p class="tournament-error">{tournamentError}</p>
 				{/if}
-			</div>
+
+				{#if tournamentResult}
+					<div class="tournament-result">
+						<div class="tournament-result-name">{tournamentResult.name}</div>
+						<div class="tournament-result-code">{tournamentResult.code}</div>
+						<div class="tournament-result-params">
+							<span>Heroes: {tournamentResult.max_heroes}</span>
+							<span>Plays: {tournamentResult.max_plays}</span>
+							<span>Bonus: {tournamentResult.max_bonus}</span>
+						</div>
+						<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Sign in to Enter</a>
+					</div>
+				{/if}
+			</section>
 		{/if}
 	</section>
 </div>
@@ -323,12 +455,7 @@
 		color: var(--gold, #f59e0b);
 	}
 
-	/* Recent scans */
-	.recent-scans {
-		margin-top: 1.5rem;
-		text-align: left;
-	}
-
+	/* Section heading */
 	.section-heading {
 		font-size: 0.85rem;
 		font-weight: 700;
@@ -336,6 +463,13 @@
 		letter-spacing: 0.05em;
 		color: var(--text-muted, #475569);
 		margin-bottom: 0.75rem;
+		text-align: left;
+	}
+
+	/* Recent scans */
+	.recent-scans {
+		margin-top: 1.5rem;
+		text-align: left;
 	}
 
 	.recent-scans-strip {
@@ -383,12 +517,12 @@
 		padding: 1rem;
 	}
 
-	/* Deck summary */
-	.deck-summary {
+	/* Block link cards */
+	.block-link-card {
 		margin-top: 1rem;
 	}
 
-	.deck-summary-link {
+	.block-link {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
@@ -403,17 +537,39 @@
 		transition: border-color 0.15s;
 	}
 
-	.deck-summary-link:hover {
+	.block-link:hover {
 		border-color: var(--gold, #f59e0b);
 	}
 
-	.deck-summary-icon {
+	.block-link.sub-link {
+		margin-top: 0.375rem;
+		background: transparent;
+		border-color: transparent;
+		padding: 0.5rem 1rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.block-link.sub-link:hover {
+		color: var(--text-primary, #e2e8f0);
+		border-color: transparent;
+		background: var(--bg-elevated, #121d34);
+	}
+
+	.block-link-icon {
 		font-size: 1.25rem;
 	}
 
-	.deck-summary-arrow {
+	.block-link-arrow {
 		margin-left: auto;
 		color: var(--text-muted, #475569);
+	}
+
+	/* Tournament block */
+	.tournament-block {
+		margin-top: 1.5rem;
+		text-align: left;
 	}
 
 	/* CTA section (unauthenticated) */
@@ -505,6 +661,7 @@
 		max-width: 400px;
 		margin-left: auto;
 		margin-right: auto;
+		text-align: center;
 	}
 
 	.tournament-result-name {
