@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { checkCollectionRateLimit } from '$lib/server/rate-limit';
+import { parseJsonBody } from '$lib/server/validate';
 import { incrementTournamentUsageRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
 
@@ -16,21 +17,19 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 
-	let body;
-	try {
-		body = await request.json();
-	} catch (err) {
-		console.debug('[api/tournament/register] JSON parse failed:', err);
-		throw error(400, 'Invalid JSON body');
-	}
-	const { tournament_id, email, name, discord_id, deck_csv } = body;
+	const body = await parseJsonBody(request);
+	const tournament_id = body.tournament_id as string | undefined;
+	const email = body.email as string | undefined;
+	const name = body.name as string | undefined;
+	const discord_id = body.discord_id as string | undefined;
+	const deck_csv = body.deck_csv as string | undefined;
 
 	if (!tournament_id || !email) {
 		throw error(400, 'tournament_id and email are required');
 	}
 
 	// Validate deck_csv size to prevent database bloat
-	if (deck_csv && typeof deck_csv === 'string' && deck_csv.length > 50000) {
+	if (deck_csv && deck_csv.length > 50000) {
 		throw error(400, 'Deck CSV too large (max 50KB)');
 	}
 

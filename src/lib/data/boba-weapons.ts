@@ -105,6 +105,26 @@ export const WEAPON_HIERARCHY: WeaponType[] = [
 		color: '#F97316',
 		iconDescription: 'Orange fist icon, introduced in 2026 Edition for close-quarters combat',
 		isApexEligible: false
+	},
+	{
+		name: 'Alt',
+		key: 'alt',
+		rarity: 'uncommon',
+		rank: 9,
+		tieBreaker: false,
+		color: '#A855F7',
+		iconDescription: 'Purple alternate art treatment, alternate version of existing heroes',
+		isApexEligible: false
+	},
+	{
+		name: 'Cyber',
+		key: 'cyber',
+		rarity: 'uncommon',
+		rank: 10,
+		tieBreaker: false,
+		color: '#06B6D4',
+		iconDescription: 'Cyan/teal digital circuit pattern, cyberpunk-themed weapon type',
+		isApexEligible: false
 	}
 ];
 

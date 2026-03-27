@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth, requireSupabase, parseJsonBody, requireString } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 async function requireOrganizer(locals: App.Locals): Promise<{ id: string }> {
@@ -28,6 +29,20 @@ function generateCode(): string {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireOrganizer(locals);
 	const supabase = requireSupabase(locals);
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
+	}
+
+	try {
 	const body = await parseJsonBody(request);
 
 	const name = requireString(body.name, 'name', 200);
@@ -100,4 +115,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		tournament,
 		share_url: `/tournaments/enter?code=${code}`
 	});
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err;
+		console.error('[organize/create] Unexpected error:', err);
+		throw error(500, 'Internal server error');
+	}
 };

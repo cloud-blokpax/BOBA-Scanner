@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth, requireSupabase, parseJsonBody, requireString, requireEmail } from '$lib/server/validate';
+import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 import type { Card } from '$lib/types';
@@ -31,6 +32,20 @@ interface PlayEntryInput {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireAuth(locals);
 	const supabase = requireSupabase(locals);
+
+	const rateLimit = await checkHeavyMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
+	}
+
+	try {
 	const body = await parseJsonBody(request);
 
 	const tournamentId = requireString(body.tournament_id, 'tournament_id');
@@ -182,4 +197,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		stats: validation.stats,
 		verify_url: `/deck/verify/${verificationCode}`
 	});
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err;
+		console.error('[tournament/submit-deck] Unexpected error:', err);
+		throw error(500, 'Internal server error');
+	}
 };

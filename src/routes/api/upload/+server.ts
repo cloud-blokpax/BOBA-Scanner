@@ -12,6 +12,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import sharp from 'sharp';
+import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 const MAX_FILE_SIZE = 10_000_000; // 10MB
@@ -22,6 +23,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) {
 		throw error(401, 'Authentication required');
+	}
+
+	const rateLimit = await checkHeavyMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many uploads' }, {
+			status: 429,
+			headers: {
+				'X-RateLimit-Limit': String(rateLimit.limit),
+				'X-RateLimit-Remaining': String(rateLimit.remaining),
+				'X-RateLimit-Reset': String(rateLimit.reset)
+			}
+		});
 	}
 
 	const formData = await request.formData();

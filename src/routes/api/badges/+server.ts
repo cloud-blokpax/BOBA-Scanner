@@ -7,6 +7,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { checkCollectionRateLimit } from '$lib/server/rate-limit';
+import { parseJsonBody, requireString } from '$lib/server/validate';
 import { awardBadgeRpc } from '$lib/server/rpc';
 import type { RequestHandler } from './$types';
 
@@ -65,10 +66,10 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
 
-	const body = await request.json();
-	const badgeKey = body.badge_key as string;
+	const body = await parseJsonBody(request);
+	const badgeKey = requireString(body.badge_key, 'badge_key', 50);
 
-	if (!badgeKey || !BADGE_DEFINITIONS[badgeKey]) {
+	if (!BADGE_DEFINITIONS[badgeKey]) {
 		throw error(400, 'Invalid badge key');
 	}
 

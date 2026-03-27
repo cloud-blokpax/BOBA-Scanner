@@ -14,6 +14,7 @@
 import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
+import { parseJsonBody } from '$lib/server/validate';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -22,15 +23,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.supabase) throw error(503, 'Database not available');
 	if (!isEbayConfigured()) throw error(503, 'eBay API not configured');
 
-	// Parse request
-	let body: { card_ids: string[] };
-	try {
-		body = await request.json();
-	} catch {
-		throw error(400, 'Invalid JSON');
-	}
-
-	const cardIds = body.card_ids;
+	const body = await parseJsonBody(request);
+	const cardIds = body.card_ids as string[];
 	if (!Array.isArray(cardIds) || cardIds.length === 0 || cardIds.length > 10) {
 		throw error(400, 'card_ids must be an array of 1-10 card IDs');
 	}

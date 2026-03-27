@@ -1,4 +1,5 @@
 import { json, error } from '@sveltejs/kit';
+import { parseJsonBody } from '$lib/server/validate';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -36,8 +37,8 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 
 	if (!userData?.is_admin) throw error(403, 'Admin access required');
 
-	const body = await request.json();
-	const { id, box_type, set_code, display_name, slots, packs_per_box } = body;
+	const body = await parseJsonBody(request);
+	const { id, box_type, set_code, display_name, slots, packs_per_box } = body as Record<string, unknown>;
 
 	// Validate slot weights
 	if (!Array.isArray(slots)) throw error(400, 'slots must be an array');

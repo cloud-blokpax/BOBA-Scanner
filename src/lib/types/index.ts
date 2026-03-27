@@ -25,6 +25,10 @@ export interface Card {
 	battle_zone: string | null;
 	image_url: string | null;
 	created_at: string;
+	/** Base play name for variant deduplication (e.g. "Blitz" for "Blitz Alpha", "Blitz Blast") */
+	base_play_name?: string;
+	/** Whether this is a bonus play (ultra-rare, beyond the standard 30) */
+	is_bonus_play?: boolean;
 }
 
 export type CardRarity = 'common' | 'uncommon' | 'rare' | 'ultra_rare' | 'legendary';

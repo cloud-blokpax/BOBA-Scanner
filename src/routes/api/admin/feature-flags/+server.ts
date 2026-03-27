@@ -8,15 +8,18 @@
 
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
+import { parseJsonBody, requireString } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);
 
-	const { feature_key, updates } = await request.json();
-	if (!feature_key || !updates) {
-		throw error(400, 'feature_key and updates are required');
+	const body = await parseJsonBody(request);
+	const feature_key = requireString(body.feature_key, 'feature_key', 100);
+	const updates = body.updates as Record<string, unknown>;
+	if (!updates || typeof updates !== 'object') {
+		throw error(400, 'updates object is required');
 	}
 
 	// Use service-role client for writes — the authenticated role has
