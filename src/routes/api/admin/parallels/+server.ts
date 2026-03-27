@@ -13,6 +13,7 @@ import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { parseJsonBody, requireString } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import { PARALLEL_TYPES } from '$lib/data/boba-parallels';
 import { mapParallelToRarity } from '$lib/services/parallel-config';
 import type { CardRarity } from '$lib/types';
@@ -31,6 +32,12 @@ function defaultRarityForParallel(key: string): CardRarity {
 /** PUT — update a single parallel's rarity */
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);
+
+	const { user } = await locals.safeGetSession();
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
 
 	const body = await parseJsonBody(request);
 	const parallel_name = requireString(body.parallel_name, 'parallel_name', 100);
@@ -65,6 +72,12 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 /** POST — seed missing parallels from PARALLEL_TYPES + cards table */
 export const POST: RequestHandler = async ({ locals }) => {
 	await requireAdmin(locals);
+
+	const { user } = await locals.safeGetSession();
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
 
 	const adminClient = getAdminClient();
 	if (!adminClient) throw error(503, 'Admin client not configured');

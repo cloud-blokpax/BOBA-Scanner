@@ -10,6 +10,8 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { parseJsonBody } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -42,8 +44,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!admin) throw error(503, 'Database not available');
 
 	const { user } = await locals.safeGetSession();
-	const body = await request.json();
-	const { title, body: content, is_notification } = body;
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const { title, body: content, is_notification } = body as { title?: string; body?: string; is_notification?: boolean };
 
 	if (!title?.trim()) throw error(400, 'Title is required');
 
@@ -70,7 +77,13 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const body = await request.json();
+	const { user } = await locals.safeGetSession();
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const body = await parseJsonBody(request);
 	const { id, title, body: content, published, is_notification } = body;
 
 	if (!id) throw error(400, 'Entry ID is required');
@@ -99,7 +112,13 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { id } = await request.json();
+	const { user } = await locals.safeGetSession();
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const { id } = await parseJsonBody(request);
 	if (!id) throw error(400, 'Entry ID is required');
 
 	const { error: dbError } = await admin

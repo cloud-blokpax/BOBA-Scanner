@@ -8,6 +8,8 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { parseJsonBody } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
@@ -16,10 +18,16 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!admin) throw error(503, 'Database not available');
 
 	const { user } = await locals.safeGetSession();
-	const body = await request.json();
-	const { user_id, updates } = body;
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const { user_id, updates } = body as { user_id?: string; updates?: Record<string, unknown> };
 
 	if (!user_id) throw error(400, 'user_id is required');
+	if (!updates || typeof updates !== 'object') throw error(400, 'updates object is required');
 
 	const allowed = ['is_pro', 'is_organizer', 'is_admin', 'card_limit', 'api_calls_limit'];
 	const safeUpdates: Record<string, unknown> = {};
@@ -54,8 +62,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!admin) throw error(503, 'Database not available');
 
 	const { user } = await locals.safeGetSession();
-	const body = await request.json();
-	const { action, user_ids, updates } = body;
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const { action, user_ids, updates } = body as { action?: string; user_ids?: string[]; updates?: Record<string, unknown> };
 
 	if (!Array.isArray(user_ids) || user_ids.length === 0) {
 		throw error(400, 'user_ids array is required');

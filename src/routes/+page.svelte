@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { onMount } from 'svelte';
 	import { scanHistory } from '$lib/stores/scan-history.svelte';
-	import { personaWeights, personaLoaded, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
+	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
+	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult } from '$lib/types';
 
 	let { data } = $props();
@@ -23,8 +25,55 @@
 	} | null>(null);
 	let tournamentError = $state<string | null>(null);
 
+	// Persona suggestion state
+	let suggestedPersona = $state<PersonaWeights | null>(null);
+	let suggestionDismissed = $state(false);
+
+	const PERSONA_LABELS: Record<PersonaId, string> = {
+		collector: 'Collector',
+		deck_builder: 'Deck Builder',
+		seller: 'Seller',
+		tournament: 'Tournament Player'
+	};
+
+	const suggestedPrimary = $derived.by(() => {
+		if (!suggestedPersona) return null;
+		const entries = Object.entries(suggestedPersona) as [PersonaId, number][];
+		const top = entries.filter(([, w]) => w > 0).sort((a, b) => b[1] - a[1]);
+		return top[0]?.[0] || null;
+	});
+
+	const currentPrimary = $derived.by(() => {
+		const w = personaWeights();
+		const entries = Object.entries(w) as [PersonaId, number][];
+		const top = entries.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+		return top[0]?.[0] || 'collector';
+	});
+
+	const showSuggestion = $derived(
+		suggestedPersona !== null &&
+		!suggestionDismissed &&
+		suggestedPrimary !== null &&
+		suggestedPrimary !== currentPrimary &&
+		data.user
+	);
+
+	async function applySuggestedPersona() {
+		if (!suggestedPersona) return;
+		await updatePersona(suggestedPersona);
+		suggestionDismissed = true;
+	}
+
 	onMount(() => {
 		initScanner();
+
+		// Prune old behavioral events and check for persona suggestions
+		if (data.user) {
+			pruneBehaviorEvents();
+			getSuggestedPersona().then((suggested) => {
+				if (suggested) suggestedPersona = suggested;
+			});
+		}
 	});
 
 	function handleUploadClick() {
@@ -43,6 +92,7 @@
 		if (uploadImageUrl) URL.revokeObjectURL(uploadImageUrl);
 		uploadImageUrl = URL.createObjectURL(file);
 
+		trackBehavior('scan_card');
 		try {
 			const result = await scanImage(file);
 			if (result) {
@@ -82,6 +132,7 @@
 		tournamentLoading = true;
 		tournamentError = null;
 		tournamentResult = null;
+		trackBehavior('lookup_tournament');
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
 			if (!res.ok) {
@@ -163,11 +214,66 @@
 			.map((b) => b.id);
 	}
 
-	const orderedBlocks = $derived(
-		data.user && personaLoaded()
-			? sortBlocksForUser(HOME_BLOCKS, personaWeights())
-			: HOME_BLOCKS.map((b) => b.id)
-	);
+	// ── Custom ordering (drag-and-drop) ─────────────────────────
+
+	let showCustomize = $state(false);
+	let customOrder = $state<string[] | null>(null);
+	let dragIndex = $state<number | null>(null);
+	let dragOverIndex = $state<number | null>(null);
+
+	const BLOCK_LABELS: Record<string, string> = {
+		scan_upload: 'Scan & Upload',
+		recent_scans: 'Recent Scans',
+		collection_summary: 'Collection',
+		active_decks: 'Decks',
+		sell_link: 'Sell & Export',
+		tournament_lookup: 'Tournaments'
+	};
+
+	// Load custom order from localStorage on mount
+	$effect(() => {
+		if (data.user && browser) {
+			try {
+				const saved = localStorage.getItem('boba:home_block_order');
+				if (saved) customOrder = JSON.parse(saved);
+			} catch { /* ignore */ }
+		}
+	});
+
+	const orderedBlocks = $derived.by(() => {
+		if (customOrder && data.user) return customOrder;
+		if (data.user && personaLoaded()) return sortBlocksForUser(HOME_BLOCKS, personaWeights());
+		return HOME_BLOCKS.map((b) => b.id);
+	});
+
+	function handleDragStart(index: number) {
+		dragIndex = index;
+	}
+
+	function handleDragOver(index: number) {
+		dragOverIndex = index;
+	}
+
+	function handleDrop(index: number) {
+		if (dragIndex === null || dragIndex === index) {
+			dragIndex = null;
+			dragOverIndex = null;
+			return;
+		}
+		const items = [...(customOrder || orderedBlocks)];
+		const [moved] = items.splice(dragIndex, 1);
+		items.splice(index, 0, moved);
+		customOrder = items;
+		localStorage.setItem('boba:home_block_order', JSON.stringify(items));
+		dragIndex = null;
+		dragOverIndex = null;
+	}
+
+	function resetCustomOrder() {
+		customOrder = null;
+		localStorage.removeItem('boba:home_block_order');
+		showCustomize = false;
+	}
 </script>
 
 <svelte:head>
@@ -179,6 +285,19 @@
 		<h1>BOBA Scanner</h1>
 
 		{#if data.user}
+			<!-- Persona adaptation suggestion -->
+			{#if showSuggestion && suggestedPrimary}
+				<div class="persona-suggestion">
+					<p class="persona-suggestion-text">
+						Based on your activity, you might prefer a <strong>{PERSONA_LABELS[suggestedPrimary]}</strong> layout.
+					</p>
+					<div class="persona-suggestion-actions">
+						<button class="btn-suggestion-apply" onclick={applySuggestedPersona}>Switch</button>
+						<button class="btn-suggestion-dismiss" onclick={() => suggestionDismissed = true}>Dismiss</button>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Authenticated dashboard -->
 			{#if uploadResult}
 				<ScanConfirmation
@@ -192,6 +311,49 @@
 				<div class="upload-status">
 					<div class="upload-spinner"></div>
 					<span>{statusText || 'Processing...'}</span>
+				</div>
+			{/if}
+
+			<!-- Customize button -->
+			<div class="customize-strip">
+				<button class="btn-customize" onclick={() => showCustomize = true}>
+					<span class="drag-handle">{'\u2630'}</span> Customize
+				</button>
+			</div>
+
+			<!-- Customize modal -->
+			{#if showCustomize}
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div class="customize-overlay" onclick={() => showCustomize = false}>
+					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+					<div class="customize-sheet" onclick={(e) => e.stopPropagation()}>
+						<div class="customize-header">
+							<h3>Reorder Home Screen</h3>
+							<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
+						</div>
+						<ul class="customize-list">
+							{#each (customOrder || orderedBlocks) as blockId, i (blockId)}
+								<li
+									class="customize-item"
+									class:dragging={dragIndex === i}
+									class:drag-over={dragOverIndex === i}
+									draggable="true"
+									ondragstart={() => handleDragStart(i)}
+									ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
+									ondrop={() => handleDrop(i)}
+									ondragend={() => { dragIndex = null; dragOverIndex = null; }}
+								>
+									<span class="drag-handle">{'\u2630'}</span>
+									<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
+								</li>
+							{/each}
+						</ul>
+						{#if customOrder}
+							<button class="btn-suggestion-dismiss" style="margin-top: 1rem; width: 100%; text-align: center;" onclick={resetCustomOrder}>
+								Reset to Auto
+							</button>
+						{/if}
+					</div>
 				</div>
 			{/if}
 
@@ -727,9 +889,173 @@
 		to { transform: rotate(360deg); }
 	}
 
+	/* Persona suggestion */
+	.persona-suggestion {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.625rem 1rem;
+		margin: 1rem auto 0;
+		max-width: 500px;
+		border-radius: 10px;
+		background: rgba(59, 130, 246, 0.08);
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		font-size: 0.85rem;
+	}
+
+	.persona-suggestion-text {
+		margin: 0;
+		color: var(--text-secondary, #94a3b8);
+		text-align: left;
+	}
+
+	.persona-suggestion-actions {
+		display: flex;
+		gap: 0.5rem;
+		flex-shrink: 0;
+	}
+
+	.btn-suggestion-apply {
+		padding: 0.25rem 0.75rem;
+		border-radius: 6px;
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		border: none;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.btn-suggestion-dismiss {
+		padding: 0.25rem 0.5rem;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-muted, #475569);
+		border: none;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	/* Customize button */
+	.customize-strip {
+		display: flex;
+		justify-content: flex-end;
+		margin: 1rem auto 0;
+		max-width: 500px;
+	}
+
+	.btn-customize {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.35rem 0.75rem;
+		border-radius: 6px;
+		background: transparent;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		color: var(--text-muted, #475569);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.btn-customize:hover {
+		color: var(--text-primary, #e2e8f0);
+		border-color: var(--text-muted, #475569);
+	}
+
+	/* Customize modal */
+	.customize-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		z-index: 100;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+	}
+
+	.customize-sheet {
+		width: 100%;
+		max-width: 500px;
+		max-height: 70vh;
+		background: var(--bg-elevated, #121d34);
+		border-radius: 16px 16px 0 0;
+		padding: 1.25rem 1rem 2rem;
+		overflow-y: auto;
+	}
+
+	.customize-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+	}
+
+	.customize-header h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+
+	.btn-customize-close {
+		background: none;
+		border: none;
+		color: var(--text-muted, #475569);
+		font-size: 1.25rem;
+		cursor: pointer;
+		padding: 0.25rem;
+	}
+
+	.customize-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.customize-item {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		border-radius: 8px;
+		background: var(--bg-surface, #0d1524);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+	}
+
+	.customize-item.dragging {
+		opacity: 0.5;
+		border-color: var(--accent-primary, #3b82f6);
+	}
+
+	.customize-item.drag-over {
+		border-color: var(--gold, #f59e0b);
+	}
+
+	.drag-handle {
+		color: var(--text-muted, #475569);
+		font-size: 1rem;
+		flex-shrink: 0;
+	}
+
+	.customize-item-label {
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
 	@media (max-width: 600px) {
 		.hero-section h1 {
 			font-size: 2rem;
+		}
+
+		.persona-suggestion {
+			flex-direction: column;
+			text-align: center;
 		}
 	}
 </style>

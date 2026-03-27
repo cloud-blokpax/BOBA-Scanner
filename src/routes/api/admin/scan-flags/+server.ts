@@ -8,6 +8,8 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { parseJsonBody } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -36,11 +38,16 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!admin) throw error(503, 'Database not available');
 
 	const { user } = await locals.safeGetSession();
-	const body = await request.json();
-	const { id, status: newStatus, notes, corrected_card } = body;
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const { id, status: newStatus, notes, corrected_card } = body as { id?: string; status?: string; notes?: string; corrected_card?: string };
 
 	if (!id) throw error(400, 'Flag ID is required');
-	if (!['confirmed_user', 'confirmed_ai', 'resolved'].includes(newStatus)) {
+	if (!newStatus || !['confirmed_user', 'confirmed_ai', 'resolved'].includes(newStatus)) {
 		throw error(400, 'Invalid status');
 	}
 
