@@ -19,5 +19,9 @@ export async function requireAdmin(locals: App.Locals): Promise<void> {
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
-	if (!profile?.is_admin) throw error(403, 'Admin access required');
+	const isAdmin = profile?.is_admin === true
+		|| user.app_metadata?.is_admin === true
+		|| user.user_metadata?.is_admin === true;
+
+	if (!isAdmin) throw error(403, 'Admin access required');
 }

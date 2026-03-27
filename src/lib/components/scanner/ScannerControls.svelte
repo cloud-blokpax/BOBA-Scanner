@@ -113,30 +113,38 @@
 
 	.mode-switcher {
 		display: flex;
-		gap: 2px;
-		background: rgba(255, 255, 255, 0.06);
-		border-radius: 8px;
-		padding: 2px;
+		justify-content: center;
+		gap: 6px;
+		padding: 8px 12px;
+		background: rgba(0, 0, 0, 0.75);
+		border-radius: 28px;
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
 		width: 100%;
-		max-width: 280px;
+		max-width: 300px;
 	}
 
 	.mode-btn {
 		flex: 1;
-		padding: 6px 12px;
+		padding: 8px 14px;
 		border: none;
-		border-radius: 6px;
+		border-radius: 20px;
 		background: transparent;
-		color: var(--text-muted, #475569);
-		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.6);
+		font-size: 0.8rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: all 0.15s;
+		transition: all 0.15s ease;
+	}
+
+	.mode-btn:active {
+		transform: scale(0.95);
 	}
 
 	.mode-active {
-		background: rgba(245, 158, 11, 0.15);
-		color: var(--gold, #f59e0b);
+		background: rgba(255, 255, 255, 0.2);
+		color: #fff;
+		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
 	}
 
 	.capture-row {
