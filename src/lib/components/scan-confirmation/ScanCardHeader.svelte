@@ -2,15 +2,19 @@
 	let {
 		name,
 		heroName,
+		athleteName,
 		cardNumber,
 		parallel,
+		weaponType,
 		isOwned,
 		ownedCount
 	}: {
 		name: string;
 		heroName: string | null;
+		athleteName: string | null;
 		cardNumber: string | null;
 		parallel: string | null;
+		weaponType: string | null;
 		isOwned: boolean;
 		ownedCount: number;
 	} = $props();
@@ -28,9 +32,17 @@
 	{#if heroName && heroName !== name}
 		<p class="hero-name">{heroName}</p>
 	{/if}
-	{#if parallel}
-		<span class="parallel-badge">{parallel}</span>
+	{#if athleteName}
+		<p class="athlete-name">{athleteName}</p>
 	{/if}
+	<div class="meta-row">
+		{#if parallel}
+			<span class="parallel-badge">{parallel}</span>
+		{/if}
+		{#if weaponType}
+			<span class="weapon-badge">{weaponType}</span>
+		{/if}
+	</div>
 	{#if cardNumber}
 		<span class="card-number">#{cardNumber}</span>
 	{/if}
@@ -64,6 +76,20 @@
 		margin: 0;
 	}
 
+	.athlete-name {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin: 0;
+		font-weight: 500;
+	}
+
+	.meta-row {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-wrap: wrap;
+	}
+
 	.parallel-badge {
 		display: inline-block;
 		padding: 0.15rem 0.625rem;
@@ -73,6 +99,16 @@
 		font-weight: 600;
 		color: #fff;
 		align-self: flex-start;
+	}
+
+	.weapon-badge {
+		display: inline-block;
+		padding: 0.15rem 0.625rem;
+		background: linear-gradient(135deg, #f59e0b, #d97706);
+		border-radius: 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #fff;
 	}
 
 	.card-number {

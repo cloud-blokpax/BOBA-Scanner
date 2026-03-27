@@ -327,6 +327,17 @@
 						<div class="review-info">
 							{#if item.status === 'success' && item.card}
 								<span class="review-name">{item.card.hero_name || item.card.name}</span>
+								{#if item.card.athlete_name}
+									<span class="review-athlete">{item.card.athlete_name}</span>
+								{/if}
+								<div class="review-meta">
+									{#if item.card.parallel}
+										<span class="review-pill parallel">{item.card.parallel}</span>
+									{/if}
+									{#if item.card.weapon_type}
+										<span class="review-pill weapon">{item.card.weapon_type}</span>
+									{/if}
+								</div>
 								{#if item.priceLoading}
 									<span class="review-price loading">...</span>
 								{:else if item.price != null}
@@ -576,6 +587,41 @@
 	}
 
 	.review-name.dimmed { color: var(--text-muted, #475569); }
+
+	.review-athlete {
+		font-size: 0.7rem;
+		color: var(--text-secondary, #94a3b8);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.review-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.2rem;
+	}
+
+	.review-pill {
+		display: inline-block;
+		padding: 0.1rem 0.375rem;
+		border-radius: 8px;
+		font-size: 0.6rem;
+		font-weight: 600;
+		color: #fff;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+	}
+
+	.review-pill.parallel {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+	}
+
+	.review-pill.weapon {
+		background: linear-gradient(135deg, #f59e0b, #d97706);
+	}
 
 	.review-price {
 		font-size: 0.8rem;
