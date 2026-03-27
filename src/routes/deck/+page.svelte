@@ -172,6 +172,23 @@
 				</div>
 			</div>
 
+			<div class="tool-links">
+				<a href="/deck/splitter" class="tool-link">
+					<span class="tool-icon">&#8644;</span>
+					<span class="tool-text">
+						<span class="tool-name">Deck Splitter</span>
+						<span class="tool-desc">Split plays across tournaments</span>
+					</span>
+				</a>
+				<a href="/deck/meta" class="tool-link">
+					<span class="tool-icon">&#9776;</span>
+					<span class="tool-text">
+						<span class="tool-name">Meta Analysis</span>
+						<span class="tool-desc">Trends &amp; counter-builds</span>
+					</span>
+				</a>
+			</div>
+
 			{#if showLegacyImportPrompt}
 				<div class="legacy-banner">
 					<p>Found a deck from your previous session. Import it?</p>
@@ -411,6 +428,51 @@
 		text-decoration: none;
 		border: none;
 		cursor: pointer;
+	}
+
+	.tool-links {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.tool-link {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.625rem 0.75rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-color, #1e293b);
+		background: var(--bg-surface, #0d1524);
+		text-decoration: none;
+		transition: background 0.15s;
+	}
+
+	.tool-link:hover {
+		background: var(--bg-hover, rgba(255, 255, 255, 0.03));
+	}
+
+	.tool-icon {
+		font-size: 1.2rem;
+		color: var(--gold, #f59e0b);
+		flex-shrink: 0;
+	}
+
+	.tool-text {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.tool-name {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--text-primary, #f1f5f9);
+	}
+
+	.tool-desc {
+		font-size: 0.7rem;
+		color: var(--text-tertiary, #64748b);
 	}
 
 	.legacy-banner {

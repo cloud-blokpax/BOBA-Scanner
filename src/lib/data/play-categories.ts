@@ -168,6 +168,16 @@ export const PLAY_CATEGORIES: PlayCategory[] = [
 		recommendedMax: 10
 	},
 	{
+		id: 'nullify',
+		name: 'Nullify / Bounce',
+		description:
+			"Cancels or removes an opponent's play, nullifying ongoing effects (Rule 5.1.7)",
+		patterns: [/nullif/i, /cancel/i, /return.*play.*hand/i, /remove.*play/i],
+		isEssential: false,
+		recommendedMin: 0,
+		recommendedMax: 3
+	},
+	{
 		id: 'free_play',
 		name: 'Free Play (0 HD)',
 		description:
