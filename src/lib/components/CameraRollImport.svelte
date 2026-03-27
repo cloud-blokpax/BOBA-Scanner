@@ -99,12 +99,15 @@
 					resizeQuality: 'high'
 				});
 
-				const result = await recognizeCard(bitmap, undefined, {
-					isAuthenticated,
-					skipBlurCheck: true
-				});
-
-				bitmap.close();
+				let result;
+				try {
+					result = await recognizeCard(bitmap, undefined, {
+						isAuthenticated,
+						skipBlurCheck: true
+					});
+				} finally {
+					bitmap.close();
+				}
 
 				items[i].result = result;
 
