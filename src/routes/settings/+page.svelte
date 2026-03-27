@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSupabase } from '$lib/services/supabase';
+	import { idb } from '$lib/services/idb';
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
@@ -125,6 +126,32 @@
 			showToast('Failed to save profile', 'x');
 		}
 		saving = false;
+	}
+
+	let exporting = $state(false);
+
+	async function exportCardDatabase() {
+		exporting = true;
+		try {
+			const cards = await idb.getCards();
+			if (!cards || cards.length === 0) {
+				showToast('No cards found in local cache', 'x');
+				exporting = false;
+				return;
+			}
+			const blob = new Blob([JSON.stringify(cards)], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `boba-card-database-${new Date().toISOString().slice(0, 10)}.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+			showToast(`Exported ${cards.length} cards`, 'check');
+		} catch (err) {
+			console.debug('[settings] Card export failed:', err);
+			showToast('Export failed', 'x');
+		}
+		exporting = false;
 	}
 
 	async function handleSignOut() {
@@ -399,6 +426,15 @@
 			</section>
 		{/if}
 
+		<!-- Data Management -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Data Management</h3>
+			<button class="export-btn" onclick={exportCardDatabase} disabled={exporting}>
+				{exporting ? 'Exporting...' : 'Export Card Database (JSON)'}
+			</button>
+			<p class="export-hint">Download the local card database from your browser cache. Use this to re-seed your Supabase cards table.</p>
+		</section>
+
 		<!-- Sign Out -->
 		<button class="sign-out-btn" onclick={handleSignOut}>Sign Out</button>
 	{/if}
@@ -587,6 +623,24 @@
 	.persona-chip-name { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
 
 	/* Sign out */
+	.export-btn {
+		width: 100%;
+		padding: 0.75rem;
+		border-radius: 10px;
+		border: 1px solid rgba(59, 130, 246, 0.3);
+		background: rgba(59, 130, 246, 0.1);
+		color: var(--primary, #3b82f6);
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.export-btn:hover { background: rgba(59, 130, 246, 0.2); }
+	.export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.export-hint {
+		font-size: 0.75rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.5rem;
+	}
 	.sign-out-btn {
 		width: 100%;
 		padding: 0.75rem;
