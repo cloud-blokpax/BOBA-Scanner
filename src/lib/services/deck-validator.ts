@@ -159,7 +159,7 @@ export function validateDeck(
 
 	// ── Rule 2: SPEC power cap (individual card) ───────────
 	if (format.specPowerCap !== null) {
-		if (format.id === 'apex_madness') {
+		if (format.madnessInsertUnlockThreshold !== null) {
 			// In Apex Madness, split by power level (not array position).
 			// Core Deck = cards at or below SPEC cap, Expanded = cards above.
 			const coreCards = heroCards.filter(c => (c.power || 0) <= format.specPowerCap!);
@@ -230,13 +230,14 @@ export function validateDeck(
 		}
 	}
 
-	// ── Rule 2d: SPEC+ core deck requirement (need 60 cards at ≤160) ─
-	if (format.id === 'spec_plus' && heroCards.length >= 60) {
-		const specCoreCards = heroCards.filter(c => (c.power || 0) <= 160);
-		if (specCoreCards.length < 60) {
+	// ── Rule 2d: SPEC+ core deck requirement (need heroDeckMin cards at ≤ specPowerCap or ≤160) ─
+	if (format.requiresSpecCore && heroCards.length >= format.heroDeckMin) {
+		const corePowerCap = format.specPowerCap ?? 160;
+		const specCoreCards = heroCards.filter(c => (c.power || 0) <= corePowerCap);
+		if (specCoreCards.length < format.heroDeckMin) {
 			violations.push({
 				rule: 'spec_plus_core',
-				message: `Only ${specCoreCards.length} cards at ≤160 Power — SPEC+ requires at least 60 Core Deck cards at ≤160`,
+				message: `Only ${specCoreCards.length} cards at ≤${corePowerCap} Power — ${format.name} requires at least ${format.heroDeckMin} Core Deck cards at ≤${corePowerCap}`,
 				severity: 'error'
 			});
 		}
@@ -340,7 +341,7 @@ export function validateDeck(
 	let madnessUnlockedInserts: string[] = [];
 	let madnessTotalApexAllowed = 0;
 
-	if (format.id === 'apex_madness' && format.madnessInsertUnlockThreshold) {
+	if (format.madnessInsertUnlockThreshold) {
 		// Core Deck = cards at or below SPEC cap (by power level, not array position)
 		const coreDeck = heroCards.filter(c => (c.power || 0) <= (format.specPowerCap || 160));
 

@@ -76,9 +76,10 @@ describe('analyzeDBS', () => {
 	});
 
 	it('handles format with no DBS cap', () => {
-		const eliteFormat = getFormat('elite_playmaker')!;
+		// Use apex_madness which has dbsCap: null (Rookie team format)
+		const madnessFormat = getFormat('apex_madness')!;
 		const plays = makePlays(30, { dbs: 50 });
-		const result = analyzeDBS(plays, eliteFormat);
+		const result = analyzeDBS(plays, madnessFormat);
 
 		expect(result.cap).toBeNull();
 		expect(result.remaining).toBe(Infinity);
@@ -90,8 +91,8 @@ describe('analyzeDBS', () => {
 		const plays = makePlays(20, { dbs: 30 });
 		const result = analyzeDBS(plays, specFormat);
 
-		// 1000 - 600 = 400 remaining, 55 total slots - 20 = 35 empty
-		expect(result.avgPerSlot).toBe(Math.round(400 / 35));
+		// 1000 - 600 = 400 remaining, 30 total slots - 20 = 10 empty
+		expect(result.avgPerSlot).toBe(Math.round(400 / 10));
 	});
 });
 
@@ -336,7 +337,7 @@ describe('allocateForTwoTournaments', () => {
 		expect(dbs2).toBeLessThanOrEqual(1000);
 	});
 
-	it('handles format with no DBS cap', () => {
+	it('handles formats with matching DBS caps', () => {
 		const eliteFormat = getFormat('elite_playmaker')!;
 		const specFormat = getFormat('spec_playmaker')!;
 
@@ -347,7 +348,7 @@ describe('allocateForTwoTournaments', () => {
 			plays, eliteFormat, 'free_play_engine', specFormat, 'mono_steel_fortress'
 		);
 
-		expect(result.deck1.length).toBeLessThanOrEqual(45); // Elite has 45 play slots
+		expect(result.deck1.length).toBeLessThanOrEqual(30); // Elite: 30 play deck size
 		expect(result.deck2.length).toBeLessThanOrEqual(30);
 	});
 });
