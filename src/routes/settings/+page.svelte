@@ -157,7 +157,7 @@
 		ebayDisconnecting = false;
 	}
 
-	const isAdmin = $derived(!!$page.data.user?.is_admin);
+	const isAdmin = $derived($page.data?.session?.user?.app_metadata?.is_admin === true);
 </script>
 
 <svelte:head>
@@ -349,6 +349,14 @@
 			<a href="/privacy" class="settings-link">Privacy Policy</a>
 			<a href="/terms" class="settings-link">Terms of Service</a>
 		</section>
+
+		{#if isAdmin}
+			<!-- Admin -->
+			<section class="settings-section">
+				<h3 class="settings-section-title">Admin</h3>
+				<a href="/admin" class="settings-link">Admin Dashboard</a>
+			</section>
+		{/if}
 
 		<!-- Sign Out -->
 		<button class="sign-out-btn" onclick={handleSignOut}>Sign Out</button>
