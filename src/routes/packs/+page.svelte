@@ -2,19 +2,23 @@
 	import { onMount } from 'svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { getSupabase } from '$lib/services/supabase';
-	import { DEFAULT_CONFIGS } from '$lib/data/pack-defaults';
+	import { DEFAULT_CONFIGS, getBoxConfig } from '$lib/data/pack-defaults';
 	import { loadCardDatabase } from '$lib/services/card-db';
 	import { getWeapon } from '$lib/data/boba-weapons';
-	import type { SlotConfig, SimulatedCard, PackResult } from '$lib/types/pack-simulator';
+	import type { SlotConfig, SimulatedCard, PackResult, BoxGuarantee } from '$lib/types/pack-simulator';
 
-	const BOX_TYPES = [
-		{ key: 'blaster', label: 'Blaster Box' },
-		{ key: 'hobby', label: 'Hobby Box' }
+	const SET_OPTIONS = [
+		{ key: 'G', label: '2026 Griffey Set' },
+		{ key: 'A', label: 'Alpha Edition' },
+		{ key: 'U', label: 'Alpha Update' }
+		// { key: 'T', label: 'Tecmo Bowl' },  // Uncomment when Tecmo launches
 	];
 
+	let selectedSet = $state('G');
 	let selectedBox = $state('blaster');
 	let slots = $state<SlotConfig[]>([]);
 	let packsPerBox = $state(6);
+	let guarantees = $state<BoxGuarantee[]>([]);
 	let loading = $state(true);
 	let dbLoaded = $state(false);
 
@@ -24,6 +28,13 @@
 	let autoRevealing = $state(false);
 	let boxResults = $state<PackResult[]>([]);
 	let showBoxSummary = $state(false);
+
+	// Derived: available box types for the selected set
+	const availableBoxTypes = $derived(
+		Object.entries(DEFAULT_CONFIGS)
+			.filter(([, config]) => config.availableForSets.includes(selectedSet))
+			.map(([key, config]) => ({ key, label: config.displayName }))
+	);
 
 	onMount(async () => {
 		// Load card database first
@@ -51,7 +62,8 @@
 
 				if (data?.slots) {
 					slots = data.slots as SlotConfig[];
-					packsPerBox = data.packs_per_box || DEFAULT_CONFIGS[selectedBox]?.packsPerBox || 10;
+					packsPerBox = data.packs_per_box || getBoxConfig(selectedBox, selectedSet)?.packsPerBox || 10;
+					guarantees = data.box_guarantees || getBoxConfig(selectedBox, selectedSet)?.guarantees || [];
 					return;
 				}
 			} catch {
@@ -60,11 +72,23 @@
 		}
 
 		// Use defaults
-		const config = DEFAULT_CONFIGS[selectedBox];
+		const config = getBoxConfig(selectedBox, selectedSet);
 		if (config) {
 			slots = config.slots;
 			packsPerBox = config.packsPerBox;
+			guarantees = config.guarantees;
 		}
+	}
+
+	function handleSetChange() {
+		// If current box type isn't available for the new set, switch to blaster
+		const available = Object.entries(DEFAULT_CONFIGS)
+			.filter(([, config]) => config.availableForSets.includes(selectedSet))
+			.map(([key]) => key);
+		if (!available.includes(selectedBox)) {
+			selectedBox = 'blaster';
+		}
+		handleBoxChange();
 	}
 
 	async function handleBoxChange() {
@@ -82,7 +106,7 @@
 			return;
 		}
 		const { openPack } = await import('$lib/services/pack-simulator');
-		currentPack = openPack(slots);
+		currentPack = openPack(slots, selectedSet);
 		revealedCount = 0;
 		autoRevealing = false;
 		showBoxSummary = false;
@@ -94,7 +118,7 @@
 			return;
 		}
 		const { openBox } = await import('$lib/services/pack-simulator');
-		boxResults = openBox(slots, packsPerBox);
+		boxResults = openBox(slots, packsPerBox, selectedSet, guarantees);
 		showBoxSummary = true;
 		currentPack = null;
 	}
@@ -130,6 +154,16 @@
 		if (w.rarity === 'ultra_rare') return `0 0 12px ${w.color}`;
 		return 'none';
 	}
+
+	function boxIcon(boxType: string): string {
+		switch (boxType) {
+			case 'blaster': return 'B';
+			case 'double_mega': return 'DM';
+			case 'hobby': return 'H';
+			case 'jumbo': return 'J';
+			default: return '?';
+		}
+	}
 </script>
 
 <svelte:head>
@@ -142,9 +176,25 @@
 		<p class="subtitle">Open virtual BoBA packs and see what you pull</p>
 	</header>
 
+	<!-- Set Selector -->
+	<div class="set-selector">
+		<span class="selector-label">Set</span>
+		<div class="set-buttons">
+			{#each SET_OPTIONS as setOpt}
+				<button
+					class="set-btn"
+					class:active={selectedSet === setOpt.key}
+					onclick={() => { selectedSet = setOpt.key; handleSetChange(); }}
+				>
+					{setOpt.label}
+				</button>
+			{/each}
+		</div>
+	</div>
+
 	<!-- Box Type Selector -->
 	<div class="box-selector">
-		{#each BOX_TYPES as box}
+		{#each availableBoxTypes as box}
 			<button
 				class="box-btn"
 				class:active={selectedBox === box.key}
@@ -162,9 +212,16 @@
 		{#if !currentPack && !showBoxSummary}
 			<div class="pack-display">
 				<div class="pack-visual">
-					<div class="pack-icon">{selectedBox === 'hobby' ? 'H' : 'B'}</div>
-					<div class="pack-name">{BOX_TYPES.find(b => b.key === selectedBox)?.label}</div>
+					<div class="pack-icon">{boxIcon(selectedBox)}</div>
+					<div class="pack-name">{availableBoxTypes.find(b => b.key === selectedBox)?.label}</div>
 					<div class="pack-info">{packsPerBox} packs per box | 10 cards per pack</div>
+					{#if guarantees.length > 0}
+						<div class="pack-guarantees">
+							{#each guarantees as g}
+								<span class="guarantee-badge">{g.minCount}x {g.value.replace(/_/g, ' ')} guaranteed</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
 				<div class="open-actions">
 					<button class="btn-open" onclick={openSinglePack}>Open a Pack</button>
@@ -271,9 +328,22 @@
 	.subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem; }
 	.loading { text-align: center; padding: 3rem; color: var(--text-tertiary); }
 
-	.box-selector { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+	.set-selector { margin-bottom: 1rem; }
+	.selector-label { font-size: 0.75rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.375rem; }
+	.set-buttons { display: flex; gap: 0.375rem; }
+	.set-btn {
+		flex: 1; padding: 0.5rem 0.25rem; border-radius: 8px; border: 1px solid var(--border-color);
+		background: var(--bg-elevated); color: var(--text-secondary); font-size: 0.8rem;
+		font-weight: 600; cursor: pointer; transition: all 0.15s;
+	}
+	.set-btn.active {
+		border-color: var(--accent-primary); color: var(--accent-primary);
+		background: rgba(59, 130, 246, 0.1);
+	}
+
+	.box-selector { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
 	.box-btn {
-		flex: 1; padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border-color);
+		flex: 1; min-width: calc(50% - 0.25rem); padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border-color);
 		background: var(--bg-elevated); color: var(--text-secondary); font-size: 0.9rem;
 		font-weight: 600; cursor: pointer; transition: all 0.15s;
 	}
@@ -287,11 +357,17 @@
 	.pack-icon {
 		width: 80px; height: 80px; border-radius: 16px; background: var(--bg-elevated);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 2rem; font-weight: 800; color: var(--accent-primary);
+		font-size: 1.75rem; font-weight: 800; color: var(--accent-primary);
 		margin: 0 auto 0.75rem; border: 2px solid var(--border-color);
 	}
 	.pack-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
 	.pack-info { font-size: 0.8rem; color: var(--text-tertiary); }
+	.pack-guarantees { margin-top: 0.5rem; display: flex; justify-content: center; gap: 0.375rem; flex-wrap: wrap; }
+	.guarantee-badge {
+		font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 999px;
+		background: rgba(234, 179, 8, 0.15); color: #eab308; font-weight: 600;
+		text-transform: capitalize;
+	}
 
 	.open-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 	.btn-open {

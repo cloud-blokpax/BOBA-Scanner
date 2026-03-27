@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
-	import { DEFAULT_CONFIGS } from '$lib/data/pack-defaults';
+	import { DEFAULT_CONFIGS, getBoxConfig } from '$lib/data/pack-defaults';
 	import { getAllWeaponKeys } from '$lib/data/boba-weapons';
 	import type { SlotConfig, SlotOutcome } from '$lib/types/pack-simulator';
 
-	const BOX_TYPES = ['blaster', 'hobby'];
+	const BOX_TYPES = ['blaster', 'double_mega', 'hobby', 'jumbo'];
+	const SET_OPTIONS = [
+		{ key: 'A', label: 'Alpha' },
+		{ key: 'U', label: 'Update' },
+		{ key: 'G', label: 'Griffey' },
+		{ key: 'T', label: 'Tecmo' }
+	];
 	const OUTCOME_TYPES: SlotOutcome['type'][] = ['weapon_rarity', 'parallel', 'card_type'];
 
 	const WEAPON_OPTIONS = getAllWeaponKeys();
@@ -15,15 +21,24 @@
 		'headlines', 'icon', 'logo', 'mixtape', 'fire_tracks', 'bubblegum',
 		'grillin', 'chillin', 'slime', 'power_glove', 'inspired_ink', 'super_parallel'
 	];
-	const CARD_TYPE_OPTIONS = ['play', 'bonus_play', 'hotdog', 'hotdog_foil'];
+	const CARD_TYPE_OPTIONS = ['play', 'bonus_play', 'hotdog'];
 
 	let selectedBox = $state('blaster');
+	let selectedSet = $state('G');
 	let slots = $state<SlotConfig[]>([]);
 	let packsPerBox = $state(6);
 	let configId = $state<string | null>(null);
 	let loading = $state(true);
 	let saving = $state(false);
 	let expandedSlot = $state<number | null>(null);
+
+	// Derived: available box types for the selected set
+	const availableBoxTypes = $derived(
+		BOX_TYPES.filter((bt) => {
+			const config = DEFAULT_CONFIGS[bt];
+			return config?.availableForSets.includes(selectedSet);
+		})
+	);
 
 	$effect(() => {
 		loadConfig();
@@ -55,13 +70,21 @@
 		}
 
 		// Fall back to defaults
-		const config = DEFAULT_CONFIGS[selectedBox];
+		const config = getBoxConfig(selectedBox, selectedSet);
 		if (config) {
 			slots = structuredClone(config.slots);
 			packsPerBox = config.packsPerBox;
 		}
 		configId = null;
 		loading = false;
+	}
+
+	function handleSetChange() {
+		// If current box type isn't available for new set, switch to blaster
+		if (!availableBoxTypes.includes(selectedBox)) {
+			selectedBox = 'blaster';
+		}
+		loadConfig();
 	}
 
 	function slotWeightSum(slot: SlotConfig): number {
@@ -105,16 +128,18 @@
 
 		saving = true;
 		try {
+			const config = getBoxConfig(selectedBox, selectedSet);
 			const res = await fetch('/api/admin/pack-config', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					id: configId,
 					box_type: selectedBox,
-					set_code: 'alpha',
-					display_name: DEFAULT_CONFIGS[selectedBox]?.displayName || selectedBox,
+					set_code: selectedSet,
+					display_name: config?.displayName || selectedBox,
 					slots,
-					packs_per_box: packsPerBox
+					packs_per_box: packsPerBox,
+					box_guarantees: config?.guarantees || []
 				})
 			});
 
@@ -133,7 +158,7 @@
 	}
 
 	function resetToDefaults() {
-		const config = DEFAULT_CONFIGS[selectedBox];
+		const config = getBoxConfig(selectedBox, selectedSet);
 		if (config) {
 			slots = structuredClone(config.slots);
 			packsPerBox = config.packsPerBox;
@@ -143,15 +168,31 @@
 </script>
 
 <div class="packs-admin">
+	<!-- Set Selector -->
+	<div class="set-selector">
+		<span class="sel-label">Set</span>
+		<div class="set-buttons">
+			{#each SET_OPTIONS as setOpt}
+				<button
+					class="set-btn"
+					class:active={selectedSet === setOpt.key}
+					onclick={() => { selectedSet = setOpt.key; handleSetChange(); }}
+				>
+					{setOpt.label}
+				</button>
+			{/each}
+		</div>
+	</div>
+
 	<!-- Box Type Selector -->
 	<div class="box-selector">
-		{#each BOX_TYPES as box}
+		{#each availableBoxTypes as box}
 			<button
 				class="box-btn"
 				class:active={selectedBox === box}
 				onclick={() => { selectedBox = box; loadConfig(); }}
 			>
-				{box}
+				{box.replace(/_/g, ' ')}
 			</button>
 		{/each}
 	</div>
@@ -162,7 +203,7 @@
 		<div class="meta-row">
 			<label class="meta-field">
 				<span>Packs per box</span>
-				<input type="number" min="1" max="50" bind:value={packsPerBox} />
+				<input type="number" min="1" max="100" bind:value={packsPerBox} />
 			</label>
 		</div>
 
@@ -245,9 +286,20 @@
 
 <style>
 	.packs-admin { display: flex; flex-direction: column; gap: 1rem; }
-	.box-selector { display: flex; gap: 0.5rem; }
+
+	.set-selector { display: flex; flex-direction: column; gap: 0.25rem; }
+	.sel-label { font-size: 0.7rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+	.set-buttons { display: flex; gap: 0.375rem; }
+	.set-btn {
+		flex: 1; padding: 0.375rem; border-radius: 6px; border: 1px solid var(--border-color);
+		background: var(--bg-elevated); color: var(--text-secondary); font-size: 0.75rem;
+		font-weight: 600; cursor: pointer; transition: all 0.15s;
+	}
+	.set-btn.active { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+	.box-selector { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 	.box-btn {
-		flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border-color);
+		flex: 1; min-width: calc(50% - 0.25rem); padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border-color);
 		background: var(--bg-elevated); color: var(--text-secondary); font-size: 0.85rem;
 		font-weight: 600; cursor: pointer; text-transform: capitalize;
 	}

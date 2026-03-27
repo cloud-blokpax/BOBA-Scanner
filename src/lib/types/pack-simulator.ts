@@ -33,16 +33,30 @@ export interface SlotConfig {
 	outcomes: SlotOutcome[];
 }
 
+/** Box-level guarantee (e.g., guaranteed Inspired Ink count per box) */
+export interface BoxGuarantee {
+	/** What must appear at least N times across all packs in the box */
+	type: 'parallel';
+	value: string;
+	/** Minimum count across the entire box */
+	minCount: number;
+	/** Which slot numbers can receive the guaranteed card */
+	eligibleSlots: number[];
+}
+
 /** Full configuration for a box type's pack structure */
 export interface PackConfiguration {
 	id: string;
-	boxType: string;
+	boxType: 'blaster' | 'double_mega' | 'hobby' | 'jumbo';
+	/** Which set this box opens cards from */
 	setCode: string;
 	displayName: string;
 	slots: SlotConfig[];
 	packsPerBox: number;
 	msrpCents: number | null;
 	isActive: boolean;
+	/** Box-level guarantees (e.g., guaranteed Inspired Ink count) */
+	boxGuarantees: BoxGuarantee[];
 }
 
 /** A single opened card in a simulated pack */
