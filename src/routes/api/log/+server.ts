@@ -68,7 +68,19 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	}
 
 	try {
-		const errors: ClientError[] = await request.json();
+		let parsed: unknown;
+		try {
+			parsed = await request.json();
+		} catch {
+			return json({ error: 'Invalid JSON in request body' }, { status: 400 });
+		}
+
+		// Accept both array (legacy client) and { errors: [...] } object format
+		const errors: ClientError[] | undefined = Array.isArray(parsed)
+			? parsed
+			: (parsed && typeof parsed === 'object' && 'errors' in parsed && Array.isArray((parsed as Record<string, unknown>).errors))
+				? (parsed as { errors: ClientError[] }).errors
+				: undefined;
 
 		if (!Array.isArray(errors) || errors.length === 0) {
 			return json({ error: 'Expected array of error objects' }, { status: 400 });

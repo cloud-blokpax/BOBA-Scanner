@@ -28,14 +28,6 @@ export const BUILT_IN_TEMPLATES: ExportTemplate[] = [
 		isAdmin: false
 	},
 	{
-		id: '__builtin_tcgplayer',
-		name: 'TCGPlayer',
-		fields: ['hero', 'cardNumber', 'set', 'rarity', 'condition', 'notes'],
-		updatedAt: '2026-01-01T00:00:00Z',
-		isUser: false,
-		isAdmin: false
-	},
-	{
 		id: '__builtin_insurance',
 		name: 'Insurance / Inventory',
 		fields: ['hero', 'athlete', 'cardNumber', 'set', 'year', 'rarity', 'weapon', 'power', 'condition', 'ebayAvgPrice', 'ebayLowPrice', 'tags', 'notes'],

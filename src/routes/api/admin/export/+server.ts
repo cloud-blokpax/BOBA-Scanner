@@ -4,17 +4,27 @@
  * Exports various data sets for admin use.
  */
 
-import { error } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { parseJsonBody } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);
+
+	const { user } = await locals.safeGetSession();
+	const rateLimit = await checkMutationRateLimit(user!.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
+
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { type, format = 'json' } = await request.json();
+	const body = await parseJsonBody(request);
+	const { type, format = 'json' } = body as { type: string; format?: string };
 
 	let data: Record<string, unknown>[] = [];
 	let filename = 'export';

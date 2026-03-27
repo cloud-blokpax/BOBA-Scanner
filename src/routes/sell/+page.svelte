@@ -78,11 +78,7 @@
 				<span class="export-card-icon">🛒</span>
 				<span class="export-card-name">eBay Seller Hub</span>
 			</button>
-			<button class="export-card" onclick={() => quickExport('__builtin_tcgplayer')}>
-				<span class="export-card-icon">🏷️</span>
-				<span class="export-card-name">TCGPlayer</span>
-			</button>
-		</div>
+			</div>
 		<a href="/export" class="custom-export-link">Custom Export Options &rarr;</a>
 	</div>
 

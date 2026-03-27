@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { parseJsonBody } from '$lib/server/validate';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -36,6 +37,11 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		.single();
 
 	if (!userData?.is_admin) throw error(403, 'Admin access required');
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
+	}
 
 	const body = await parseJsonBody(request);
 	const { id, box_type, set_code, display_name, slots, packs_per_box } = body as Record<string, unknown>;

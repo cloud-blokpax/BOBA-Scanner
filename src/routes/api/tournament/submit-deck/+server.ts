@@ -45,6 +45,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
+	// Reject oversized payloads (100KB max for deck submissions)
+	const contentLength = Number(request.headers.get('content-length') || 0);
+	if (contentLength > 102_400) {
+		throw error(413, 'Request body too large (max 100KB)');
+	}
+
 	try {
 	const body = await parseJsonBody(request);
 
