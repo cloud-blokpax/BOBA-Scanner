@@ -5,304 +5,355 @@
  * pack configuration exists for a box type. The admin can
  * override these entirely through the Pack Simulator admin tab.
  *
- * BoBA packs contain 10 cards. The slot structure varies by box type.
+ * BoBA packs contain 10 cards in a fixed order:
+ *   Slots 1-6: Heroes (structure varies by box type)
+ *   Slots 7-9: Play cards (always paper, never foiled)
+ *   Slot 10:   Hot Dog (always paper, never foiled)
+ *
  * Pull rates here are ESTIMATES based on community observation —
  * the admin should adjust these based on actual data.
  */
 
-import type { SlotConfig } from '$lib/types/pack-simulator';
+import type { SlotConfig, BoxGuarantee } from '$lib/types/pack-simulator';
 
-/** Blaster Box (6 packs, retail, Headliner exclusive) */
+// ── Shared slot builders ────────────────────────────────────
+
+/** Paper hero — common weapon types only */
+function paperHeroSlot(slotNumber: number): SlotConfig {
+	return {
+		slotNumber,
+		label: 'Hero (Paper)',
+		outcomes: [
+			{ type: 'weapon_rarity', value: 'steel', label: 'Steel', weight: 40 },
+			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl', weight: 40 },
+			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 10 },
+			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 10 }
+		]
+	};
+}
+
+/** Play card slot — always paper, standard or bonus */
+function playSlot(slotNumber: number): SlotConfig {
+	return {
+		slotNumber,
+		label: 'Play (Paper)',
+		outcomes: [
+			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 85 },
+			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play', weight: 15 }
+		]
+	};
+}
+
+/** Hot Dog slot — always paper, never foiled */
+function hotDogSlot(slotNumber: number): SlotConfig {
+	return {
+		slotNumber,
+		label: 'Hot Dog (Paper)',
+		outcomes: [
+			{ type: 'card_type', value: 'hotdog', label: 'Hot Dog', weight: 100 }
+		]
+	};
+}
+
+/** Battlefoil hero slot — foil treatment, any weapon up to Glow */
+function battlefoilHeroSlot(slotNumber: number): SlotConfig {
+	return {
+		slotNumber,
+		label: 'Battlefoil Hero',
+		outcomes: [
+			{ type: 'weapon_rarity', value: 'steel', label: 'Steel BF', weight: 30 },
+			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl BF', weight: 30 },
+			{ type: 'weapon_rarity', value: 'fire', label: 'Fire BF', weight: 18 },
+			{ type: 'weapon_rarity', value: 'ice', label: 'Ice BF', weight: 18 },
+			{ type: 'weapon_rarity', value: 'glow', label: 'Glow BF', weight: 4 }
+		]
+	};
+}
+
+// ── Blaster Box ─────────────────────────────────────────────
+
 export const BLASTER_SLOTS: SlotConfig[] = [
+	// Slots 1-5: Paper heroes
+	paperHeroSlot(1),
+	paperHeroSlot(2),
+	paperHeroSlot(3),
+	paperHeroSlot(4),
+	paperHeroSlot(5),
+	// Slot 6: Battlefoil or better (any parallel up to Super)
 	{
-		slotNumber: 1,
-		label: 'Common Hero',
+		slotNumber: 6,
+		label: 'Battlefoil+ Hero',
 		outcomes: [
-			{ type: 'weapon_rarity', value: 'steel', label: 'Steel (Common)', weight: 50 },
-			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl (Common)', weight: 50 }
+			{ type: 'parallel', value: 'foil', label: 'Base Foil', weight: 40 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 12 },
+			{ type: 'parallel', value: 'headlines', label: 'Headlines', weight: 10 },
+			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 10 },
+			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 8 },
+			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 8 },
+			{ type: 'weapon_rarity', value: 'glow', label: 'Glow', weight: 5 },
+			{ type: 'weapon_rarity', value: 'hex', label: 'Hex', weight: 3 },
+			{ type: 'weapon_rarity', value: 'gum', label: 'Gum', weight: 2.5 },
+			{ type: 'weapon_rarity', value: 'super', label: 'Super 1/1', weight: 0.5 },
+			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 1 }
 		]
 	},
+	// Slots 7-9: Play cards (always paper)
+	playSlot(7),
+	playSlot(8),
+	playSlot(9),
+	// Slot 10: Hot Dog (always paper, never foiled)
+	hotDogSlot(10)
+];
+
+export const BLASTER_GUARANTEES: BoxGuarantee[] = [];
+
+// ── Double Mega Box ─────────────────────────────────────────
+
+export const DOUBLE_MEGA_SLOTS: SlotConfig[] = [
+	// Slots 1-5: Paper heroes (same as Blaster)
+	paperHeroSlot(1),
+	paperHeroSlot(2),
+	paperHeroSlot(3),
+	paperHeroSlot(4),
+	paperHeroSlot(5),
+	// Slot 6: Battlefoil+ hero OR bonus play (unique to Double Mega)
 	{
-		slotNumber: 2,
-		label: 'Common Hero',
+		slotNumber: 6,
+		label: 'Battlefoil+ Hero / Bonus Play',
 		outcomes: [
-			{ type: 'weapon_rarity', value: 'steel', label: 'Steel (Common)', weight: 50 },
-			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl (Common)', weight: 50 }
-		]
-	},
-	{
-		slotNumber: 3,
-		label: 'Common Hero',
-		outcomes: [
-			{ type: 'weapon_rarity', value: 'steel', label: 'Steel (Common)', weight: 50 },
-			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl (Common)', weight: 50 }
-		]
-	},
-	{
-		slotNumber: 4,
-		label: 'Common/Uncommon',
-		outcomes: [
-			{ type: 'weapon_rarity', value: 'steel', label: 'Steel', weight: 35 },
-			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl', weight: 35 },
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire (Rare)', weight: 15 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice (Rare)', weight: 15 }
-		]
-	},
-	{
-		slotNumber: 5,
-		label: 'Rare+',
-		outcomes: [
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire (Rare)', weight: 40 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice (Rare)', weight: 40 },
-			{ type: 'weapon_rarity', value: 'glow', label: 'Glow (Ultra Rare)', weight: 12 },
-			{ type: 'weapon_rarity', value: 'hex', label: 'Hex (Secret Rare)', weight: 5 },
-			{ type: 'weapon_rarity', value: 'gum', label: 'Gum (Secret Rare)', weight: 2.5 },
+			{ type: 'parallel', value: 'foil', label: 'Base Foil Hero', weight: 35 },
 			{
-				type: 'weapon_rarity',
-				value: 'super',
-				label: 'Super (Legendary 1/1)',
-				weight: 0.5
+				type: 'parallel',
+				value: 'orange_battlefoil',
+				label: 'Orange BF Hero',
+				weight: 10
+			},
+			{ type: 'parallel', value: 'headlines', label: 'Headlines Hero', weight: 8 },
+			{
+				type: 'parallel',
+				value: 'power_glove',
+				label: 'Power Glove Hero',
+				weight: 8
+			},
+			{ type: 'weapon_rarity', value: 'fire', label: 'Fire Hero', weight: 7 },
+			{ type: 'weapon_rarity', value: 'ice', label: 'Ice Hero', weight: 7 },
+			{ type: 'weapon_rarity', value: 'glow', label: 'Glow Hero', weight: 4 },
+			{ type: 'weapon_rarity', value: 'hex', label: 'Hex Hero', weight: 2.5 },
+			{ type: 'weapon_rarity', value: 'gum', label: 'Gum Hero', weight: 2 },
+			{ type: 'weapon_rarity', value: 'super', label: 'Super 1/1', weight: 0.5 },
+			{
+				type: 'parallel',
+				value: 'inspired_ink',
+				label: 'Inspired Ink',
+				weight: 1
+			},
+			{
+				type: 'card_type',
+				value: 'bonus_play',
+				label: 'Bonus Play (DM Excl.)',
+				weight: 15
 			}
 		]
 	},
+	// Slots 7-9: Play cards (always paper)
+	playSlot(7),
+	playSlot(8),
+	playSlot(9),
+	// Slot 10: Hot Dog (always paper)
+	hotDogSlot(10)
+];
+
+export const DOUBLE_MEGA_GUARANTEES: BoxGuarantee[] = [];
+
+// ── Hobby Box ───────────────────────────────────────────────
+
+export const HOBBY_SLOTS: SlotConfig[] = [
+	// Slots 1-3: Paper heroes
+	paperHeroSlot(1),
+	paperHeroSlot(2),
+	paperHeroSlot(3),
+	// Slots 4-5: Always Battlefoil (up to Glow — no Hex/Gum/Super)
+	battlefoilHeroSlot(4),
+	battlefoilHeroSlot(5),
+	// Slot 6: Any parallel (full range including Inspired Ink, Super)
 	{
 		slotNumber: 6,
-		label: 'Battlefoil Slot',
+		label: 'Insert / Parallel Hero',
 		outcomes: [
-			{ type: 'parallel', value: 'foil', label: 'Base Foil', weight: 60 },
-			{ type: 'parallel', value: 'silver', label: 'Silver Battlefoil', weight: 10 },
+			{ type: 'parallel', value: 'silver', label: 'Silver BF', weight: 8 },
 			{
 				type: 'parallel',
 				value: 'blue_battlefoil',
-				label: 'Blue Battlefoil',
-				weight: 10
+				label: 'Blue BF',
+				weight: 8
 			},
 			{
 				type: 'parallel',
 				value: 'orange_battlefoil',
-				label: 'Orange Battlefoil',
-				weight: 10
+				label: 'Orange BF',
+				weight: 8
 			},
-			{ type: 'parallel', value: 'headlines', label: 'Headlines', weight: 5 },
-			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 5 }
-		]
-	},
-	{
-		slotNumber: 7,
-		label: 'Play Card',
-		outcomes: [
-			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 85 },
-			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play (SP)', weight: 15 }
-		]
-	},
-	{
-		slotNumber: 8,
-		label: 'Play Card',
-		outcomes: [
-			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 85 },
-			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play (SP)', weight: 15 }
-		]
-	},
-	{
-		slotNumber: 9,
-		label: 'Hot Dog',
-		outcomes: [
-			{ type: 'card_type', value: 'hotdog', label: 'Hot Dog', weight: 90 },
-			{ type: 'card_type', value: 'hotdog_foil', label: 'Foil Hot Dog', weight: 10 }
-		]
-	},
-	{
-		slotNumber: 10,
-		label: 'Headliner / Insert',
-		outcomes: [
-			{ type: 'parallel', value: 'foil', label: 'Base Foil', weight: 40 },
 			{
 				type: 'parallel',
-				value: 'headlines',
-				label: 'Headlines (Blaster Excl.)',
-				weight: 25
+				value: 'red_battlefoil',
+				label: 'Red BF (Hobby Excl.)',
+				weight: 5
 			},
-			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 10 },
-			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 10 },
+			{
+				type: 'parallel',
+				value: 'green_battlefoil',
+				label: 'Green BF',
+				weight: 5
+			},
+			{
+				type: 'parallel',
+				value: 'pink_battlefoil',
+				label: 'Pink BF',
+				weight: 5
+			},
+			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 6 },
+			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 6 },
 			{
 				type: 'parallel',
 				value: 'grandmas_linoleum',
 				label: "Grandma's Linoleum",
-				weight: 8
-			},
-			{
-				type: 'parallel',
-				value: 'inspired_ink',
-				label: 'Inspired Ink (Auto)',
-				weight: 2
-			}
-		]
-	}
-];
-
-/** Hobby Box (20 packs, 1 guaranteed auto, color BFs exclusive) */
-export const HOBBY_SLOTS: SlotConfig[] = [
-	...Array.from({ length: 4 }, (_, i) => ({
-		slotNumber: i + 1,
-		label: 'Common Hero',
-		outcomes: [
-			{
-				type: 'weapon_rarity' as const,
-				value: 'steel',
-				label: 'Steel',
-				weight: 50
-			},
-			{
-				type: 'weapon_rarity' as const,
-				value: 'brawl',
-				label: 'Brawl',
-				weight: 50
-			}
-		]
-	})),
-	{
-		slotNumber: 5,
-		label: 'Guaranteed Rare+',
-		outcomes: [
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire (Rare)', weight: 35 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice (Rare)', weight: 35 },
-			{
-				type: 'weapon_rarity',
-				value: 'glow',
-				label: 'Glow (Ultra Rare)',
-				weight: 15
-			},
-			{
-				type: 'weapon_rarity',
-				value: 'hex',
-				label: 'Hex (Secret Rare)',
-				weight: 8
-			},
-			{
-				type: 'weapon_rarity',
-				value: 'gum',
-				label: 'Gum (Secret Rare)',
 				weight: 5
 			},
-			{ type: 'weapon_rarity', value: 'super', label: 'Super (1/1)', weight: 2 }
-		]
-	},
-	{
-		slotNumber: 6,
-		label: 'Color Battlefoil (Hobby Excl.)',
-		outcomes: [
-			{ type: 'parallel', value: 'silver', label: 'Silver', weight: 20 },
-			{ type: 'parallel', value: 'blue_battlefoil', label: 'Blue', weight: 15 },
-			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange', weight: 15 },
+			{ type: 'parallel', value: 'headlines', label: 'Headlines', weight: 5 },
+			{ type: 'parallel', value: 'logo', label: 'Logo', weight: 4 },
+			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 5 },
 			{
 				type: 'parallel',
-				value: 'red_battlefoil',
-				label: 'Red (Hobby Excl.)',
-				weight: 10
+				value: 'fire_tracks',
+				label: 'Fire Tracks',
+				weight: 5
 			},
-			{ type: 'parallel', value: 'green_battlefoil', label: 'Green', weight: 10 },
-			{ type: 'parallel', value: 'pink_battlefoil', label: 'Pink', weight: 10 },
-			{ type: 'parallel', value: 'logo', label: 'Logo', weight: 8 },
+			{ type: 'parallel', value: 'bubblegum', label: 'Bubblegum', weight: 5 },
 			{
 				type: 'parallel',
 				value: 'grillin',
 				label: 'Grillin (Hobby Excl.)',
-				weight: 6
+				weight: 3
 			},
 			{
 				type: 'parallel',
 				value: 'chillin',
 				label: 'Chillin (Hobby Excl.)',
-				weight: 6
-			}
-		]
-	},
-	{
-		slotNumber: 7,
-		label: 'Play Card',
-		outcomes: [
-			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 80 },
-			{
-				type: 'card_type',
-				value: 'bonus_play',
-				label: 'Bonus Play (SP)',
-				weight: 20
-			}
-		]
-	},
-	{
-		slotNumber: 8,
-		label: 'Play Card',
-		outcomes: [
-			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 80 },
-			{
-				type: 'card_type',
-				value: 'bonus_play',
-				label: 'Bonus Play (SP)',
-				weight: 20
-			}
-		]
-	},
-	{
-		slotNumber: 9,
-		label: 'Hot Dog',
-		outcomes: [
-			{ type: 'card_type', value: 'hotdog', label: 'Hot Dog', weight: 85 },
-			{ type: 'card_type', value: 'hotdog_foil', label: 'Foil Hot Dog', weight: 15 }
-		]
-	},
-	{
-		slotNumber: 10,
-		label: 'Insert / Auto Slot',
-		outcomes: [
-			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 15 },
-			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 15 },
+				weight: 3
+			},
+			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 4 },
 			{
 				type: 'parallel',
-				value: 'grandmas_linoleum',
-				label: "Grandma's Linoleum",
-				weight: 12
+				value: 'power_glove',
+				label: 'Power Glove',
+				weight: 4
 			},
-			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 12 },
-			{ type: 'parallel', value: 'fire_tracks', label: 'Fire Tracks', weight: 12 },
-			{ type: 'parallel', value: 'bubblegum', label: 'Bubblegum', weight: 10 },
-			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 10 },
-			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 8 },
 			{
 				type: 'parallel',
 				value: 'inspired_ink',
 				label: 'Inspired Ink (Auto)',
-				weight: 5
+				weight: 3
+			},
+			{ type: 'weapon_rarity', value: 'hex', label: 'Hex Hero', weight: 3 },
+			{ type: 'weapon_rarity', value: 'gum', label: 'Gum Hero', weight: 2 },
+			{
+				type: 'weapon_rarity',
+				value: 'super',
+				label: 'Super 1/1',
+				weight: 0.5
 			},
 			{
 				type: 'parallel',
 				value: 'super_parallel',
-				label: 'Superfoil 1/1',
-				weight: 1
+				label: 'Superfoil Parallel',
+				weight: 0.5
 			}
 		]
-	}
+	},
+	// Slots 7-9: Play cards (always paper)
+	playSlot(7),
+	playSlot(8),
+	playSlot(9),
+	// Slot 10: Hot Dog (always paper)
+	hotDogSlot(10)
 ];
 
-export const DEFAULT_CONFIGS: Record<
-	string,
-	{
-		slots: SlotConfig[];
-		packsPerBox: number;
-		msrpCents: number;
-		displayName: string;
-	}
-> = {
+export const HOBBY_GUARANTEES: BoxGuarantee[] = [
+	{ type: 'parallel', value: 'inspired_ink', minCount: 1, eligibleSlots: [6] }
+];
+
+// ── Jumbo Hobby Box ─────────────────────────────────────────
+
+// Same pack structure as Hobby
+export const JUMBO_SLOTS: SlotConfig[] = HOBBY_SLOTS;
+
+export const JUMBO_GUARANTEES: BoxGuarantee[] = [
+	{ type: 'parallel', value: 'inspired_ink', minCount: 3, eligibleSlots: [6] }
+];
+
+// ── Default Configurations ──────────────────────────────────
+
+export interface BoxTypeConfig {
+	slots: SlotConfig[];
+	packsPerBox: number;
+	msrpCents: number;
+	displayName: string;
+	guarantees: BoxGuarantee[];
+	/** Which sets this box type is available for */
+	availableForSets: string[];
+}
+
+export const DEFAULT_CONFIGS: Record<string, BoxTypeConfig> = {
 	blaster: {
 		slots: BLASTER_SLOTS,
 		packsPerBox: 6,
 		msrpCents: 6995,
-		displayName: 'Blaster Box'
+		displayName: 'Blaster Box',
+		guarantees: BLASTER_GUARANTEES,
+		availableForSets: ['A', 'U', 'G', 'T']
+	},
+	double_mega: {
+		slots: DOUBLE_MEGA_SLOTS,
+		packsPerBox: 14,
+		msrpCents: 12599,
+		displayName: 'Double Mega Box',
+		guarantees: DOUBLE_MEGA_GUARANTEES,
+		availableForSets: ['G', 'T'] // NOT available for Alpha or Update
 	},
 	hobby: {
 		slots: HOBBY_SLOTS,
 		packsPerBox: 20,
 		msrpCents: 51499,
-		displayName: 'Hobby Box'
+		displayName: 'Hobby Box',
+		guarantees: HOBBY_GUARANTEES,
+		availableForSets: ['A', 'U', 'G', 'T']
+	},
+	jumbo: {
+		slots: JUMBO_SLOTS,
+		packsPerBox: 50,
+		msrpCents: 99999,
+		displayName: 'Jumbo Hobby Box',
+		guarantees: JUMBO_GUARANTEES,
+		availableForSets: ['A', 'U', 'G', 'T']
 	}
 };
+
+/** Set-specific overrides (e.g., Tecmo Double Mega has 16 packs not 14) */
+export const SET_OVERRIDES: Record<string, Record<string, Partial<BoxTypeConfig>>> = {
+	T: {
+		double_mega: { packsPerBox: 16 }
+	}
+};
+
+/** Get config for a specific box type + set, applying set overrides */
+export function getBoxConfig(boxType: string, setCode: string): BoxTypeConfig | null {
+	const base = DEFAULT_CONFIGS[boxType];
+	if (!base) return null;
+	if (!base.availableForSets.includes(setCode)) return null;
+
+	const override = SET_OVERRIDES[setCode]?.[boxType];
+	if (override) {
+		return { ...base, ...override };
+	}
+	return base;
+}
