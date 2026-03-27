@@ -219,7 +219,7 @@ export async function recognizeCard(
 				scan_method: 'hash_cache',
 				confidence: 0,
 				processing_ms: Math.round(performance.now() - startTime),
-				failReason: `Image too blurry (sharpness: ${blurResult.variance.toFixed(0)}/${BOBA_SCAN_CONFIG.blurThreshold})`
+				failReason: 'Image too blurry — try holding the card steady with better lighting'
 			};
 		}
 	}
