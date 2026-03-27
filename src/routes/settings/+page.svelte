@@ -311,7 +311,6 @@
 		<section class="settings-section">
 			<h3 class="settings-section-title">Card Tools</h3>
 			<a href="/set-completion" class="settings-link">Set Completion</a>
-			<a href="/dbs" class="settings-link">DBS Calculator</a>
 			<a href="/organize" class="settings-link">Organize Collection</a>
 		</section>
 

@@ -16,7 +16,7 @@
 	let menuOpenId = $state<string | null>(null);
 
 	// Tab state
-	let activeTab = $state<'decks' | 'dbs' | 'tournament'>('decks');
+	let activeTab = $state<'decks' | 'tournament'>('decks');
 
 	// Tournament lookup state
 	let tournamentCode = $state('');
@@ -125,7 +125,7 @@
 	onMount(async () => {
 		// Check URL tab param
 		const tabParam = $page.url.searchParams.get('tab');
-		if (tabParam === 'dbs' || tabParam === 'tournament') {
+		if (tabParam === 'tournament') {
 			activeTab = tabParam;
 		}
 
@@ -153,7 +153,6 @@
 	<!-- Tab bar -->
 	<div class="tab-bar">
 		<button class="tab-btn" class:tab-active={activeTab === 'decks'} onclick={() => activeTab = 'decks'}>My Decks</button>
-		<button class="tab-btn" class:tab-active={activeTab === 'dbs'} onclick={() => activeTab = 'dbs'}>DBS Calculator</button>
 		<button class="tab-btn" class:tab-active={activeTab === 'tournament'} onclick={() => activeTab = 'tournament'}>Tournament</button>
 	</div>
 
@@ -257,14 +256,6 @@
 				</div>
 			{/if}
 		{/if}
-
-	{:else if activeTab === 'dbs'}
-		<!-- DBS Calculator Tab -->
-		<div class="dbs-tab-content">
-			<h1>DBS Calculator</h1>
-			<p class="subtitle">Check your Playbook's Deck Balancing Score.</p>
-			<a href="/dbs" class="btn-create" style="display:inline-block;text-decoration:none;">Open Full Calculator</a>
-		</div>
 
 	{:else if activeTab === 'tournament'}
 		<!-- Tournament Tab -->
@@ -478,11 +469,11 @@
 	.menu-item-danger { color: var(--color-error, #ef4444); }
 	.menu-item-danger:hover { background: rgba(239, 68, 68, 0.1); }
 
-	/* DBS tab */
-	.dbs-tab-content, .tournament-tab-content {
+	/* Tournament tab */
+	.tournament-tab-content {
 		padding: 1rem 0;
 	}
-	.dbs-tab-content h1, .tournament-tab-content h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+	.tournament-tab-content h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
 	.subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; }
 
 	/* Tournament tab */
