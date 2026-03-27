@@ -118,9 +118,9 @@ function roleCheck(flag: FeatureFlag): boolean {
 		// refreshing to prevent features from flickering off briefly
 		_refreshProfile(currentUser.id);
 	}
-	if (_userProfile?.is_admin) return flag.enabled_for_admin !== false;
-	if (_userProfile?.is_pro) return flag.enabled_for_pro !== false;
-	return flag.enabled_for_authenticated !== false;
+	if (_userProfile?.is_admin) return flag.enabled_for_admin === true;
+	if (_userProfile?.is_pro) return flag.enabled_for_pro === true;
+	return flag.enabled_for_authenticated === true;
 }
 
 async function _refreshProfile(userId: string): Promise<void> {
