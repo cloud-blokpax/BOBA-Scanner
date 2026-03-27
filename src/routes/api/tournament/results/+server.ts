@@ -55,6 +55,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!Array.isArray(results) || results.length === 0) {
 		throw error(400, 'results array is required');
 	}
+	if (results.length > 500) {
+		throw error(400, 'Too many results (max 500)');
+	}
+	for (let i = 0; i < results.length; i++) {
+		const r = results[i];
+		if (typeof r.player_name !== 'string' || !r.player_name.trim()) {
+			throw error(400, `results[${i}].player_name is required`);
+		}
+		if (typeof r.final_standing !== 'number' || r.final_standing < 1) {
+			throw error(400, `results[${i}].final_standing must be a positive number`);
+		}
+	}
 
 	// Verify tournament exists and user has access
 	const { data: tournament } = await supabase

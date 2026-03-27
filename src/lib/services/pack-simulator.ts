@@ -88,7 +88,7 @@ function rollWeightedOutcome(
 
 	for (const outcome of outcomes) {
 		roll -= outcome.weight;
-		if (roll <= 0) return outcome;
+		if (roll < 0) return outcome;
 	}
 
 	return outcomes[outcomes.length - 1];

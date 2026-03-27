@@ -14,6 +14,7 @@
 import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
+import { getAdminClient } from '$lib/server/supabase-admin';
 import { parseJsonBody } from '$lib/server/validate';
 import type { RequestHandler } from './$types';
 
@@ -159,7 +160,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				fetched_at: new Date().toISOString()
 			};
 
-			await supabase.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			const cacheClient = getAdminClient() || supabase;
+			await cacheClient.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
 
 			return {
 				card_id: cardId,

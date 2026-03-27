@@ -99,6 +99,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!Array.isArray(heroCards) || heroCards.length === 0) {
 		throw error(400, 'Hero cards are required');
 	}
+	if (heroCards.length > 100) {
+		throw error(400, 'Too many hero cards (max 100)');
+	}
+	if (playEntries.length > 75) {
+		throw error(400, 'Too many play entries (max 75)');
+	}
 
 	// Run server-side validation
 	const { validateDeck } = await import('$lib/services/deck-validator');

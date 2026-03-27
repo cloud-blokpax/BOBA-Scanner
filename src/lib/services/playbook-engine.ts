@@ -185,7 +185,7 @@ export function projectHDFlow(
 			battle < Math.ceil(weaponMatchSubs)
 				? Math.min(2, (weaponMatchSubs * 2) / Math.ceil(weaponMatchSubs))
 				: 0;
-		hd -= subCostThisBattle;
+		hd = Math.max(0, hd - subCostThisBattle);
 
 		// Recovery
 		hd +=
@@ -199,7 +199,7 @@ export function projectHDFlow(
 		if (freeRatio > 0.3) {
 			activationsThisBattle = 1;
 		}
-		if (hd >= avgPaidCost && paidPlays.length > 0) {
+		if (hd >= avgPaidCost && avgPaidCost > 0 && paidPlays.length > 0) {
 			activationsThisBattle += 1;
 			hd -= avgPaidCost;
 		}

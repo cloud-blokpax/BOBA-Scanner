@@ -17,7 +17,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
+	const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 50, 200));
 	const publishedOnly = url.searchParams.get('published') === 'true';
 
 	let query = admin

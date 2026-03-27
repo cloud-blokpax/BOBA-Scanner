@@ -147,8 +147,8 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		// Update cache — use service role to bypass RLS (price_cache is server-managed)
 		try {
 			const adminClient = getAdminClient();
-			const writeCacheClient = adminClient || locals.supabase;
-			await writeCacheClient.from('price_cache').upsert(priceData, {
+			if (!adminClient) throw new Error('Admin client unavailable for cache write');
+			await adminClient.from('price_cache').upsert(priceData, {
 				onConflict: 'card_id,source'
 			});
 		} catch (err) {
@@ -158,7 +158,8 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 		// Log price data point to history — only when price actually changed
 		try {
-			const historyClient = getAdminClient() || locals.supabase;
+			const historyClient = getAdminClient();
+			if (!historyClient) throw new Error('Admin client unavailable for history write');
 			const { data: lastEntry } = await historyClient
 				.from('price_history')
 				.select('price_mid')

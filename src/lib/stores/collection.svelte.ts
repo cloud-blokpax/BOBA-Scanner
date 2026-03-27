@@ -37,13 +37,13 @@ export function clearLocalModifications(): void {
 export function collectionItems(): CollectionItem[] { return _items; }
 export function collectionLoading(): boolean { return _loading; }
 export function collectionCount(): number {
-	return _items.reduce((sum, item) => sum + item.quantity, 0);
+	return _items.reduce((sum, item) => sum + (item.quantity || 1), 0);
 }
 export function uniqueCardCount(): number { return _items.length; }
 export function ownedCardCounts(): Map<string, number> {
 	const map = new Map<string, number>();
 	for (const item of _items) {
-		map.set(item.card_id, (map.get(item.card_id) || 0) + item.quantity);
+		map.set(item.card_id, (map.get(item.card_id) || 0) + (item.quantity || 1));
 	}
 	return map;
 }

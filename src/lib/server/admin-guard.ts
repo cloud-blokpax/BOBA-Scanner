@@ -19,9 +19,10 @@ export async function requireAdmin(locals: App.Locals): Promise<void> {
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
+	// SECURITY: Only trust the database profile and app_metadata (server-only).
+	// Never trust user_metadata — it is editable by the user via auth.updateUser().
 	const isAdmin = profile?.is_admin === true
-		|| user.app_metadata?.is_admin === true
-		|| user.user_metadata?.is_admin === true;
+		|| user.app_metadata?.is_admin === true;
 
 	if (!isAdmin) throw error(403, 'Admin access required');
 }
