@@ -250,6 +250,43 @@ export const COMBO_ENGINES: ComboEngine[] = [
 			'+125 power swing in Battle 4 after losing first 3. Must win 4 of remaining 4 battles.',
 		rarityNote:
 			'Turn the Tide is Update BPL-21 (DBS 1). Extremely accessible. Most supporting cards are commons/uncommons.'
+	},
+	{
+		id: 'substitution_cleanse',
+		name: 'The Substitution Cleanse',
+		tagline: 'Erase every debuff your opponent applies',
+		description:
+			'Rule 3.2: cards lose all applied effects when they move between zones. If your hero gets -20 from an opponent play, substitute them out — the debuff is erased. With Unlimited Subs (free substitutions), you can systematically cleanse every negative effect at zero HD cost.',
+		chain: 'Opponent plays debuff on your hero (-20) → you substitute that hero out (free via Unlimited Subs) → debuff is erased (Rule 3.2) → new hero enters clean → opponent wasted their play and HD. Repeat every battle.',
+		coreCards: ['Unlimited Subs'],
+		enhancerCards: ['Substitution Boost', 'No More Subs', 'Late Game Lockdown'],
+		feedCategory: null,
+		coreDBS: 19,
+		coreHD: 4,
+		weaponRequirement: null,
+		risk: 'low',
+		projectedImpact:
+			'Neutralizes all opponent debuffs post-activation. +5 per sub from Substitution Boost. Opponent debuff plays become dead cards.',
+		rarityNote: 'Unlimited Subs is Alpha SP (PL-19). Accessible.'
+	},
+	{
+		id: 'ongoing_kill_switch',
+		name: 'The Ongoing Kill Switch',
+		tagline: 'Kill their persistent effects retroactively',
+		description:
+			"Rule 5.1.7: if a play with an ongoing effect leaves play or is returned to hand, its ongoing effects are immediately nullified. Cards that bounce opponent plays to hand don't just deny activation — they retroactively kill any persistent buffs or restrictions that play created.",
+		chain: "Opponent plays persistent buff (+10 all heroes rest of game) → you play a bounce/nullify effect → their play returns to hand → Rule 5.1.7 triggers → the +10 buff is immediately nullified. Their HD is wasted, their buff is gone, and the play is back in their hand (they could replay it, but they'd need to spend HD again).",
+		coreCards: [],
+		enhancerCards: [],
+		feedCategory: 'nullify',
+		coreDBS: 0,
+		coreHD: 0,
+		weaponRequirement: null,
+		risk: 'medium',
+		projectedImpact:
+			"Each nullification erases the opponent's HD investment + removes their persistent advantage.",
+		rarityNote:
+			'TBD — requires identifying bounce/nullify plays in the database.'
 	}
 ];
 
