@@ -289,13 +289,37 @@
 			{/if}
 		</section>
 
+		<!-- My Stuff -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">My Stuff</h3>
+			<a href="/collection" class="settings-link">My Collection</a>
+			<a href="/deck" class="settings-link">My Decks</a>
+			<a href="/export" class="settings-link">Export Collection</a>
+		</section>
+
 		<!-- Scanning Tools -->
 		<section class="settings-section">
 			<h3 class="settings-section-title">Scanning Tools</h3>
-			<a href="/grader" class="settings-link">Card Grader</a>
+			<a href="/scan" class="settings-link">Single Scan</a>
 			<a href="/scan?mode=batch" class="settings-link">Batch Scanner</a>
 			<a href="/scan?mode=binder" class="settings-link">Binder Scanner</a>
+			<a href="/scan?mode=roll" class="settings-link">Camera Roll Import</a>
+			<a href="/grader" class="settings-link">Card Grader</a>
+		</section>
+
+		<!-- Card Tools -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Card Tools</h3>
 			<a href="/set-completion" class="settings-link">Set Completion</a>
+			<a href="/dbs" class="settings-link">DBS Calculator</a>
+			<a href="/organize" class="settings-link">Organize Collection</a>
+		</section>
+
+		<!-- Competitive -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Competitive</h3>
+			<a href="/deck/new" class="settings-link">Deck Builder</a>
+			<a href="/tournaments" class="settings-link">Tournaments</a>
 		</section>
 
 		<!-- Community -->
@@ -304,6 +328,12 @@
 			<a href="/speed" class="settings-link">Speed Challenge</a>
 			<a href="/leaderboard" class="settings-link">Leaderboard</a>
 			<a href="/marketplace/monitor" class="settings-link">Seller Monitor</a>
+		</section>
+
+		<!-- Sell -->
+		<section class="settings-section">
+			<h3 class="settings-section-title">Sell</h3>
+			<a href="/sell" class="settings-link">Sell Cards</a>
 		</section>
 
 		{#if isAdmin}
