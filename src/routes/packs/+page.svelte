@@ -58,7 +58,7 @@
 					.eq('box_type', selectedBox)
 					.eq('is_active', true)
 					.limit(1)
-					.single();
+					.maybeSingle();
 
 				if (data?.slots) {
 					slots = data.slots as SlotConfig[];

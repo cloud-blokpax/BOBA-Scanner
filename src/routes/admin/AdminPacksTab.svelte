@@ -57,7 +57,7 @@
 					.eq('box_type', selectedBox)
 					.eq('is_active', true)
 					.limit(1)
-					.single();
+					.maybeSingle();
 
 				if (data) {
 					slots = structuredClone(data.slots as SlotConfig[]);
