@@ -196,8 +196,10 @@
 				<ScanCardHeader
 					name={card.name}
 					heroName={card.hero_name ?? null}
+					athleteName={card.athlete_name ?? null}
 					cardNumber={card.card_number ?? null}
 					parallel={card.parallel ?? activeResult.variant ?? null}
+					weaponType={card.weapon_type ?? null}
 					{isOwned}
 					{ownedCount}
 				/>
