@@ -278,7 +278,7 @@
 		<a href="/scan" class="scan-fab" class:active={currentPath === '/scan'} aria-label="Scan Card">
 			<span class="scan-fab-icon">📷</span>
 		</a>
-		<a href="/deck" class="bottom-nav-item" class:active={currentPath.startsWith('/deck') || currentPath.startsWith('/dbs') || currentPath.startsWith('/tournaments') || currentPath.startsWith('/packs')}>
+		<a href="/deck" class="bottom-nav-item" class:active={currentPath.startsWith('/deck') || currentPath.startsWith('/tournaments') || currentPath.startsWith('/packs')}>
 			<span class="bottom-nav-icon">🃏</span>
 			<span class="bottom-nav-label">Decks</span>
 		</a>

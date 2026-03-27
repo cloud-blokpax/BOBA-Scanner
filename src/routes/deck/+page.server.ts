@@ -1,4 +1,4 @@
-// Deck page loads for all users (DBS Calculator and Tournament tabs don't require auth)
+// Deck page loads for all users (Tournament tab doesn't require auth)
 export function load() {
 	return {};
 }

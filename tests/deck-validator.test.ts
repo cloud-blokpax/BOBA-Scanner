@@ -104,12 +104,31 @@ describe('validateDeck', () => {
 		expect(result.violations.some(v => v.rule === 'max_per_variation')).toBe(true);
 	});
 
-	it('validates SPEC+ combined power cap', () => {
-		// 70 cards at 140 power = 9,800 > 9,500 cap
-		const heroes = makeHeroDeck(70, { power: 140 });
+	it('validates SPEC+ core deck requirement (60 cards must be ≤160)', () => {
+		// 70 cards all at 170 power — only 0 are ≤160, need 60
+		const heroes = makeHeroDeck(70, { power: 170 });
 		const result = validateDeck(heroes, 'spec_plus');
 		expect(result.isValid).toBe(false);
-		expect(result.violations.some(v => v.rule === 'combined_power_cap')).toBe(true);
+		expect(result.violations.some(v => v.rule === 'spec_plus_core')).toBe(true);
+	});
+
+	it('validates SPEC+ absolute max power of 200', () => {
+		const heroes = makeHeroDeck(60);
+		heroes[0] = makeCard({ power: 210, hero_name: 'Over Max' });
+		const result = validateDeck(heroes, 'spec_plus');
+		expect(result.isValid).toBe(false);
+		expect(result.violations.some(v => v.rule === 'absolute_max_power')).toBe(true);
+	});
+
+	it('validates SPEC+ graduated power slot limits', () => {
+		// 3 cards at power 165 — max is 2
+		const heroes = makeHeroDeck(60);
+		heroes[57] = makeCard({ power: 165, hero_name: 'Slot1', weapon_type: 'Fire' });
+		heroes[58] = makeCard({ power: 165, hero_name: 'Slot2', weapon_type: 'Ice' });
+		heroes[59] = makeCard({ power: 165, hero_name: 'Slot3', weapon_type: 'Steel' });
+		const result = validateDeck(heroes, 'spec_plus');
+		expect(result.isValid).toBe(false);
+		expect(result.violations.some(v => v.rule === 'power_slot_limit')).toBe(true);
 	});
 
 	it('returns unknown format error for invalid format ID', () => {
