@@ -1,7 +1,8 @@
 /**
  * /api/admin/users — Enhanced user management
  *
- * PUT: Update user role/status
+ * GET:  List all users (admin only, bypasses RLS via service role)
+ * PUT:  Update user role/status
  * POST: Bulk operations on users
  */
 
@@ -11,6 +12,22 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 import { parseJsonBody } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async ({ locals }) => {
+	await requireAdmin(locals);
+	const admin = getAdminClient();
+	if (!admin) throw error(503, 'Database not available');
+
+	const { data, error: dbError } = await admin
+		.from('users')
+		.select('id, auth_user_id, email, name, is_admin, is_pro, is_organizer, api_calls_used, cards_in_collection, created_at')
+		.order('created_at', { ascending: false })
+		.limit(500);
+
+	if (dbError) throw error(500, dbError.message);
+
+	return json(data ?? []);
+};
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);

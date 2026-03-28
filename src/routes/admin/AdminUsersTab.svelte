@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { debounce } from '$lib/utils';
 
@@ -11,7 +10,7 @@
 		is_admin: boolean;
 		is_pro: boolean;
 		is_organizer: boolean;
-		scan_count: number;
+		api_calls_used: number;
 		cards_in_collection: number;
 		created_at: string;
 	}
@@ -21,7 +20,7 @@
 	let loading = $state(true);
 	let searchQuery = $state('');
 	let roleFilter = $state<'all' | 'admin' | 'pro' | 'organizer' | 'user'>('all');
-	let sortBy = $state<'created_at' | 'scan_count' | 'name' | 'cards_in_collection'>('created_at');
+	let sortBy = $state<'created_at' | 'api_calls_used' | 'name' | 'cards_in_collection'>('created_at');
 	let sortDir = $state<'asc' | 'desc'>('desc');
 	let togglingUser = $state<string | null>(null);
 	let selectedUsers = $state<Set<string>>(new Set());
@@ -69,7 +68,7 @@
 		result.sort((a, b) => {
 			let cmp = 0;
 			if (sortBy === 'created_at') cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-			else if (sortBy === 'scan_count') cmp = a.scan_count - b.scan_count;
+			else if (sortBy === 'api_calls_used') cmp = (a.api_calls_used || 0) - (b.api_calls_used || 0);
 			else if (sortBy === 'cards_in_collection') cmp = (a.cards_in_collection || 0) - (b.cards_in_collection || 0);
 			else if (sortBy === 'name') cmp = (a.name || '').localeCompare(b.name || '');
 			return sortDir === 'desc' ? -cmp : cmp;
@@ -90,18 +89,12 @@
 
 	async function loadUsers() {
 		loading = true;
-		const client = getSupabase();
-		if (!client) { showToast('Supabase not configured', 'x'); loading = false; return; }
 		try {
-			const { data } = await client
-				.from('users')
-				.select('id, auth_user_id, email, name, is_admin, is_pro, is_organizer, scan_count, cards_in_collection, created_at')
-				.order('created_at', { ascending: false })
-				.limit(500);
-			if (data) {
-				users = data as unknown as UserRow[];
-				filteredUsers = users;
-			}
+			const res = await fetch('/api/admin/users');
+			if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
+			const data = await res.json();
+			users = data as UserRow[];
+			filteredUsers = users;
 		} catch {
 			showToast('Failed to load users', 'x');
 		}
@@ -232,8 +225,8 @@
 						</th>
 						<th>Email</th>
 						<th>Role</th>
-						<th class="sortable" onclick={() => setSort('scan_count')}>
-							Scans {sortBy === 'scan_count' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+						<th class="sortable" onclick={() => setSort('api_calls_used')}>
+							API Calls {sortBy === 'api_calls_used' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
 						</th>
 						<th class="sortable" onclick={() => setSort('cards_in_collection')}>
 							Cards {sortBy === 'cards_in_collection' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
@@ -275,7 +268,7 @@
 									<span class="badge organizer">Org</span>
 								{/if}
 							</td>
-							<td>{user.scan_count || 0}</td>
+							<td>{user.api_calls_used || 0}</td>
 							<td>{user.cards_in_collection || 0}</td>
 							<td class="date-cell">{timeAgo(user.created_at)}</td>
 							<td class="actions-cell">
@@ -319,8 +312,8 @@
 												<span class="detail-value mono">{user.auth_user_id}</span>
 											</div>
 											<div class="detail-item">
-												<span class="detail-label">Total Scans</span>
-												<span class="detail-value">{user.scan_count}</span>
+												<span class="detail-label">API Calls Used</span>
+												<span class="detail-value">{user.api_calls_used || 0}</span>
 											</div>
 											<div class="detail-item">
 												<span class="detail-label">Collection Size</span>

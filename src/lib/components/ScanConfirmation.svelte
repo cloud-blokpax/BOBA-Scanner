@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection.svelte';
-	import { getPrice } from '$lib/stores/prices.svelte';
+	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
@@ -40,6 +40,7 @@
 	let priceData = $state<{ price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null>(null);
 	let priceLoading = $state(false);
 	let priceError = $state(false);
+	let priceErrorReason = $state<string | null>(null);
 
 	// Price history state
 	let historyData = $state<Array<{ date: string; price_mid: number | null }>>([]);
@@ -79,11 +80,17 @@
 		const cardId = card.id;
 		priceLoading = true;
 		priceError = false;
+		priceErrorReason = null;
 		priceData = null;
 
-		getPrice(cardId)
-			.then(data => {
-				if (card?.id === cardId) priceData = data;
+		getPriceWithReason(cardId)
+			.then(result => {
+				if (card?.id !== cardId) return;
+				priceData = result.data;
+				if (!result.data && result.errorReason) {
+					priceError = true;
+					priceErrorReason = result.errorReason;
+				}
 			})
 			.catch(() => {
 				if (card?.id === cardId) priceError = true;
@@ -208,6 +215,7 @@
 					{priceData}
 					{priceLoading}
 					{priceError}
+					{priceErrorReason}
 					{historyData}
 					{historyLoading}
 					showPriceHistory={hasPriceHistory()}

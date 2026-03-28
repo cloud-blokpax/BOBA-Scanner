@@ -75,13 +75,15 @@ export async function upsertCollectionItem(
 	const userId = user.id;
 
 	// Check if this card+condition already exists for this user
-	const { data: existing } = await supabase
+	const { data: existing, error: lookupError } = await supabase
 		.from('collections')
 		.select('id, quantity')
 		.eq('user_id', userId)
 		.eq('card_id', cardId)
 		.eq('condition', condition)
 		.maybeSingle();
+
+	if (lookupError) throw new Error('Failed to check collection — please try again');
 
 	if (existing) {
 		// Increment quantity on existing entry instead of overwriting to 1
@@ -93,7 +95,7 @@ export async function upsertCollectionItem(
 			.select(`*, card:cards(*)`)
 			.single();
 
-		if (error) throw error;
+		if (error) throw new Error('Failed to update quantity — please try again');
 		return data as unknown as CollectionItem;
 	}
 
@@ -110,7 +112,32 @@ export async function upsertCollectionItem(
 		.select(`*, card:cards(*)`)
 		.single();
 
-	if (error) throw error;
+	if (error) {
+		// Handle race condition: another tab/device inserted between our check and insert
+		if (error.code === '23505') {
+			// Unique constraint violation — retry as quantity increment
+			const { data: retryExisting } = await supabase
+				.from('collections')
+				.select('id, quantity')
+				.eq('user_id', userId)
+				.eq('card_id', cardId)
+				.eq('condition', condition)
+				.maybeSingle();
+
+			if (retryExisting) {
+				const { data: retryData, error: retryError } = await supabase
+					.from('collections')
+					.update({ quantity: (retryExisting.quantity || 1) + 1, notes })
+					.eq('id', retryExisting.id)
+					.select(`*, card:cards(*)`)
+					.single();
+
+				if (retryError) throw new Error('Failed to add card — please try again');
+				return retryData as unknown as CollectionItem;
+			}
+		}
+		throw new Error('Failed to add card to collection — please try again');
+	}
 	return data as unknown as CollectionItem;
 }
 
