@@ -108,6 +108,16 @@
 					failReason: errorMsg
 				};
 			}
+		} catch (err) {
+			console.error('[home] Upload scan error:', err);
+			uploadResult = {
+				card_id: null,
+				card: null,
+				scan_method: 'claude',
+				confidence: 0,
+				processing_ms: 0,
+				failReason: 'Scan failed — please try again'
+			};
 		} finally {
 			uploading = false;
 			input.value = '';

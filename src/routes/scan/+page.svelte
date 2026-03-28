@@ -77,11 +77,11 @@
 			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} onModeChange={handleModeChange} />
 		{:else if scanMode === 'batch'}
 			{#await import('$lib/components/BatchScanner.svelte') then { default: BatchScanner }}
-				<BatchScanner />
+				<BatchScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
 			{/await}
 		{:else if scanMode === 'binder'}
 			{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
-				<BinderScanner />
+				<BinderScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
 			{/await}
 		{:else if scanMode === 'roll'}
 			{#await import('$lib/components/CameraRollImport.svelte') then { default: CameraRollImport }}

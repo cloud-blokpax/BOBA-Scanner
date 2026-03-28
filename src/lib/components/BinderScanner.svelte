@@ -5,7 +5,7 @@
 	import { addToCollection } from '$lib/stores/collection.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 
-	let { onClose }: { onClose?: () => void } = $props();
+	let { onClose, isAuthenticated = false }: { onClose?: () => void; isAuthenticated?: boolean } = $props();
 
 	type GridPreset = { rows: number; cols: number; label: string };
 
@@ -172,9 +172,18 @@
 	}
 
 	async function commitResults() {
+		if (!isAuthenticated) {
+			window.location.href = '/auth/login?redirectTo=/scan?mode=binder';
+			return;
+		}
+
 		for (const cell of doneCells) {
 			if (cell.result?.card_id) {
-				await addToCollection(cell.result.card_id, 'near_mint');
+				try {
+					await addToCollection(cell.result.card_id, 'near_mint');
+				} catch (err) {
+					console.warn('[BinderScanner] Failed to add card:', err);
+				}
 			}
 		}
 		committed = true;

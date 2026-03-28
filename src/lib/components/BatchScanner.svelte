@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import type { ScanResult, Card } from '$lib/types';
 	import { recognizeCard } from '$lib/services/recognition';
 	import { addToCollection } from '$lib/stores/collection.svelte';
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 
-	let { onClose }: { onClose?: () => void } = $props();
+	let { onClose, isAuthenticated = false }: { onClose?: () => void; isAuthenticated?: boolean } = $props();
 
 	interface BatchEntry {
 		id: string;
@@ -107,22 +107,31 @@
 	}
 
 	async function commitBatch() {
+		if (!isAuthenticated) {
+			const cardIds = entries
+				.filter(e => e.status === 'done' && e.result?.card_id)
+				.map(e => e.result!.card_id!);
+			sessionStorage.setItem('pending_batch_cards', JSON.stringify(cardIds));
+			window.location.href = '/auth/login?redirectTo=/scan?mode=batch';
+			return;
+		}
+
 		const successful = entries.filter((e) => e.status === 'done' && e.result?.card_id);
+		let addedCount = 0;
 		for (const entry of successful) {
 			if (entry.result?.card_id) {
-				await addToCollection(entry.result.card_id, 'near_mint');
+				try {
+					await addToCollection(entry.result.card_id, 'near_mint');
+					addedCount++;
+				} catch (err) {
+					console.warn('[BatchScanner] Failed to add card:', err);
+				}
 			}
 		}
 		committed = true;
 	}
 
-	onMount(() => {
-		return () => {
-			for (const entry of entries) {
-				URL.revokeObjectURL(entry.previewUrl);
-			}
-		};
-	});
+	// Cleanup is handled in onDestroy — no additional teardown needed here
 </script>
 
 <div class="batch-scanner">

@@ -873,23 +873,24 @@ async function writeHashToAllLayers(
 	// Automatically submit high-confidence scans as candidate reference images.
 	// The server-side RPC handles the atomic "beat the champion" logic.
 	// This runs in the background — it never blocks the scan result.
+	//
+	// IMPORTANT: We must do the bitmap work (resize + blur check) SYNCHRONOUSLY
+	// before this function returns, because the caller will close the bitmap
+	// in a finally block. Only the network upload is fire-and-forget.
 	if (bitmap && imageWorker && confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence) {
-		(async () => {
-			try {
-				// Resize the bitmap to a clean JPEG for upload
-				const uploadBlob = await imageWorker!.resizeForUpload(bitmap, 800);
+		try {
+			// Do bitmap operations NOW, before the caller closes the bitmap
+			const uploadBlob = await imageWorker.resizeForUpload(bitmap, 800);
+			const { variance: blurVariance } = await imageWorker.checkBlurry(bitmap, 100);
 
-				// Check blur quality — we want sharp reference images
-				const { variance: blurVariance } = await imageWorker!.checkBlurry(bitmap, 100);
-
-				// Only submit non-blurry images (variance > 150 means reasonably sharp)
-				if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
-					await submitReferenceImage(cardId, confidence, uploadBlob, blurVariance);
-				}
-			} catch (err) {
-				console.debug('[scan] Reference image submission failed:', err);
+			// Only the network submission is fire-and-forget
+			if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
+				submitReferenceImage(cardId, confidence, uploadBlob, blurVariance)
+					.catch(err => console.debug('[scan] Reference image submission failed:', err));
 			}
-		})();  // Fire-and-forget — don't await
+		} catch (err) {
+			console.debug('[scan] Reference image preparation failed:', err);
+		}
 	}
 }
 
