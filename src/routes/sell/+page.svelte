@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { collectionItems } from '$lib/stores/collection.svelte';
+	import { onMount } from 'svelte';
+	import { collectionItems, collectionLoading, loadCollection } from '$lib/stores/collection.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { formatPrice } from '$lib/utils';
 	import {
@@ -12,7 +13,12 @@
 	} from '$lib/services/export-templates';
 	import { getAllTags } from '$lib/stores/tags.svelte';
 
+	onMount(() => {
+		loadCollection();
+	});
+
 	const items = $derived(collectionItems());
+	const loading = $derived(collectionLoading());
 
 	function buildExportRows(): Record<string, unknown>[] {
 		return items.map((item) => {
@@ -63,7 +69,7 @@
 <div class="sell-page">
 	<header class="page-header">
 		<h1>Sell</h1>
-		<p class="subtitle">Your scanned cards, ready to list</p>
+		<p class="subtitle">Export and price your collection</p>
 	</header>
 
 	<!-- Quick Export strip -->
@@ -85,23 +91,37 @@
 	<!-- Scanned Cards -->
 	<div class="scanned-cards">
 		<h2 class="section-heading">Scanned Cards ({items.length})</h2>
-		{#if items.length === 0}
+		{#if loading}
 			<div class="empty-state">
-				<p>No cards scanned yet.</p>
+				<p>Loading your collection...</p>
+			</div>
+		{:else if items.length === 0}
+			<div class="empty-state">
+				<p>No cards in your collection yet.</p>
 				<a href="/scan" class="btn-scan-link">Scan your first card</a>
 			</div>
 		{:else}
 			<div class="cards-list">
 				{#each items as item (item.id)}
 					{@const card = item.card}
+					{@const ebayQuery = encodeURIComponent(`BoBA ${card?.hero_name || card?.name || ''} ${card?.card_number || ''}`)}
 					<div class="card-row">
 						<div class="card-row-thumb">🎴</div>
 						<div class="card-row-info">
 							<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
 							<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
 						</div>
-						<div class="card-row-price">
+						<div class="card-row-actions">
 							<span class="card-row-condition">{item.condition || 'NM'}</span>
+							<a
+								href="https://www.ebay.com/sch/i.html?_nkw={ebayQuery}&_sacat=0"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="card-row-ebay-link"
+								title="Search eBay for comps"
+							>
+								eBay ↗
+							</a>
 						</div>
 					</div>
 				{/each}
@@ -240,11 +260,34 @@
 		font-size: 0.75rem;
 		color: var(--text-muted, #475569);
 	}
+
+	.card-row-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25rem;
+	}
+
 	.card-row-condition {
 		font-size: 0.75rem;
 		padding: 0.125rem 0.5rem;
 		border-radius: 4px;
 		background: var(--bg-surface, #0d1524);
 		color: var(--text-secondary, #94a3b8);
+	}
+
+	.card-row-ebay-link {
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--primary, #3b82f6);
+		text-decoration: none;
+		padding: 0.125rem 0.375rem;
+		border-radius: 4px;
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		white-space: nowrap;
+	}
+
+	.card-row-ebay-link:hover {
+		background: rgba(59, 130, 246, 0.1);
 	}
 </style>

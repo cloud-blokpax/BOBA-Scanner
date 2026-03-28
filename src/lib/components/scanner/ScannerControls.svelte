@@ -11,6 +11,8 @@
 		onFoilCapture,
 		onFoilToggle,
 		onFileUpload,
+		onFileDialogOpen,
+		onFileDialogClose,
 		onModeChange
 	}: {
 		torchOn: boolean;
@@ -24,6 +26,8 @@
 		onFoilCapture: () => void;
 		onFoilToggle: () => void;
 		onFileUpload: (event: Event) => void;
+		onFileDialogOpen?: () => void;
+		onFileDialogClose?: () => void;
 		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
 </script>
@@ -57,12 +61,19 @@
 
 	<!-- Capture controls -->
 	<div class="capture-row">
-		<label class="control-btn upload-btn">
+		<label class="control-btn upload-btn" onclick={() => onFileDialogOpen?.()}>
 			<span>📁</span>
 			<input
 				type="file"
 				accept="image/jpeg,image/png,image/webp"
 				onchange={onFileUpload}
+				onclick={(e) => {
+					const handler = () => {
+						setTimeout(() => onFileDialogClose?.(), 300);
+						window.removeEventListener('focus', handler);
+					};
+					window.addEventListener('focus', handler);
+				}}
 				hidden
 			/>
 		</label>
