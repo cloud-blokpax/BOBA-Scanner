@@ -25,6 +25,8 @@ export interface Card {
 	battle_zone: string | null;
 	image_url: string | null;
 	created_at: string;
+	/** Release year: 2025 for Alpha Edition / Alpha Update, 2026 for Griffey Edition */
+	year?: number | null;
 	/** Base play name for variant deduplication (e.g. "Blitz" for "Blitz Alpha", "Blitz Blast") */
 	base_play_name?: string;
 	/** Whether this is a bonus play (ultra-rare, beyond the standard 30) */
