@@ -21,12 +21,6 @@ function generateCode(length = 8): string {
 	return Array.from(bytes, b => chars[b % chars.length]).join('');
 }
 
-interface DeckCard {
-	card_id: string;
-	zone: string;
-	card: Card;
-}
-
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireAuth(locals);
 	const supabase = requireSupabase(locals);
@@ -48,39 +42,41 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const deckId = requireString(body.deck_id, 'deck_id');
 	const formatId = requireString(body.format_id, 'format_id');
 
-	// Fetch the deck and its cards — cast to unknown first to avoid
-	// Supabase typed client issues with joined queries
-	const { data: rawDeck, error: deckErr } = await supabase
-		.from('decks')
-		.select('*, cards:deck_cards(card_id, zone, card:cards(*))')
+	// Fetch the deck from user_decks (JSONB-based storage)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { data: rawDeck, error: deckErr } = await (supabase as any)
+		.from('user_decks')
+		.select('*')
 		.eq('id', deckId)
 		.eq('user_id', user.id)
 		.single();
 
 	if (deckErr || !rawDeck) throw error(404, 'Deck not found');
 
-	const deck = rawDeck as unknown as {
+	const deck = rawDeck as {
 		id: string;
 		name: string;
-		cards: DeckCard[];
+		hero_card_ids: string[];
+		play_entries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
 	};
+
+	// Resolve hero card IDs to full Card objects for validation
+	const heroCardIds = deck.hero_card_ids || [];
+	let heroCards: Card[] = [];
+	if (heroCardIds.length > 0) {
+		const { data: heroData } = await supabase
+			.from('cards')
+			.select('*')
+			.in('id', heroCardIds);
+		heroCards = (heroData || []) as Card[];
+	}
 
 	// Run validation
 	const { validateDeck } = await import('$lib/services/deck-validator');
 
-	const deckCards = deck.cards || [];
-
-	const heroCards = deckCards
-		.filter((c) => c.zone === 'hero' || !c.zone)
-		.map((c) => c.card);
-
-	const playCards = deckCards
-		.filter((c) => c.zone === 'play')
-		.map((c) => c.card);
-
-	const hotDogCards = deckCards
-		.filter((c) => c.zone === 'hotdog')
-		.map((c) => c.card);
+	// Play and hot dog cards are stored as entries, not full Card objects
+	const playCards: Card[] = [];
+	const hotDogCards: Card[] = [];
 
 	const validation = validateDeck(heroCards, formatId, playCards, hotDogCards);
 
@@ -111,9 +107,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			weapon_type: c.weapon_type,
 			parallel: c.parallel
 		})),
-		play_cards: playCards.map((c) => ({
-			card_number: c.card_number,
-			name: c.name
+		play_cards: (deck.play_entries || []).map((p) => ({
+			card_number: p.cardNumber,
+			name: p.name
 		})),
 		player_name: user.email?.split('@')[0] || 'Player',
 		locked_at: new Date().toISOString()

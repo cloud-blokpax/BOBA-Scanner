@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { recognizeCard, initWorkers } from '$lib/services/recognition';
 	import { addToCollection } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
@@ -49,6 +49,16 @@
 	const progressPercent = $derived(
 		items.length > 0 ? Math.round(((currentIndex + (phase === 'review' ? 1 : 0)) / items.length) * 100) : 0
 	);
+
+	onMount(() => {
+		const handler = () => {
+			if (document.visibilityState === 'hidden' && phase === 'processing') {
+				isPaused = true;
+			}
+		};
+		document.addEventListener('visibilitychange', handler);
+		return () => document.removeEventListener('visibilitychange', handler);
+	});
 
 	onDestroy(() => {
 		cleanup();
@@ -195,16 +205,23 @@
 	async function addAllToCollection() {
 		addingAll = true;
 		const successes = items.filter(i => i.status === 'success' && i.result?.card_id);
+		let addedCount = 0;
+		let failedCount = 0;
 		for (const item of successes) {
 			try {
 				await addToCollection(item.result!.card_id!);
+				addedCount++;
 			} catch {
-				// Individual add failure is non-fatal
+				failedCount++;
 			}
 		}
 		addingAll = false;
 		addedAll = true;
 		triggerHaptic('successAdd');
+		if (failedCount > 0) {
+			const { showToast } = await import('$lib/stores/toast.svelte');
+			showToast(`Added ${addedCount} cards. ${failedCount} failed — try again.`, 'x');
+		}
 	}
 
 	function exportCSV() {

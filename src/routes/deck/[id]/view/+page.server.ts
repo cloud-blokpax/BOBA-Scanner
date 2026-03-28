@@ -23,14 +23,22 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		throw error(503, 'Database not available');
 	}
 
-	// Try user_decks first, then fall back to shared_decks
+	// Check if the requester owns this deck
+	const { user } = await locals.safeGetSession();
+
+	// Try user_decks — only allow if requester is the owner or deck is shared
 	const { data: deck } = await locals.supabase
 		.from('user_decks')
 		.select('*')
 		.eq('id', id)
 		.maybeSingle();
 
-	let typedDeck = deck as unknown as SharedDeck;
+	let typedDeck = deck as unknown as (SharedDeck & { is_shared?: boolean });
+
+	// Only expose user_decks to the owner or if explicitly shared
+	if (typedDeck && typedDeck.user_id !== user?.id && !typedDeck.is_shared) {
+		typedDeck = null as unknown as SharedDeck;
+	}
 
 	if (!typedDeck) {
 		const { data: shared } = await locals.supabase
