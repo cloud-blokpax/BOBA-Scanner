@@ -88,6 +88,7 @@
 	let foilCaptures = $state<ImageBitmap[]>([]);
 	let foilStep = $state(0);
 	const FOIL_CAPTURES_NEEDED = 3;
+	let fileDialogOpen = $state(false);
 	const FOIL_GUIDANCE = [
 		'Capture 1/3 — hold card at current angle',
 		'Capture 2/3 — tilt card slightly right',
@@ -409,7 +410,7 @@
 	}
 
 	async function runAutoAnalyze() {
-		if (!videoEl || !cameraReady || scanning || paused) {
+		if (!videoEl || !cameraReady || scanning || paused || fileDialogOpen) {
 			bracketState = 'idle';
 			cardDetectedSince = null;
 			stableFrameCount = 0;
@@ -674,6 +675,7 @@
 	}
 
 	async function handleFileUpload(event: Event) {
+		fileDialogOpen = false;
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
@@ -834,6 +836,12 @@
 			onFoilCapture={handleFoilCapture}
 			onFoilToggle={handleFoilToggle}
 			onFileUpload={handleFileUpload}
+			onFileDialogOpen={() => {
+				fileDialogOpen = true;
+				stableFrameCount = 0;
+				lastFrameHash = null;
+			}}
+			onFileDialogClose={() => { fileDialogOpen = false; }}
 		/>
 	</div>
 </div>
