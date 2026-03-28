@@ -53,6 +53,9 @@ sw.addEventListener('activate', (event) => {
 sw.addEventListener('fetch', (event) => {
 	const url = new URL(event.request.url);
 
+	// Only handle http(s) requests — skip chrome-extension://, etc.
+	if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
+
 	// Skip non-GET requests (form submissions, API calls)
 	if (event.request.method !== 'GET') return;
 
@@ -62,14 +65,19 @@ sw.addEventListener('fetch', (event) => {
 	// Skip auth routes
 	if (url.pathname.startsWith('/auth/')) return;
 
+	// Skip cross-origin requests — only cache our own origin
+	if (url.origin !== sw.location.origin) return;
+
 	// For navigation requests (HTML pages): network-first with cache fallback
 	if (event.request.mode === 'navigate') {
 		event.respondWith(
 			(async () => {
 				try {
 					const response = await fetch(event.request);
-					const clone = response.clone();
-					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+					if (response.ok) {
+						const clone = response.clone();
+						caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+					}
 					return response;
 				} catch (_err) {
 					// Offline: serve from cache
@@ -94,8 +102,10 @@ sw.addEventListener('fetch', (event) => {
 				const cached = await caches.match(event.request);
 				if (cached) return cached;
 				const response = await fetch(event.request);
-				const clone = response.clone();
-				caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+				if (response.ok) {
+					const clone = response.clone();
+					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+				}
 				return response;
 			})()
 		);
@@ -115,8 +125,10 @@ sw.addEventListener('fetch', (event) => {
 		(async () => {
 			const cached = await caches.match(event.request);
 			const fetchPromise = fetch(event.request).then((response) => {
-				const clone = response.clone();
-				caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+				if (response.ok) {
+					const clone = response.clone();
+					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+				}
 				return response;
 			}).catch(() => {
 				return cached || new Response('', { status: 503 });
