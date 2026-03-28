@@ -10,7 +10,7 @@
 import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
-import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
+import { checkAnonPriceRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
@@ -32,7 +32,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 	// Rate limit anonymous price lookups to prevent eBay API abuse
 	if (!user) {
-		const rateLimit = await checkAnonScanRateLimit(getClientAddress());
+		const rateLimit = await checkAnonPriceRateLimit(getClientAddress());
 		if (!rateLimit.success) {
 			return json(
 				{ error: 'Rate limited. Please sign in for unlimited price lookups.' },

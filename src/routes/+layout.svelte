@@ -283,13 +283,13 @@
 		<a href="/scan" class="scan-fab" class:active={currentPath === '/scan'} aria-label="Scan Card">
 			<span class="scan-fab-icon">📷</span>
 		</a>
+		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
+			<span class="bottom-nav-icon">📚</span>
+			<span class="bottom-nav-label">Collection</span>
+		</a>
 		<a href="/deck" class="bottom-nav-item" class:active={currentPath.startsWith('/deck') || currentPath.startsWith('/tournaments') || currentPath.startsWith('/packs')}>
 			<span class="bottom-nav-icon">🃏</span>
 			<span class="bottom-nav-label">Decks</span>
-		</a>
-		<a href="/sell" class="bottom-nav-item" class:active={currentPath.startsWith('/sell') || currentPath.startsWith('/export') || currentPath.startsWith('/marketplace')}>
-			<span class="bottom-nav-icon">💰</span>
-			<span class="bottom-nav-label">Sell</span>
 		</a>
 	</nav>
 	{/if}

@@ -119,6 +119,11 @@ let _ocrRetryAttempted = false;
 let _initFailCount = 0;
 const MAX_INIT_RETRIES = 3;
 
+/** Reset the worker failure counter so navigation acts as a retry. */
+export function resetWorkerFailCount(): void {
+	_initFailCount = 0;
+}
+
 export async function initWorkers(): Promise<void> {
 	if (imageWorker) return;
 	if (_initFailCount >= MAX_INIT_RETRIES) {

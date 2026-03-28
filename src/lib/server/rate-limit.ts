@@ -14,6 +14,7 @@ import { getRedis } from './redis';
 
 let scanLimiter: Ratelimit | null = null;
 let anonScanLimiter: Ratelimit | null = null;
+let anonPriceLimiter: Ratelimit | null = null;
 let collectionLimiter: Ratelimit | null = null;
 let mutationLimiter: Ratelimit | null = null;
 let heavyMutationLimiter: Ratelimit | null = null;
@@ -39,6 +40,13 @@ function initLimiters() {
 		redis,
 		limiter: Ratelimit.slidingWindow(5, '60 s'),
 		prefix: 'rl:anon-scan'
+	});
+
+	// 30 price lookups per 60 seconds per anonymous IP (separate from scan budget)
+	anonPriceLimiter = new Ratelimit({
+		redis,
+		limiter: Ratelimit.slidingWindow(30, '60 s'),
+		prefix: 'rl:anon-price'
 	});
 
 	// 60 collection updates per 60 seconds per user
@@ -69,6 +77,7 @@ const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const WINDOW_MS = 60_000;
 const MAX_SCAN_REQUESTS = 20;
 const MAX_ANON_SCAN_REQUESTS = 5;
+const MAX_ANON_PRICE_REQUESTS = 30;
 const MAX_COLLECTION_REQUESTS = 60;
 const MAX_MUTATION_REQUESTS = 10;
 const MAX_HEAVY_MUTATION_REQUESTS = 3;
@@ -171,6 +180,38 @@ export async function checkAnonScanRateLimit(ip: string): Promise<RateLimitResul
 		success,
 		limit: MAX_ANON_SCAN_REQUESTS,
 		remaining: Math.max(0, MAX_ANON_SCAN_REQUESTS - count),
+		reset: Date.now() + WINDOW_MS
+	};
+}
+
+/**
+ * Check price lookup rate limit for an anonymous IP (separate from scan budget).
+ */
+export async function checkAnonPriceRateLimit(ip: string): Promise<RateLimitResult> {
+	initLimiters();
+
+	if (anonPriceLimiter) {
+		try {
+			const result = await anonPriceLimiter.limit(ip);
+			return {
+				success: result.success,
+				limit: result.limit,
+				remaining: result.remaining,
+				reset: result.reset
+			};
+		} catch (err) {
+			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
+		}
+	}
+
+	// In-memory fallback
+	const key = `anon-price:${ip}`;
+	const success = checkInMemory(key, MAX_ANON_PRICE_REQUESTS);
+	const count = rateLimitMap.get(key)?.count || 0;
+	return {
+		success,
+		limit: MAX_ANON_PRICE_REQUESTS,
+		remaining: Math.max(0, MAX_ANON_PRICE_REQUESTS - count),
 		reset: Date.now() + WINDOW_MS
 	};
 }

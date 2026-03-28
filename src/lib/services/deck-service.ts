@@ -72,8 +72,13 @@ export async function fetchUserDecks(
 	const table = userDecksTable();
 	if (!table) return [];
 
+	const client = getSupabase()!;
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return [];
+
 	let query = table
 		.select('*')
+		.eq('user_id', user.id)
 		.order('last_edited_at', { ascending: false });
 
 	if (formatFilter && formatFilter !== 'all') {
@@ -160,13 +165,18 @@ export async function updateDeckContents(
 	const table = userDecksTable();
 	if (!table) return false;
 
+	const client = getSupabase()!;
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return false;
+
 	const { error } = await table
 		.update({
 			...updates,
 			last_edited_at: new Date().toISOString(),
 			updated_at: new Date().toISOString()
 		})
-		.eq('id', deckId);
+		.eq('id', deckId)
+		.eq('user_id', user.id);
 
 	if (error) {
 		console.debug('[deck-service] Update deck failed:', error);
@@ -184,12 +194,17 @@ export async function updateDeckSettings(
 	const table = userDecksTable();
 	if (!table) return false;
 
+	const client = getSupabase()!;
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return false;
+
 	const { error } = await table
 		.update({
 			...settings,
 			updated_at: new Date().toISOString()
 		})
-		.eq('id', deckId);
+		.eq('id', deckId)
+		.eq('user_id', user.id);
 
 	if (error) {
 		console.debug('[deck-service] Update settings failed:', error);
@@ -204,9 +219,14 @@ export async function deleteDeck(deckId: string): Promise<boolean> {
 	const table = userDecksTable();
 	if (!table) return false;
 
+	const client = getSupabase()!;
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return false;
+
 	const { error } = await table
 		.delete()
-		.eq('id', deckId);
+		.eq('id', deckId)
+		.eq('user_id', user.id);
 
 	if (error) {
 		console.debug('[deck-service] Delete deck failed:', error);
@@ -282,6 +302,6 @@ export function computeDeckStats(deck: UserDeck): DeckStats {
 		totalDbs,
 		dbsCap,
 		dbsPercent: dbsCap > 0 ? Math.min(100, Math.round((totalDbs / dbsCap) * 100)) : 0,
-		isComplete: heroCount >= heroTarget && playCount >= playTarget && totalDbs <= dbsCap
+		isComplete: heroCount >= heroTarget && playCount >= playTarget && (dbsCap === 0 || totalDbs <= dbsCap)
 	};
 }

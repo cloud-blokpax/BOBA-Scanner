@@ -61,7 +61,8 @@ export async function ebayFetch(url: string | URL, init?: RequestInit): Promise<
 	const headers = {
 		...init?.headers,
 		Authorization: `Bearer ${token}`,
-		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+		'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
 	};
 
 	const response = await fetch(url.toString(), { ...init, headers });
@@ -74,7 +75,8 @@ export async function ebayFetch(url: string | URL, init?: RequestInit): Promise<
 		const retryHeaders = {
 			...init?.headers,
 			Authorization: `Bearer ${freshToken}`,
-			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+			'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
 		};
 		return fetch(url.toString(), { ...init, headers: retryHeaders });
 	}

@@ -3,7 +3,7 @@
  */
 
 import type { ScanPipelineState, ScanResult } from '$lib/types';
-import { recognizeCard, initWorkers } from '$lib/services/recognition';
+import { recognizeCard, initWorkers, resetWorkerFailCount } from '$lib/services/recognition';
 
 const initialState: ScanPipelineState = {
 	status: 'idle',
@@ -26,6 +26,8 @@ export function isScanning(): boolean {
 export function scanResult(): ScanResult | null { return _scanState.result; }
 
 export async function initScanner(): Promise<void> {
+	// Reset failure counter on fresh scanner init so navigation acts as a retry
+	resetWorkerFailCount();
 	await initWorkers();
 }
 

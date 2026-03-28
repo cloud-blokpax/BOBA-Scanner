@@ -40,13 +40,14 @@ export function collectionCount(): number {
 	return _items.reduce((sum, item) => sum + (item.quantity || 1), 0);
 }
 export function uniqueCardCount(): number { return _items.length; }
-export function ownedCardCounts(): Map<string, number> {
+const _ownedCounts = $derived.by(() => {
 	const map = new Map<string, number>();
 	for (const item of _items) {
 		map.set(item.card_id, (map.get(item.card_id) || 0) + (item.quantity || 1));
 	}
 	return map;
-}
+});
+export function ownedCardCounts(): Map<string, number> { return _ownedCounts; }
 export function collectionSets(): string[] {
 	const sets = new Set<string>();
 	for (const item of _items) {

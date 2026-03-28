@@ -3,7 +3,7 @@
 	import { page } from '$app/stores';
 	import { fade } from 'svelte/transition';
 	import Scanner from '$lib/components/Scanner.svelte';
-	import { initScanner } from '$lib/stores/scanner.svelte';
+	import { initScanner, setScannerActive } from '$lib/stores/scanner.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import {
@@ -83,11 +83,13 @@
 	}
 
 	onMount(() => {
+		setScannerActive(true);
 		initScanner();
 		resetGame(selectedDuration);
 	});
 
 	onDestroy(() => {
+		setScannerActive(false);
 		cleanup();
 		resetGame();
 	});

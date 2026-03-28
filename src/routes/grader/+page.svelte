@@ -35,23 +35,28 @@
 			const img = new Image();
 			const objectUrl = URL.createObjectURL(file);
 			img.onload = () => {
-				URL.revokeObjectURL(objectUrl);
-				const canvas = document.createElement('canvas');
-				const maxDim = 2000;
-				let w = img.width;
-				let h = img.height;
-				if (w > maxDim || h > maxDim) {
-					const ratio = Math.min(maxDim / w, maxDim / h);
-					w *= ratio;
-					h *= ratio;
+				try {
+					const canvas = document.createElement('canvas');
+					const maxDim = 2000;
+					let w = img.width;
+					let h = img.height;
+					if (w > maxDim || h > maxDim) {
+						const ratio = Math.min(maxDim / w, maxDim / h);
+						w *= ratio;
+						h *= ratio;
+					}
+					canvas.width = w;
+					canvas.height = h;
+					const ctx = canvas.getContext('2d')!;
+					ctx.drawImage(img, 0, 0, w, h);
+					// Strip data URL prefix — API expects raw base64
+					const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+					resolve(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
+				} catch (err) {
+					reject(err instanceof Error ? err : new Error('Canvas operation failed'));
+				} finally {
+					URL.revokeObjectURL(objectUrl);
 				}
-				canvas.width = w;
-				canvas.height = h;
-				const ctx = canvas.getContext('2d')!;
-				ctx.drawImage(img, 0, 0, w, h);
-				// Strip data URL prefix — API expects raw base64
-				const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-				resolve(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
 			};
 			img.onerror = () => {
 				URL.revokeObjectURL(objectUrl);

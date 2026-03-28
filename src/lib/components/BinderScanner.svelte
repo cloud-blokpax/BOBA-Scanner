@@ -177,14 +177,22 @@
 			return;
 		}
 
+		let addedCount = 0;
+		let failedCount = 0;
 		for (const cell of doneCells) {
 			if (cell.result?.card_id) {
 				try {
 					await addToCollection(cell.result.card_id, 'near_mint');
+					addedCount++;
 				} catch (err) {
+					failedCount++;
 					console.warn('[BinderScanner] Failed to add card:', err);
 				}
 			}
+		}
+		if (failedCount > 0) {
+			const { showToast } = await import('$lib/stores/toast.svelte');
+			showToast(`Added ${addedCount} cards. ${failedCount} failed — try again.`, 'x');
 		}
 		committed = true;
 	}
