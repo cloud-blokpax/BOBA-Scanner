@@ -154,8 +154,9 @@
 		item.error = null;
 		items = [...items];
 
+		let bitmap: ImageBitmap | null = null;
 		try {
-			const bitmap = await createImageBitmap(item.file, {
+			bitmap = await createImageBitmap(item.file, {
 				resizeWidth: 2048,
 				resizeHeight: 2048,
 				resizeQuality: 'high'
@@ -164,7 +165,6 @@
 				isAuthenticated,
 				skipBlurCheck: true
 			});
-			bitmap.close();
 			item.result = result;
 			if (result.card_id && result.card) {
 				item.status = 'success';
@@ -186,6 +186,8 @@
 		} catch (err) {
 			item.status = 'fail';
 			item.error = err instanceof Error ? err.message : 'Retry failed';
+		} finally {
+			bitmap?.close();
 		}
 		items = [...items];
 	}
