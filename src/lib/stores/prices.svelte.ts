@@ -5,13 +5,23 @@
 import { idb } from '$lib/services/idb';
 import type { PriceData } from '$lib/types';
 
+export interface PriceResult {
+	data: PriceData | null;
+	errorReason: string | null;
+}
+
 let _priceCache = $state<Map<string, PriceData>>(new Map());
 
 export function priceCache(): Map<string, PriceData> { return _priceCache; }
 
-const inflightRequests = new Map<string, Promise<PriceData | null>>();
+const inflightRequests = new Map<string, Promise<PriceResult>>();
 
 export async function getPrice(cardId: string): Promise<PriceData | null> {
+	const result = await getPriceWithReason(cardId);
+	return result.data;
+}
+
+export async function getPriceWithReason(cardId: string): Promise<PriceResult> {
 	const inflight = inflightRequests.get(cardId);
 	if (inflight) return inflight;
 
@@ -24,7 +34,7 @@ export async function getPrice(cardId: string): Promise<PriceData | null> {
 	}
 }
 
-async function _fetchPrice(cardId: string): Promise<PriceData | null> {
+async function _fetchPrice(cardId: string): Promise<PriceResult> {
 	try {
 		const cached = await idb.getPrice(cardId, 14400_000);
 		if (cached) {
@@ -32,7 +42,7 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 			const newMap = new Map(_priceCache);
 			newMap.set(cardId, priceData);
 			_priceCache = newMap;
-			return priceData;
+			return { data: priceData, errorReason: null };
 		}
 	} catch (err) {
 		console.debug('[prices] IDB cache read failed:', err);
@@ -40,7 +50,11 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 
 	try {
 		const response = await fetch(`/api/price/${cardId}`);
-		if (!response.ok) return null;
+		if (!response.ok) {
+			const body = await response.json().catch(() => ({}));
+			const reason = body.error || `Price lookup failed (${response.status})`;
+			return { data: null, errorReason: reason };
+		}
 
 		const priceData = (await response.json()) as PriceData;
 
@@ -54,9 +68,9 @@ async function _fetchPrice(cardId: string): Promise<PriceData | null> {
 		newMap.set(cardId, priceData);
 		_priceCache = newMap;
 
-		return priceData;
+		return { data: priceData, errorReason: null };
 	} catch (err) {
 		console.debug('[prices] Server fetch failed:', err);
-		return null;
+		return { data: null, errorReason: 'Network error — check your connection' };
 	}
 }

@@ -5,6 +5,7 @@
 		priceData,
 		priceLoading,
 		priceError,
+		priceErrorReason = null,
 		historyData,
 		historyLoading,
 		showPriceHistory
@@ -12,6 +13,7 @@
 		priceData: { price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null; buy_now_low?: number | null; buy_now_mid?: number | null; buy_now_count?: number | null } | null;
 		priceLoading: boolean;
 		priceError: boolean;
+		priceErrorReason?: string | null;
 		historyData: Array<{ date: string; price_mid: number | null }>;
 		historyLoading: boolean;
 		showPriceHistory: boolean;
@@ -40,7 +42,12 @@
 		<div class="price-main">${priceData.price_mid.toFixed(2)}</div>
 		<div class="price-source">Based on {priceData.listings_count} listing{priceData.listings_count !== 1 ? 's' : ''} (incl. auctions)</div>
 	{:else if priceError}
-		<div class="price-unavailable">Price unavailable</div>
+		<div class="price-unavailable">
+			<span>Price unavailable</span>
+			{#if priceErrorReason}
+				<span class="price-unavailable-sub">{priceErrorReason}</span>
+			{/if}
+		</div>
 	{:else}
 		<div class="price-unavailable">
 			<span>No pricing data available</span>
