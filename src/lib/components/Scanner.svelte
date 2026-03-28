@@ -223,6 +223,9 @@
 		stopAutoAnalyze();
 		stopCamera();
 		resetScanner();
+		// Release any in-progress foil capture bitmaps (GPU memory)
+		foilCaptures.forEach(b => b.close());
+		foilCaptures = [];
 		if (_visibilityHandler) {
 			document.removeEventListener('visibilitychange', _visibilityHandler);
 		}
@@ -268,7 +271,11 @@
 
 		try {
 			const { idb } = await import('$lib/services/idb');
-			const { getCardById } = await import('$lib/services/card-db');
+			const { getCardById, loadCardDatabase } = await import('$lib/services/card-db');
+
+			// Ensure card DB is loaded before attempting lookup — on cold start
+			// the idIndex is empty and getCardById will always return undefined
+			await loadCardDatabase();
 
 			// Step 1: Local IndexedDB hash lookup
 			let cardId: string | null = null;
@@ -593,8 +600,16 @@
 					failReason: errorMsg
 				}, imageUrl);
 			}
-		} catch {
-			phase = 'idle';
+		} catch (err) {
+			console.error('[Scanner] handleCapture error:', err);
+			handleScanResult({
+				card_id: null,
+				card: null,
+				scan_method: 'claude',
+				confidence: 0,
+				processing_ms: 0,
+				failReason: 'Scanner error — please try again'
+			});
 		}
 	}
 
@@ -633,8 +648,19 @@
 						failReason: errorMsg
 					}, imageUrl);
 				}
-			} catch {
-				phase = 'idle';
+			} catch (err) {
+				console.error('[Scanner] handleFoilCapture error:', err);
+				foilCaptures.forEach(b => b.close());
+				foilCaptures = [];
+				foilStep = 0;
+				handleScanResult({
+					card_id: null,
+					card: null,
+					scan_method: 'claude',
+					confidence: 0,
+					processing_ms: 0,
+					failReason: 'Foil scan error — please try again'
+				});
 			}
 		} else {
 			phase = 'idle';
@@ -670,8 +696,16 @@
 					failReason: errorMsg
 				}, imageUrl);
 			}
-		} catch {
-			phase = 'idle';
+		} catch (err) {
+			console.error('[Scanner] handleFileUpload error:', err);
+			handleScanResult({
+				card_id: null,
+				card: null,
+				scan_method: 'claude',
+				confidence: 0,
+				processing_ms: 0,
+				failReason: 'Failed to process image — try a different photo'
+			});
 		} finally {
 			input.value = '';
 		}

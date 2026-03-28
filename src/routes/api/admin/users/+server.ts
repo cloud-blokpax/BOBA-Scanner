@@ -16,15 +16,39 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals }) => {
 	await requireAdmin(locals);
 	const admin = getAdminClient();
-	if (!admin) throw error(503, 'Database not available');
+	if (!admin) {
+		// Fall back to user's own Supabase client if service role unavailable
+		// This will be limited by RLS but is better than a 503
+		if (!locals.supabase) throw error(503, 'Database not available');
 
-	const { data, error: dbError } = await admin
+		const { data } = await locals.supabase
+			.from('users')
+			.select('id, auth_user_id, email, name, is_admin, is_pro, api_calls_used, cards_in_collection, created_at')
+			.order('created_at', { ascending: false })
+			.limit(500);
+
+		return json((data ?? []).map((u: Record<string, unknown>) => ({ ...u, is_organizer: false })));
+	}
+
+	// Try with all columns first; fall back to base columns if is_organizer doesn't exist
+	let { data, error: dbError } = await admin
 		.from('users')
 		.select('id, auth_user_id, email, name, is_admin, is_pro, is_organizer, api_calls_used, cards_in_collection, created_at')
 		.order('created_at', { ascending: false })
 		.limit(500);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		// is_organizer may not exist if migration 005 hasn't been applied
+		const fallback = await admin
+			.from('users')
+			.select('id, auth_user_id, email, name, is_admin, is_pro, api_calls_used, cards_in_collection, created_at')
+			.order('created_at', { ascending: false })
+			.limit(500);
+
+		if (fallback.error) throw error(500, fallback.error.message);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		data = (fallback.data ?? []).map((u: any) => ({ ...u, is_organizer: false }));
+	}
 
 	return json(data ?? []);
 };

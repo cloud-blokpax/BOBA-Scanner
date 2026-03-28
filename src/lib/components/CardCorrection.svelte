@@ -23,7 +23,11 @@
 		if (!searchQuery.trim()) return;
 		searching = true;
 		try {
-			searchResults = await searchCards(searchQuery.trim(), 10);
+			// Ensure card database is loaded before searching — searchCards() is
+			// synchronous and returns [] if the database hasn't loaded yet
+			const { loadCardDatabase } = await import('$lib/services/card-db');
+			await loadCardDatabase();
+			searchResults = searchCards(searchQuery.trim(), 10);
 		} catch (err) {
 			console.debug('[CardCorrection] Card search failed:', err);
 			searchResults = [];

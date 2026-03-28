@@ -30,10 +30,9 @@
 		errorMessage = null;
 	}
 
-	function handleFallbackUpload() {
-		hasError = false;
-		errorMessage = null;
-		window.location.href = '/';
+	function handleGoToUpload() {
+		// Navigate to scan page fresh — the file upload button there works correctly
+		window.location.href = '/scan';
 	}
 </script>
 
@@ -44,15 +43,9 @@
 			<p>{errorMessage || 'Something went wrong with the scanner.'}</p>
 			<div class="error-actions">
 				<button class="btn-retry" onclick={retry}>Try Again</button>
-				<label class="btn-upload-fallback">
-					Upload Image Instead
-					<input
-						type="file"
-						accept="image/jpeg,image/png,image/webp"
-						onchange={handleFallbackUpload}
-						hidden
-					/>
-				</label>
+				<button class="btn-upload-fallback" onclick={handleGoToUpload}>
+					Reload Scanner
+				</button>
 				<a href="/" class="btn-home">Go Home</a>
 			</div>
 		</div>
