@@ -13,6 +13,7 @@
 import seedrandom from 'seedrandom';
 import { getAllCards } from '$lib/services/card-db';
 import { getWeapon } from '$lib/data/boba-weapons';
+import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
 import type {
 	SlotConfig,
 	SlotOutcome,
@@ -20,6 +21,11 @@ import type {
 	PackResult,
 	BoxGuarantee
 } from '$lib/types/pack-simulator';
+
+/** Map single-letter UI codes to database set_code values */
+function resolveSetCode(code: string): string {
+	return RELEASE_TO_SET_NAME[code] || code;
+}
 
 /**
  * Open a simulated pack, filtering cards by set.
@@ -32,9 +38,10 @@ export function openPack(
 	const packSeed = seed || crypto.randomUUID();
 	const rng = seedrandom(packSeed);
 	const allCards = getAllCards();
-	// Filter to only cards from the selected set
+	// Resolve UI letter code (e.g. 'G') to database set_code (e.g. 'Griffey Edition')
+	const resolvedSet = resolveSetCode(setCode);
 	const setCards = allCards.filter(
-		(c) => (c.set_code || '').toUpperCase() === setCode.toUpperCase()
+		(c) => (c.set_code || '').toUpperCase() === resolvedSet.toUpperCase()
 	);
 	const cards: SimulatedCard[] = [];
 
@@ -126,8 +133,9 @@ function enforceGuarantee(
 	// Need to inject (guarantee.minCount - currentCount) more
 	const needed = guarantee.minCount - currentCount;
 	const rng = seedrandom(`${boxSeed}-guarantee-${guarantee.value}`);
+	const resolvedSet = resolveSetCode(setCode);
 	const allCards = getAllCards().filter(
-		(c) => (c.set_code || '').toUpperCase() === setCode.toUpperCase()
+		(c) => (c.set_code || '').toUpperCase() === resolvedSet.toUpperCase()
 	);
 	// For parallel guarantees, pick any hero card and apply the parallel
 	const heroCandidates = allCards.filter(
