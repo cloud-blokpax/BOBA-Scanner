@@ -410,11 +410,13 @@ async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	// This catches the same card under different lighting conditions.
 	if (client) {
 		try {
-			const { data: fuzzyMatch } = await client.rpc('find_similar_hash', {
+			const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 				query_hash: hash,
 				max_distance: 5
 			});
-			if (fuzzyMatch && fuzzyMatch.length > 0) {
+			if (fuzzyErr) {
+				console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup RPC error:`, fuzzyErr.message);
+			} else if (fuzzyMatch && fuzzyMatch.length > 0) {
 				const match = fuzzyMatch[0];
 
 				// pHash verification: if the fuzzy match has a pHash stored,
@@ -863,12 +865,13 @@ async function writeHashToAllLayers(
 	try {
 		const client = getSupabase();
 		if (client) {
-			await client.rpc('upsert_hash_cache', {
+			const { error: rpcErr } = await client.rpc('upsert_hash_cache', {
 				p_phash: hash,
 				p_card_id: cardId,
 				p_confidence: confidence,
-				p_phash_256: phash256 || undefined
+				p_phash_256: phash256 ?? undefined
 			});
+			if (rpcErr) console.debug('[scan] Supabase hash writeback RPC error:', rpcErr.message);
 		}
 	} catch (err) {
 		console.debug('[scan] Supabase hash writeback failed:', err);

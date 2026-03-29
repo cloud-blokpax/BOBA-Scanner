@@ -64,14 +64,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// Atomic "beat the champion" check via RPC BEFORE uploading
 	const storagePath = `references/${cardId}.jpg`;
-	const result = await submitReferenceImageRpc(client, {
-		p_card_id: cardId,
-		p_image_path: storagePath,
-		p_confidence: confidence,
-		p_user_id: user.id,
-		p_user_name: displayName,
-		p_blur_variance: isNaN(blurVariance) ? null : blurVariance
-	});
+	let result: { accepted: boolean; is_new_card: boolean; previous_holder?: string; old_confidence?: number };
+	try {
+		result = await submitReferenceImageRpc(client, {
+			p_card_id: cardId,
+			p_image_path: storagePath,
+			p_confidence: confidence,
+			p_user_id: user.id,
+			p_user_name: displayName,
+			p_blur_variance: isNaN(blurVariance) ? null : blurVariance
+		});
+	} catch (err) {
+		console.error('[reference-image] RPC submit_reference_image failed:', err);
+		return json({ accepted: false, error: 'Reference image submission unavailable' }, { status: 503 });
+	}
 
 	// Only upload to storage if the submission was accepted
 	if (result?.accepted) {
@@ -104,34 +110,36 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		} catch { /* badge award is non-critical */ }
 
 		// Milestone badges based on total reference images held
-		const { count: topCount } = await client
-			.from('card_reference_images')
-			.select('*', { count: 'exact', head: true })
-			.eq('contributed_by', user.id);
+		try {
+			const { count: topCount } = await client
+				.from('card_reference_images')
+				.select('*', { count: 'exact', head: true })
+				.eq('contributed_by', user.id);
 
-		const milestones: Array<{ threshold: number; key: string; name: string; desc: string; icon: string }> = [
-			{ threshold: 10, key: 'sharp_eye', name: 'Sharp Eye', desc: 'Hold 10 top reference images', icon: '👁️' },
-			{ threshold: 50, key: 'card_photographer', name: 'Card Photographer', desc: 'Hold 50 top reference images', icon: '📷' },
-			{ threshold: 100, key: 'lens_master', name: 'Lens Master', desc: 'Hold 100 top reference images', icon: '🔍' },
-			{ threshold: 500, key: 'the_archivist', name: 'The Archivist', desc: 'Hold 500 top reference images — legendary contributor', icon: '🏛️' }
-		];
+			const milestones: Array<{ threshold: number; key: string; name: string; desc: string; icon: string }> = [
+				{ threshold: 10, key: 'sharp_eye', name: 'Sharp Eye', desc: 'Hold 10 top reference images', icon: '👁️' },
+				{ threshold: 50, key: 'card_photographer', name: 'Card Photographer', desc: 'Hold 50 top reference images', icon: '📷' },
+				{ threshold: 100, key: 'lens_master', name: 'Lens Master', desc: 'Hold 100 top reference images', icon: '🔍' },
+				{ threshold: 500, key: 'the_archivist', name: 'The Archivist', desc: 'Hold 500 top reference images — legendary contributor', icon: '🏛️' }
+			];
 
-		if (topCount) {
-			for (const m of milestones) {
-				if (topCount >= m.threshold) {
-					try {
-						const awarded = await awardBadgeRpc(client, {
-							p_user_id: user.id,
-							p_badge_key: m.key,
-							p_badge_name: m.name,
-							p_description: m.desc,
-							p_icon: m.icon
-						});
-						if (awarded) badgesAwarded.push(m.key);
-					} catch { /* badge award is non-critical */ }
+			if (topCount) {
+				for (const m of milestones) {
+					if (topCount >= m.threshold) {
+						try {
+							const awarded = await awardBadgeRpc(client, {
+								p_user_id: user.id,
+								p_badge_key: m.key,
+								p_badge_name: m.name,
+								p_description: m.desc,
+								p_icon: m.icon
+							});
+							if (awarded) badgesAwarded.push(m.key);
+						} catch { /* badge award is non-critical */ }
+					}
 				}
 			}
-		}
+		} catch { /* milestone badge check is non-critical */ }
 	}
 
 	return json({
