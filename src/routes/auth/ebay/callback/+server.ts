@@ -4,7 +4,7 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, locals, cookies }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw redirect(303, '/auth/login');
+	if (!user) throw redirect(303, '/auth/login?redirectTo=/auth/ebay');
 
 	const ebayError = url.searchParams.get('error');
 	if (ebayError) throw redirect(303, '/settings?ebay=declined');

@@ -5,7 +5,7 @@ import crypto from 'crypto';
 
 export const GET: RequestHandler = async ({ locals, cookies }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw redirect(303, '/auth/login?redirectTo=/settings');
+	if (!user) throw redirect(303, '/auth/login?redirectTo=/auth/ebay');
 	if (!isSellerOAuthConfigured()) throw redirect(303, '/settings?ebay=not_configured');
 
 	const state = crypto.randomBytes(32).toString('hex');
