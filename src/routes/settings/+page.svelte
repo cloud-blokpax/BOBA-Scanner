@@ -184,7 +184,6 @@
 
 	// Load eBay status
 	$effect(() => {
-		if (!hasScanToList()) { ebayLoading = false; return; }
 		fetch('/api/ebay/status')
 			.then(res => res.ok ? res.json() : Promise.reject())
 			.then(data => {
@@ -314,34 +313,32 @@
 			</div>
 		{/if}
 
-		{#if hasScanToList()}
-			<div class="settings-card" style="margin-top: 1rem;">
-				<h2>eBay Seller Account</h2>
+		<div class="settings-card" style="margin-top: 1rem;">
+			<h2>eBay Seller Account</h2>
 
-				{#if ebayMessage}
-					<div class="ebay-message ebay-message-{ebayMessage.type}">
-						{ebayMessage.text}
-					</div>
-				{/if}
+			{#if ebayMessage}
+				<div class="ebay-message ebay-message-{ebayMessage.type}">
+					{ebayMessage.text}
+				</div>
+			{/if}
 
-				{#if ebayLoading}
-					<p class="field-hint">Checking eBay connection...</p>
-				{:else if ebayConnected}
-					<div class="ebay-status">
-						<span class="ebay-badge ebay-connected">Connected</span>
-						<p class="field-hint">Your eBay seller account is linked. You can create listings directly from scan results.</p>
-					</div>
-					<button class="save-btn ebay-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
-						{ebayDisconnecting ? 'Disconnecting...' : 'Disconnect eBay'}
-					</button>
-				{:else if ebayConfigured}
-					<p class="field-hint">Connect your eBay seller account to create listings directly from scanned cards.</p>
-					<a href="/auth/ebay" class="save-btn ebay-connect">Connect eBay Account</a>
-				{:else}
-					<p class="field-hint">eBay seller integration is not yet configured for this app.</p>
-				{/if}
-			</div>
-		{/if}
+			{#if ebayLoading}
+				<p class="field-hint">Checking eBay connection...</p>
+			{:else if ebayConnected}
+				<div class="ebay-status">
+					<span class="ebay-badge ebay-connected">Connected</span>
+					<p class="field-hint">Your eBay seller account is linked. You can create listings directly from scan results.</p>
+				</div>
+				<button class="save-btn ebay-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+					{ebayDisconnecting ? 'Disconnecting...' : 'Disconnect eBay'}
+				</button>
+			{:else if ebayConfigured}
+				<p class="field-hint">Connect your eBay seller account to create listings directly from scanned cards.</p>
+				<a href="/auth/ebay" class="save-btn ebay-connect">Connect eBay Account</a>
+			{:else}
+				<p class="field-hint">eBay seller integration is coming soon. You'll be able to connect your eBay account and list cards directly from scans.</p>
+			{/if}
+		</div>
 
 		<section class="badges-section">
 			<h3>Badges</h3>
