@@ -121,7 +121,7 @@
 			{:else}
 				<div class="ebay-connect-card">
 					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
-					<a href="/auth/ebay" class="btn-ebay-connect">Connect eBay Account</a>
+					<a href="/settings?ebay=setup" class="btn-ebay-connect">Connect eBay Account</a>
 				</div>
 			{/if}
 		</div>
