@@ -94,11 +94,9 @@
 						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
 					</button>
 				{:else}
-					<button class="btn btn-add" class:btn-added={addSuccess && !isOwned} onclick={onAdd} disabled={adding}>
+					<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding}>
 						{#if adding}
 							Adding...
-						{:else if addSuccess && isOwned}
-							Add Another Copy
 						{:else if addSuccess}
 							Added!
 						{:else if isOwned}
@@ -213,10 +211,11 @@
 	.add-btn-wrapper {
 		position: relative;
 		flex: 1;
+		min-width: 0;
 	}
 
 	.btn-scan-another {
-		flex: 0 0 auto;
+		flex: 1;
 		background: rgba(255, 255, 255, 0.1);
 		border: 1px solid rgba(255, 255, 255, 0.2);
 		color: #fff;

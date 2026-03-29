@@ -3,6 +3,8 @@
 	import { collectionItems, collectionLoading, loadCollection } from '$lib/stores/collection.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { formatPrice } from '$lib/utils';
+	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import {
 		BUILT_IN_TEMPLATES,
 		getBuiltInTemplate,
@@ -13,8 +15,19 @@
 	} from '$lib/services/export-templates';
 	import { getAllTags } from '$lib/stores/tags.svelte';
 
+	const hasScanToList = featureEnabled('scan_to_list');
+
+	let ebayConnected = $state(false);
+	let ebayChecked = $state(false);
+
 	onMount(() => {
 		loadCollection();
+		// Check eBay seller connection status
+		fetch('/api/ebay/status')
+			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(data => { ebayConnected = data.connected; })
+			.catch(() => { ebayConnected = false; })
+			.finally(() => { ebayChecked = true; });
 	});
 
 	const items = $derived(collectionItems());
@@ -88,6 +101,25 @@
 		<a href="/export" class="custom-export-link">Custom Export Options &rarr;</a>
 	</div>
 
+	<!-- eBay Seller Connection -->
+	{#if ebayChecked}
+		<div class="ebay-connect-section">
+			<h2 class="section-heading">eBay Seller</h2>
+			{#if ebayConnected}
+				<div class="ebay-status ebay-connected">
+					<span class="ebay-status-dot"></span>
+					<span>eBay account connected</span>
+					<a href="/settings" class="ebay-manage-link">Manage</a>
+				</div>
+			{:else}
+				<div class="ebay-connect-card">
+					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
+					<a href="/auth/ebay" class="btn-ebay-connect">Connect eBay Account</a>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Scanned Cards -->
 	<div class="scanned-cards">
 		<h2 class="section-heading">Scanned Cards ({items.length})</h2>
@@ -106,7 +138,13 @@
 					{@const card = item.card}
 					{@const ebayQuery = encodeURIComponent(`BoBA ${card?.hero_name || card?.name || ''} ${card?.card_number || ''}`)}
 					<div class="card-row">
-						<div class="card-row-thumb">🎴</div>
+						<div class="card-row-thumb">
+							{#if card?.image_url}
+								<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
+							{:else}
+								<span class="card-row-placeholder">🎴</span>
+							{/if}
+						</div>
 						<div class="card-row-info">
 							<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
 							<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
@@ -200,6 +238,62 @@
 	}
 	.custom-export-link:hover { color: var(--text-secondary, #94a3b8); }
 
+	/* eBay connection */
+	.ebay-connect-section { margin-bottom: 2rem; }
+
+	.ebay-status {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.ebay-status-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--success, #10b981);
+		flex-shrink: 0;
+	}
+
+	.ebay-manage-link {
+		margin-left: auto;
+		font-size: 0.8rem;
+		color: var(--text-muted, #475569);
+		text-decoration: none;
+	}
+	.ebay-manage-link:hover { color: var(--text-secondary, #94a3b8); }
+
+	.ebay-connect-card {
+		padding: 1rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+
+	.ebay-connect-text {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin: 0 0 0.75rem;
+	}
+
+	.btn-ebay-connect {
+		display: inline-block;
+		padding: 0.5rem 1.25rem;
+		border-radius: 8px;
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		text-decoration: none;
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+	.btn-ebay-connect:hover { opacity: 0.9; }
+
 	/* Cards list */
 	.empty-state {
 		text-align: center;
@@ -243,8 +337,19 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 1.25rem;
 		flex-shrink: 0;
+		overflow: hidden;
+	}
+
+	.card-row-thumb :global(.card-row-img) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 6px;
+	}
+
+	.card-row-placeholder {
+		font-size: 1.25rem;
 	}
 
 	.card-row-info { flex: 1; min-width: 0; }
