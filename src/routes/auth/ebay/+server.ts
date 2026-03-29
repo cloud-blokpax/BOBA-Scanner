@@ -6,7 +6,7 @@ import crypto from 'crypto';
 export const GET: RequestHandler = async ({ locals, cookies }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw redirect(303, '/auth/login?redirectTo=/settings');
-	if (!isSellerOAuthConfigured()) throw error(503, 'eBay seller integration is not configured');
+	if (!isSellerOAuthConfigured()) throw redirect(303, '/settings?ebay=not_configured');
 
 	const state = crypto.randomBytes(32).toString('hex');
 	cookies.set('ebay_oauth_state', state, { path: '/', httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600 });

@@ -172,6 +172,8 @@
 			ebayConnected = true;
 		} else if (ebayParam === 'declined') {
 			ebayMessage = { type: 'info', text: 'eBay authorization was declined.' };
+		} else if (ebayParam === 'not_configured') {
+			ebayMessage = { type: 'info', text: 'eBay seller integration is not yet available. Check back soon!' };
 		} else if (ebayParam === 'error') {
 			const reason = $page.url.searchParams.get('reason') || 'unknown';
 			ebayMessage = { type: 'error', text: `eBay connection failed: ${reason}` };

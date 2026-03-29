@@ -17,6 +17,7 @@
 
 	const hasScanToList = featureEnabled('scan_to_list');
 
+	let ebayConfigured = $state(false);
 	let ebayConnected = $state(false);
 	let ebayChecked = $state(false);
 
@@ -25,8 +26,14 @@
 		// Check eBay seller connection status
 		fetch('/api/ebay/status')
 			.then(res => res.ok ? res.json() : Promise.reject())
-			.then(data => { ebayConnected = data.connected; })
-			.catch(() => { ebayConnected = false; })
+			.then(data => {
+				ebayConfigured = data.configured;
+				ebayConnected = data.connected;
+			})
+			.catch(() => {
+				ebayConfigured = false;
+				ebayConnected = false;
+			})
 			.finally(() => { ebayChecked = true; });
 	});
 
@@ -102,7 +109,7 @@
 	</div>
 
 	<!-- eBay Seller Connection -->
-	{#if ebayChecked}
+	{#if ebayChecked && ebayConfigured}
 		<div class="ebay-connect-section">
 			<h2 class="section-heading">eBay Seller</h2>
 			{#if ebayConnected}
