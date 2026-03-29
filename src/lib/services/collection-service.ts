@@ -8,6 +8,7 @@
 
 import { getSupabase } from '$lib/services/supabase';
 import { idb } from '$lib/services/idb';
+import { forceReloadCardDatabase } from '$lib/services/card-db';
 import type { CollectionItem } from '$lib/types';
 
 /**
@@ -135,6 +136,16 @@ export async function upsertCollectionItem(
 				if (retryError) throw new Error('Failed to add card — please try again');
 				return retryData as unknown as CollectionItem;
 			}
+		}
+		// Foreign key violation — card ID doesn't exist in the cards table.
+		// This happens when the local card cache has stale IDs after a DB re-seed.
+		// Invalidate the IDB cache so the next load fetches fresh data.
+		if (error.code === '23503') {
+			try {
+				// Trigger a full reload so subsequent adds work
+				forceReloadCardDatabase().catch(() => {});
+			} catch { /* best-effort cache invalidation */ }
+			throw new Error('Card database is out of date — please refresh the page and re-scan this card');
 		}
 		throw new Error('Failed to add card to collection — please try again');
 	}

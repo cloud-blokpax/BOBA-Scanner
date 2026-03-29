@@ -41,6 +41,25 @@ export async function loadCardDatabase(): Promise<Card[]> {
 	}
 }
 
+/**
+ * Force a full reload from Supabase, bypassing IDB and in-memory caches.
+ * Used when stale card IDs are detected (e.g. FK violations on collection insert).
+ */
+export async function forceReloadCardDatabase(): Promise<Card[]> {
+	isLoaded = false;
+	cards = [];
+	cardIndex.clear();
+	prefixIndex.clear();
+	idIndex.clear();
+	heroIndex.clear();
+	searchIndex = [];
+
+	// Mark IDB version as stale so _loadCardDatabaseImpl skips IDB on version check
+	try { await idb.setCardsVersion('stale'); } catch { /* best-effort */ }
+
+	return loadCardDatabase();
+}
+
 async function _loadCardDatabaseImpl(): Promise<Card[]> {
 	if (isLoaded && cards.length > 0) return cards;
 

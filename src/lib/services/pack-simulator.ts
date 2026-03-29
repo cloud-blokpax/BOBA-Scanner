@@ -22,9 +22,22 @@ import type {
 	BoxGuarantee
 } from '$lib/types/pack-simulator';
 
-/** Map single-letter UI codes to database set_code values */
-function resolveSetCode(code: string): string {
-	return RELEASE_TO_SET_NAME[code] || code;
+/**
+ * Build a set of uppercase strings that a card's set_code might match.
+ * Handles both the single-letter UI code (e.g. 'G') and the display name
+ * (e.g. 'Griffey Edition') so packs work regardless of what the DB stores.
+ */
+function buildSetMatchers(code: string): Set<string> {
+	const matchers = new Set<string>();
+	const upper = code.toUpperCase();
+	matchers.add(upper);
+	const displayName = RELEASE_TO_SET_NAME[code];
+	if (displayName) matchers.add(displayName.toUpperCase());
+	// Also add reverse lookup — if someone passes the display name directly
+	for (const [key, val] of Object.entries(RELEASE_TO_SET_NAME)) {
+		if (val.toUpperCase() === upper) matchers.add(key.toUpperCase());
+	}
+	return matchers;
 }
 
 /**
@@ -38,10 +51,10 @@ export function openPack(
 	const packSeed = seed || crypto.randomUUID();
 	const rng = seedrandom(packSeed);
 	const allCards = getAllCards();
-	// Resolve UI letter code (e.g. 'G') to database set_code (e.g. 'Griffey Edition')
-	const resolvedSet = resolveSetCode(setCode);
+	// Match cards whose set_code matches any known form of this set code
+	const matchers = buildSetMatchers(setCode);
 	const setCards = allCards.filter(
-		(c) => (c.set_code || '').toUpperCase() === resolvedSet.toUpperCase()
+		(c) => matchers.has((c.set_code || '').toUpperCase())
 	);
 	const cards: SimulatedCard[] = [];
 
@@ -133,9 +146,9 @@ function enforceGuarantee(
 	// Need to inject (guarantee.minCount - currentCount) more
 	const needed = guarantee.minCount - currentCount;
 	const rng = seedrandom(`${boxSeed}-guarantee-${guarantee.value}`);
-	const resolvedSet = resolveSetCode(setCode);
+	const matchers = buildSetMatchers(setCode);
 	const allCards = getAllCards().filter(
-		(c) => (c.set_code || '').toUpperCase() === resolvedSet.toUpperCase()
+		(c) => matchers.has((c.set_code || '').toUpperCase())
 	);
 	// For parallel guarantees, pick any hero card and apply the parallel
 	const heroCandidates = allCards.filter(
