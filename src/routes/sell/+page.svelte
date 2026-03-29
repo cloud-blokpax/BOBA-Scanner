@@ -109,7 +109,7 @@
 	</div>
 
 	<!-- eBay Seller Connection -->
-	{#if ebayChecked && ebayConfigured}
+	{#if ebayChecked}
 		<div class="ebay-connect-section">
 			<h2 class="section-heading">eBay Seller</h2>
 			{#if ebayConnected}
@@ -118,10 +118,14 @@
 					<span>eBay account connected</span>
 					<a href="/settings" class="ebay-manage-link">Manage</a>
 				</div>
-			{:else}
+			{:else if ebayConfigured}
 				<div class="ebay-connect-card">
 					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
 					<a href="/settings?ebay=setup" class="btn-ebay-connect">Connect eBay Account</a>
+				</div>
+			{:else}
+				<div class="ebay-connect-card">
+					<p class="ebay-connect-text">eBay listing integration is coming soon. You'll be able to list cards for sale directly from scans.</p>
 				</div>
 			{/if}
 		</div>
