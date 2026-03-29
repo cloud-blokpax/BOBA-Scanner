@@ -54,6 +54,7 @@
 	let listingError = $state<string | null>(null);
 
 	let manualCard = $state<Card | null>(null);
+	let autoAddAttempted = $state(false);
 
 	function handleManualCorrection(correctedCard: Partial<Card>) {
 		manualCard = correctedCard as Card;
@@ -131,6 +132,15 @@
 				if (!controller.signal.aborted) ebayChecked = true;
 			});
 		return () => controller.abort();
+	});
+
+	// Auto-add card to collection after successful scan
+	$effect(() => {
+		if (autoAddAttempted || adding || addSuccess) return;
+		if (!card?.id || !isAuthenticated) return;
+		if (activeResult.confidence < 0.7) return;
+		autoAddAttempted = true;
+		handleAdd();
 	});
 
 	async function handleListOnEbay() {

@@ -94,9 +94,11 @@
 						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
 					</button>
 				{:else}
-					<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding || addSuccess}>
+					<button class="btn btn-add" class:btn-added={addSuccess && !isOwned} onclick={onAdd} disabled={adding}>
 						{#if adding}
 							Adding...
+						{:else if addSuccess && isOwned}
+							Add Another Copy
 						{:else if addSuccess}
 							Added!
 						{:else if isOwned}
