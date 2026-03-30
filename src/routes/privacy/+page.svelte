@@ -4,9 +4,9 @@
 
 <div class="legal-page">
 	<h1>Privacy Policy</h1>
-	<p class="last-updated">Effective date: [DATE]. Last updated: [DATE].</p>
+	<p class="last-updated">Effective date: March 29, 2026. Last updated: March 29, 2026.</p>
 
-	<p>BOBA Scanner ("we," "us," or "the app") is operated by [Your Name / Entity] ("[OPERATOR]"). This policy explains what personal data we collect, why, how we process it, who we share it with, and your rights.</p>
+	<p>BOBA Scanner ("we," "us," or "the app") is operated by James Poto ("James Poto"). This policy explains what personal data we collect, why, how we process it, who we share it with, and your rights.</p>
 	<p>By using BOBA Scanner, you agree to the collection and use of information as described in this policy. If you do not agree, please do not use the app.</p>
 
 	<section>
@@ -172,7 +172,7 @@
 	<section>
 		<h2>14. Contact</h2>
 		<p>For privacy questions, data rights requests, or concerns, contact:</p>
-		<p>[Your Name]<br/>Email: [your-email@example.com]</p>
+		<p>James Poto<br/>Email: jamespoto@gmail.com</p>
 		<p>For GDPR-related inquiries, you may also contact your local data protection supervisory authority.</p>
 	</section>
 </div>

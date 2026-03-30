@@ -4,9 +4,9 @@
 
 <div class="legal-page">
 	<h1>Terms of Service</h1>
-	<p class="last-updated">Effective date: [DATE]. Last updated: [DATE].</p>
+	<p class="last-updated">Effective date: March 29, 2026. Last updated: March 29, 2026.</p>
 
-	<p>These Terms of Service ("Terms") govern your use of BOBA Scanner ("the app," "the service"), operated by [Your Name / Entity] ("[OPERATOR]"). By accessing or using the app, you agree to these Terms. If you do not agree, do not use the app.</p>
+	<p>These Terms of Service ("Terms") govern your use of BOBA Scanner ("the app," "the service"), operated by James Poto ("James Poto"). By accessing or using the app, you agree to these Terms. If you do not agree, do not use the app.</p>
 
 	<section>
 		<h2>1. Eligibility</h2>
@@ -68,13 +68,13 @@
 	<section>
 		<h2>9. Intellectual Property</h2>
 		<p>Bo Jackson Battle Arena, BoBA, and related card names, images, and designs are trademarks and copyrights of their respective owners. BOBA Scanner is an independent fan-built tool and is <strong>not affiliated with, endorsed by, or sponsored by</strong> the creators of the BoBA card game, Bo Jackson, or any associated entities.</p>
-		<p>Card data, pricing information, and reference images displayed in the app are sourced from publicly available information and user contributions. The app's source code, recognition algorithms, and original content are the property of [OPERATOR].</p>
+		<p>Card data, pricing information, and reference images displayed in the app are sourced from publicly available information and user contributions. The app's source code, recognition algorithms, and original content are the property of James Poto.</p>
 	</section>
 
 	<section>
 		<h2>10. Limitation of Liability</h2>
 		<p>THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
-		<p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, [OPERATOR] SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO YOUR USE OF THE SERVICE.</p>
+		<p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, JAMES POTO SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO YOUR USE OF THE SERVICE.</p>
 		<p>OUR TOTAL LIABILITY FOR ALL CLAIMS ARISING OUT OF OR RELATING TO THESE TERMS OR THE SERVICE SHALL NOT EXCEED THE AMOUNT YOU PAID US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM, OR FIFTY US DOLLARS ($50), WHICHEVER IS GREATER.</p>
 		<p>Some jurisdictions do not allow the exclusion or limitation of certain warranties or damages. In those jurisdictions, the above limitations apply to the fullest extent permitted by law.</p>
 	</section>
@@ -103,7 +103,7 @@
 	<section>
 		<h2>14. Contact</h2>
 		<p>For questions about these Terms, contact:</p>
-		<p>[Your Name]<br/>Email: [your-email@example.com]</p>
+		<p>James Poto<br/>Email: jamespoto@gmail.com</p>
 	</section>
 </div>
 

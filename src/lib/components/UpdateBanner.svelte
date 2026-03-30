@@ -1,12 +1,28 @@
 <script lang="ts">
 	import { updateAvailable } from '$lib/services/version';
 
+	let updating = $state(false);
+
 	function handleUpdate() {
-		// Force service worker to check for updates, then reload
-		if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-			navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+		if (updating) return;
+		updating = true;
+
+		if ('serviceWorker' in navigator) {
+			// Wait for the new SW to take control before reloading
+			navigator.serviceWorker.addEventListener('controllerchange', () => {
+				location.reload();
+			});
+
+			// Tell the waiting SW to activate
+			if (navigator.serviceWorker.controller) {
+				navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+			}
+
+			// Safety timeout — if controllerchange doesn't fire within 3s, reload anyway
+			setTimeout(() => location.reload(), 3000);
+		} else {
+			location.reload();
 		}
-		location.reload();
 	}
 
 	function dismiss() {
@@ -23,7 +39,9 @@
 					— {$updateAvailable.notes}
 				{/if}
 			</span>
-			<button class="update-btn" onclick={handleUpdate}>Update</button>
+			<button class="update-btn" onclick={handleUpdate} disabled={updating}>
+				{updating ? 'Updating...' : 'Update'}
+			</button>
 			<button class="dismiss-btn" onclick={dismiss} aria-label="Dismiss">x</button>
 		</div>
 	</div>
@@ -69,6 +87,10 @@
 	}
 	.update-btn:hover {
 		background: rgba(255,255,255,0.25);
+	}
+	.update-btn:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
 	}
 	.dismiss-btn {
 		background: none;

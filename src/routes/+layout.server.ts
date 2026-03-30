@@ -27,8 +27,7 @@ export const load: LayoutServerLoad = async ({ locals, depends }) => {
 				.eq('auth_user_id', user.id)
 				.maybeSingle();
 			isAdmin = profile?.is_admin === true
-				|| user.app_metadata?.is_admin === true
-				|| user.user_metadata?.is_admin === true;
+				|| user.app_metadata?.is_admin === true;
 			isPro = profile?.is_pro === true;
 			proUntil = profile?.pro_until ?? null;
 			profileCache.set(user.id, { isAdmin, isPro, proUntil, ts: Date.now() });

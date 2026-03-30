@@ -44,6 +44,18 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		throw error(401, 'Authentication required for card grading');
 	}
 
+	// Pro check — grading is a premium feature (prevents direct API abuse)
+	if (!locals.supabase) throw error(503, 'Service unavailable');
+	const { data: profile } = await locals.supabase
+		.from('users')
+		.select('is_pro, is_admin')
+		.eq('auth_user_id', user.id)
+		.single();
+
+	if (!profile?.is_pro && !profile?.is_admin) {
+		throw error(403, 'Pro subscription required for AI grading');
+	}
+
 	// Rate limiting (reuse scan limiter — grading is scan-like)
 	const rateLimitKey = user.id;
 	const rateLimit = await checkScanRateLimit(rateLimitKey);
