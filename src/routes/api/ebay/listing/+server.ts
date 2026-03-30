@@ -276,6 +276,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Listing creation failed';
+		console.error('[ebay/listing] Listing creation error:', message);
 
 		// Update template with error
 		if (adminClient) {
@@ -290,6 +291,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		}
 
-		throw error(502, message);
+		throw error(502, 'Listing creation failed');
 	}
 };

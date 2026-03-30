@@ -227,6 +227,10 @@
 		// Release any in-progress foil capture bitmaps (GPU memory)
 		foilCaptures.forEach(b => b.close());
 		foilCaptures = [];
+		if (_overlayTimeout) {
+			clearTimeout(_overlayTimeout);
+			_overlayTimeout = null;
+		}
 		if (_visibilityHandler) {
 			document.removeEventListener('visibilitychange', _visibilityHandler);
 		}

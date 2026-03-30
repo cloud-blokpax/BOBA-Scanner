@@ -31,7 +31,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		.gte('recorded_at', thirtyDaysAgo.toISOString())
 		.order('recorded_at', { ascending: true });
 
-	if (dbError) throw error(500, 'Failed to fetch price history');
+	if (dbError) {
+		console.error('[price/history] DB error:', dbError.message);
+		throw error(500, 'Failed to fetch price history');
+	}
 
 	return json({
 		card_id: cardId,

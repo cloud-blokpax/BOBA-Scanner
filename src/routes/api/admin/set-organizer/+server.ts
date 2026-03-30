@@ -26,7 +26,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		.update({ is_organizer: isOrganizer })
 		.eq('auth_user_id', userId);
 
-	if (updateErr) throw error(500, 'Failed to update organizer status');
+	if (updateErr) {
+		console.error('[admin/set-organizer] DB error:', updateErr.message);
+		throw error(500, 'Failed to update organizer status');
+	}
 
 	return json({ success: true, is_organizer: isOrganizer });
 };

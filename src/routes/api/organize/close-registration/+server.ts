@@ -52,7 +52,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.update({ registration_closed: true })
 		.eq('id', tournamentId);
 
-	if (updateErr) throw error(500, 'Failed to close registration');
+	if (updateErr) {
+		console.error('[organize/close-registration] DB error:', updateErr.message);
+		throw error(500, 'Failed to close registration');
+	}
 
 	return json({ success: true });
 	} catch (err) {
