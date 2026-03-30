@@ -422,7 +422,7 @@ async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 
 	// Layer 3: Supabase fuzzy match via Hamming distance (≤5 bits different)
 	// This catches the same card under different lighting conditions.
-	if (client) {
+	if (client && /^[0-9a-f]{16}$/.test(hash)) {
 		try {
 			const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 				query_hash: hash,

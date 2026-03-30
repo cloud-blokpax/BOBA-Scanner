@@ -316,7 +316,7 @@
 						}
 
 						// Fuzzy match if exact missed
-						if (!cardId) {
+						if (!cardId && /^[0-9a-f]{16}$/.test(hash)) {
 							const { data: fuzzyMatch } = await client.rpc('find_similar_hash', {
 								query_hash: hash,
 								max_distance: 5
