@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS public.themes (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.tournaments (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    creator_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    creator_id      UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     code            TEXT NOT NULL UNIQUE,
     name            TEXT NOT NULL,
     max_heroes      INT NOT NULL DEFAULT 60,

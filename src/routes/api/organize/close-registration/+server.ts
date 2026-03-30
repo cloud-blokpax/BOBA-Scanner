@@ -27,7 +27,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Verify organizer/admin role
 	const { data: profile } = await supabase
 		.from('users')
-		.select('is_organizer, is_admin')
+		.select('id, is_organizer, is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
@@ -43,7 +43,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.single();
 
 	if (!tournament) throw error(404, 'Tournament not found');
-	if (tournament.creator_id !== user.id && !profile.is_admin) {
+	if (tournament.creator_id !== profile.id && !profile.is_admin) {
 		throw error(403, 'Not your tournament');
 	}
 

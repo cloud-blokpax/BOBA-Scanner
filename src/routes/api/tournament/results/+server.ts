@@ -3,14 +3,14 @@ import { parseJsonBody, requireString } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string }> {
+async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string; publicUserId: string }> {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Not authenticated');
 	if (!locals.supabase) throw error(503, 'Database not available');
 
 	const { data: profile } = await locals.supabase
 		.from('users')
-		.select('is_organizer, is_admin')
+		.select('id, is_organizer, is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
@@ -18,7 +18,7 @@ async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string
 		throw error(403, 'Organizer or admin access required');
 	}
 
-	return user;
+	return { id: user.id, publicUserId: profile.id };
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -77,13 +77,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!tournament) throw error(404, 'Tournament not found');
 
-	const { data: profile } = await supabase
+	const { data: adminCheck } = await supabase
 		.from('users')
 		.select('is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
-	if (!profile?.is_admin && tournament.creator_id !== user.id) {
+	if (!adminCheck?.is_admin && tournament.creator_id !== user.publicUserId) {
 		throw error(403, 'Not your tournament');
 	}
 
