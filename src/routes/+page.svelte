@@ -7,6 +7,7 @@
 	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
 	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult } from '$lib/types';
+	import { getOptimizedImageUrls } from '$lib/utils/image-url';
 
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -394,7 +395,22 @@
 							<div class="recent-scans-strip">
 								{#each recentScans as scan}
 									<div class="recent-scan-card">
-										<div class="recent-scan-placeholder">{'\u{1F3B4}'}</div>
+										{#if scan.imageUrl}
+											{@const urls = getOptimizedImageUrls(scan.imageUrl, 'thumb')}
+											<picture class="recent-scan-image-wrap">
+												{#if urls.avif}<source srcset={urls.avif} type="image/avif" />{/if}
+												{#if urls.webp}<source srcset={urls.webp} type="image/webp" />{/if}
+												<img
+													src={urls.fallback}
+													alt={scan.heroName || scan.cardNumber || 'Card'}
+													class="recent-scan-image"
+													loading="lazy"
+													width={urls.width}
+												/>
+											</picture>
+										{:else}
+											<div class="recent-scan-placeholder">{'\u{1F3B4}'}</div>
+										{/if}
 										<span class="recent-scan-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
 									</div>
 								{/each}
@@ -658,6 +674,22 @@
 		scroll-snap-align: start;
 		width: 80px;
 		text-align: center;
+	}
+
+	.recent-scan-image-wrap {
+		display: block;
+		width: 64px;
+		height: 80px;
+		margin: 0 auto 0.25rem;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.recent-scan-image {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 8px;
 	}
 
 	.recent-scan-placeholder {
