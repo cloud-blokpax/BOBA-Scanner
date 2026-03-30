@@ -18,7 +18,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.eq('is_active', true)
 		.order('box_type');
 
-	if (dbErr) throw error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[admin/pack-config] GET DB error:', dbErr.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json(data || []);
 };
@@ -77,7 +80,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			.select()
 			.single();
 
-		if (dbErr) throw error(500, dbErr.message);
+		if (dbErr) {
+			console.error('[admin/pack-config] PUT update DB error:', dbErr.message);
+			throw error(500, 'Database operation failed');
+		}
 		result = data;
 	} else {
 		const { data, error: dbErr } = await supabase
@@ -86,7 +92,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			.select()
 			.single();
 
-		if (dbErr) throw error(500, dbErr.message);
+		if (dbErr) {
+			console.error('[admin/pack-config] PUT insert DB error:', dbErr.message);
+			throw error(500, 'Database operation failed');
+		}
 		result = data;
 	}
 

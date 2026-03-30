@@ -45,7 +45,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 			.order('created_at', { ascending: false })
 			.limit(500);
 
-		if (fallback.error) throw error(500, fallback.error.message);
+		if (fallback.error) {
+			console.error('[admin/users] GET fallback DB error:', fallback.error.message);
+			throw error(500, 'Database operation failed');
+		}
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		data = (fallback.data ?? []).map((u: any) => ({ ...u, is_organizer: false }));
 	}
@@ -83,7 +86,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		.update(safeUpdates)
 		.eq('auth_user_id', user_id);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/users] PUT DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	// Log admin action
 	await admin.from('admin_activity_log').insert({
@@ -129,7 +135,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				.update(safeUpdates)
 				.in('auth_user_id', user_ids);
 
-			if (dbError) throw error(500, dbError.message);
+			if (dbError) {
+				console.error('[admin/users] POST bulk update DB error:', dbError.message);
+				throw error(500, 'Database operation failed');
+			}
 
 			await admin.from('admin_activity_log').insert({
 				admin_id: user!.id,

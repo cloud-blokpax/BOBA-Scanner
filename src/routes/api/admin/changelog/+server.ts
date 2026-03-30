@@ -33,7 +33,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	const { data, error: dbError } = await query;
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/changelog] GET DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json({ entries: data || [] });
 };
@@ -67,7 +70,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.select()
 		.single();
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/changelog] POST DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json({ entry: data }, { status: 201 });
 };
@@ -102,7 +108,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		.update(updates)
 		.eq('id', id);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/changelog] PUT DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json({ success: true });
 };
@@ -126,7 +135,10 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 		.delete()
 		.eq('id', id);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/changelog] DELETE DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json({ success: true });
 };

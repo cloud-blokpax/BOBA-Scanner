@@ -27,7 +27,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		.order('created_at', { ascending: false })
 		.limit(limit);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/scan-flags] GET DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	return json({ flags: data || [] });
 };
@@ -64,7 +67,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		.update(updates)
 		.eq('id', id);
 
-	if (dbError) throw error(500, dbError.message);
+	if (dbError) {
+		console.error('[admin/scan-flags] PUT DB error:', dbError.message);
+		throw error(500, 'Database operation failed');
+	}
 
 	// Log admin action
 	await admin.from('admin_activity_log').insert({
