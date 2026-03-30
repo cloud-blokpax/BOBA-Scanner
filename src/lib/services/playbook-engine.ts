@@ -342,15 +342,15 @@ export function recommendHeroes(selectedPlays: PlayCard[]): HeroRecommendation {
 
 	const sorted = Object.entries(weaponPlayCounts).sort((a, b) => b[1] - a[1]);
 	const topWeapon = sorted[0];
-	const secondWeapon = sorted[1];
+	const secondWeapon = sorted[1] ?? [null, 0] as [string | null, number];
 
-	if (topWeapon[1] < 3) {
+	if (!topWeapon || topWeapon[1] < 3) {
 		return {
 			primaryWeapon: null,
 			primaryCount: 0,
 			secondaryWeapon: null,
 			secondaryCount: 0,
-			reasoning: `Your playbook has ${topWeapon[1]} weapon-specific plays — not enough to commit to a weapon. Run the highest-power heroes available across all weapon types. All 10 HD can go to substitutions for power optimization.`,
+			reasoning: `Your playbook has ${topWeapon?.[1] ?? 0} weapon-specific plays — not enough to commit to a weapon. Run the highest-power heroes available across all weapon types. All 10 HD can go to substitutions for power optimization.`,
 			weaponPlayCounts
 		};
 	}
