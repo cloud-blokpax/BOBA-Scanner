@@ -8,7 +8,7 @@
 		uniqueCardCount,
 		loadCollection
 	} from '$lib/stores/collection.svelte';
-	import { priceCache } from '$lib/stores/prices.svelte';
+	import { priceCache, getPrice } from '$lib/stores/prices.svelte';
 	import { getWeapon, WEAPON_HIERARCHY } from '$lib/data/boba-weapons';
 	import type { CollectionItem } from '$lib/types';
 
@@ -39,6 +39,24 @@
 
 	onMount(() => {
 		loadCollection();
+	});
+
+	// Batch-fetch prices for collection items with concurrency limit
+	let pricesFetchStarted = $state(false);
+	$effect(() => {
+		if (items.length === 0 || pricesFetchStarted) return;
+		pricesFetchStarted = true;
+		const ids = items.map(i => i.card_id);
+		let active = 0;
+		let idx = 0;
+		function next() {
+			while (active < 3 && idx < ids.length) {
+				const cardId = ids[idx++];
+				active++;
+				getPrice(cardId).finally(() => { active--; next(); });
+			}
+		}
+		next();
 	});
 
 	// ── Computed stats ─────────────────────────────────────

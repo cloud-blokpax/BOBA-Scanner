@@ -7,7 +7,7 @@
 	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
 	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult } from '$lib/types';
-	import { getOptimizedImageUrls } from '$lib/utils/image-url';
+	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -394,9 +394,10 @@
 						{#if recentScans.length > 0}
 							<div class="recent-scans-strip">
 								{#each recentScans as scan}
+									{@const resolvedImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null)}
 									<div class="recent-scan-card">
-										{#if scan.imageUrl}
-											{@const urls = getOptimizedImageUrls(scan.imageUrl, 'thumb')}
+									{#if resolvedImageUrl}
+											{@const urls = getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
 											<picture class="recent-scan-image-wrap">
 												{#if urls.avif}<source srcset={urls.avif} type="image/avif" />{/if}
 												{#if urls.webp}<source srcset={urls.webp} type="image/webp" />{/if}

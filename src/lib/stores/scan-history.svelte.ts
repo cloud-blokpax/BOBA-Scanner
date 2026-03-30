@@ -1,11 +1,14 @@
 /**
  * Scan history store — chronological record of scan attempts.
+ *
+ * Persists to IndexedDB with a localStorage backup to survive IDB recovery.
  */
 
 import { browser } from '$app/environment';
 import { idb } from '$lib/services/idb';
 
 const IDB_KEY = 'scanHistory';
+const LS_BACKUP_KEY = 'scanHistory_backup';
 const MAX_ENTRIES = 100;
 
 export interface ScanHistoryEntry {
@@ -14,6 +17,7 @@ export interface ScanHistoryEntry {
 	cardNumber: string | null;
 	heroName: string | null;
 	imageUrl: string | null;
+	cardId?: string | null;
 	method: 'hash_cache' | 'tesseract' | 'claude' | 'manual' | 'unknown';
 	confidence: number;
 	success: boolean;
@@ -24,15 +28,47 @@ let _scanHistory = $state<ScanHistoryEntry[]>([]);
 
 export function scanHistory(): ScanHistoryEntry[] { return _scanHistory; }
 
+/** Save to localStorage as a backup (sync, immune to IDB recovery). */
+function saveToLocalStorage(entries: ScanHistoryEntry[]): void {
+	try {
+		localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(entries));
+	} catch { /* quota exceeded — ignore */ }
+}
+
+/** Load from localStorage backup. */
+function loadFromLocalStorage(): ScanHistoryEntry[] | null {
+	try {
+		const raw = localStorage.getItem(LS_BACKUP_KEY);
+		if (raw) {
+			const entries = JSON.parse(raw);
+			if (Array.isArray(entries) && entries.length > 0) return entries;
+		}
+	} catch { /* ignore */ }
+	return null;
+}
+
 if (browser) {
+	// Primary: load from IndexedDB
 	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((entries) => {
 		if (Array.isArray(entries) && entries.length > 0) {
 			_scanHistory = entries;
+			saveToLocalStorage(entries);
+		} else {
+			// IDB empty (possibly wiped by health check) — restore from localStorage backup
+			const backup = loadFromLocalStorage();
+			if (backup) {
+				_scanHistory = backup;
+				// Re-persist to IDB so future loads are fast
+				idb.setMeta(IDB_KEY, backup).catch(() => {});
+			}
 		}
-	}).catch((err) => {
-		console.debug('[scan-history] IDB load failed:', err);
+	}).catch(() => {
+		// IDB failed — try localStorage backup
+		const backup = loadFromLocalStorage();
+		if (backup) _scanHistory = backup;
 	});
 
+	// Migrate legacy localStorage key (one-time)
 	try {
 		const legacyRaw = localStorage.getItem('scanHistory');
 		if (legacyRaw) {
@@ -40,6 +76,7 @@ if (browser) {
 			if (Array.isArray(legacyEntries) && legacyEntries.length > 0) {
 				idb.setMeta(IDB_KEY, legacyEntries).then(() => {
 					_scanHistory = legacyEntries;
+					saveToLocalStorage(legacyEntries);
 					localStorage.removeItem('scanHistory');
 				}).catch((err) => console.warn('[scan-history] IDB migration from localStorage failed:', err));
 			}
@@ -52,6 +89,7 @@ function saveToIdb(entries: ScanHistoryEntry[]): void {
 	idb.setMeta(IDB_KEY, entries).catch((err) => {
 		console.debug('[scan-history] IDB save failed:', err);
 	});
+	saveToLocalStorage(entries);
 }
 
 export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp'>): void {
@@ -64,4 +102,3 @@ export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp
 	saveToIdb(updated);
 	_scanHistory = updated;
 }
-
