@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 
 	let {
 		priceData,
@@ -8,7 +10,8 @@
 		priceErrorReason = null,
 		historyData,
 		historyLoading,
-		showPriceHistory
+		showPriceHistory,
+		card = null
 	}: {
 		priceData: { price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null; buy_now_low?: number | null; buy_now_mid?: number | null; buy_now_count?: number | null } | null;
 		priceLoading: boolean;
@@ -17,7 +20,10 @@
 		historyData: Array<{ date: string; price_mid: number | null }>;
 		historyLoading: boolean;
 		showPriceHistory: boolean;
+		card?: { card_number?: string | null; hero_name?: string | null; set_code?: string | null } | null;
 	} = $props();
+
+	const ebayUrl = $derived(card ? buildEbaySearchUrl(card) : null);
 </script>
 
 <!-- Price section -->
@@ -53,6 +59,12 @@
 			<span>No pricing data available</span>
 			<span class="price-unavailable-sub">This card may be too new or rare for market data</span>
 		</div>
+	{/if}
+	{#if ebayUrl && !priceLoading}
+		<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="ebay-link">
+			View on eBay →
+		</a>
+		<AffiliateNotice compact />
 	{/if}
 </div>
 
@@ -117,6 +129,21 @@
 		font-size: 0.75rem;
 		color: var(--text-muted, #475569);
 		margin-top: 0.125rem;
+	}
+
+	.ebay-link {
+		display: inline-block;
+		margin-top: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		border-radius: 6px;
+		background: rgba(0, 100, 210, 0.1);
+		color: var(--accent-primary, #3b82f6);
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.ebay-link:hover {
+		background: rgba(0, 100, 210, 0.2);
 	}
 
 	.price-unavailable {

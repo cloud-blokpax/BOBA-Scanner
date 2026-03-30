@@ -233,6 +233,7 @@
 					{historyData}
 					{historyLoading}
 					showPriceHistory={hasPriceHistory()}
+					{card}
 				/>
 
 				<!-- Actions first — always visible without scrolling -->

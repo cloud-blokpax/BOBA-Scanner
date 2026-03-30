@@ -252,6 +252,7 @@ export async function recognizeCard(
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,
 			imageUrl: final.card ? getCardImageUrl(final.card) : null,
+			cardId: final.card?.id ?? null,
 			method: final.scan_method || 'unknown',
 			confidence: final.confidence,
 			success: final.card_id !== null,
