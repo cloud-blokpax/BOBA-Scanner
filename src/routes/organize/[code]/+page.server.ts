@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	const { data: profile } = await locals.supabase
 		.from('users')
-		.select('is_organizer, is_admin')
+		.select('id, is_organizer, is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
@@ -23,7 +23,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	if (!tournament) throw error(404, 'Tournament not found');
 
-	if (tournament.creator_id !== user.id && !profile.is_admin) {
+	if (tournament.creator_id !== profile.id && !profile.is_admin) {
 		throw error(403, 'Not your tournament');
 	}
 

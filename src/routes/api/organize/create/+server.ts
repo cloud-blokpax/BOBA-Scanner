@@ -3,13 +3,13 @@ import { requireAuth, requireSupabase, parseJsonBody, requireString } from '$lib
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-async function requireOrganizer(locals: App.Locals): Promise<{ id: string }> {
+async function requireOrganizer(locals: App.Locals): Promise<{ id: string; publicUserId: string }> {
 	const user = await requireAuth(locals);
 	const supabase = requireSupabase(locals);
 
 	const { data: profile } = await supabase
 		.from('users')
-		.select('is_organizer, is_admin')
+		.select('id, is_organizer, is_admin')
 		.eq('auth_user_id', user.id)
 		.maybeSingle();
 
@@ -17,7 +17,7 @@ async function requireOrganizer(locals: App.Locals): Promise<{ id: string }> {
 		throw error(403, 'Organizer access required');
 	}
 
-	return user;
+	return { id: user.id, publicUserId: profile.id };
 }
 
 function generateCode(): string {
@@ -27,10 +27,10 @@ function generateCode(): string {
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const user = await requireOrganizer(locals);
+	const organizer = await requireOrganizer(locals);
 	const supabase = requireSupabase(locals);
 
-	const rateLimit = await checkMutationRateLimit(user.id);
+	const rateLimit = await checkMutationRateLimit(organizer.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, {
 			status: 429,
@@ -82,7 +82,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { data: tournament, error: insertErr } = await supabase
 		.from('tournaments')
 		.insert({
-			creator_id: user.id,
+			creator_id: organizer.publicUserId,
 			code,
 			name,
 			format_id: formatId,
