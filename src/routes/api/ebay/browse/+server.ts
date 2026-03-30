@@ -17,7 +17,7 @@ import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
-	const { user } = await locals.safeGetSession();
+	const user = locals.user;
 
 	// Rate limit anonymous users by IP
 	if (!user) {

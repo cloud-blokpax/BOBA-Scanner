@@ -66,7 +66,7 @@ const CONDITION_MAP: Record<string, { conditionId: string; conditionDescription:
 const getServiceClient = getAdminClient;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const { user } = await locals.safeGetSession();
+	const user = locals.user;
 	if (!user) throw error(401, 'Authentication required');
 
 	// Server-side feature gate

@@ -4,7 +4,7 @@ import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ locals }) => {
-	const { user } = await locals.safeGetSession();
+	const user = locals.user;
 	if (!user) throw error(401, 'Authentication required');
 
 	const rateLimit = await checkMutationRateLimit(user.id);
