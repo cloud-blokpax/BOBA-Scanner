@@ -44,19 +44,14 @@
 	const format = $derived(getFormat(tournament.format_id || ''));
 
 	let activeTab = $state<'overview' | 'submissions' | 'results' | 'share'>('overview');
-	let submissions = $state<DeckSubmission[]>(data.submissions as DeckSubmission[]);
-	let results = $state<TournamentResult[]>(data.results as TournamentResult[]);
+	const submissions = $derived(data.submissions as DeckSubmission[]);
+	const results = $derived(data.results as TournamentResult[]);
 
-	// Re-sync from page data when it changes (e.g. after invalidation)
-	$effect(() => {
-		submissions = data.submissions as DeckSubmission[];
-		results = data.results as TournamentResult[];
-	});
 	let expandedSubmission = $state<string | null>(null);
 	let closingRegistration = $state(false);
 	let savingResults = $state(false);
 
-	// Results entry state
+	// Results entry state — re-syncs when page data changes (e.g. after invalidation)
 	let resultEntries = $state<Array<{
 		player_name: string;
 		final_standing: number | string;
@@ -65,34 +60,40 @@
 		match_losses: string;
 		match_draws: string;
 		submission_id: string | null;
-	}>>(
-		results.length > 0
-			? results.map((r) => ({
-					player_name: r.player_name,
-					final_standing: r.final_standing,
-					placement_label: r.placement_label || '',
-					match_wins: r.match_wins?.toString() || '',
-					match_losses: r.match_losses?.toString() || '',
-					match_draws: r.match_draws?.toString() || '',
-					submission_id: r.submission_id
+	}>>([]);
+
+	function buildResultEntries(r: TournamentResult[], s: DeckSubmission[]) {
+		return r.length > 0
+			? r.map((entry) => ({
+					player_name: entry.player_name,
+					final_standing: entry.final_standing as number | string,
+					placement_label: entry.placement_label || '',
+					match_wins: entry.match_wins?.toString() || '',
+					match_losses: entry.match_losses?.toString() || '',
+					match_draws: entry.match_draws?.toString() || '',
+					submission_id: entry.submission_id
 				}))
-			: submissions.map((s) => ({
-					player_name: s.player_name,
-					final_standing: '',
+			: s.map((sub) => ({
+					player_name: sub.player_name,
+					final_standing: '' as number | string,
 					placement_label: '',
 					match_wins: '',
 					match_losses: '',
 					match_draws: '',
-					submission_id: s.id
-				}))
-	);
+					submission_id: sub.id
+				}));
+	}
+
+	$effect(() => {
+		resultEntries = buildResultEntries(results, submissions);
+	});
 
 	const shareUrl = $derived(`${typeof window !== 'undefined' ? window.location.origin : ''}/tournaments/enter?code=${tournament.code}`);
 	const shareText = $derived(`Register your deck for ${tournament.name} at ${shareUrl}. Enter code ${tournament.code} in BOBA Scanner to submit and validate your deck before the event.`);
 	const validCount = $derived(submissions.filter((s) => s.is_valid).length);
 	const invalidCount = $derived(submissions.filter((s) => !s.is_valid).length);
 
-	const isOpen = $derived(() => {
+	const isOpen = $derived.by(() => {
 		if (tournament.registration_closed) return false;
 		if (data.isDeadlinePassed) return false;
 		return tournament.is_active;
@@ -235,7 +236,7 @@
 					<span class="stat-label">Invalid</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value" class:open={isOpen()} class:closed={!isOpen()}>{isOpen() ? 'Open' : 'Closed'}</span>
+					<span class="stat-value" class:open={isOpen} class:closed={!isOpen}>{isOpen ? 'Open' : 'Closed'}</span>
 					<span class="stat-label">Status</span>
 				</div>
 			</div>
@@ -294,7 +295,7 @@
 	{:else if activeTab === 'submissions'}
 		<div class="tab-panel">
 			<div class="sub-actions">
-				{#if isOpen() && !tournament.registration_closed}
+				{#if isOpen && !tournament.registration_closed}
 					<button class="action-btn danger" onclick={closeRegistration} disabled={closingRegistration}>
 						{closingRegistration ? 'Closing...' : 'Close Registration'}
 					</button>

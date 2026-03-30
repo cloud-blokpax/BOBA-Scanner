@@ -225,9 +225,12 @@ export function buildMetaSnapshot(
 		.map((d) => d.plays.reduce((s, p) => s + p.dbs_score, 0))
 		.sort((a, b) => a - b);
 
+	const mid = Math.floor(n / 2);
+	const dbsMedian = n % 2 === 1 ? dbsTotals[mid] : (dbsTotals[mid - 1] + dbsTotals[mid]) / 2;
+
 	const dbsStats = {
 		avg: dbsTotals.reduce((s, v) => s + v, 0) / n,
-		median: dbsTotals[Math.floor(n / 2)],
+		median: dbsMedian,
 		min: dbsTotals[0],
 		max: dbsTotals[n - 1]
 	};
