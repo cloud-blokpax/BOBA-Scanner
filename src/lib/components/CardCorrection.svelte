@@ -45,7 +45,7 @@
 		if (originalNumber && correctedNumber && originalNumber !== correctedNumber) {
 			import('$lib/services/community-corrections').then(({ submitCommunityCorrection }) => {
 				submitCommunityCorrection(originalNumber, correctedNumber);
-			}).catch(() => {});
+			}).catch((err) => console.warn('[card-correction] Community correction submission failed:', err));
 		}
 
 		onClose?.();

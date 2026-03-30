@@ -40,10 +40,10 @@ if (browser) {
 				idb.setMeta(IDB_KEY, legacyEntries).then(() => {
 					_scanHistory = legacyEntries;
 					localStorage.removeItem('scanHistory');
-				}).catch(() => {});
+				}).catch((err) => console.warn('[scan-history] IDB migration from localStorage failed:', err));
 			}
 		}
-	} catch { /* ignore */ }
+	} catch (err) { console.debug('[scan-history] localStorage migration read failed:', err); }
 }
 
 function saveToIdb(entries: ScanHistoryEntry[]): void {

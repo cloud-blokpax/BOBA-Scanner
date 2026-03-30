@@ -56,7 +56,9 @@
 				const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 				if (elapsed < THIRTY_DAYS) return;
 			}
-		} catch {}
+		} catch (err) {
+			console.debug('[profile-prompt] localStorage read failed:', err);
+		}
 
 		const client = getSupabase();
 		if (!client) return;
@@ -132,7 +134,9 @@
 		visible = false;
 		try {
 			localStorage.setItem('profilePromptDismissedAt', Date.now().toString());
-		} catch {}
+		} catch (err) {
+			console.debug('[profile-prompt] localStorage write failed:', err);
+		}
 	}
 </script>
 

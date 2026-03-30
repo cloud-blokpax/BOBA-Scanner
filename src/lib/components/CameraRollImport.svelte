@@ -132,7 +132,8 @@
 						items[i].price = priceData?.price_low ?? null;
 						items[i].priceLoading = false;
 						items = [...items];
-					}).catch(() => {
+					}).catch((err) => {
+						console.warn('[camera-roll] Price fetch failed for card:', result.card_id, err);
 						items[i].priceLoading = false;
 						items = [...items];
 					});
@@ -185,7 +186,8 @@
 					item.price = priceData?.price_low ?? null;
 					item.priceLoading = false;
 					items = [...items];
-				}).catch(() => {
+				}).catch((err) => {
+					console.warn('[camera-roll] Price fetch failed on retry:', err);
 					item.priceLoading = false;
 					items = [...items];
 				});
@@ -211,7 +213,8 @@
 			try {
 				await addToCollection(item.result!.card_id!);
 				addedCount++;
-			} catch {
+			} catch (err) {
+				console.warn('[camera-roll] Failed to add card to collection:', item.result!.card_id, err);
 				failedCount++;
 			}
 		}

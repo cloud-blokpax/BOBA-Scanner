@@ -30,7 +30,8 @@
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
 			})
-			.catch(() => {
+			.catch((err) => {
+				console.warn('[sell] eBay status check failed:', err);
 				ebayConfigured = false;
 				ebayConnected = false;
 			})

@@ -143,8 +143,8 @@ export async function upsertCollectionItem(
 		if (error.code === '23503') {
 			try {
 				// Trigger a full reload so subsequent adds work
-				forceReloadCardDatabase().catch(() => {});
-			} catch { /* best-effort cache invalidation */ }
+				forceReloadCardDatabase().catch((err) => console.warn('[collection] Card DB reload failed after FK violation:', err));
+			} catch (err) { console.debug('[collection] Cache invalidation wrapper failed:', err); }
 			throw new Error('Card database is out of date — please refresh the page and re-scan this card');
 		}
 		throw new Error('Failed to add card to collection — please try again');

@@ -55,7 +55,7 @@
 	});
 
 	function saveSettings() {
-		idb.setMeta(SETTINGS_KEY, settings).catch(() => {});
+		idb.setMeta(SETTINGS_KEY, settings).catch((err) => console.debug('[marketplace-monitor] Settings save failed:', err));
 	}
 
 	async function checkNow() {
@@ -91,7 +91,7 @@
 
 			matches = results.sort((a, b) => b.score - a.score);
 			lastCheck = new Date().toISOString();
-			idb.setMeta(LAST_CHECK_KEY, lastCheck).catch(() => {});
+			idb.setMeta(LAST_CHECK_KEY, lastCheck).catch((err) => console.debug('[marketplace-monitor] Last check save failed:', err));
 			showToast(`Found ${matches.length} matches`, 'check');
 		} catch (err) {
 			console.debug('[marketplace-monitor] Listing check failed:', err);
