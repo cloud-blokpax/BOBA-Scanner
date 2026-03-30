@@ -6,6 +6,7 @@
 	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
 	import { validateDeck } from '$lib/services/deck-validator';
 	import { fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
+	import SealedDeckEntry from '$lib/components/tournament/SealedDeckEntry.svelte';
 	import type { Card } from '$lib/types';
 
 	interface TournamentInfo {
@@ -19,6 +20,7 @@
 		require_name: boolean;
 		require_discord: boolean;
 		format_id: string | null;
+		deck_type: 'constructed' | 'sealed';
 		description: string | null;
 		venue: string | null;
 		event_date: string | null;
@@ -85,6 +87,7 @@
 	let existingSubmission = $state<Record<string, unknown> | null>(null);
 
 	const formatInfo = $derived(tournament?.format_id ? getFormat(tournament.format_id) : null);
+	const isSealed = $derived(tournament?.deck_type === 'sealed');
 	const isRegistrationOpen = $derived(() => {
 		if (!tournament) return false;
 		if (tournament.registration_closed) return false;
@@ -193,7 +196,7 @@
 			return;
 		}
 		step = 'deck';
-		loadUserDecks();
+		if (!isSealed) loadUserDecks();
 	}
 
 	async function loadUserDecks() {
@@ -351,11 +354,11 @@
 	}
 
 	function proceedToConfirm() {
-		if (heroCards.length === 0) {
-			showToast('Add hero cards to your deck first', 'x');
+		if (heroCards.length === 0 && playCards.length === 0) {
+			showToast('Add cards first', 'x');
 			return;
 		}
-		runValidation();
+		if (!isSealed) runValidation();
 		step = 'confirm';
 	}
 
@@ -433,6 +436,12 @@
 
 		<!-- Tournament info display -->
 		<div class="tournament-info-card">
+			{#if isSealed}
+				<div class="info-row">
+					<span class="info-label">Deck Type</span>
+					<span class="info-value">Sealed</span>
+				</div>
+			{/if}
 			{#if formatInfo}
 				<div class="info-row">
 					<span class="info-label">Format</span>
@@ -513,135 +522,147 @@
 			<span class="tournament-code-badge">{tournament.code}</span>
 		</header>
 
-		<div class="step-card">
-			<h2>Select Your Deck</h2>
+		{#if isSealed}
+			<SealedDeckEntry
+				bind:heroCards
+				bind:playCards
+				maxHeroes={tournament.max_heroes}
+				maxPlays={tournament.max_plays}
+				maxBonus={tournament.max_bonus}
+				onProceed={proceedToConfirm}
+				onBack={proceedToInfo}
+			/>
+		{:else}
+			<div class="step-card">
+				<h2>Select Your Deck</h2>
 
-			<!-- Deck source options -->
-			<div class="deck-options">
-				<button
-					class="option-btn"
-					class:active={deckSource === 'existing'}
-					onclick={() => { deckSource = 'existing'; loadUserDecks(); }}
-				>
-					Select Existing Deck
-				</button>
-				<a
-					href="/deck/new?format={tournament.format_id || ''}&tournament={tournament.code}"
-					class="option-btn"
-				>
-					Build New Deck
-				</a>
-				<button
-					class="option-btn"
-					class:active={deckSource === 'csv'}
-					onclick={() => (deckSource = 'csv')}
-				>
-					Import from CSV
-				</button>
-			</div>
-
-			{#if deckSource === 'existing'}
-				<div class="deck-list">
-					{#if userDecks.length === 0}
-						<p class="empty-deck">No saved decks found for this format.</p>
-					{:else}
-						{#each userDecks as deck}
-							<button
-								class="deck-option"
-								class:selected={selectedDeckId === deck.id}
-								onclick={() => selectExistingDeck(deck)}
-							>
-								<span class="deck-name">{deck.name}</span>
-								<span class="deck-meta">
-									{deck.hero_card_ids?.length || 0} heroes,
-									{deck.play_entries?.length || 0} plays
-								</span>
-							</button>
-						{/each}
-					{/if}
+				<!-- Deck source options -->
+				<div class="deck-options">
+					<button
+						class="option-btn"
+						class:active={deckSource === 'existing'}
+						onclick={() => { deckSource = 'existing'; loadUserDecks(); }}
+					>
+						Select Existing Deck
+					</button>
+					<a
+						href="/deck/new?format={tournament.format_id || ''}&tournament={tournament.code}"
+						class="option-btn"
+					>
+						Build New Deck
+					</a>
+					<button
+						class="option-btn"
+						class:active={deckSource === 'csv'}
+						onclick={() => (deckSource = 'csv')}
+					>
+						Import from CSV
+					</button>
 				</div>
-			{:else if deckSource === 'csv'}
-				<div class="csv-section">
-					<textarea
-						bind:value={csvInput}
-						placeholder="Paste card numbers, one per line or comma-separated"
-						rows="8"
-						class="csv-input"
-					></textarea>
-					<button class="secondary-btn" onclick={parseCsvInput}>Resolve Cards</button>
-				</div>
-			{/if}
 
-			<!-- Validation Panel -->
-			{#if heroCards.length > 0}
-				<div class="validation-panel" class:valid={validationResult?.isValid} class:invalid={validationResult && !validationResult.isValid}>
-					<div class="val-header">
-						{#if validationResult?.isValid}
-							<span class="val-badge valid">VALID</span>
-						{:else if validationResult}
-							<span class="val-badge invalid">INVALID</span>
+				{#if deckSource === 'existing'}
+					<div class="deck-list">
+						{#if userDecks.length === 0}
+							<p class="empty-deck">No saved decks found for this format.</p>
+						{:else}
+							{#each userDecks as deck}
+								<button
+									class="deck-option"
+									class:selected={selectedDeckId === deck.id}
+									onclick={() => selectExistingDeck(deck)}
+								>
+									<span class="deck-name">{deck.name}</span>
+									<span class="deck-meta">
+										{deck.hero_card_ids?.length || 0} heroes,
+										{deck.play_entries?.length || 0} plays
+									</span>
+								</button>
+							{/each}
 						{/if}
-						<span class="val-format">{formatInfo?.name || 'Custom'}</span>
+					</div>
+				{:else if deckSource === 'csv'}
+					<div class="csv-section">
+						<textarea
+							bind:value={csvInput}
+							placeholder="Paste card numbers, one per line or comma-separated"
+							rows="8"
+							class="csv-input"
+						></textarea>
+						<button class="secondary-btn" onclick={parseCsvInput}>Resolve Cards</button>
+					</div>
+				{/if}
+
+				<!-- Validation Panel -->
+				{#if heroCards.length > 0}
+					<div class="validation-panel" class:valid={validationResult?.isValid} class:invalid={validationResult && !validationResult.isValid}>
+						<div class="val-header">
+							{#if validationResult?.isValid}
+								<span class="val-badge valid">VALID</span>
+							{:else if validationResult}
+								<span class="val-badge invalid">INVALID</span>
+							{/if}
+							<span class="val-format">{formatInfo?.name || 'Custom'}</span>
+						</div>
+
+						<div class="val-stats">
+							<div class="val-stat">
+								<span class="val-num">{heroCards.length}</span>
+								<span class="val-label">Heroes</span>
+							</div>
+							<div class="val-stat">
+								<span class="val-num">{validationResult?.stats.totalPower.toLocaleString() || 0}</span>
+								<span class="val-label">Total PWR</span>
+							</div>
+							<div class="val-stat">
+								<span class="val-num">{validationResult?.stats.averagePower || 0}</span>
+								<span class="val-label">Avg PWR</span>
+							</div>
+							<div class="val-stat">
+								<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
+								<span class="val-label">DBS</span>
+							</div>
+						</div>
+
+						{#if validationResult?.violations.length}
+							<div class="val-violations">
+								{#each validationResult.violations as v}
+									<p class="violation">{v.message}</p>
+								{/each}
+							</div>
+						{/if}
+
+						{#if validationResult?.warnings.length}
+							<div class="val-warnings">
+								{#each validationResult.warnings as w}
+									<p class="warning">{w}</p>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
-					<div class="val-stats">
-						<div class="val-stat">
-							<span class="val-num">{heroCards.length}</span>
-							<span class="val-label">Heroes</span>
-						</div>
-						<div class="val-stat">
-							<span class="val-num">{validationResult?.stats.totalPower.toLocaleString() || 0}</span>
-							<span class="val-label">Total PWR</span>
-						</div>
-						<div class="val-stat">
-							<span class="val-num">{validationResult?.stats.averagePower || 0}</span>
-							<span class="val-label">Avg PWR</span>
-						</div>
-						<div class="val-stat">
-							<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
-							<span class="val-label">DBS</span>
-						</div>
+					<!-- Hot dog count -->
+					<div class="form-group hot-dog-row">
+						<label for="hot-dogs">Hot Dog Cards</label>
+						<input id="hot-dogs" type="number" bind:value={hotDogCount} min="0" max="20" class="narrow-input" />
+						{#if formatInfo?.requiresFoilHotDogs}
+							<label for="foil-hd" class="foil-label">Foil Hot Dogs</label>
+							<input id="foil-hd" type="number" bind:value={foilHotDogCount} min="0" max="10" class="narrow-input" />
+						{/if}
 					</div>
+				{/if}
 
-					{#if validationResult?.violations.length}
-						<div class="val-violations">
-							{#each validationResult.violations as v}
-								<p class="violation">{v.message}</p>
-							{/each}
-						</div>
-					{/if}
-
-					{#if validationResult?.warnings.length}
-						<div class="val-warnings">
-							{#each validationResult.warnings as w}
-								<p class="warning">{w}</p>
-							{/each}
-						</div>
-					{/if}
+				<div class="deck-actions">
+					<button class="secondary-btn" onclick={proceedToInfo}>Back</button>
+					<button
+						class="primary-btn"
+						onclick={proceedToConfirm}
+						disabled={heroCards.length === 0}
+					>
+						Review & Submit
+					</button>
 				</div>
-
-				<!-- Hot dog count -->
-				<div class="form-group hot-dog-row">
-					<label for="hot-dogs">Hot Dog Cards</label>
-					<input id="hot-dogs" type="number" bind:value={hotDogCount} min="0" max="20" class="narrow-input" />
-					{#if formatInfo?.requiresFoilHotDogs}
-						<label for="foil-hd" class="foil-label">Foil Hot Dogs</label>
-						<input id="foil-hd" type="number" bind:value={foilHotDogCount} min="0" max="10" class="narrow-input" />
-					{/if}
-				</div>
-			{/if}
-
-			<div class="deck-actions">
-				<button class="secondary-btn" onclick={proceedToInfo}>Back</button>
-				<button
-					class="primary-btn"
-					onclick={proceedToConfirm}
-					disabled={heroCards.length === 0}
-				>
-					Review & Submit
-				</button>
 			</div>
-		</div>
+		{/if}
 
 	{:else if tournament && step === 'confirm'}
 		<header class="page-header">
@@ -678,7 +699,9 @@
 				</div>
 			</div>
 
-			{#if validationResult}
+			{#if isSealed}
+				<div class="confirm-validation valid">Sealed Pool</div>
+			{:else if validationResult}
 				<div class="confirm-validation" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
 					{validationResult.isValid ? 'Deck is valid for ' + validationResult.formatName : 'Deck has validation errors'}
 				</div>

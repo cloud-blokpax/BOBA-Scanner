@@ -9,6 +9,7 @@
 
 	// Form state
 	let name = $state('');
+	let deckType = $state<'constructed' | 'sealed'>('sealed');
 	let formatId = $state('apex_playmaker');
 	let description = $state('');
 	let venue = $state('');
@@ -33,6 +34,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					name: name.trim(),
+					deck_type: deckType,
 					format_id: formatId,
 					description: description.trim() || null,
 					venue: venue.trim() || null,
@@ -94,6 +96,20 @@
 			<label for="t-name">Tournament Name <span class="required">*</span></label>
 			<input id="t-name" type="text" bind:value={name} placeholder="e.g. Weekly SPEC Showdown" maxlength="200" />
 		</div>
+
+		<fieldset class="form-group">
+			<legend>Deck Type <span class="required">*</span></legend>
+			<label class="radio-label">
+				<input type="radio" bind:group={deckType} value="sealed" />
+				Sealed
+				<span class="deck-type-desc">Players scan cards from a sealed product opening</span>
+			</label>
+			<label class="radio-label disabled">
+				<input type="radio" bind:group={deckType} value="constructed" disabled />
+				Constructed
+				<span class="deck-type-desc">Players build decks from their collection (coming soon)</span>
+			</label>
+		</fieldset>
 
 		<div class="form-group">
 			<label for="t-format">Format <span class="required">*</span></label>
@@ -297,6 +313,17 @@
 		cursor: pointer;
 	}
 	.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+	.deck-type-desc {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		margin-left: 1.5rem;
+		font-weight: 400;
+	}
+	.radio-label.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
 
 	/* My Tournaments */
 	.my-tournaments { margin-bottom: 2rem; }
