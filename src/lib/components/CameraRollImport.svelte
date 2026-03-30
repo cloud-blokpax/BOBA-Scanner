@@ -36,6 +36,8 @@
 	let isPaused = $state(false);
 	let addingAll = $state(false);
 	let addedAll = $state(false);
+	let _destroyed = false;
+	let _pauseInterval: ReturnType<typeof setInterval> | null = null;
 
 	const totalValue = $derived(
 		items.reduce((sum, item) => sum + (item.price ?? 0), 0)
@@ -61,6 +63,11 @@
 	});
 
 	onDestroy(() => {
+		_destroyed = true;
+		if (_pauseInterval) {
+			clearInterval(_pauseInterval);
+			_pauseInterval = null;
+		}
 		cleanup();
 	});
 
@@ -90,12 +97,18 @@
 
 	async function processSequentially() {
 		for (let i = 0; i < items.length; i++) {
+			if (_destroyed) return;
 			if (isPaused) {
 				await new Promise<void>(resolve => {
-					const check = setInterval(() => {
-						if (!isPaused) { clearInterval(check); resolve(); }
+					_pauseInterval = setInterval(() => {
+						if (!isPaused || _destroyed) {
+							clearInterval(_pauseInterval!);
+							_pauseInterval = null;
+							resolve();
+						}
 					}, 200);
 				});
+				if (_destroyed) return;
 			}
 
 			currentIndex = i;

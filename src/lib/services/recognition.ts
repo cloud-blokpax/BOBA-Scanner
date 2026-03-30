@@ -273,12 +273,16 @@ export async function recognizeCard(
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
-	const tier1Result = await runTier1(bitmap, ctx);
-	if (tier1Result) {
-		console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
-		return finalize(tier1Result);
+	try {
+		const tier1Result = await runTier1(bitmap, ctx);
+		if (tier1Result) {
+			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
+			return finalize(tier1Result);
+		}
+		console.debug('[scan] Tier 1 MISS: no hash match found');
+	} catch (err) {
+		console.warn(`[scan:${ctx.traceId}] Tier 1 failed, falling through:`, err);
 	}
-	console.debug('[scan] Tier 1 MISS: no hash match found');
 
 	// ── Offline handling: queue for later if no network ──────
 	if (!navigator.onLine) {

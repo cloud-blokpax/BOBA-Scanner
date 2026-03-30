@@ -62,7 +62,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			const browseRes = await ebayFetch(searchUrl.toString());
 
 			if (!browseRes.ok) {
-				throw error(502, `eBay Browse API: ${browseRes.status}`);
+				console.error('[ebay/browse] eBay Browse API error:', browseRes.status);
+				throw error(502, 'eBay API error');
 			}
 
 			const data = await browseRes.json();
@@ -131,7 +132,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		const browseRes = await ebayFetch(searchUrl.toString());
 
 		if (!browseRes.ok) {
-			throw error(502, `eBay Browse API: ${browseRes.status}`);
+			console.error('[ebay/browse] eBay Browse API error (seller mode):', browseRes.status);
+			throw error(502, 'eBay API error');
 		}
 
 		const data = await browseRes.json();

@@ -8,7 +8,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	await requireAdmin(locals);
 
 	const client = locals.supabase;
-	if (!client) throw error(500, 'Database not configured');
+	if (!client) throw error(503, 'Database not available');
 
 	// pack_configurations is not yet in the generated Supabase types
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +32,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!user) throw error(401, 'Unauthorized');
 
 	const client = locals.supabase;
-	if (!client) throw error(500, 'Database not configured');
+	if (!client) throw error(503, 'Database not available');
 
 	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {

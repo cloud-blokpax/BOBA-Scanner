@@ -357,6 +357,79 @@ describe('Recognition Pipeline E2E', () => {
 	});
 });
 
+describe('concurrent scans', () => {
+	it('handles multiple concurrent recognizeCard calls without interference', async () => {
+		// Simulate two concurrent scans — both should complete independently
+		mockIdb.getHash
+			.mockResolvedValueOnce({ card_id: 'card-bf108', confidence: 0.95 })
+			.mockResolvedValueOnce({ card_id: 'card-pl46', confidence: 0.88 });
+
+		const blob1 = new Blob(['test1'], { type: 'image/jpeg' });
+		const blob2 = new Blob(['test2'], { type: 'image/jpeg' });
+
+		const [result1, result2] = await Promise.all([
+			recognizeCard(blob1),
+			recognizeCard(blob2)
+		]);
+
+		expect(result1.card_id).toBe('card-bf108');
+		expect(result2.card_id).toBe('card-pl46');
+		// Each scan should have its own result — no cross-contamination
+		expect(result1.card?.name).toBe('Bo Jackson');
+		expect(result2.card?.name).toBe('Speed Demon');
+	});
+
+	it('concurrent scans with different tier outcomes do not interfere', async () => {
+		// First scan: hash cache hit (Tier 1)
+		// Second scan: cache miss → Tier 3
+		mockIdb.getHash
+			.mockResolvedValueOnce({ card_id: 'card-bf108', confidence: 0.95 })
+			.mockResolvedValueOnce(undefined);
+
+		mockFetch.mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({
+				success: true,
+				card: { card_number: 'PL-46', hero_name: 'Speed Demon', confidence: 0.9 }
+			}),
+			text: () => Promise.resolve('')
+		});
+
+		const blob1 = new Blob(['test1'], { type: 'image/jpeg' });
+		const blob2 = new Blob(['test2'], { type: 'image/jpeg' });
+
+		const [result1, result2] = await Promise.all([
+			recognizeCard(blob1),
+			recognizeCard(blob2)
+		]);
+
+		expect(result1.scan_method).toBe('hash_cache');
+		expect(result2.scan_method).toBe('claude');
+	});
+});
+
+describe('worker initialization resilience', () => {
+	it('returns graceful failure when worker throws during scan', async () => {
+		mockIdb.getHash.mockResolvedValue(undefined);
+		mockImageWorker.computeDHash.mockRejectedValueOnce(new Error('Worker crashed'));
+		mockFetch.mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({
+				success: true,
+				card: { card_number: 'BF-108', hero_name: 'Bo Jackson', confidence: 0.9 }
+			}),
+			text: () => Promise.resolve('')
+		});
+
+		const blob = new Blob(['test'], { type: 'image/jpeg' });
+		const result = await recognizeCard(blob);
+
+		// Should fall through to Tier 3 even if dHash computation fails
+		expect(result.card_id).toBe('card-bf108');
+		expect(result.scan_method).toBe('claude');
+	});
+});
+
 describe('analyzeFrame', () => {
 	it('returns card detection and sharpness info', async () => {
 		mockImageWorker.analyzeCardPresence.mockResolvedValue({
