@@ -38,10 +38,17 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		.from('card_reference_images')
 		.select('*', { count: 'exact', head: true });
 
+	// Count distinct contributors via the leaderboard view (already grouped by user)
 	const { count: totalContributors } = await client
-		.from('card_reference_images')
-		.select('contributed_by', { count: 'exact', head: true })
-		.not('contributed_by', 'is', null);
+		.from('reference_image_leaderboard')
+		.select('*', { count: 'exact', head: true });
+
+	// Get actual card count for coverage calculation instead of hardcoding
+	const { count: totalCards } = await client
+		.from('cards')
+		.select('*', { count: 'exact', head: true });
+
+	const cardCount = totalCards || 1; // fallback to 1 to avoid division by zero
 
 	return json({
 		leaderboard: leaderboard || [],
@@ -49,7 +56,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		stats: {
 			total_reference_images: totalImages || 0,
 			total_contributors: totalContributors || 0,
-			coverage_percent: totalImages ? ((totalImages / 17644) * 100).toFixed(1) : '0'
+			coverage_percent: totalImages ? ((totalImages / cardCount) * 100).toFixed(1) : '0'
 		}
 	}, {
 		headers: { 'Cache-Control': 's-maxage=60, stale-while-revalidate=300' }
