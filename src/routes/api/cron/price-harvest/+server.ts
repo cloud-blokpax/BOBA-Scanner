@@ -102,6 +102,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	let processed = 0;
 	let updated = 0;
 	let errors = 0;
+	const harvestLogs: Record<string, unknown>[] = [];
 
 	for (let wave = 0; wave < MAX_WAVES; wave++) {
 		if (Date.now() - startTime > 7500) break;
@@ -111,20 +112,30 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		if (waveCards.length === 0) break;
 
 		const results = await Promise.allSettled(
-			waveCards.map(card => refreshCardPrice(admin, card, redis, today))
+			waveCards.map(card => refreshCardPrice(admin, card, redis, today, chainDepth))
 		);
 
 		for (const result of results) {
 			processed++;
-			if (result.status === 'fulfilled' && result.value) {
-				updated++;
-			} else if (result.status === 'rejected') {
+			if (result.status === 'fulfilled') {
+				if (result.value.success) updated++;
+				if (result.value.logEntry) harvestLogs.push(result.value.logEntry);
+			} else {
 				errors++;
 			}
 		}
 
 		if (wave < MAX_WAVES - 1 && waveCards.length === BATCH_SIZE) {
 			await new Promise(r => setTimeout(r, WAVE_DELAY_MS));
+		}
+	}
+
+	// ── Batch insert harvest logs ────────────────────────
+	if (harvestLogs.length > 0) {
+		try {
+			await admin.from('price_harvest_log').insert(harvestLogs);
+		} catch (err) {
+			console.debug('[harvest] Log batch insert failed:', err);
 		}
 	}
 
@@ -294,15 +305,22 @@ async function hydrateCards(
 
 // ── Single card price refresh ───────────────────────────────
 
+interface RefreshResult {
+	success: boolean;
+	logEntry: Record<string, unknown> | null;
+}
+
 async function refreshCardPrice(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	card: CardCandidate,
 	redis: NonNullable<ReturnType<typeof getRedis>>,
-	today: string
-): Promise<boolean> {
+	today: string,
+	chainDepth: number
+): Promise<RefreshResult> {
 	const heroOrName = card.hero_name || card.name || '';
 	const cardNum = card.card_number || '';
 	const query = `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
+	const callStart = Date.now();
 
 	// Increment Redis counter BEFORE the call
 	try {
@@ -311,6 +329,24 @@ async function refreshCardPrice(
 		if (count === 1) await redis.expire(key, 86400);
 	} catch { /* best-effort */ }
 
+	// Fetch previous price for delta tracking
+	let previousMid: number | null = null;
+	let isNewPrice = false;
+	try {
+		const { data: cached } = await admin
+			.from('price_cache')
+			.select('price_mid')
+			.eq('card_id', card.id)
+			.eq('source', 'ebay')
+			.maybeSingle();
+
+		if (cached) {
+			previousMid = cached.price_mid !== null ? Number(cached.price_mid) : null;
+		} else {
+			isNewPrice = true;
+		}
+	} catch { /* non-critical — delta tracking is best-effort */ }
+
 	try {
 		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 		searchUrl.searchParams.set('q', query);
@@ -318,21 +354,40 @@ async function refreshCardPrice(
 		searchUrl.searchParams.set('limit', '50');
 
 		const res = await ebayFetch(searchUrl.toString());
-		if (!res.ok) return false;
+		if (!res.ok) {
+			return {
+				success: false,
+				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
+					success: false,
+					error_message: `eBay API returned ${res.status}`,
+					isNewPrice, previousMid
+				})
+			};
+		}
 
 		const data = await res.json();
-		const items = data.itemSummaries || [];
+		const items: Array<{
+			price?: { value?: string };
+			buyingOptions?: string[];
+		}> = data.itemSummaries || [];
+
+		const ebayResultsRaw = items.length;
+
+		// Separate by buying option
+		const fixedPriceItems = items.filter(item =>
+			item.buyingOptions?.includes('FIXED_PRICE')
+		);
+		const auctionItems = items.filter(item =>
+			item.buyingOptions?.includes('AUCTION')
+		);
 
 		const allPrices = items
-			.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value || '0'))
-			.filter((p: number) => p > 0);
+			.map(item => parseFloat(item.price?.value || '0'))
+			.filter(p => p > 0);
 
-		const fixedPrices = items
-			.filter((item: { buyingOptions?: string[] }) =>
-				item.buyingOptions?.includes('FIXED_PRICE')
-			)
-			.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value || '0'))
-			.filter((p: number) => p > 0);
+		const fixedPrices = fixedPriceItems
+			.map(item => parseFloat(item.price?.value || '0'))
+			.filter(p => p > 0);
 
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
@@ -352,18 +407,14 @@ async function refreshCardPrice(
 			fetched_at: new Date().toISOString()
 		};
 
+		// Upsert price cache
 		await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
 
 		// Write price history only if price changed
-		const { data: lastEntry } = await admin
-			.from('price_history')
-			.select('price_mid')
-			.eq('card_id', card.id)
-			.order('recorded_at', { ascending: false })
-			.limit(1)
-			.maybeSingle();
+		const newMid = priceData.price_mid !== null ? Number(priceData.price_mid) : null;
+		const priceChanged = previousMid !== newMid;
 
-		if (!lastEntry || lastEntry.price_mid !== priceData.price_mid) {
+		if (!previousMid || priceChanged) {
 			await admin.from('price_history').insert({
 				card_id: card.id,
 				source: 'ebay',
@@ -375,11 +426,116 @@ async function refreshCardPrice(
 			});
 		}
 
-		return true;
+		// Calculate delta
+		let priceDelta: number | null = null;
+		let priceDeltaPct: number | null = null;
+		if (previousMid !== null && newMid !== null) {
+			priceDelta = parseFloat((newMid - previousMid).toFixed(2));
+			if (previousMid > 0) {
+				priceDeltaPct = parseFloat(((priceDelta / previousMid) * 100).toFixed(2));
+			}
+		}
+
+		return {
+			success: true,
+			logEntry: {
+				run_id: today,
+				chain_depth: chainDepth,
+				priority: card.priority,
+				card_id: card.id,
+				hero_name: card.hero_name,
+				card_name: card.name,
+				card_number: card.card_number,
+				search_query: query,
+				ebay_results_raw: ebayResultsRaw,
+				auction_count: auctionItems.length,
+				fixed_price_count: fixedPriceItems.length,
+				price_low: allStats?.low ?? null,
+				price_mid: allStats?.median ?? null,
+				price_high: allStats?.high ?? null,
+				price_mean: allStats?.mean ?? null,
+				listings_count: allPrices.length,
+				filtered_count: allStats?.filteredCount ?? 0,
+				confidence_score: allStats?.confidenceScore ?? 0,
+				buy_now_low: fixedStats?.low ?? null,
+				buy_now_mid: fixedStats?.median ?? null,
+				buy_now_high: fixedStats?.high ?? null,
+				buy_now_mean: fixedStats?.mean ?? null,
+				buy_now_count: fixedPrices.length,
+				buy_now_filtered: fixedStats?.filteredCount ?? 0,
+				buy_now_confidence: fixedStats?.confidenceScore ?? 0,
+				previous_mid: previousMid,
+				price_changed: priceChanged,
+				price_delta: priceDelta,
+				price_delta_pct: priceDeltaPct,
+				is_new_price: isNewPrice,
+				success: true,
+				zero_results: ebayResultsRaw === 0,
+				error_message: null,
+				duration_ms: Date.now() - callStart,
+				processed_at: new Date().toISOString()
+			}
+		};
 	} catch (err) {
-		console.debug(`[harvest] Price refresh failed for ${card.id}:`, err);
-		return false;
+		return {
+			success: false,
+			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
+				success: false,
+				error_message: err instanceof Error ? err.message : 'Unknown error',
+				isNewPrice, previousMid
+			})
+		};
 	}
+}
+
+/**
+ * Build a minimal log entry for failed refreshes.
+ */
+function buildLogEntry(
+	card: CardCandidate,
+	query: string,
+	chainDepth: number,
+	today: string,
+	callStart: number,
+	result: { success: boolean; error_message: string | null; isNewPrice: boolean; previousMid: number | null }
+): Record<string, unknown> {
+	return {
+		run_id: today,
+		chain_depth: chainDepth,
+		priority: card.priority,
+		card_id: card.id,
+		hero_name: card.hero_name,
+		card_name: card.name,
+		card_number: card.card_number,
+		search_query: query,
+		ebay_results_raw: 0,
+		auction_count: 0,
+		fixed_price_count: 0,
+		price_low: null,
+		price_mid: null,
+		price_high: null,
+		price_mean: null,
+		listings_count: 0,
+		filtered_count: 0,
+		confidence_score: 0,
+		buy_now_low: null,
+		buy_now_mid: null,
+		buy_now_high: null,
+		buy_now_mean: null,
+		buy_now_count: 0,
+		buy_now_filtered: 0,
+		buy_now_confidence: 0,
+		previous_mid: result.previousMid,
+		price_changed: false,
+		price_delta: null,
+		price_delta_pct: null,
+		is_new_price: result.isNewPrice,
+		success: result.success,
+		zero_results: true,
+		error_message: result.error_message,
+		duration_ms: Date.now() - callStart,
+		processed_at: new Date().toISOString()
+	};
 }
 
 // ── Helpers ─────────────────────────────────────────────────
