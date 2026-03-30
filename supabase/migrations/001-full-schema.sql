@@ -567,6 +567,11 @@ RETURNS TABLE (
     distance   INT
 ) AS $$
 BEGIN
+    -- Validate input: must be exactly 16 hex characters for BIT(64) cast
+    IF query_hash IS NULL OR length(query_hash) != 16 OR query_hash !~ '^[0-9a-fA-F]{16}$' THEN
+        RETURN;
+    END IF;
+
     RETURN QUERY
     SELECT
         h.phash,
@@ -575,7 +580,9 @@ BEGIN
         h.scan_count,
         bit_count(('x' || h.phash)::BIT(64) # ('x' || query_hash)::BIT(64))::INT AS distance
     FROM public.hash_cache h
-    WHERE bit_count(('x' || h.phash)::BIT(64) # ('x' || query_hash)::BIT(64))::INT <= max_distance
+    WHERE length(h.phash) = 16
+      AND h.phash ~ '^[0-9a-fA-F]{16}$'
+      AND bit_count(('x' || h.phash)::BIT(64) # ('x' || query_hash)::BIT(64))::INT <= max_distance
     ORDER BY distance ASC
     LIMIT 5;
 END;
