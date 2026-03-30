@@ -443,7 +443,7 @@
 				// AR Price Overlay: attempt lookup on first stable frame
 				// to give Supabase round-trip time before auto-capture at frame 4
 				if (stableFrameCount === 1) {
-					lookupOverlayPrice(frameHash).catch(() => {});
+					lookupOverlayPrice(frameHash).catch((err) => console.debug('[scanner] AR overlay price lookup failed:', err));
 				}
 
 				if (stableFrameCount >= STABLE_FRAMES_REQUIRED) {

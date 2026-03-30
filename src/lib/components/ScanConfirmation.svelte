@@ -93,7 +93,8 @@
 					priceErrorReason = result.errorReason;
 				}
 			})
-			.catch(() => {
+			.catch((err) => {
+				console.warn('[scan-confirm] Price lookup failed for card:', cardId, err);
 				if (card?.id === cardId) priceError = true;
 			})
 			.finally(() => {
@@ -111,6 +112,7 @@
 			.then(data => { historyData = data.history || []; historyLoading = false; })
 			.catch((err) => {
 				if (err instanceof DOMException && err.name === 'AbortError') return;
+				console.warn('[scan-confirm] Price history fetch failed:', err);
 				historyData = [];
 				historyLoading = false;
 			});
@@ -126,6 +128,7 @@
 			.then(data => { ebayConnected = data.connected; })
 			.catch((err) => {
 				if (err instanceof DOMException && err.name === 'AbortError') return;
+				console.debug('[scan-confirm] eBay status check failed:', err);
 				ebayConnected = false;
 			})
 			.finally(() => {

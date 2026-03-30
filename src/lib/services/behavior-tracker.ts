@@ -117,8 +117,8 @@ export function trackBehavior(action: BehaviorAction): void {
 			const tx = db.transaction(STORE_NAME, 'readwrite');
 			tx.objectStore(STORE_NAME).put(event);
 		})
-		.catch(() => {
-			// Silent failure — behavioral tracking is non-critical
+		.catch((err) => {
+			console.debug('[behavior-tracker] Failed to record event:', action, err);
 		});
 }
 

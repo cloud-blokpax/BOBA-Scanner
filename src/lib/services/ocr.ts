@@ -72,7 +72,7 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 			worker = newWorker;
 			recognitionCount = 0;
 			// Terminate old worker in background (non-blocking)
-			oldWorker?.terminate().catch(() => {});
+			oldWorker?.terminate().catch((err) => console.debug('[ocr] Old worker terminate failed:', err));
 		} catch (err) {
 			console.warn('[ocr] Worker restart failed:', err);
 			// Keep the existing worker running — better than no worker

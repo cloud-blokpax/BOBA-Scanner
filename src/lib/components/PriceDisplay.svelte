@@ -35,8 +35,9 @@
 				priceData = data;
 				loading = false;
 			}
-		}).catch(() => {
+		}).catch((err) => {
 			if (!cancelled) {
+				console.warn('[price-display] Price fetch failed for card:', id, err);
 				priceData = null;
 				loading = false;
 			}

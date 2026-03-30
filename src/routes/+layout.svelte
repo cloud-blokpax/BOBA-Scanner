@@ -69,7 +69,7 @@
 					showToast('Offline storage unavailable — some features may not work.', 'ℹ️', 5000);
 				}
 			})
-		).catch(() => { /* IDB check failed — non-fatal */ });
+		).catch((err) => { console.warn('[layout] IDB health check failed:', err); });
 
 		const client = getSupabase();
 
@@ -128,7 +128,7 @@
 								});
 							});
 						}
-					} catch { /* ignore parse errors */ }
+					} catch (err) { console.debug('[layout] Failed to parse pending card from sessionStorage:', err); }
 				}
 			}
 		});
@@ -149,7 +149,7 @@
 
 		// Request persistent storage to prevent browser from evicting cached data
 		if (navigator.storage?.persist) {
-			navigator.storage.persist().catch(() => {});
+			navigator.storage.persist().catch((err) => console.debug('[layout] Storage persist request failed:', err));
 		}
 
 		// Process queued offline scans when connectivity returns

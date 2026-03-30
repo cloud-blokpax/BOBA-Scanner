@@ -51,7 +51,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	}
 
 	// Increment view count atomically (non-blocking)
-	Promise.resolve(locals.supabase.rpc('increment_shared_deck_views', { deck_id: id })).catch(() => {});
+	Promise.resolve(locals.supabase.rpc('increment_shared_deck_views', { deck_id: id })).catch((err) => console.debug('[deck-view] View count increment failed:', err));
 
 	return { deck: typedDeck };
 };

@@ -141,7 +141,7 @@ export async function initWorkers(): Promise<void> {
 		}
 
 		// Eagerly load OCR corrections into memory for synchronous lookups
-		loadCorrectionsFromIdb().catch(() => {});
+		loadCorrectionsFromIdb().catch((err) => console.warn('[scan] Failed to load OCR corrections from IDB:', err));
 
 		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
 		// skipped gracefully and we fall through to Tier 3 (Claude API).
@@ -255,7 +255,7 @@ export async function recognizeCard(
 		if (final.card?.parallel && final.card_id) {
 			import('$lib/stores/tags.svelte').then(({ addTag }) => {
 				addTag(final.card_id!, final.card!.parallel!);
-			}).catch(() => {});
+			}).catch((err) => console.debug('[scan] Auto-tag failed:', err));
 		}
 
 		return final;

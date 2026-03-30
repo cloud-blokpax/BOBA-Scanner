@@ -76,7 +76,7 @@ sw.addEventListener('fetch', (event) => {
 					const response = await fetch(event.request);
 					if (response.ok) {
 						const clone = response.clone();
-						caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+						caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch((err) => console.debug('[sw] Cache put failed (navigate):', err)));
 					}
 					return response;
 				} catch (_err) {
@@ -104,7 +104,7 @@ sw.addEventListener('fetch', (event) => {
 				const response = await fetch(event.request);
 				if (response.ok) {
 					const clone = response.clone();
-					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch((err) => console.debug('[sw] Cache put failed (precache):', err)));
 				}
 				return response;
 			})()
@@ -127,7 +127,7 @@ sw.addEventListener('fetch', (event) => {
 			const fetchPromise = fetch(event.request).then((response) => {
 				if (response.ok) {
 					const clone = response.clone();
-					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch(() => {}));
+					caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone).catch((err) => console.debug('[sw] Cache put failed (swr):', err)));
 				}
 				return response;
 			}).catch(() => {

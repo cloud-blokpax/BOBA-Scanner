@@ -196,7 +196,7 @@
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
 			})
-			.catch(() => {})
+			.catch((err) => console.warn('[settings] eBay status check failed:', err))
 			.finally(() => { ebayLoading = false; });
 	});
 
