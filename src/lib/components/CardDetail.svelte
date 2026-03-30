@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import PriceDisplay from './PriceDisplay.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import { getCardImageUrl } from '$lib/utils/image-url';
 	import { updateQuantity, removeFromCollection } from '$lib/stores/collection.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import type { CollectionItem } from '$lib/types';
@@ -74,18 +75,23 @@
 
 			<div class="detail-content">
 				<div class="detail-header">
-					{#if item.card?.image_url}
-						<div
-							class="detail-image-tilt"
-							use:tilt={{
-								gyro: item.card.rarity !== 'common',
-								weaponType: item.card.weapon_type ?? null,
-								shimmer: true,
-								specular: item.card.rarity !== 'common'
-							}}
-						>
-							<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="detail-image" size="large" />
-						</div>
+					{#if item.card}
+						{@const detailImgUrl = getCardImageUrl(item.card)}
+						{#if detailImgUrl}
+							<div
+								class="detail-image-tilt"
+								use:tilt={{
+									gyro: item.card.rarity !== 'common',
+									weaponType: item.card.weapon_type ?? null,
+									shimmer: true,
+									specular: item.card.rarity !== 'common'
+								}}
+							>
+								<OptimizedCardImage src={detailImgUrl} alt={item.card.name} className="detail-image" size="large" />
+							</div>
+						{:else}
+							<div class="detail-placeholder">🎴</div>
+						{/if}
 					{:else}
 						<div class="detail-placeholder">🎴</div>
 					{/if}

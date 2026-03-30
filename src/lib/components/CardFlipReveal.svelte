@@ -64,7 +64,8 @@
 		<!-- Card front (revealed) -->
 		<div class="flip-face flip-back">
 			{#if imageUrl}
-				<img src={imageUrl} alt={cardName} class="flip-card-image" />
+				<img src={imageUrl} alt={cardName} class="flip-card-image"
+					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
 			{/if}
 		</div>
 	</div>

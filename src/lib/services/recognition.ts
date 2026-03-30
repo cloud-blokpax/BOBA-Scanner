@@ -14,13 +14,15 @@ import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards,
 import { getSupabase } from './supabase';
 
 /** Circuit breaker: disable fuzzy hash RPC for the session if it fails once (bad DB function) */
-let _fuzzyHashRpcDisabled = false;
+export let _fuzzyHashRpcDisabled = false;
+export function disableFuzzyHashRpc(): void { _fuzzyHashRpcDisabled = true; }
 /** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
 let _upsertHashRpcDisabled = false;
 import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
+import { getCardImageUrl } from '$lib/utils/image-url';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
 import { submitReferenceImage } from '$lib/services/reference-images';
@@ -249,7 +251,7 @@ export async function recognizeCard(
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,
-			imageUrl: final.card?.image_url ?? null,
+			imageUrl: final.card ? getCardImageUrl(final.card) : null,
 			method: final.scan_method || 'unknown',
 			confidence: final.confidence,
 			success: final.card_id !== null,

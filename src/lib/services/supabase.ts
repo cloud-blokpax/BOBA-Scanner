@@ -12,6 +12,7 @@
 
 import { createBrowserClient } from '@supabase/ssr';
 import { env } from '$env/dynamic/public';
+import { initCardImageUrl } from '$lib/utils/image-url';
 import type { Database } from '$lib/types/database';
 
 type SupabaseClient = ReturnType<typeof createBrowserClient<Database>>;
@@ -32,6 +33,9 @@ export function getSupabase(): SupabaseClient | null {
 		console.warn('Supabase not configured — cloud features disabled');
 		return null;
 	}
+
+	// Initialize reference image URL fallback with Supabase URL
+	initCardImageUrl(url);
 
 	_supabase = createBrowserClient<Database>(url, key);
 	return _supabase;

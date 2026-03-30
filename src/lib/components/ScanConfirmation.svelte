@@ -2,6 +2,7 @@
 	import { addToCollection, ownedCardCounts } from '$lib/stores/collection.svelte';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import { getCardImageUrl } from '$lib/utils/image-url';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import { tryAwardBadge } from '$lib/services/badges';
@@ -206,7 +207,7 @@
 		<div class="sheet-handle"></div>
 		{#if card}
 			<ScanCardImage
-				imageUrl={capturedImageUrl ?? card.image_url ?? null}
+				imageUrl={capturedImageUrl ?? getCardImageUrl(card) ?? null}
 				cardName={card.name}
 				rarity={card.rarity ?? 'common'}
 				weaponType={card.weapon_type ?? null}

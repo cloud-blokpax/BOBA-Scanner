@@ -16,9 +16,14 @@
 	} = $props();
 
 	const urls = $derived(getOptimizedImageUrls(src, size));
+
+	let failed = $state(false);
+	function handleError() { failed = true; }
 </script>
 
-{#if urls.avif || urls.webp}
+{#if failed}
+	<div class={className} style="display:flex;align-items:center;justify-content:center;background:var(--bg-elevated,#121d34);border-radius:8px;aspect-ratio:2.5/3.5;font-size:2rem;">🎴</div>
+{:else if urls.avif || urls.webp}
 	<picture>
 		{#if urls.avif}
 			<source srcset={urls.avif} type="image/avif" />
@@ -33,6 +38,7 @@
 			decoding="async"
 			width={urls.width}
 			class={className}
+			onerror={handleError}
 		/>
 	</picture>
 {:else}
@@ -42,5 +48,6 @@
 		{loading}
 		decoding="async"
 		class={className}
+		onerror={handleError}
 	/>
 {/if}

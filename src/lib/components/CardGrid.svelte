@@ -3,6 +3,7 @@
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { CollectionItem, CardRarity } from '$lib/types';
 	import { collectionSets,collectionRarities,collectionWeaponTypes } from '$lib/stores/collection.svelte';
+	import { getCardImageUrl } from '$lib/utils/image-url';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 
 	let {
@@ -246,9 +247,10 @@
 					>
 						<div class="card-grid">
 							{#each virtualRows[virtualRow.index] as item (item.id)}
+								{@const imgUrl = item.card ? getCardImageUrl(item.card) : null}
 								<button class="card-tile" onclick={() => onCardClick?.(item)}>
-									{#if item.card?.image_url}
-										<OptimizedCardImage src={item.card.image_url} alt={item.card.name} className="card-image" size="thumb" />
+									{#if imgUrl}
+										<OptimizedCardImage src={imgUrl} alt={item.card?.name ?? 'Card'} className="card-image" size="thumb" />
 									{:else}
 										<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
 									{/if}
@@ -270,9 +272,10 @@
 		<!-- Standard grid for small collections -->
 		<div class="card-grid">
 			{#each filteredItems as item (item.id)}
+				{@const imgUrl = item.card ? getCardImageUrl(item.card) : null}
 				<button class="card-tile" onclick={() => onCardClick?.(item)}>
-					{#if item.card?.image_url}
-						<img src={item.card.image_url} alt={item.card.name} class="card-image" loading="lazy" />
+					{#if imgUrl}
+						<img src={imgUrl} alt={item.card?.name ?? 'Card'} class="card-image" loading="lazy" />
 					{:else}
 						<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
 					{/if}

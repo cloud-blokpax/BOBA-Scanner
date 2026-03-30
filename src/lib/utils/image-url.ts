@@ -55,4 +55,30 @@ export function getOptimizedImageUrls(src: string, size: ImageSize = 'medium'): 
 	};
 }
 
+/**
+ * Get the best available image URL for a card.
+ *
+ * Falls back to the Supabase Storage reference image when the card's
+ * image_url field is null (most cards don't have it set yet).
+ */
+export function getCardImageUrl(
+	card: { id: string; image_url?: string | null },
+	supabaseUrl?: string
+): string | null {
+	if (card.image_url) return card.image_url;
+
+	// Construct reference image URL from Supabase Storage
+	const url = supabaseUrl || _supabaseUrl;
+	if (!url) return null;
+	return `${url}/storage/v1/object/public/scans/references/${card.id}.jpg`;
+}
+
+/** Cached Supabase URL — set once from dynamic env */
+let _supabaseUrl: string | null = null;
+
+/** Initialize the Supabase URL for reference image fallback */
+export function initCardImageUrl(supabaseUrl: string): void {
+	_supabaseUrl = supabaseUrl;
+}
+
 export { IMAGE_SIZES, type ImageSize };
