@@ -526,6 +526,9 @@
 			<SealedDeckEntry
 				bind:heroCards
 				bind:playCards
+				maxHeroes={tournament.max_heroes}
+				maxPlays={tournament.max_plays}
+				maxBonus={tournament.max_bonus}
 				onProceed={proceedToConfirm}
 				onBack={proceedToInfo}
 			/>

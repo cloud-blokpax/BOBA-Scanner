@@ -125,10 +125,53 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	let validation: { isValid: boolean; formatName: string; violations: any[]; warnings: string[]; stats: any };
 
 	if (isSealed) {
+		const sealedViolations: { rule: string; message: string; severity: string }[] = [];
+
+		// Validate hero count
+		if (heroCards.length > tournament.max_heroes) {
+			sealedViolations.push({
+				rule: 'sealed_hero_count',
+				message: `Too many heroes: ${heroCards.length}/${tournament.max_heroes}`,
+				severity: 'error'
+			});
+		}
+
+		// Validate play count (standard + bonus)
+		const maxTotalPlays = tournament.max_plays + (tournament.max_bonus || 0);
+		if (playEntries.length > maxTotalPlays) {
+			sealedViolations.push({
+				rule: 'sealed_play_count',
+				message: `Too many plays: ${playEntries.length}/${maxTotalPlays}`,
+				severity: 'error'
+			});
+		}
+
+		// Check for duplicate heroes (by card_id or card_number+parallel)
+		const heroKeys = heroCards.map(c => c.card_id || `${c.card_number}:${c.parallel || 'base'}`);
+		const dupeHeroKeys = heroKeys.filter((key, i) => key && heroKeys.indexOf(key) !== i);
+		if (dupeHeroKeys.length > 0) {
+			sealedViolations.push({
+				rule: 'sealed_duplicate_heroes',
+				message: `Duplicate heroes found (${[...new Set(dupeHeroKeys)].length} duplicates)`,
+				severity: 'error'
+			});
+		}
+
+		// Check for duplicate plays (by card_number)
+		const playNums = playEntries.map(p => p.card_number);
+		const dupePlayNums = playNums.filter((num, i) => num && playNums.indexOf(num) !== i);
+		if (dupePlayNums.length > 0) {
+			sealedViolations.push({
+				rule: 'sealed_duplicate_plays',
+				message: `Duplicate plays found (${[...new Set(dupePlayNums)].length} duplicates)`,
+				severity: 'error'
+			});
+		}
+
 		validation = {
-			isValid: true,
+			isValid: sealedViolations.length === 0,
 			formatName: 'Sealed',
-			violations: [],
+			violations: sealedViolations,
 			warnings: [],
 			stats: {
 				totalHeroes: heroCards.length,

@@ -24,11 +24,17 @@
 	let {
 		heroCards = $bindable<HeroCardEntry[]>([]),
 		playCards = $bindable<PlayCardEntry[]>([]),
+		maxHeroes = 60,
+		maxPlays = 30,
+		maxBonus = 25,
 		onProceed,
 		onBack
 	}: {
 		heroCards: HeroCardEntry[];
 		playCards: PlayCardEntry[];
+		maxHeroes: number;
+		maxPlays: number;
+		maxBonus: number;
 		onProceed: () => void;
 		onBack: () => void;
 	} = $props();
@@ -39,9 +45,45 @@
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const totalCards = $derived(heroCards.length + playCards.length);
+	const maxTotalPlays = $derived(maxPlays + maxBonus);
+
+	// Validation
+	const violations = $derived(() => {
+		const v: string[] = [];
+		if (heroCards.length > maxHeroes) {
+			v.push(`Too many heroes: ${heroCards.length}/${maxHeroes}`);
+		}
+		if (playCards.length > maxTotalPlays) {
+			v.push(`Too many plays: ${playCards.length}/${maxTotalPlays}`);
+		}
+		// Check for duplicate heroes (same card_id)
+		const heroIds = heroCards.map(c => c.card_id);
+		const dupeHeroes = heroIds.filter((id, i) => id && heroIds.indexOf(id) !== i);
+		if (dupeHeroes.length > 0) {
+			const uniqueDupes = [...new Set(dupeHeroes)];
+			const dupeNames = uniqueDupes.map(id => heroCards.find(c => c.card_id === id)?.hero_name || id);
+			v.push(`Duplicate heroes: ${dupeNames.join(', ')}`);
+		}
+		// Check for duplicate plays (same card_number)
+		const playNums = playCards.map(c => c.card_number);
+		const dupePlays = playNums.filter((num, i) => num && playNums.indexOf(num) !== i);
+		if (dupePlays.length > 0) {
+			const uniqueDupes = [...new Set(dupePlays)];
+			const dupeNames = uniqueDupes.map(num => playCards.find(c => c.card_number === num)?.name || num);
+			v.push(`Duplicate plays: ${dupeNames.join(', ')}`);
+		}
+		return v;
+	});
+
+	const isValid = $derived(violations().length === 0 && totalCards > 0);
 
 	function addCard(card: Card) {
 		if (card.power) {
+			// Check for duplicate hero (same card ID)
+			if (heroCards.some(c => c.card_id === card.id)) {
+				showToast(`Already added: ${card.hero_name || card.name}`, 'x');
+				return;
+			}
 			heroCards = [...heroCards, {
 				card_id: card.id,
 				card_number: card.card_number || '',
@@ -52,6 +94,11 @@
 				set_code: card.set_code || ''
 			}];
 		} else {
+			// Check for duplicate play (same card number)
+			if (playCards.some(c => c.card_number === card.card_number)) {
+				showToast(`Already added: ${card.hero_name || card.name}`, 'x');
+				return;
+			}
 			playCards = [...playCards, {
 				card_number: card.card_number || '',
 				name: card.hero_name || card.name || '',
@@ -103,6 +150,25 @@
 	</div>
 
 	<p class="sealed-desc">Open your sealed product and scan or look up each card below.</p>
+
+	<!-- Requirements -->
+	<div class="requirements">
+		<div class="req" class:met={heroCards.length > 0 && heroCards.length <= maxHeroes}>
+			Heroes: {heroCards.length}/{maxHeroes}
+		</div>
+		<div class="req" class:met={playCards.length > 0 && playCards.length <= maxTotalPlays}>
+			Plays: {playCards.length}/{maxPlays}{#if maxBonus > 0} (+{maxBonus} bonus){/if}
+		</div>
+	</div>
+
+	<!-- Validation warnings -->
+	{#if violations().length > 0}
+		<div class="validation-errors">
+			{#each violations() as v}
+				<p class="violation">{v}</p>
+			{/each}
+		</div>
+	{/if}
 
 	<!-- Scanner toggle -->
 	<button
@@ -190,7 +256,7 @@
 		<button
 			class="primary-btn"
 			onclick={onProceed}
-			disabled={totalCards === 0}
+			disabled={!isValid}
 		>
 			Review & Submit
 		</button>
@@ -226,6 +292,41 @@
 		font-size: 0.85rem;
 		color: var(--text-secondary);
 		margin-bottom: 1rem;
+	}
+
+	/* Requirements */
+	.requirements {
+		display: flex;
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+	.req {
+		flex: 1;
+		text-align: center;
+		padding: 0.5rem;
+		border-radius: 8px;
+		background: var(--bg-base);
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		border: 1px solid var(--border-color);
+	}
+	.req.met {
+		border-color: #16a34a40;
+		color: #16a34a;
+	}
+	.validation-errors {
+		background: #ef444410;
+		border: 1px solid #ef444440;
+		border-radius: 8px;
+		padding: 0.5rem 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+	.violation {
+		font-size: 0.82rem;
+		color: #ef4444;
+		margin: 0;
+		padding: 2px 0;
 	}
 
 	/* Scanner toggle */
