@@ -12,6 +12,9 @@ import * as Comlink from 'comlink';
 import { idb } from './idb';
 import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards, searchCards, findSimilarCardNumbers } from './card-db';
 import { getSupabase } from './supabase';
+
+/** Circuit breaker: disable fuzzy hash RPC for the session if it fails once (bad DB function) */
+let _fuzzyHashRpcDisabled = false;
 import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
@@ -423,7 +426,7 @@ async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 
 	// Layer 3: Supabase fuzzy match via Hamming distance (≤5 bits different)
 	// This catches the same card under different lighting conditions.
-	if (client && /^[0-9a-f]{16}$/.test(hash)) {
+	if (client && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
 		try {
 			const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 				query_hash: hash,
@@ -431,6 +434,8 @@ async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 			});
 			if (fuzzyErr) {
 				console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup RPC error:`, fuzzyErr.message);
+				// Disable for rest of session to avoid repeated 400 errors
+				_fuzzyHashRpcDisabled = true;
 			} else if (fuzzyMatch && fuzzyMatch.length > 0) {
 				const match = fuzzyMatch[0];
 
