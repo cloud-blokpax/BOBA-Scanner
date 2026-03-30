@@ -96,14 +96,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	// Validate hero cards
+	// Validate card arrays
 	const heroCards = body.hero_cards as HeroCardInput[] | undefined;
 	const playEntries = (body.play_entries || []) as PlayEntryInput[];
 	const hotDogCount = (body.hot_dog_count as number) || 0;
 	const foilHotDogCount = (body.foil_hot_dog_count as number) || 0;
+	const isSealed = (tournament as Record<string, unknown>).deck_type === 'sealed';
 
-	if (!Array.isArray(heroCards) || heroCards.length === 0) {
+	if (!Array.isArray(heroCards)) {
+		throw error(400, 'Hero cards must be an array');
+	}
+	if (!isSealed && heroCards.length === 0) {
 		throw error(400, 'Hero cards are required');
+	}
+	if (heroCards.length === 0 && playEntries.length === 0) {
+		throw error(400, 'At least one card is required');
 	}
 	if (heroCards.length > 100) {
 		throw error(400, 'Too many hero cards (max 100)');
@@ -112,43 +119,63 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Too many play entries (max 75)');
 	}
 
-	// Run server-side validation
-	const { validateDeck } = await import('$lib/services/deck-validator');
+	// Run server-side validation (skip for sealed tournaments)
 	const formatId = tournament.format_id || 'apex_playmaker';
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let validation: { isValid: boolean; formatName: string; violations: any[]; warnings: string[]; stats: any };
 
-	const heroCardsForValidation: Card[] = heroCards.map((c) => ({
-		id: c.card_id || '',
-		card_number: c.card_number,
-		hero_name: c.hero_name,
-		name: c.hero_name,
-		power: c.power,
-		weapon_type: c.weapon_type,
-		parallel: c.parallel || 'base',
-		set_code: c.set_code,
-		rarity: null,
-		athlete_name: null,
-		battle_zone: null,
-		image_url: null,
-		created_at: ''
-	}));
+	if (isSealed) {
+		validation = {
+			isValid: true,
+			formatName: 'Sealed',
+			violations: [],
+			warnings: [],
+			stats: {
+				totalHeroes: heroCards.length,
+				totalPower: heroCards.reduce((sum, c) => sum + (c.power || 0), 0),
+				averagePower: heroCards.length > 0
+					? Math.round((heroCards.reduce((sum, c) => sum + (c.power || 0), 0) / heroCards.length) * 10) / 10
+					: 0,
+				dbsTotal: playEntries.reduce((sum, p) => sum + (p.dbs_score || 0), 0)
+			}
+		};
+	} else {
+		const { validateDeck } = await import('$lib/services/deck-validator');
 
-	const playCardsForValidation: Card[] = playEntries.map((p) => ({
-		id: '',
-		card_number: p.card_number,
-		name: p.name,
-		hero_name: null,
-		power: null,
-		weapon_type: null,
-		parallel: null,
-		set_code: p.set_code,
-		rarity: null,
-		athlete_name: null,
-		battle_zone: null,
-		image_url: null,
-		created_at: ''
-	}));
+		const heroCardsForValidation: Card[] = heroCards.map((c) => ({
+			id: c.card_id || '',
+			card_number: c.card_number,
+			hero_name: c.hero_name,
+			name: c.hero_name,
+			power: c.power,
+			weapon_type: c.weapon_type,
+			parallel: c.parallel || 'base',
+			set_code: c.set_code,
+			rarity: null,
+			athlete_name: null,
+			battle_zone: null,
+			image_url: null,
+			created_at: ''
+		}));
 
-	const validation = validateDeck(heroCardsForValidation, formatId, playCardsForValidation, []);
+		const playCardsForValidation: Card[] = playEntries.map((p) => ({
+			id: '',
+			card_number: p.card_number,
+			name: p.name,
+			hero_name: null,
+			power: null,
+			weapon_type: null,
+			parallel: null,
+			set_code: p.set_code,
+			rarity: null,
+			athlete_name: null,
+			battle_zone: null,
+			image_url: null,
+			created_at: ''
+		}));
+
+		validation = validateDeck(heroCardsForValidation, formatId, playCardsForValidation, []);
+	}
 
 	// Compute stats
 	const powers = heroCards.map((c) => c.power || 0);

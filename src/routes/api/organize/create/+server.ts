@@ -46,6 +46,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await parseJsonBody(request);
 
 	const name = requireString(body.name, 'name', 200);
+	const deckType = (body.deck_type as string) || 'sealed';
+	if (!['constructed', 'sealed'].includes(deckType)) {
+		throw error(400, 'Invalid deck_type');
+	}
 	const formatId = requireString(body.format_id, 'format_id', 50);
 	const deadlineMode = (body.deadline_mode as string) || 'manual';
 
@@ -85,6 +89,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			creator_id: organizer.publicUserId,
 			code,
 			name,
+			deck_type: deckType,
 			format_id: formatId,
 			description: (body.description as string) || null,
 			venue: (body.venue as string) || null,
