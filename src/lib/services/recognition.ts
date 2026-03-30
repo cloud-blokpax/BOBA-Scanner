@@ -15,6 +15,8 @@ import { getSupabase } from './supabase';
 
 /** Circuit breaker: disable fuzzy hash RPC for the session if it fails once (bad DB function) */
 let _fuzzyHashRpcDisabled = false;
+/** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
+let _upsertHashRpcDisabled = false;
 import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
@@ -882,19 +884,25 @@ async function writeHashToAllLayers(
 	}
 
 	// Layer 3: Supabase (atomic scan_count increment via RPC)
-	try {
-		const client = getSupabase();
-		if (client) {
-			const { error: rpcErr } = await client.rpc('upsert_hash_cache', {
-				p_phash: hash,
-				p_card_id: cardId,
-				p_confidence: confidence,
-				p_phash_256: phash256 ?? undefined
-			});
-			if (rpcErr) console.debug('[scan] Supabase hash writeback RPC error:', rpcErr.message);
+	if (!_upsertHashRpcDisabled) {
+		try {
+			const client = getSupabase();
+			if (client) {
+				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string } = {
+					p_phash: hash,
+					p_card_id: cardId,
+					p_confidence: confidence
+				};
+				if (phash256) rpcArgs.p_phash_256 = phash256;
+				const { error: rpcErr } = await client.rpc('upsert_hash_cache', rpcArgs);
+				if (rpcErr) {
+					console.debug('[scan] Supabase hash writeback RPC error:', rpcErr.message);
+					_upsertHashRpcDisabled = true;
+				}
+			}
+		} catch (err) {
+			console.debug('[scan] Supabase hash writeback failed:', err);
 		}
-	} catch (err) {
-		console.debug('[scan] Supabase hash writeback failed:', err);
 	}
 
 	// Layer 4: Reference image competition
