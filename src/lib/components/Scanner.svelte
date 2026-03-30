@@ -79,6 +79,7 @@
 	let _overlayTimeout: ReturnType<typeof setTimeout> | null = null;
 	let _overlayLookupInProgress = false;
 	let _lastOverlayHash: string | null = null;
+	let _fuzzyHashRpcDisabled = false;
 
 	let showFirstRunGuide = $state(false);
 	let showCameraExplainer = $state(false);
@@ -316,11 +317,14 @@
 						}
 
 						// Fuzzy match if exact missed
-						if (!cardId && /^[0-9a-f]{16}$/.test(hash)) {
-							const { data: fuzzyMatch } = await client.rpc('find_similar_hash', {
+						if (!cardId && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
+							const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 								query_hash: hash,
 								max_distance: 5
 							});
+							if (fuzzyErr) {
+								_fuzzyHashRpcDisabled = true;
+							}
 
 							if (fuzzyMatch && (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>).length > 0) {
 								const match = (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>)[0];
