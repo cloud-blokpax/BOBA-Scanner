@@ -63,9 +63,13 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 			setAll: (
 				cookies: Array<{ name: string; value: string; options: Record<string, unknown> }>
 			) => {
-				cookies.forEach(({ name, value, options }) => {
-					event.cookies.set(name, value, { ...options, path: '/' });
-				});
+				try {
+					cookies.forEach(({ name, value, options }) => {
+						event.cookies.set(name, value, { ...options, path: '/' });
+					});
+				} catch (err) {
+					console.error('[auth] Failed to set cookies:', err);
+				}
 			}
 		}
 	});
@@ -76,34 +80,39 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 	 * getUser() validates the JWT with Supabase servers.
 	 */
 	event.locals.safeGetSession = async () => {
-		const {
-			data: { session }
-		} = await event.locals.supabase.auth.getSession();
+		try {
+			const {
+				data: { session }
+			} = await event.locals.supabase.auth.getSession();
 
-		if (!session) {
+			if (!session) {
+				return { session: null, user: null };
+			}
+
+			// Trust the session if the JWT has >5 minutes remaining.
+			// This avoids a round-trip to Supabase Auth on every request.
+			const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+			const fiveMinutes = 5 * 60 * 1000;
+			if (expiresAt - Date.now() > fiveMinutes) {
+				return { session, user: session.user };
+			}
+
+			// Near expiry or no expiry info — validate with getUser()
+			const {
+				data: { user },
+				error
+			} = await event.locals.supabase.auth.getUser();
+
+			if (error) {
+				console.warn('[auth] getUser() failed:', error.message);
+				return { session: null, user: null };
+			}
+
+			return { session, user };
+		} catch (err) {
+			console.error('[auth] safeGetSession crashed (likely corrupted cookies):', err);
 			return { session: null, user: null };
 		}
-
-		// Trust the session if the JWT has >5 minutes remaining.
-		// This avoids a round-trip to Supabase Auth on every request.
-		const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-		const fiveMinutes = 5 * 60 * 1000;
-		if (expiresAt - Date.now() > fiveMinutes) {
-			return { session, user: session.user };
-		}
-
-		// Near expiry or no expiry info — validate with getUser()
-		const {
-			data: { user },
-			error
-		} = await event.locals.supabase.auth.getUser();
-
-		if (error) {
-			console.warn('[auth] getUser() failed:', error.message);
-			return { session: null, user: null };
-		}
-
-		return { session, user };
 	};
 
 	const { session, user } = await event.locals.safeGetSession();
@@ -159,3 +168,17 @@ const requestLogger: Handle = async ({ event, resolve }) => {
 };
 
 export const handle = sequence(globalRateLimit, supabaseHandle, authGuard, requestLogger);
+
+export const handleError = ({ error, event, status, message }: { error: unknown; event: { url: URL; request: Request }; status: number; message: string }) => {
+	const ua = event.request.headers.get('user-agent') || 'unknown';
+	console.error(JSON.stringify({
+		type: 'unhandled_error',
+		status,
+		message,
+		path: event.url.pathname,
+		ua: ua.slice(0, 200),
+		error: error instanceof Error ? { message: error.message, stack: error.stack?.slice(0, 500) } : String(error)
+	}));
+
+	return { message: 'Something went wrong on our end.' };
+};
