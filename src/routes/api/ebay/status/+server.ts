@@ -3,7 +3,7 @@ import { isSellerOAuthConfigured, isSellerConnected } from '$lib/server/ebay-sel
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	const { user } = await locals.safeGetSession();
+	const user = locals.user;
 	if (!user) throw error(401, 'Authentication required');
 
 	const configured = isSellerOAuthConfigured();

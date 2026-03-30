@@ -178,7 +178,13 @@
 			ebayMessage = { type: 'info', text: 'eBay seller integration is not yet available. Check back soon!' };
 		} else if (ebayParam === 'error') {
 			const reason = $page.url.searchParams.get('reason') || 'unknown';
-			ebayMessage = { type: 'error', text: `eBay connection failed: ${reason}` };
+			const reasonMessages: Record<string, string> = {
+				session_expired: 'Your session expired during the eBay connection process. Please try again.',
+				state_mismatch: 'Security verification failed. Please try connecting again.',
+				no_code: 'eBay did not return an authorization code. Please try again.',
+				token_exchange: 'Failed to complete eBay authorization. Please try again.'
+			};
+			ebayMessage = { type: 'error', text: reasonMessages[reason] || `eBay connection failed: ${reason}` };
 		}
 	});
 

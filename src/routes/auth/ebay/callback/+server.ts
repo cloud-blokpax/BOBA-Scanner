@@ -3,8 +3,8 @@ import { exchangeCode } from '$lib/server/ebay-seller-auth';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, locals, cookies }) => {
-	const { user } = await locals.safeGetSession();
-	if (!user) throw redirect(303, '/auth/login?redirectTo=/auth/ebay');
+	const user = locals.user;
+	if (!user) throw redirect(303, '/settings?ebay=error&reason=session_expired');
 
 	const ebayError = url.searchParams.get('error');
 	if (ebayError) throw redirect(303, '/settings?ebay=declined');
