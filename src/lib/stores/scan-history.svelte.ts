@@ -13,6 +13,7 @@ export interface ScanHistoryEntry {
 	timestamp: number;
 	cardNumber: string | null;
 	heroName: string | null;
+	imageUrl: string | null;
 	method: 'hash_cache' | 'tesseract' | 'claude' | 'manual' | 'unknown';
 	confidence: number;
 	success: boolean;
