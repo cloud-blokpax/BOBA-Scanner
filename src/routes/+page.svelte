@@ -406,6 +406,11 @@
 													class="recent-scan-image"
 													loading="lazy"
 													width={urls.width}
+													onerror={(e) => {
+														const img = e.currentTarget as HTMLImageElement;
+														const wrap = img.closest('.recent-scan-image-wrap');
+														if (wrap) wrap.outerHTML = '<div class="recent-scan-placeholder">\u{1F3B4}</div>';
+													}}
 												/>
 											</picture>
 										{:else}

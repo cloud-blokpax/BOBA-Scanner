@@ -3,7 +3,7 @@
 	import { startCamera, stopCamera, toggleTorch, captureFrame, checkCameraPermission, getActiveStream } from '$lib/services/camera';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
-	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance } from '$lib/services/recognition';
+	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance, _fuzzyHashRpcDisabled as fuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
@@ -79,7 +79,6 @@
 	let _overlayTimeout: ReturnType<typeof setTimeout> | null = null;
 	let _overlayLookupInProgress = false;
 	let _lastOverlayHash: string | null = null;
-	let _fuzzyHashRpcDisabled = false;
 
 	let showFirstRunGuide = $state(false);
 	let showCameraExplainer = $state(false);
@@ -317,13 +316,13 @@
 						}
 
 						// Fuzzy match if exact missed
-						if (!cardId && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
+						if (!cardId && !fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
 							const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 								query_hash: hash,
 								max_distance: 5
 							});
 							if (fuzzyErr) {
-								_fuzzyHashRpcDisabled = true;
+								disableFuzzyHashRpc();
 							}
 
 							if (fuzzyMatch && (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>).length > 0) {
