@@ -1,11 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import { parseJsonBody } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
+import { requireAdmin } from '$lib/server/admin-guard';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Unauthorized');
+	await requireAdmin(locals);
 
 	const client = locals.supabase;
 	if (!client) throw error(500, 'Database not configured');
@@ -24,19 +24,12 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
+	await requireAdmin(locals);
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Unauthorized');
 
 	const client = locals.supabase;
 	if (!client) throw error(500, 'Database not configured');
-
-	const { data: userData } = await client
-		.from('users')
-		.select('is_admin')
-		.eq('auth_user_id', user.id)
-		.single();
-
-	if (!userData?.is_admin) throw error(403, 'Admin access required');
 
 	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {

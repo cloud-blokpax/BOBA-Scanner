@@ -41,9 +41,20 @@ import { POST } from '../src/routes/api/grade/+server';
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function makeLocals(user: { id: string } | null = { id: 'user-1' }) {
+function makeLocals(user: { id: string } | null = { id: 'user-1' }, opts: { isPro?: boolean; isAdmin?: boolean } = { isPro: true }) {
 	return {
-		safeGetSession: vi.fn().mockResolvedValue({ user })
+		safeGetSession: vi.fn().mockResolvedValue({ user }),
+		supabase: user ? {
+			from: () => ({
+				select: () => ({
+					eq: () => ({
+						single: () => Promise.resolve({
+							data: { is_pro: opts.isPro ?? true, is_admin: opts.isAdmin ?? false }
+						})
+					})
+				})
+			})
+		} : null
 	};
 }
 
