@@ -24,6 +24,7 @@
 	let tournaments = $state<Tournament[]>([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
+	let publicUserId = $state<string | null>(null);
 
 	let newName = $state('');
 	let newCode = $state('');
@@ -49,26 +50,42 @@
 		return code;
 	}
 
+	async function resolvePublicUserId(): Promise<string | null> {
+		if (publicUserId) return publicUserId;
+		const currentUser = $page.data.user;
+		const sb = getSupabase();
+		if (!currentUser || !sb) return null;
+
+		const { data } = await sb
+			.from('users')
+			.select('id')
+			.eq('auth_user_id', currentUser.id)
+			.maybeSingle();
+
+		if (data?.id) {
+			publicUserId = data.id;
+		}
+		return publicUserId;
+	}
+
 	async function loadTournaments() {
 		loading = true;
 		try {
-			const currentUser = $page.data.user;
 			const sb = getSupabase();
-			if (!currentUser || !sb) {
+			if (!sb) {
 				tournaments = [];
 				loading = false;
 				return;
 			}
 
-			// Use the auth UID directly — creator_id references auth.users(id),
-			// and RLS policies check creator_id = auth.uid()
-			const authUid = currentUser.id;
+			const pubId = await resolvePublicUserId();
 
-			const { data, error } = await sb
-				.from('tournaments')
-				.select('*')
-				.or(`creator_id.eq.${authUid},is_active.eq.true`)
-				.order('created_at', { ascending: false });
+			// creator_id references public.users(id), not auth.users(id)
+			const query = pubId
+				? sb.from('tournaments').select('*').or(`creator_id.eq.${pubId},is_active.eq.true`)
+				: sb.from('tournaments').select('*').eq('is_active', true);
+
+			const { data, error } = await query.order('created_at', { ascending: false });
 
 			if (error) throw error;
 			tournaments = (data || []) as Tournament[];
@@ -94,9 +111,13 @@
 		try {
 			const sb = getSupabase();
 			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
-			// Always use auth UID — matches RLS policy (creator_id = auth.uid())
+
+			const pubId = await resolvePublicUserId();
+			if (!pubId) { showToast('User profile not found', 'x'); creating = false; return; }
+
+			// creator_id references public.users(id), not auth.users(id)
 			const { error } = await sb.from('tournaments').insert({
-				creator_id: currentUser.id,
+				creator_id: pubId,
 				code: newCode.toUpperCase(),
 				name: newName.trim(),
 				max_heroes: newMaxHeroes,
@@ -184,14 +205,12 @@
 		}
 	}
 
-	const currentAuthUid = $derived($page.data.user?.id ?? null);
-
 	const myTournaments = $derived(
-		tournaments.filter((t) => currentAuthUid && t.creator_id === currentAuthUid)
+		tournaments.filter((t) => publicUserId && t.creator_id === publicUserId)
 	);
 
 	const otherTournaments = $derived(
-		tournaments.filter((t) => !currentAuthUid || t.creator_id !== currentAuthUid)
+		tournaments.filter((t) => !publicUserId || t.creator_id !== publicUserId)
 	);
 
 	onMount(() => {
