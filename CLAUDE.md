@@ -62,7 +62,10 @@ BOBA-Scanner/
 │   │   │   ├── [id]/+page.svelte   # Edit deck by ID
 │   │   │   ├── [id]/view/+page.svelte # View deck (read-only)
 │   │   │   ├── architect/+page.svelte # Playbook architect (AI-assisted deck building)
+│   │   │   ├── builder/+page.svelte # Interactive deck builder
+│   │   │   ├── meta/+page.svelte   # Meta analysis view (format metagame insights)
 │   │   │   ├── shop/+page.svelte   # Deck shop (find missing cards)
+│   │   │   ├── splitter/+page.svelte # Deck splitter utility
 │   │   │   └── verify/[code]/+page.svelte # Deck verification by share code
 │   │   ├── grader/+page.svelte     # AI card condition grading
 │   │   ├── export/+page.svelte     # Collection export (CSV, etc.)
@@ -113,6 +116,7 @@ BOBA-Scanner/
 │   │       ├── go-pro/+server.ts   # POST: Pro subscription upgrade
 │   │       ├── log/+server.ts      # POST: Client-side error logging
 │   │       ├── upload/+server.ts   # POST: Image upload
+│   │       ├── meta/[formatId]/+server.ts # GET: Format meta analysis
 │   │       ├── price/[cardId]/
 │   │       │   ├── +server.ts      # GET: eBay price lookup with caching
 │   │       │   └── history/+server.ts # GET: Price history
@@ -194,6 +198,7 @@ BOBA-Scanner/
 │   │   │       ├── ArchetypeSelector.svelte
 │   │   │       ├── ComboStatusCard.svelte
 │   │   │       ├── DBSBudgetCard.svelte
+│   │   │       ├── DeadCardAlert.svelte
 │   │   │       ├── DrawConsistencyCard.svelte
 │   │   │       ├── HDFlowCard.svelte
 │   │   │       └── PlayBrowser.svelte
@@ -247,6 +252,9 @@ BOBA-Scanner/
 │   │   │   ├── scan-learning.ts    # Correction tracking for scan improvement
 │   │   │   ├── share-card.ts       # Card sharing (social, QR codes)
 │   │   │   ├── export-templates.ts # Export format definitions
+│   │   │   ├── behavior-tracker.ts  # User behavior tracking for adaptive persona
+│   │   │   ├── dead-card-detector.ts # Dead card detection in playbooks
+│   │   │   ├── meta-analyzer.ts    # Format metagame analysis engine
 │   │   │   ├── error-tracking.ts   # Client error reporting
 │   │   │   └── version.ts          # Version checking
 │   │   ├── stores/                 # All stores use .svelte.ts extension (Svelte 5 runes)
@@ -259,6 +267,7 @@ BOBA-Scanner/
 │   │   │   ├── toast.svelte.ts         # Toast notification store
 │   │   │   ├── speed-game.svelte.ts    # Speed game challenge state
 │   │   │   ├── feature-flags.svelte.ts # Feature flag store
+│   │   │   ├── persona.svelte.ts        # User persona weights (adaptive UI)
 │   │   │   ├── pro.svelte.ts           # Pro subscription state store
 │   │   │   └── playbook-architect.svelte.ts # Playbook architect state store
 │   │   ├── types/
@@ -302,9 +311,12 @@ BOBA-Scanner/
 │   ├── 20260324000000_add_deck_snapshots.sql # Deck snapshot support
 │   ├── 20260324000000_add_pack_configurations.sql # Pack config tables
 │   ├── 20260327000000_admin_dashboard_tables.sql # Admin tables: scan_flags, changelog_entries, admin_activity_log, ebay_api_log
+│   ├── 20260327000001_add_persona_column.sql # Persona JSONB column on users table
+│   ├── 20260329000000_add_submit_reference_image_rpc.sql # RPC function for reference image submission with champion tracking
 │   └── README.md                   # Migration documentation
 ├── scripts/
-│   └── generate-card-seed.js       # Generate SQL seed from card-database.json
+│   ├── generate-card-seed.js       # Generate SQL seed from card-database.json
+│   └── json-to-card-seed.js        # JSON to SQL seed conversion utility
 ├── middleware.ts                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
 ├── svelte.config.js                # SvelteKit config (Vercel adapter, path aliases)
 ├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers as ES modules)
@@ -464,7 +476,7 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 ### Database
 
 - Schema defined across numbered migrations in `supabase/migrations/` (canonical schema in `001-full-schema.sql`)
-- Key tables: `users`, `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`, `scan_flags`, `changelog_entries`, `admin_activity_log`, `ebay_api_log`
+- Key tables: `users` (with `persona` JSONB column), `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`, `scan_flags`, `changelog_entries`, `admin_activity_log`, `ebay_api_log`
 - RLS is enabled on all tables. The anon key has read-only access to public data (cards, prices, feature flags, tournaments). User-scoped data (collections, decks, badges) is restricted to the owning user via auth.uid(). Server-only tables (ebay_seller_tokens, error_logs) have no client-accessible policies — they are accessed exclusively via the service role key.
 - Card seed data generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo)
 
