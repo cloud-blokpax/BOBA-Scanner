@@ -30,6 +30,8 @@
 		onFileDialogClose?: () => void;
 		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
+
+	let fileInputEl = $state<HTMLInputElement | null>(null);
 </script>
 
 <div class="scanner-controls">
@@ -61,22 +63,23 @@
 
 	<!-- Capture controls -->
 	<div class="capture-row">
-		<label class="control-btn upload-btn" onclick={() => onFileDialogOpen?.()}>
+		<button type="button" class="control-btn upload-btn" onclick={() => { onFileDialogOpen?.(); fileInputEl?.click(); }}>
 			<span>📁</span>
-			<input
-				type="file"
-				accept="image/jpeg,image/png,image/webp"
-				onchange={onFileUpload}
-				onclick={(e) => {
-					const handler = () => {
-						setTimeout(() => onFileDialogClose?.(), 300);
-						window.removeEventListener('focus', handler);
-					};
-					window.addEventListener('focus', handler);
-				}}
-				hidden
-			/>
-		</label>
+		</button>
+		<input
+			bind:this={fileInputEl}
+			type="file"
+			accept="image/jpeg,image/png,image/webp"
+			onchange={onFileUpload}
+			onclick={(e) => {
+				const handler = () => {
+					setTimeout(() => onFileDialogClose?.(), 300);
+					window.removeEventListener('focus', handler);
+				};
+				window.addEventListener('focus', handler);
+			}}
+			hidden
+		/>
 
 		<button
 			class="capture-btn"

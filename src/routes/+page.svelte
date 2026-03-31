@@ -357,10 +357,8 @@
 
 			<!-- Customize modal -->
 			{#if showCustomize}
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div class="customize-overlay" onclick={() => showCustomize = false}>
-					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-					<div class="customize-sheet" onclick={(e) => e.stopPropagation()}>
+				<div class="customize-overlay" role="button" tabindex="-1" onclick={() => showCustomize = false} onkeydown={(e) => { if (e.key === 'Escape') showCustomize = false; }}>
+					<div class="customize-sheet" role="dialog" aria-label="Reorder Home Screen" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 						<div class="customize-header">
 							<h3>Reorder Home Screen</h3>
 							<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
