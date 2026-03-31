@@ -57,22 +57,39 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	event.locals.supabase = createServerClient(supabaseUrl, supabaseKey, {
-		cookies: {
-			getAll: () => event.cookies.getAll(),
-			setAll: (
-				cookies: Array<{ name: string; value: string; options: Record<string, unknown> }>
-			) => {
-				try {
-					cookies.forEach(({ name, value, options }) => {
-						event.cookies.set(name, value, { ...options, path: '/' });
-					});
-				} catch (err) {
-					console.error('[auth] Failed to set cookies:', err);
+	try {
+		event.locals.supabase = createServerClient(supabaseUrl, supabaseKey, {
+			cookies: {
+				getAll: () => {
+					try {
+						return event.cookies.getAll();
+					} catch (err) {
+						console.error('[auth] Failed to read cookies:', err);
+						return [];
+					}
+				},
+				setAll: (
+					cookies: Array<{ name: string; value: string; options: Record<string, unknown> }>
+				) => {
+					try {
+						cookies.forEach(({ name, value, options }) => {
+							event.cookies.set(name, value, { ...options, path: '/' });
+						});
+					} catch (err) {
+						console.error('[auth] Failed to set cookies:', err);
+					}
 				}
 			}
-		}
-	});
+		});
+	} catch (err) {
+		// createServerClient can throw on corrupted cookies (e.g. invalid base64
+		// in chunked Supabase auth tokens left by a previous mobile session).
+		console.error('[auth] createServerClient crashed — falling back to anonymous:', err);
+		event.locals.safeGetSession = async () => ({ session: null, user: null });
+		event.locals.session = null;
+		event.locals.user = null;
+		return resolve(event);
+	}
 
 	/**
 	 * SECURITY: Always use getUser() for auth checks, never getSession() alone.
