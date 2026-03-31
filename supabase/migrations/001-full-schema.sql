@@ -310,8 +310,8 @@ CREATE INDEX IF NOT EXISTS idx_price_cache_fetched ON public.price_cache(fetched
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.hash_cache (
     phash       TEXT PRIMARY KEY,
-    card_id     TEXT NOT NULL,
-    confidence  REAL NOT NULL DEFAULT 0.9,
+    card_id     UUID NOT NULL,
+    confidence  DOUBLE PRECISION NOT NULL DEFAULT 0.9,
     scan_count  INT NOT NULL DEFAULT 1,
     last_seen   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     phash_256   TEXT
@@ -561,9 +561,10 @@ CREATE OR REPLACE FUNCTION public.find_similar_hash(
 )
 RETURNS TABLE (
     phash      TEXT,
-    card_id    TEXT,
-    confidence REAL,
+    card_id    UUID,
+    confidence DOUBLE PRECISION,
     scan_count INT,
+    phash_256  TEXT,
     distance   INT
 ) AS $$
 BEGIN
@@ -595,8 +596,8 @@ $$ LANGUAGE plpgsql STABLE;
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.upsert_hash_cache(
     p_phash      TEXT,
-    p_card_id    TEXT,
-    p_confidence REAL DEFAULT 0.9,
+    p_card_id    UUID,
+    p_confidence DOUBLE PRECISION DEFAULT 0.9,
     p_phash_256  TEXT DEFAULT NULL
 )
 RETURNS VOID AS $$

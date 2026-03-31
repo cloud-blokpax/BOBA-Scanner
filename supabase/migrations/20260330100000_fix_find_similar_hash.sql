@@ -8,9 +8,10 @@ CREATE OR REPLACE FUNCTION public.find_similar_hash(
 )
 RETURNS TABLE (
     phash      TEXT,
-    card_id    TEXT,
-    confidence REAL,
+    card_id    UUID,
+    confidence DOUBLE PRECISION,
     scan_count INT,
+    phash_256  TEXT,
     distance   INT
 ) AS $$
 BEGIN
