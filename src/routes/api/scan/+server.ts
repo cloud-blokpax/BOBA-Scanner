@@ -212,20 +212,6 @@ card_number=null (unreadable), hero_name="The Kid", power=180, flags=["foil_refl
 
 		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
 
-		// Track scan in database (only for authenticated users)
-		if (user && locals.supabase) {
-			try {
-				await locals.supabase.from('scans').insert({
-					user_id: user.id,
-					scan_method: 'claude',
-					confidence: (cardData.confidence as number) || null,
-					processing_ms: null
-				});
-			} catch (err) {
-				console.debug('[api/scan] Scan log insert failed:', err);
-			}
-		}
-
 		return json({ success: true, card: cardData, method: 'claude' });
 	} catch (err) {
 		console.error('[api/scan] Claude API error:', err);

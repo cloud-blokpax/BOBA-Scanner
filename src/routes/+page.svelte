@@ -6,10 +6,11 @@
 	import { scanHistory } from '$lib/stores/scan-history.svelte';
 	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
 	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
-	import type { ScanResult } from '$lib/types';
+	import type { ScanResult, ScanMethod } from '$lib/types';
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
 	import { getCardById } from '$lib/services/card-db';
+	import { getSupabase } from '$lib/services/supabase';
 	import {
 		visibleNavItems, hiddenNavItems,
 		navConfigLoaded, toggleNavItem, moveNavItem, resetNavConfig, navConfig
@@ -45,7 +46,7 @@
 		selectedScanResult = {
 			card_id: scan.cardId ?? null,
 			card,
-			scan_method: scan.method === 'unknown' ? 'claude' : scan.method,
+			scan_method: (scan.method === 'unknown' ? 'claude' : scan.method) as ScanMethod,
 			confidence: scan.confidence,
 			processing_ms: scan.processingMs
 		};
@@ -66,6 +67,72 @@
 		max_bonus: number;
 	} | null>(null);
 	let tournamentError = $state<string | null>(null);
+
+	// ── Recent Scans (Supabase-backed for logged-in users) ──────
+	interface RecentScan {
+		id: string;
+		card_id: string | null;
+		hero_name: string | null;
+		card_number: string | null;
+		scan_method: string;
+		created_at: string;
+		timestamp: number;
+		imageUrl: string | null;
+		cardId: string | null;
+		heroName: string | null;
+		cardNumber: string | null;
+		confidence: number;
+		method: string;
+		processingMs: number;
+		success: boolean;
+	}
+
+	let supabaseScans = $state<RecentScan[]>([]);
+	let supabaseScansLoaded = $state(false);
+
+	async function loadRecentScans() {
+		const client = getSupabase();
+		if (!client || !data.user) return;
+
+		try {
+			const { data: rows, error: err } = await client
+				.from('scans')
+				.select('id, card_id, hero_name, card_number, scan_method, created_at')
+				.not('card_id', 'is', null)
+				.order('created_at', { ascending: false })
+				.limit(10);
+
+			if (err) throw err;
+
+			supabaseScans = (rows || []).map(row => ({
+				...row,
+				timestamp: new Date(row.created_at).getTime(),
+				imageUrl: row.card_id ? getCardImageUrl({ id: row.card_id }) : null,
+				cardId: row.card_id,
+				heroName: row.hero_name,
+				cardNumber: row.card_number,
+				confidence: 1,
+				method: row.scan_method || 'unknown',
+				processingMs: 0,
+				success: true,
+			}));
+		} catch (err) {
+			console.debug('[home] Failed to load recent scans from Supabase:', err);
+		}
+		supabaseScansLoaded = true;
+	}
+
+	async function removeScan(scanId: string) {
+		const client = getSupabase();
+		if (!client) return;
+
+		try {
+			await client.from('scans').delete().eq('id', scanId);
+			supabaseScans = supabaseScans.filter(s => s.id !== scanId);
+		} catch (err) {
+			console.debug('[home] Failed to delete scan:', err);
+		}
+	}
 
 	// Persona suggestion state
 	let suggestedPersona = $state<PersonaWeights | null>(null);
@@ -108,6 +175,7 @@
 
 	onMount(() => {
 		initScanner();
+		loadRecentScans();
 
 		// Prune old behavioral events and check for persona suggestions
 		if (data.user) {
@@ -215,7 +283,14 @@
 		}
 	});
 
-	const recentScans = $derived(scanHistory().filter(s => s.success).slice(0, 5));
+	// Prefer Supabase scans for logged-in users (consistent across devices).
+	// Fall back to IndexedDB for anonymous users or while Supabase loads.
+	const recentScans = $derived.by(() => {
+		if (data.user && supabaseScansLoaded && supabaseScans.length > 0) {
+			return supabaseScans.slice(0, 5);
+		}
+		return scanHistory().filter(s => s.success).slice(0, 5);
+	});
 	const collectionCount = $derived(getCollectionCount());
 
 	function timeAgo(timestamp: number): string {
@@ -598,6 +673,13 @@
 										<span class="scan-card-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
 										<span class="scan-card-time">{timeAgo(scan.timestamp)}</span>
 									</div>
+									{#if data.user && scan.id}
+										<button
+											class="scan-remove-btn"
+											onclick={(e) => { e.stopPropagation(); removeScan(scan.id); }}
+											title="Remove"
+										>&#x2715;</button>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -876,6 +958,7 @@
 	}
 
 	.scan-card {
+		position: relative;
 		flex-shrink: 0;
 		scroll-snap-align: start;
 		width: 100px;
@@ -933,6 +1016,37 @@
 	.scan-card-time {
 		font-size: 0.6rem;
 		color: var(--text-muted, #475569);
+	}
+
+	.scan-remove-btn {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		border: none;
+		background: rgba(0, 0, 0, 0.6);
+		color: var(--text-tertiary);
+		font-size: 0.6rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	.scan-card:hover .scan-remove-btn,
+	.scan-card:active .scan-remove-btn {
+		opacity: 1;
+	}
+
+	/* Always visible on touch devices */
+	@media (hover: none) {
+		.scan-remove-btn {
+			opacity: 0.7;
+		}
 	}
 
 	/* TOURNAMENTS */

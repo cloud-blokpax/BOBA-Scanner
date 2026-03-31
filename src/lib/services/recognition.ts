@@ -25,6 +25,7 @@ import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
+import { userId } from '$lib/stores/auth.svelte';
 import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry, ValidationMethod } from '$lib/types';
@@ -216,6 +217,33 @@ export async function initWorkers(): Promise<void> {
 /**
  * Run the full 3-tier recognition pipeline.
  *
+/**
+ * Persist a successful scan to Supabase for cross-device recent scans.
+ * Non-blocking, best-effort — does not affect scan flow.
+ */
+async function logScanToSupabase(result: ScanResult): Promise<void> {
+	const uid = userId();
+	if (!uid || !result.card_id) return;
+
+	const client = getSupabase();
+	if (!client) return;
+
+	try {
+		await client.from('scans').insert({
+			user_id: uid,
+			card_id: result.card_id,
+			hero_name: result.card?.hero_name ?? null,
+			card_number: result.card?.card_number ?? null,
+			scan_method: result.scan_method ?? 'unknown',
+			confidence: result.confidence ?? null,
+			processing_ms: result.processing_ms ?? null
+		});
+	} catch (err) {
+		console.debug('[scan] Supabase scan log failed:', err);
+	}
+}
+
+/**
  * @param imageSource - File, Blob, or ImageBitmap to scan
  * @param onTierChange - Optional callback for UI progress updates
  * @returns ScanResult with matched card data
@@ -288,6 +316,11 @@ export async function recognizeCard(
 			success: final.card_id !== null,
 			processingMs: final.processing_ms
 		});
+
+		// Persist to Supabase for cross-device consistency (non-blocking)
+		if (final.card_id) {
+			logScanToSupabase(final);
+		}
 
 		// Track scan performance metrics for operational monitoring
 		trackScanMetric({
