@@ -154,6 +154,7 @@ export interface Database {
 					pro_until: string | null;
 					discord_id: string | null;
 					persona: Record<string, number> | null;
+					nav_config: { visible: string[] } | null;
 					created_at: string;
 				};
 				Insert: {
@@ -164,6 +165,7 @@ export interface Database {
 					auth_user_id?: string | null;
 					discord_id?: string | null;
 					persona?: Record<string, number> | null;
+					nav_config?: { visible: string[] } | null;
 					is_organizer?: boolean;
 				};
 				Update: Partial<Database['public']['Tables']['users']['Insert']>;
