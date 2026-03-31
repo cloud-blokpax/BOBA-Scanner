@@ -66,7 +66,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 	const remainingCalls = 5000 - usedToday - RESERVE_CALLS;
 	if (remainingCalls <= 0) {
-		await logHarvestComplete(admin, usedToday, chainDepth);
+		await logHarvestComplete(admin, usedToday, chainDepth, 'quota_exhausted');
 		return json({
 			stopped: true,
 			reason: 'Quota exhausted',
@@ -88,7 +88,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Fetch prioritized card list ─────────────────────
 	const candidates = await getPrioritizedCards(admin, callBudget, offset);
 	if (candidates.length === 0) {
-		await logHarvestComplete(admin, usedToday, chainDepth);
+		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
 			stopped: true,
 			reason: 'No more cards to refresh',
@@ -159,6 +159,28 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	} catch {
 		// fetch() itself failed — chain ends here
 	}
+
+	// ── Log quota snapshot to ebay_api_log ────────────────
+	let currentUsed = usedToday;
+	try {
+		const count = await redis.get<number>(`ebay-calls:${today}`);
+		currentUsed = count ?? usedToday;
+	} catch { /* use pre-batch count */ }
+
+	try {
+		await admin.from('ebay_api_log').insert({
+			calls_used: currentUsed,
+			calls_remaining: Math.max(0, 5000 - currentUsed),
+			calls_limit: 5000,
+			reset_at: getNextResetTime(),
+			chain_depth: chainDepth,
+			cards_processed: processed,
+			cards_updated: updated,
+			cards_errored: errors,
+			status: 'running',
+			recorded_at: new Date().toISOString()
+		});
+	} catch { /* non-critical */ }
 
 	return json({
 		success: true,
@@ -543,7 +565,8 @@ function buildLogEntry(
 async function logHarvestComplete(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	usedToday: number,
-	chainDepth: number
+	chainDepth: number,
+	reason: string
 ): Promise<void> {
 	try {
 		await admin.from('ebay_api_log').insert({
@@ -551,6 +574,11 @@ async function logHarvestComplete(
 			calls_remaining: Math.max(0, 5000 - usedToday),
 			calls_limit: 5000,
 			reset_at: getNextResetTime(),
+			chain_depth: chainDepth,
+			cards_processed: 0,
+			cards_updated: 0,
+			cards_errored: 0,
+			status: reason,
 			recorded_at: new Date().toISOString()
 		});
 	} catch { /* non-critical */ }

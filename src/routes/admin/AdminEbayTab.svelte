@@ -29,7 +29,7 @@
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const [quotaRes, pricesRes, staleRes] = await Promise.all([
 				(client as any).from('ebay_api_log')
-					.select('calls_remaining, calls_limit, reset_at')
+					.select('calls_remaining, calls_limit, reset_at, status, chain_depth, cards_processed, cards_updated, recorded_at')
 					.order('recorded_at', { ascending: false })
 					.limit(1)
 					.maybeSingle(),
@@ -77,8 +77,32 @@
 
 	async function triggerHarvest() {
 		triggeringHarvest = true;
-		showToast('Price harvest would be triggered here', 'check');
-		triggeringHarvest = false;
+		try {
+			const res = await fetch('/api/admin/trigger-harvest', { method: 'POST' });
+			const data = await res.json();
+
+			if (!res.ok) {
+				showToast(data.error || `Trigger failed: ${res.status}`, 'x');
+				return;
+			}
+
+			if (data.cronResponse?.skipped) {
+				showToast(`Harvest skipped: ${data.cronResponse.reason}`, 'x');
+			} else if (data.cronResponse?.stopped) {
+				showToast(`Harvest stopped: ${data.cronResponse.reason}`, 'x');
+			} else {
+				const processed = data.cronResponse?.processed ?? 0;
+				const updated = data.cronResponse?.updated ?? 0;
+				showToast(`Harvest started! First batch: ${processed} processed, ${updated} updated`, 'check');
+			}
+
+			// Refresh the tab data after a short delay to let the first chain link finish
+			setTimeout(() => loadEbay(), 2000);
+		} catch {
+			showToast('Failed to trigger harvest', 'x');
+		} finally {
+			triggeringHarvest = false;
+		}
 	}
 </script>
 
