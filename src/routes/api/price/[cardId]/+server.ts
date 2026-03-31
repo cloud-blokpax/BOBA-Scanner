@@ -13,6 +13,7 @@ import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonPriceRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculatePriceStats } from '$lib/utils/pricing';
+import { buildEbaySearchQuery } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params, locals, getClientAddress }) => {
@@ -85,11 +86,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		throw error(404, 'Card not found');
 	}
 
-	// Build eBay search query — "bo jackson battle arena" is the key phrase sellers use
-	const heroOrName = card.hero_name || card.name || '';
-	const cardNum = card.card_number || '';
-	const athlete = card.athlete_name || '';
-	const query = `bo jackson battle arena ${heroOrName} ${cardNum} ${athlete}`.trim();
+	const query = buildEbaySearchQuery(card);
 
 	// Check eBay daily API call limit (4,500/day with 500 headroom)
 	const withinLimit = await checkEbayDailyLimit();

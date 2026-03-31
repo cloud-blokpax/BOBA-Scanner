@@ -16,6 +16,8 @@ import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { parseJsonBody } from '$lib/server/validate';
+import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
+import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -122,7 +124,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!card) return null;
 
 		try {
-			const query = ['BoBA', card.hero_name, card.card_number].filter(Boolean).join(' ');
+			const query = buildEbaySearchQuery(card);
 			const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
 			searchUrl.searchParams.set('q', query);
 			searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
@@ -133,32 +135,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (!browseRes.ok) return null;
 
 			const data = await browseRes.json();
-			const items = data.itemSummaries || [];
-			const cardNum = (card.card_number || '').toUpperCase();
-			const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
+			const rawItems: Array<{ title?: string; price?: { value?: string } }> = data.itemSummaries || [];
 
-			const relevant = items.filter((item: { title?: string }) => {
-				if (!normalizedCardNum) return false;
-				const normalizedTitle = (item.title || '').toUpperCase().replace(/[-\s]/g, '');
-				return normalizedTitle.includes(normalizedCardNum);
-			});
+			// Filter to relevant listings using shared logic
+			const relevant = filterRelevantListings(rawItems, card);
 
 			const prices = relevant
-				.map((item: { price?: { value?: string } }) => parseFloat(item.price?.value ?? ''))
-				.filter((p: number) => !isNaN(p) && p > 0)
-				.sort((a: number, b: number) => a - b);
+				.map(item => parseFloat(item.price?.value ?? ''))
+				.filter((p: number) => !isNaN(p) && p > 0);
 
-			const priceMid = prices.length > 0 ? prices[Math.floor(prices.length / 2)] : null;
-			const priceLow = prices.length > 0 ? prices[0] : null;
-			const priceHigh = prices.length > 0 ? prices[prices.length - 1] : null;
+			const stats = calculatePriceStats(prices);
 
 			const priceData = {
 				card_id: cardId,
 				source: 'ebay',
-				price_low: priceLow,
-				price_mid: priceMid,
-				price_high: priceHigh,
-				listings_count: prices.length,
+				price_low: stats?.low ?? null,
+				price_mid: stats?.median ?? null,
+				price_high: stats?.high ?? null,
+				listings_count: stats?.count ?? 0,
+				filtered_count: stats?.filteredCount ?? 0,
+				confidence_score: stats?.confidenceScore ?? 0,
 				fetched_at: new Date().toISOString()
 			};
 
@@ -167,10 +163,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 			return {
 				card_id: cardId,
-				price_mid: priceMid,
-				price_low: priceLow,
-				price_high: priceHigh,
-				listings_count: prices.length
+				price_mid: stats?.median ?? null,
+				price_low: stats?.low ?? null,
+				price_high: stats?.high ?? null,
+				listings_count: stats?.count ?? 0
 			};
 		} catch (err) {
 			console.debug(`[deck/refresh-prices] Failed for ${cardId}:`, err);
