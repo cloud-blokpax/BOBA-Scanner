@@ -82,7 +82,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// to skip already-processed cards, so no offset needed)
 
 	// ── Fetch prioritized card list ─────────────────────
-	const candidates = await getPrioritizedCards(admin, callBudget, today);
+	const candidates = await getNextCandidates(admin, callBudget, today);
 	if (candidates.length === 0) {
 		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
@@ -190,7 +190,10 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	});
 };
 
-// ── Prioritized card selection ──────────────────────────────
+// ── SQL-based candidate selection ───────────────────────────
+// Single Postgres function replaces four in-memory priority passes.
+// Avoids the Supabase JS client's 1,000-row default limit that
+// caused the harvester to stall after ~1,000 cards.
 
 interface CardCandidate {
 	id: string;
@@ -200,153 +203,22 @@ interface CardCandidate {
 	priority: number;
 }
 
-async function getPrioritizedCards(
+async function getNextCandidates(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	limit: number,
 	today: string
 ): Promise<CardCandidate[]> {
-	const candidates: CardCandidate[] = [];
-	const seenIds = new Set<string>();
+	const { data, error: rpcError } = await admin.rpc('get_harvest_candidates', {
+		p_run_id: today,
+		p_limit: limit
+	});
 
-	// Step 1: Get all card_ids that already have prices
-	const { data: pricedRows } = await admin
-		.from('price_cache')
-		.select('card_id, fetched_at')
-		.eq('source', 'ebay');
-
-	const pricedMap = new Map<string, string>();
-	for (const row of pricedRows || []) {
-		pricedMap.set(row.card_id, row.fetched_at);
+	if (rpcError) {
+		console.error('[harvest] get_harvest_candidates RPC failed:', rpcError);
+		return [];
 	}
 
-	// Step 2: Get card_ids already processed today (prevents re-trying threshold-rejected cards)
-	const processedToday = new Set<string>();
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const { data: todayRows } = await (admin as any)
-			.from('price_harvest_log')
-			.select('card_id')
-			.eq('run_id', today);
-
-		for (const row of todayRows || []) {
-			processedToday.add(row.card_id);
-		}
-	} catch {
-		// If this fails, we might re-process some cards — acceptable
-	}
-
-	// Step 3: Get all distinct card_ids in user collections
-	const { data: collectionRows } = await admin
-		.from('collections')
-		.select('card_id');
-
-	const collectedIds = new Set<string>();
-	for (const row of collectionRows || []) {
-		collectedIds.add(row.card_id);
-	}
-
-	// Helper: should this card be considered?
-	function isCandidate(id: string): boolean {
-		return !seenIds.has(id) && !processedToday.has(id);
-	}
-
-	// Priority 1: Cards in collections with NO price cache
-	const unpricedCollected = [...collectedIds].filter(id => !pricedMap.has(id));
-	for (const id of unpricedCollected) {
-		if (isCandidate(id)) {
-			candidates.push({ id, hero_name: null, name: null, card_number: null, priority: 1 });
-			seenIds.add(id);
-		}
-	}
-
-	// Priority 2: Cards in collections with STALE prices (oldest first)
-	const staleThreshold24h = Date.now() - 24 * 60 * 60 * 1000;
-	const staleCollected = [...collectedIds]
-		.filter(id => {
-			const fetched = pricedMap.get(id);
-			return fetched && new Date(fetched).getTime() < staleThreshold24h && isCandidate(id);
-		})
-		.sort((a, b) => {
-			return new Date(pricedMap.get(a)!).getTime() - new Date(pricedMap.get(b)!).getTime();
-		});
-
-	for (const id of staleCollected) {
-		candidates.push({ id, hero_name: null, name: null, card_number: null, priority: 2 });
-		seenIds.add(id);
-	}
-
-	// Early exit: if we already have enough candidates, skip the heavy query
-	if (candidates.length >= limit) {
-		return hydrateCards(admin, candidates.slice(0, limit));
-	}
-
-	// Priority 3: Any card with no price data (ALL cards, no range limit)
-	try {
-		const { data: allCards } = await admin
-			.from('cards')
-			.select('id')
-			.order('id');
-
-		if (allCards) {
-			for (const card of allCards) {
-				if (isCandidate(card.id) && !pricedMap.has(card.id)) {
-					candidates.push({ id: card.id, hero_name: null, name: null, card_number: null, priority: 3 });
-					seenIds.add(card.id);
-					// Stop accumulating once we have enough — no need to load all 17K into memory
-					if (candidates.length >= limit * 3) break;
-				}
-			}
-		}
-	} catch (err) {
-		console.debug('[harvest] Priority 3 query failed:', err);
-	}
-
-	if (candidates.length >= limit) {
-		return hydrateCards(admin, candidates.slice(0, limit));
-	}
-
-	// Priority 4: Any card with stale prices (oldest first)
-	const staleThreshold48h = Date.now() - 48 * 60 * 60 * 1000;
-	const staleAny = [...pricedMap.entries()]
-		.filter(([id, fetched]) =>
-			isCandidate(id) && new Date(fetched).getTime() < staleThreshold48h
-		)
-		.sort((a, b) => new Date(a[1]).getTime() - new Date(b[1]).getTime());
-
-	for (const [id] of staleAny) {
-		candidates.push({ id, hero_name: null, name: null, card_number: null, priority: 4 });
-		seenIds.add(id);
-	}
-
-	return hydrateCards(admin, candidates.slice(0, limit));
-}
-
-async function hydrateCards(
-	admin: NonNullable<ReturnType<typeof getAdminClient>>,
-	candidates: CardCandidate[]
-): Promise<CardCandidate[]> {
-	if (candidates.length === 0) return [];
-
-	const ids = candidates.map(c => c.id);
-	const { data: cards } = await admin
-		.from('cards')
-		.select('id, hero_name, name, card_number')
-		.in('id', ids);
-
-	if (!cards) return [];
-
-	const cardMap = new Map<string, { hero_name: string | null; name: string | null; card_number: string | null }>();
-	for (const card of cards) {
-		cardMap.set(card.id, card);
-	}
-
-	return candidates
-		.map(c => {
-			const details = cardMap.get(c.id);
-			if (!details) return null;
-			return { ...c, ...details };
-		})
-		.filter((c): c is CardCandidate => c !== null);
+	return (data as CardCandidate[]) || [];
 }
 
 // ── Single card price refresh ───────────────────────────────
