@@ -1,9 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth, requireSupabase, parseJsonBody, requireString } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
+import { apiError, rateLimited } from '$lib/server/api-response';
 import type { RequestHandler } from './$types';
 
-async function requireOrganizer(locals: App.Locals): Promise<{ id: string; publicUserId: string }> {
+async function requireOrganizer(locals: App.Locals) {
 	const user = await requireAuth(locals);
 	const supabase = requireSupabase(locals);
 
@@ -17,7 +18,7 @@ async function requireOrganizer(locals: App.Locals): Promise<{ id: string; publi
 		throw error(403, 'Organizer access required');
 	}
 
-	return { id: user.id, publicUserId: profile.id };
+	return { id: user.id, publicUserId: profile.id, supabase };
 }
 
 function generateCode(): string {
@@ -27,105 +28,97 @@ function generateCode(): string {
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const organizer = await requireOrganizer(locals);
-	const supabase = requireSupabase(locals);
-
-	const rateLimit = await checkMutationRateLimit(organizer.id);
-	if (!rateLimit.success) {
-		return json({ error: 'Too many requests' }, {
-			status: 429,
-			headers: {
-				'X-RateLimit-Limit': String(rateLimit.limit),
-				'X-RateLimit-Remaining': String(rateLimit.remaining),
-				'X-RateLimit-Reset': String(rateLimit.reset)
-			}
-		});
-	}
-
 	try {
-	const body = await parseJsonBody(request);
+		const { supabase, ...organizer } = await requireOrganizer(locals);
 
-	const name = requireString(body.name, 'name', 200);
-	const deckType = (body.deck_type as string) || 'sealed';
-	if (!['constructed', 'sealed'].includes(deckType)) {
-		throw error(400, 'Invalid deck_type');
-	}
-	const formatId = requireString(body.format_id, 'format_id', 50);
-	const deadlineMode = (body.deadline_mode as string) || 'manual';
-
-	if (!['manual', 'datetime', 'both'].includes(deadlineMode)) {
-		throw error(400, 'Invalid deadline_mode');
-	}
-
-	// Validate format exists (unless custom)
-	if (formatId !== 'custom') {
-		const { getFormat } = await import('$lib/data/tournament-formats');
-		const format = getFormat(formatId);
-		if (!format) throw error(400, `Unknown format: ${formatId}`);
-	}
-
-	// Generate unique code (retry up to 5 times for collision)
-	let code = '';
-	let codeIsUnique = false;
-	for (let attempt = 0; attempt < 5; attempt++) {
-		code = generateCode();
-		const { data: existing } = await supabase
-			.from('tournaments')
-			.select('id')
-			.eq('code', code)
-			.maybeSingle();
-		if (!existing) {
-			codeIsUnique = true;
-			break;
+		const rateLimit = await checkMutationRateLimit(organizer.id);
+		if (!rateLimit.success) {
+			return rateLimited(rateLimit);
 		}
-	}
-	if (!codeIsUnique) {
-		throw error(500, 'Could not generate unique tournament code. Please try again.');
-	}
 
-	// Validate deck size values
-	const maxHeroes = typeof body.max_heroes === 'number' ? Math.max(1, Math.min(120, body.max_heroes)) : 60;
-	const maxPlays = typeof body.max_plays === 'number' ? Math.max(0, Math.min(60, body.max_plays)) : 30;
-	const maxBonus = typeof body.max_bonus === 'number' ? Math.max(0, Math.min(50, body.max_bonus)) : 25;
+		const body = await parseJsonBody(request);
 
-	const { data: tournament, error: insertErr } = await supabase
-		.from('tournaments')
-		.insert({
-			creator_id: organizer.publicUserId,
-			code,
-			name,
-			deck_type: deckType,
-			format_id: formatId,
-			description: (body.description as string) || null,
-			venue: (body.venue as string) || null,
-			event_date: (body.event_date as string) || null,
-			max_players: (body.max_players as number) || null,
-			deadline_mode: deadlineMode,
-			submission_deadline: (body.submission_deadline as string) || null,
-			max_heroes: maxHeroes,
-			max_plays: maxPlays,
-			max_bonus: maxBonus,
-			require_email: true,
-			require_name: body.require_name === true,
-			require_discord: body.require_discord === true,
-			is_active: true
-		})
-		.select()
-		.single();
+		const name = requireString(body.name, 'name', 200);
+		const deckType = (body.deck_type as string) || 'sealed';
+		if (!['constructed', 'sealed'].includes(deckType)) {
+			throw error(400, 'Invalid deck_type');
+		}
+		const formatId = requireString(body.format_id, 'format_id', 50);
+		const deadlineMode = (body.deadline_mode as string) || 'manual';
 
-	if (insertErr) {
-		console.error('[organize/create] Insert failed:', insertErr);
-		throw error(500, 'Failed to create tournament');
-	}
+		if (!['manual', 'datetime', 'both'].includes(deadlineMode)) {
+			throw error(400, 'Invalid deadline_mode');
+		}
 
-	return json({
-		success: true,
-		tournament,
-		share_url: `/tournaments/enter?code=${code}`
-	});
+		// Validate format exists (unless custom)
+		if (formatId !== 'custom') {
+			const { getFormat } = await import('$lib/data/tournament-formats');
+			const format = getFormat(formatId);
+			if (!format) throw error(400, `Unknown format: ${formatId}`);
+		}
+
+		// Generate unique code (retry up to 5 times for collision)
+		let code = '';
+		let codeIsUnique = false;
+		for (let attempt = 0; attempt < 5; attempt++) {
+			code = generateCode();
+			const { data: existing } = await supabase
+				.from('tournaments')
+				.select('id')
+				.eq('code', code)
+				.maybeSingle();
+			if (!existing) {
+				codeIsUnique = true;
+				break;
+			}
+		}
+		if (!codeIsUnique) {
+			throw error(500, 'Could not generate unique tournament code. Please try again.');
+		}
+
+		// Validate deck size values
+		const maxHeroes = typeof body.max_heroes === 'number' ? Math.max(1, Math.min(120, body.max_heroes)) : 60;
+		const maxPlays = typeof body.max_plays === 'number' ? Math.max(0, Math.min(60, body.max_plays)) : 30;
+		const maxBonus = typeof body.max_bonus === 'number' ? Math.max(0, Math.min(50, body.max_bonus)) : 25;
+
+		const { data: tournament, error: insertErr } = await supabase
+			.from('tournaments')
+			.insert({
+				creator_id: organizer.publicUserId,
+				code,
+				name,
+				deck_type: deckType,
+				format_id: formatId,
+				description: (body.description as string) || null,
+				venue: (body.venue as string) || null,
+				event_date: (body.event_date as string) || null,
+				max_players: (body.max_players as number) || null,
+				deadline_mode: deadlineMode,
+				submission_deadline: (body.submission_deadline as string) || null,
+				max_heroes: maxHeroes,
+				max_plays: maxPlays,
+				max_bonus: maxBonus,
+				require_email: true,
+				require_name: body.require_name === true,
+				require_discord: body.require_discord === true,
+				is_active: true
+			})
+			.select()
+			.single();
+
+		if (insertErr) {
+			console.error('[organize/create] Insert failed:', insertErr);
+			throw error(500, 'Failed to create tournament');
+		}
+
+		return json({
+			success: true,
+			tournament,
+			share_url: `/tournaments/enter?code=${code}`
+		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err;
 		console.error('[organize/create] Unexpected error:', err);
-		throw error(500, 'Internal server error');
+		return apiError('Internal server error', 500);
 	}
 };
