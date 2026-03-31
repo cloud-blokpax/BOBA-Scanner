@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { DEFAULT_CONFIGS, getBoxConfig } from '$lib/data/pack-defaults';
 	import { getAllWeaponKeys } from '$lib/data/boba-weapons';
@@ -46,28 +45,19 @@
 
 	async function loadConfig() {
 		loading = true;
-		const client = getSupabase();
-		if (client) {
-			try {
-				// pack_configurations is not in generated Supabase types yet
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const { data } = await (client as any)
-					.from('pack_configurations')
-					.select('*')
-					.eq('box_type', selectedBox)
-					.eq('is_active', true)
-					.limit(1)
-					.maybeSingle();
-
-				if (data) {
+		try {
+			const res = await fetch(`/api/admin/pack-config?box_type=${selectedBox}`);
+			if (res.ok) {
+				const data = await res.json();
+				if (data && data.slots) {
 					slots = structuredClone(data.slots as SlotConfig[]);
 					packsPerBox = data.packs_per_box || 10;
 					configId = data.id;
 					loading = false;
 					return;
 				}
-			} catch { /* use defaults */ }
-		}
+			}
+		} catch { /* use defaults */ }
 
 		// Fall back to defaults
 		const config = getBoxConfig(selectedBox, selectedSet);

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	interface LogRow {
@@ -28,15 +27,11 @@
 
 	async function loadLogs() {
 		loading = true;
-		const client = getSupabase();
-		if (!client) { loading = false; return; }
 		try {
-			const { data } = await client
-				.from('api_call_logs')
-				.select('*')
-				.order('created_at', { ascending: false })
-				.limit(50);
-			if (data) logs = data as LogRow[];
+			const res = await fetch('/api/admin/logs');
+			if (!res.ok) throw new Error('Failed to load logs');
+			const data = await res.json();
+			logs = data.logs as LogRow[];
 		} catch {
 			showToast('Failed to load logs', 'x');
 		}

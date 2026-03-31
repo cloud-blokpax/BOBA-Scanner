@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import {
 		getAllFeatureFlags,
@@ -31,25 +30,11 @@
 		try {
 			await loadFeatureFlags();
 			featureList = getAllFeatureFlags();
-			const client = getSupabase();
-			if (client) {
-				const { data } = await client
-					.from('user_feature_overrides')
-					.select('user_id, feature_key, enabled')
-					.order('created_at', { ascending: false })
-					.limit(200);
-				if (data) {
-					const userIds = [...new Set(data.map((d: { user_id: string }) => d.user_id))];
-					const { data: userRows } = await client
-						.from('users')
-						.select('id, email')
-						.in('id', userIds);
-					const emailMap = new Map((userRows || []).map((u: { id: string; email: string }) => [u.id, u.email]));
-					userOverridesList = data.map((d: { user_id: string; feature_key: string; enabled: boolean }) => ({
-						...d,
-						user_email: emailMap.get(d.user_id) || d.user_id
-					}));
-				}
+
+			const res = await fetch('/api/admin/user-overrides');
+			if (res.ok) {
+				const data = await res.json();
+				userOverridesList = data.overrides;
 			}
 		} catch (err) {
 			console.debug('[admin] Features load failed:', err);
@@ -77,20 +62,22 @@
 	async function addUserOverride() {
 		if (!overrideUserId.trim() || !overrideFeatureKey) return;
 		overrideSaving = true;
-		const client = getSupabase();
-		if (!client) { overrideSaving = false; return; }
 		try {
-			let userId = overrideUserId.trim();
-			if (!userId.match(/^[0-9a-f-]{36}$/i)) {
-				const { data: userRow } = await client.from('users').select('id').eq('email', userId).maybeSingle();
-				if (!userRow) { showToast('User not found', 'x'); overrideSaving = false; return; }
-				userId = userRow.id;
+			const res = await fetch('/api/admin/user-overrides', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					user_id: overrideUserId.trim(),
+					feature_key: overrideFeatureKey,
+					enabled: overrideEnabled
+				})
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				showToast(err.message || 'Failed to save override', 'x');
+				overrideSaving = false;
+				return;
 			}
-			const { error } = await client.from('user_feature_overrides').upsert(
-				{ user_id: userId, feature_key: overrideFeatureKey, enabled: overrideEnabled, updated_at: new Date().toISOString() },
-				{ onConflict: 'user_id,feature_key' }
-			);
-			if (error) throw error;
 			showToast('Override saved', 'check');
 			overrideUserId = '';
 			await loadFeaturesTab();
@@ -99,11 +86,21 @@
 	}
 
 	async function removeOverride(userId: string, featureKey: string) {
-		const client = getSupabase();
-		if (!client) return;
-		const { error } = await client.from('user_feature_overrides').delete().eq('user_id', userId).eq('feature_key', featureKey);
-		if (error) showToast('Failed to remove override', 'x');
-		else { showToast('Override removed', 'check'); await loadFeaturesTab(); }
+		try {
+			const res = await fetch('/api/admin/user-overrides', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ user_id: userId, feature_key: featureKey })
+			});
+			if (!res.ok) {
+				showToast('Failed to remove override', 'x');
+				return;
+			}
+			showToast('Override removed', 'check');
+			await loadFeaturesTab();
+		} catch {
+			showToast('Failed to remove override', 'x');
+		}
 	}
 </script>
 
