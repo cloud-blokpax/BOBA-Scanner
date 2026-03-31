@@ -58,7 +58,7 @@ export async function recognizeText(imageBlob: Blob): Promise<OcrResult> {
 	if (!worker) await initOcr();
 
 	// Restart worker every 50 recognitions (WASM memory leak mitigation, reduced from 100 for better mobile memory)
-	if (++recognitionCount > BOBA_PIPELINE_CONFIG.ocrWorkerRestartInterval) {
+	if (++recognitionCount >= BOBA_PIPELINE_CONFIG.ocrWorkerRestartInterval) {
 		try {
 			const oldWorker = worker;
 			// Don't null out worker or _initPromise until new worker is ready

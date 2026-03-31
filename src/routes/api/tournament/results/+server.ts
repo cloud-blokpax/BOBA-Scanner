@@ -144,6 +144,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (updateErr) {
 		console.error('[tournament/results] Tournament status update failed:', updateErr);
+		throw error(500, 'Results saved but tournament status update failed — please retry');
 	}
 
 	return json({ success: true, count: enrichedResults.length });

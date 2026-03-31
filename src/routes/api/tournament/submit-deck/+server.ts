@@ -77,19 +77,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	// Check max players
+	// Check max players (single query to reduce race window)
 	if (tournament.max_players) {
-		const { count } = await supabase
-			.from('deck_submissions')
-			.select('*', { count: 'exact', head: true })
-			.eq('tournament_id', tournamentId);
-
-		const { data: existingSub } = await supabase
-			.from('deck_submissions')
-			.select('id')
-			.eq('tournament_id', tournamentId)
-			.eq('user_id', user.id)
-			.maybeSingle();
+		const [{ count }, { data: existingSub }] = await Promise.all([
+			supabase
+				.from('deck_submissions')
+				.select('*', { count: 'exact', head: true })
+				.eq('tournament_id', tournamentId),
+			supabase
+				.from('deck_submissions')
+				.select('id')
+				.eq('tournament_id', tournamentId)
+				.eq('user_id', user.id)
+				.maybeSingle()
+		]);
 
 		if (!existingSub && count !== null && count >= tournament.max_players) {
 			throw error(400, 'Tournament is full');
