@@ -159,6 +159,18 @@
 		<button class="tab-btn" class:tab-active={activeTab === 'tournament'} onclick={() => activeTab = 'tournament'}>Tournament</button>
 	</div>
 
+	<!-- Quick links -->
+	<div class="deck-actions">
+		<a href="/tournaments" class="action-chip">
+			<span class="action-icon">🏆</span>
+			<span>Tournaments</span>
+		</a>
+		<a href="/deck/new" class="action-chip action-chip-primary">
+			<span class="action-icon">➕</span>
+			<span>New Deck</span>
+		</a>
+	</div>
+
 	{#if activeTab === 'decks'}
 		<!-- My Decks Tab -->
 		{#if !isAuthenticated}
@@ -343,6 +355,35 @@
 		margin: 0 auto;
 		padding: 1rem;
 	}
+
+	.deck-actions {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0 0 0.75rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.deck-actions::-webkit-scrollbar { display: none; }
+
+	.action-chip {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.4rem 0.75rem;
+		border-radius: 20px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-decoration: none;
+		white-space: nowrap;
+		flex-shrink: 0;
+		transition: border-color var(--transition-fast), background var(--transition-fast);
+	}
+	.action-chip:hover { border-color: var(--border-strong); background: var(--bg-elevated); }
+	.action-chip-primary { border-color: var(--gold); color: var(--gold); }
+	.action-icon { font-size: 0.85rem; }
 
 	/* Tab bar */
 	.tab-bar {

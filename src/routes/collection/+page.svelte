@@ -207,6 +207,34 @@
 			{/each}
 		</div>
 
+		<!-- Quick actions -->
+		<div class="collection-actions">
+			<a href="/set-completion" class="action-chip">
+				<span class="action-icon">📊</span>
+				<span>Set Progress</span>
+			</a>
+			<a href="/organize" class="action-chip">
+				<span class="action-icon">📁</span>
+				<span>Organize</span>
+			</a>
+			<a href="/sell" class="action-chip">
+				<span class="action-icon">💰</span>
+				<span>Sell</span>
+			</a>
+			<a href="/export" class="action-chip">
+				<span class="action-icon">📤</span>
+				<span>Export</span>
+			</a>
+			<a href="/leaderboard" class="action-chip">
+				<span class="action-icon">🏆</span>
+				<span>Leaderboard</span>
+			</a>
+			<a href="/marketplace/monitor" class="action-chip">
+				<span class="action-icon">🔍</span>
+				<span>Market</span>
+			</a>
+		</div>
+
 		<div class="tab-content">
 			<!-- ════════ Overview Tab ════════ -->
 			{#if activeTab === 'overview'}
@@ -554,6 +582,38 @@
 
 	/* ── Tab content ──────────────────────────────── */
 	.tab-content { padding: 0 1rem 1.5rem; }
+
+	.collection-actions {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0 1rem 0.75rem;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+	.collection-actions::-webkit-scrollbar { display: none; }
+
+	.action-chip {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.4rem 0.75rem;
+		border-radius: 20px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-decoration: none;
+		white-space: nowrap;
+		flex-shrink: 0;
+		transition: border-color var(--transition-fast), background var(--transition-fast);
+	}
+	.action-chip:hover {
+		border-color: var(--border-strong);
+		background: var(--bg-elevated);
+	}
+	.action-icon { font-size: 0.85rem; }
 
 	/* ── Stat cards ───────────────────────────────── */
 	.stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
