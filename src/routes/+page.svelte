@@ -10,6 +10,20 @@
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
 
+	const RARITY_COLORS: Record<string, string> = {
+		common: '#94a3b8',
+		uncommon: '#4ade80',
+		rare: '#3b82f6',
+		ultra_rare: '#a855f7',
+		legendary: '#f59e0b'
+	};
+
+	function getRarityColor(cardId: string | null | undefined): string {
+		// Without a card lookup, default to common
+		// Once card-db is wired, look up rarity from cardId
+		return RARITY_COLORS.common;
+	}
+
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let uploadResult = $state<ScanResult | null>(null);
@@ -178,6 +192,17 @@
 	const recentScans = $derived(scanHistory().filter(s => s.success).slice(0, 5));
 	const collectionCount = $derived(getCollectionCount());
 
+	function timeAgo(timestamp: number): string {
+		const seconds = Math.floor((Date.now() - timestamp) / 1000);
+		if (seconds < 60) return 'Just now';
+		const minutes = Math.floor(seconds / 60);
+		if (minutes < 60) return `${minutes}m ago`;
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours}h ago`;
+		const days = Math.floor(hours / 24);
+		return `${days}d ago`;
+	}
+
 	// ── Content Block Ordering ──────────────────────────────────
 
 	interface HomeBlock {
@@ -190,21 +215,10 @@
 	}
 
 	const HOME_BLOCKS: HomeBlock[] = [
-		// Universal
-		{ id: 'scan_upload', personaAffinity: { collector: 1, deck_builder: 0.5, seller: 0.8, tournament: 0.3 }, threshold: 0, basePriority: 0 },
-
-		// Collector
+		{ id: 'scan_hero', personaAffinity: { collector: 1, deck_builder: 0.5, seller: 0.8, tournament: 0.3 }, threshold: 0, basePriority: 0 },
 		{ id: 'recent_scans', personaAffinity: { collector: 0.8, deck_builder: 0.3, seller: 0.3, tournament: 0.2 }, threshold: 0, basePriority: 10 },
-		{ id: 'collection_summary', personaAffinity: { collector: 1, seller: 0.5 }, threshold: 0.3, basePriority: 20 },
-
-		// Deck Builder
-		{ id: 'active_decks', personaAffinity: { deck_builder: 1, tournament: 0.7, collector: 0.3 }, threshold: 0, basePriority: 15 },
-
-		// Seller
-		{ id: 'sell_link', personaAffinity: { seller: 1, collector: 0.2 }, threshold: 0.3, basePriority: 25 },
-
-		// Tournament
-		{ id: 'tournament_lookup', personaAffinity: { tournament: 1, deck_builder: 0.3 }, threshold: 0, basePriority: 30 },
+		{ id: 'tournaments', personaAffinity: { tournament: 1, deck_builder: 0.3, collector: 0.2 }, threshold: 0, basePriority: 15 },
+		{ id: 'quick_actions', personaAffinity: { collector: 0.8, deck_builder: 0.8, seller: 0.5, tournament: 0.3 }, threshold: 0, basePriority: 20 },
 	];
 
 	function sortBlocksForUser(blocks: HomeBlock[], persona: PersonaWeights): string[] {
@@ -238,12 +252,10 @@
 	let dragOverIndex = $state<number | null>(null);
 
 	const BLOCK_LABELS: Record<string, string> = {
-		scan_upload: 'Scan & Upload',
+		scan_hero: 'Scan Card',
 		recent_scans: 'Recent Scans',
-		collection_summary: 'Collection',
-		active_decks: 'Decks',
-		sell_link: 'Sell & Export',
-		tournament_lookup: 'Tournaments'
+		tournaments: 'Tournaments',
+		quick_actions: 'Quick Actions'
 	};
 
 	// Load custom order from localStorage on mount
@@ -297,347 +309,346 @@
 </svelte:head>
 
 <div class="dashboard">
-	<section class="hero-section">
-		<h1>BOBA Scanner</h1>
-
-		{#if data.user}
-			<!-- Persona adaptation suggestion -->
-			{#if showSuggestion && suggestedPrimary}
-				<div class="persona-suggestion">
-					<p class="persona-suggestion-text">
-						Based on your activity, you might prefer a <strong>{PERSONA_LABELS[suggestedPrimary]}</strong> layout.
-					</p>
-					<div class="persona-suggestion-actions">
-						<button class="btn-suggestion-apply" onclick={applySuggestedPersona}>Switch</button>
-						<button class="btn-suggestion-dismiss" onclick={() => suggestionDismissed = true}>Dismiss</button>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Authenticated dashboard -->
-			{#if uploadResult}
-				<ScanConfirmation
-					result={uploadResult}
-					capturedImageUrl={uploadImageUrl}
-					isAuthenticated={!!data.user}
-					onScanAnother={dismissResult}
-					onClose={dismissResult}
-				/>
-			{:else if uploading}
-				<div class="upload-status">
-					<div class="upload-spinner"></div>
-					<span>{statusText || 'Processing...'}</span>
-				</div>
-			{/if}
-
-			<!-- Collection stats row -->
-			{#if collectionCount > 0}
-				<div class="stats-row">
-					<a href="/collection" class="stat-tile">
-						<span class="stat-number" data-tabular>{collectionCount}</span>
-						<span class="stat-label">Cards</span>
-					</a>
-					<a href="/set-completion" class="stat-tile">
-						<span class="stat-number" data-tabular>&mdash;</span>
-						<span class="stat-label">Sets</span>
-					</a>
-					<a href="/deck" class="stat-tile">
-						<span class="stat-number" data-tabular>&mdash;</span>
-						<span class="stat-label">Decks</span>
-					</a>
-				</div>
-			{/if}
-
-			<!-- Customize button -->
-			<div class="customize-strip">
-				<button class="btn-customize" onclick={() => showCustomize = true}>
-					<span class="drag-handle">{'\u2630'}</span> Customize
-				</button>
+	{#if data.user}
+		<!-- Upload scan result overlay -->
+		{#if uploadResult}
+			<ScanConfirmation
+				result={uploadResult}
+				capturedImageUrl={uploadImageUrl}
+				isAuthenticated={!!data.user}
+				onScanAnother={dismissResult}
+				onClose={dismissResult}
+			/>
+		{:else if uploading}
+			<div class="upload-status">
+				<div class="upload-spinner"></div>
+				<span>{statusText || 'Processing...'}</span>
 			</div>
+		{/if}
 
-			<!-- Customize modal -->
-			{#if showCustomize}
-				<div class="customize-overlay" role="button" tabindex="-1" onclick={() => showCustomize = false} onkeydown={(e) => { if (e.key === 'Escape') showCustomize = false; }}>
-					<div class="customize-sheet" role="dialog" aria-label="Reorder Home Screen" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-						<div class="customize-header">
-							<h3>Reorder Home Screen</h3>
-							<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
-						</div>
-						<ul class="customize-list">
-							{#each (customOrder || orderedBlocks) as blockId, i (blockId)}
-								<li
-									class="customize-item"
-									class:dragging={dragIndex === i}
-									class:drag-over={dragOverIndex === i}
-									draggable="true"
-									ondragstart={() => handleDragStart(i)}
-									ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
-									ondrop={() => handleDrop(i)}
-									ondragend={() => { dragIndex = null; dragOverIndex = null; }}
-								>
-									<span class="drag-handle">{'\u2630'}</span>
-									<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
-								</li>
-							{/each}
-						</ul>
-						{#if customOrder}
-							<button class="btn-suggestion-dismiss" style="margin-top: 1rem; width: 100%; text-align: center;" onclick={resetCustomOrder}>
-								Reset to Auto
-							</button>
-						{/if}
-					</div>
+		<!-- Persona suggestion banner -->
+		{#if showSuggestion && suggestedPrimary}
+			<div class="persona-suggestion">
+				<p class="persona-suggestion-text">
+					Based on your activity, you might prefer a <strong>{PERSONA_LABELS[suggestedPrimary]}</strong> layout.
+				</p>
+				<div class="persona-suggestion-actions">
+					<button class="btn-suggestion-apply" onclick={applySuggestedPersona}>Switch</button>
+					<button class="btn-suggestion-dismiss" onclick={() => suggestionDismissed = true}>Dismiss</button>
 				</div>
-			{/if}
+			</div>
+		{/if}
 
-			<!-- Persona-ordered content blocks -->
-			{#each orderedBlocks as blockId, i (blockId)}
-				<div class="block-entrance" style="animation-delay: {80 * i}ms">
-				{#if blockId === 'scan_upload'}
-					<div class="scan-hero-card">
-						<a href="/scan" class="scan-hero-btn">
-							<span class="scan-hero-icon">{'\u{1F4F7}'}</span>
-							<span class="scan-hero-label">Scan Card</span>
-						</a>
-						<div class="scan-hero-secondary">
-							<button class="btn-secondary-action" onclick={handleUploadClick} disabled={uploading}>
+		<!-- Customize button -->
+		<div class="customize-strip">
+			<button class="btn-customize" onclick={() => showCustomize = true}>
+				<span class="drag-handle">{'\u2630'}</span> Customize
+			</button>
+		</div>
+
+		<!-- Customize modal -->
+		{#if showCustomize}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div class="customize-overlay" onclick={() => showCustomize = false}>
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div class="customize-sheet" onclick={(e) => e.stopPropagation()}>
+					<div class="customize-header">
+						<h3>Reorder Home Screen</h3>
+						<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
+					</div>
+					<ul class="customize-list">
+						{#each (customOrder || orderedBlocks) as blockId, i (blockId)}
+							<li
+								class="customize-item"
+								class:dragging={dragIndex === i}
+								class:drag-over={dragOverIndex === i}
+								draggable="true"
+								ondragstart={() => handleDragStart(i)}
+								ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
+								ondrop={() => handleDrop(i)}
+								ondragend={() => { dragIndex = null; dragOverIndex = null; }}
+							>
+								<span class="drag-handle">{'\u2630'}</span>
+								<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
+							</li>
+						{/each}
+					</ul>
+					{#if customOrder}
+						<button class="btn-suggestion-dismiss" style="margin-top: 1rem; width: 100%; text-align: center;" onclick={resetCustomOrder}>
+							Reset to Auto
+						</button>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Content blocks -->
+		{#each orderedBlocks as blockId, i (blockId)}
+			<div class="block-entrance" style="animation-delay: {60 * i}ms">
+
+			{#if blockId === 'scan_hero'}
+				<!-- HERO SCAN CARD -->
+				<div class="scan-hero-card">
+					<a href="/scan" class="scan-hero-btn" aria-label="Scan a card">
+						<span class="scan-hero-icon">📷</span>
+					</a>
+					<div class="scan-hero-text">
+						<div class="scan-hero-title">Scan a Card</div>
+						<div class="scan-hero-desc">Point your camera at any BoBA card to identify it instantly</div>
+						<div class="scan-hero-actions">
+							<button class="btn-hero-secondary" onclick={handleUploadClick} disabled={uploading}>
 								Upload Photo
 							</button>
-							<a href="/scan?mode=roll" class="btn-secondary-action">
-								Camera Roll
-							</a>
+							<a href="/scan?mode=roll" class="btn-hero-secondary">Camera Roll</a>
 						</div>
-						<input
-							bind:this={fileInput}
-							type="file"
-							accept="image/jpeg,image/png,image/webp"
-							onchange={handleFileSelected}
-							hidden
-						/>
 					</div>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						onchange={handleFileSelected}
+						hidden
+					/>
+				</div>
 
-				{:else if blockId === 'recent_scans'}
-					<div class="recent-scans">
-						<h2 class="section-heading">Recent Scans</h2>
-						{#if recentScans.length > 0}
-							<div class="recent-scans-strip">
-								{#each recentScans as scan}
-									{@const resolvedImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null)}
-									<div class="recent-scan-card">
-									{#if resolvedImageUrl}
-											{@const isDataUrl = resolvedImageUrl.startsWith('data:')}
-											{@const urls = isDataUrl ? { avif: null, webp: null, fallback: resolvedImageUrl, width: 80 } : getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
-											<picture class="recent-scan-image-wrap">
+			{:else if blockId === 'recent_scans'}
+				<!-- RECENT SCANS -->
+				{#if recentScans.length > 0}
+					<div class="section-block">
+						<div class="section-header">
+							<h2 class="section-heading">Recent Scans</h2>
+						</div>
+						<div class="recent-scans-strip">
+							{#each recentScans as scan}
+								{@const resolvedImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null)}
+								{@const isDataUrl = resolvedImageUrl?.startsWith('data:')}
+								<div class="scan-card">
+									<div class="scan-card-image">
+										{#if resolvedImageUrl}
+											{@const urls = isDataUrl ? { avif: null, webp: null, fallback: resolvedImageUrl, width: 100 } : getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
+											<picture>
 												{#if urls.avif}<source srcset={urls.avif} type="image/avif" />{/if}
 												{#if urls.webp}<source srcset={urls.webp} type="image/webp" />{/if}
 												<img
 													src={urls.fallback}
 													alt={scan.heroName || scan.cardNumber || 'Card'}
-													class="recent-scan-image"
+													class="scan-card-img"
 													loading="lazy"
-													width={urls.width}
 													onerror={(e) => {
 														const img = e.currentTarget as HTMLImageElement;
-														const wrap = img.closest('.recent-scan-image-wrap');
-														if (wrap) wrap.outerHTML = '<div class="recent-scan-placeholder">\u{1F3B4}</div>';
+														img.style.display = 'none';
+														const next = img.parentElement?.querySelector('.scan-card-fallback') as HTMLElement;
+														if (next) next.style.display = 'flex';
 													}}
 												/>
 											</picture>
+											<div class="scan-card-fallback" style="display:none">🎴</div>
 										{:else}
-											<div class="recent-scan-placeholder">{'\u{1F3B4}'}</div>
+											<div class="scan-card-fallback">🎴</div>
 										{/if}
-										<span class="recent-scan-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
 									</div>
-								{/each}
-							</div>
-						{:else}
-							<p class="recent-scans-empty">Scan your first card to see it here.</p>
-						{/if}
-					</div>
-
-				{:else if blockId === 'collection_summary'}
-					<div class="block-link-card">
-						<a href="/collection" class="block-link">
-							<span class="block-link-icon">{'\u{1F4E6}'}</span>
-							<span>My Collection</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-						<a href="/set-completion" class="block-link sub-link">
-							<span class="block-link-icon">{'\u{1F4CA}'}</span>
-							<span>Set Completion</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-					</div>
-
-				{:else if blockId === 'active_decks'}
-					<div class="block-link-card">
-						<a href="/deck" class="block-link">
-							<span class="block-link-icon">{'\u{1F0CF}'}</span>
-							<span>My Decks</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-						<a href="/deck/architect" class="block-link sub-link">
-							<span class="block-link-icon">{'\u{1F9E0}'}</span>
-							<span>Playbook Architect</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-					</div>
-
-				{:else if blockId === 'sell_link'}
-					<div class="block-link-card">
-						<a href="/sell" class="block-link">
-							<span class="block-link-icon">{'\u{1F4B0}'}</span>
-							<span>Sell Cards</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-						<a href="/export" class="block-link sub-link">
-							<span class="block-link-icon">{'\u{1F4E4}'}</span>
-							<span>Export Collection</span>
-							<span class="block-link-arrow">&rarr;</span>
-						</a>
-					</div>
-
-				{:else if blockId === 'tournament_lookup'}
-					<div class="tournament-block">
-						<h2 class="section-heading">Tournaments</h2>
-						<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
-							<input
-								type="text"
-								class="tournament-code-input"
-								bind:value={tournamentCode}
-								placeholder="Enter code"
-								maxlength="8"
-								autocapitalize="characters"
-								spellcheck="false"
-							/>
-							<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
-								{tournamentLoading ? '...' : 'Look Up'}
-							</button>
-						</form>
-						{#if tournamentError}
-							<p class="tournament-error">{tournamentError}</p>
-						{/if}
-						{#if tournamentResult}
-							<div class="tournament-result">
-								<div class="tournament-result-name">{tournamentResult.name}</div>
-								<div class="tournament-result-code">{tournamentResult.code}</div>
-								<div class="tournament-result-params">
-									<span>Heroes: {tournamentResult.max_heroes}</span>
-									<span>Plays: {tournamentResult.max_plays}</span>
-									<span>Bonus: {tournamentResult.max_bonus}</span>
+									<div class="scan-card-info">
+										<span class="scan-card-name">{scan.heroName || scan.cardNumber || 'Unknown'}</span>
+										<span class="scan-card-time">{timeAgo(scan.timestamp)}</span>
+									</div>
 								</div>
-								<a href="/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Enter Tournament</a>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+			{:else if blockId === 'tournaments'}
+				<!-- TOURNAMENTS -->
+				<div class="section-block">
+					<h2 class="section-heading">Tournaments</h2>
+
+					<div class="tournament-code-strip">
+						<input
+							type="text"
+							class="tournament-code-input"
+							bind:value={tournamentCode}
+							placeholder="Enter tournament code"
+							maxlength="8"
+							autocapitalize="characters"
+							spellcheck="false"
+							onkeydown={(e) => { if (e.key === 'Enter') lookupTournament(); }}
+						/>
+						<button class="btn-tournament-join" onclick={lookupTournament} disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+							{tournamentLoading ? '...' : 'Join'}
+						</button>
+					</div>
+
+					{#if tournamentError}
+						<p class="tournament-error">{tournamentError}</p>
+					{/if}
+
+					{#if tournamentResult}
+						<div class="tournament-result-card">
+							<div class="tournament-result-header">
+								<div>
+									<div class="tournament-result-name">{tournamentResult.name}</div>
+									<div class="tournament-result-meta">
+										{tournamentResult.code} · Heroes: {tournamentResult.max_heroes} · Plays: {tournamentResult.max_plays}
+									</div>
+								</div>
+								<span class="tournament-status-badge">Open</span>
 							</div>
-						{/if}
-						<a href="/tournaments" class="block-link sub-link" style="margin-top: 0.5rem;">
-							<span class="block-link-icon">{'\u{1F3C6}'}</span>
-							<span>Browse Tournaments</span>
-							<span class="block-link-arrow">&rarr;</span>
+							<a href="/tournaments/enter?code={tournamentResult.code}" class="btn-tournament-enter">Enter Tournament</a>
+						</div>
+					{/if}
+
+					<a href="/tournaments" class="link-subtle">Browse all tournaments →</a>
+				</div>
+
+			{:else if blockId === 'quick_actions'}
+				<!-- QUICK ACTIONS GRID -->
+				<div class="section-block">
+					<h2 class="section-heading">Quick Actions</h2>
+					<div class="actions-grid">
+						<a href="/collection" class="action-tile">
+							<span class="action-icon">📦</span>
+							<div class="action-text">
+								<span class="action-label">Collection</span>
+								<span class="action-sub">View & manage</span>
+							</div>
+						</a>
+						<a href="/deck" class="action-tile">
+							<span class="action-icon">🃏</span>
+							<div class="action-text">
+								<span class="action-label">My Decks</span>
+								<span class="action-sub">Build & edit</span>
+							</div>
+						</a>
+						<a href="/set-completion" class="action-tile">
+							<span class="action-icon">📊</span>
+							<div class="action-text">
+								<span class="action-label">Set Progress</span>
+								<span class="action-sub">Track completion</span>
+							</div>
+						</a>
+						<a href="/deck/architect" class="action-tile">
+							<span class="action-icon">🧠</span>
+							<div class="action-text">
+								<span class="action-label">Playbook</span>
+								<span class="action-sub">Architect</span>
+							</div>
 						</a>
 					</div>
-				{/if}
 				</div>
-			{/each}
+			{/if}
 
-		{:else}
-			<!-- Unauthenticated landing -->
-			<p class="hero-subtitle">Scan any BoBA card. See what it's worth instantly.</p>
-
-			<div class="cta-section">
-				<a href="/scan" class="btn-scan-cta">Scan a Card</a>
-				<p class="cta-note">No sign-in required — try it free.</p>
 			</div>
+		{/each}
 
-			<!-- Tournament code entry for guests -->
-			<section class="tournament-lookup-section">
-				<h2>Entering a Tournament?</h2>
-				<form class="tournament-lookup-form" onsubmit={(e) => { e.preventDefault(); lookupTournament(); }}>
-					<input
-						type="text"
-						class="tournament-code-input"
-						bind:value={tournamentCode}
-						placeholder="ABCD1234"
-						maxlength="8"
-						autocapitalize="characters"
-						spellcheck="false"
-					/>
-					<button type="submit" class="btn-primary" disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
-						{tournamentLoading ? 'Looking up...' : 'Look Up'}
-					</button>
-				</form>
+	{:else}
+		<!-- UNAUTHENTICATED LANDING -->
+		<div class="landing-hero">
+			<h1 class="landing-title">BOBA Scanner</h1>
+			<p class="landing-subtitle">Scan any BoBA card. See what it's worth instantly.</p>
+			<a href="/scan" class="landing-cta">Scan a Card</a>
+			<p class="landing-note">No sign-in required — try it free.</p>
+		</div>
 
-				{#if tournamentError}
-					<p class="tournament-error">{tournamentError}</p>
-				{/if}
-
-				{#if tournamentResult}
-					<div class="tournament-result">
-						<div class="tournament-result-name">{tournamentResult.name}</div>
-						<div class="tournament-result-code">{tournamentResult.code}</div>
-						<div class="tournament-result-params">
-							<span>Heroes: {tournamentResult.max_heroes}</span>
-							<span>Plays: {tournamentResult.max_plays}</span>
-							<span>Bonus: {tournamentResult.max_bonus}</span>
+		<div class="section-block" style="margin-top: 2rem;">
+			<h2 class="section-heading">Entering a Tournament?</h2>
+			<div class="tournament-code-strip">
+				<input
+					type="text"
+					class="tournament-code-input"
+					bind:value={tournamentCode}
+					placeholder="ABCD1234"
+					maxlength="8"
+					autocapitalize="characters"
+					spellcheck="false"
+					onkeydown={(e) => { if (e.key === 'Enter') lookupTournament(); }}
+				/>
+				<button class="btn-tournament-join" onclick={lookupTournament} disabled={tournamentLoading || tournamentCode.trim().length !== 8}>
+					{tournamentLoading ? 'Looking up...' : 'Join'}
+				</button>
+			</div>
+			{#if tournamentError}
+				<p class="tournament-error">{tournamentError}</p>
+			{/if}
+			{#if tournamentResult}
+				<div class="tournament-result-card">
+					<div class="tournament-result-header">
+						<div>
+							<div class="tournament-result-name">{tournamentResult.name}</div>
+							<div class="tournament-result-meta">
+								{tournamentResult.code} · Heroes: {tournamentResult.max_heroes} · Plays: {tournamentResult.max_plays}
+							</div>
 						</div>
-						<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-primary btn-small-cta">Sign in to Enter</a>
 					</div>
-				{/if}
-			</section>
-		{/if}
-	</section>
+					<a href="/auth/login?redirectTo=/tournaments/enter?code={tournamentResult.code}" class="btn-tournament-enter">Sign in to Enter</a>
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
 	.dashboard {
-		max-width: 800px;
+		max-width: 600px;
 		margin: 0 auto;
-		padding: 1.5rem 1rem;
+		padding: 0.5rem 1rem 1.5rem;
 	}
 
-	.hero-section {
-		text-align: center;
-		margin-bottom: 2rem;
+	/* Entrance animation */
+	.block-entrance {
+		animation: slideUpFade 0.4s ease-out both;
 	}
 
-	.hero-section h1 {
-		font-family: 'Syne', sans-serif;
-		font-size: 2.5rem;
-		font-weight: 800;
-		margin-bottom: 0.5rem;
+	@keyframes slideUpFade {
+		from { opacity: 0; transform: translateY(16px); }
+		to { opacity: 1; transform: translateY(0); }
 	}
 
-	.hero-subtitle {
-		color: var(--text-secondary, #94a3b8);
-		font-size: 1.1rem;
+	/* Section block spacing */
+	.section-block {
 		margin-bottom: 1.5rem;
 	}
 
-	/* Hero scan CTA */
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.625rem;
+	}
+
+	.section-heading {
+		font-size: 0.8rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted, #64748b);
+		margin: 0 0 0.625rem;
+	}
+
+	/* HERO SCAN CARD */
 	.scan-hero-card {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 1rem;
-		padding: 1.5rem;
-		background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(59,130,246,0.05));
-		border: 1px solid rgba(245,158,11,0.15);
+		gap: 1.25rem;
+		padding: 1.25rem 1.25rem;
+		background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(59,130,246,0.03));
+		border: 1px solid rgba(245,158,11,0.12);
 		border-radius: var(--radius-xl, 16px);
+		margin-bottom: 1.5rem;
 	}
 
 	.scan-hero-btn {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 0.5rem;
-		width: 100px;
-		height: 100px;
+		justify-content: center;
+		width: 72px;
+		height: 72px;
 		border-radius: 50%;
 		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
-		color: #0d1524;
+		flex-shrink: 0;
 		text-decoration: none;
-		justify-content: center;
-		box-shadow: 0 0 0 0 rgba(245,158,11,0.3), var(--shadow-gold, 0 4px 16px rgba(245,158,11,0.3));
-		animation: scan-breathe 3s ease-in-out infinite;
-		transition: transform 0.15s ease;
+		box-shadow: 0 0 0 0 rgba(245,158,11,0.3), var(--shadow-gold, 0 4px 20px rgba(245,158,11,0.35));
+		animation: scanBreathe 3s ease-in-out infinite;
+		transition: transform 0.12s ease;
 	}
 
 	.scan-hero-btn:active {
@@ -645,408 +656,385 @@
 		animation: none;
 	}
 
+	@keyframes scanBreathe {
+		0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3), 0 4px 20px rgba(245,158,11,0.35); }
+		50% { box-shadow: 0 0 0 12px rgba(245,158,11,0), 0 8px 32px rgba(245,158,11,0.45); }
+	}
+
 	.scan-hero-icon {
-		font-size: 2rem;
-		line-height: 1;
+		font-size: 1.75rem;
+		filter: brightness(0.2);
 	}
 
-	.scan-hero-label {
+	.scan-hero-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.scan-hero-title {
 		font-family: var(--font-display, 'Syne', sans-serif);
-		font-size: 0.7rem;
+		font-size: 1.1rem;
 		font-weight: 700;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
+		margin-bottom: 0.2rem;
 	}
 
-	@keyframes scan-breathe {
-		0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3), var(--shadow-gold, 0 4px 16px rgba(245,158,11,0.3)); }
-		50% { box-shadow: 0 0 0 14px rgba(245,158,11,0), var(--shadow-gold-lg, 0 8px 32px rgba(245,158,11,0.4)); }
+	.scan-hero-desc {
+		font-size: 0.8rem;
+		color: var(--text-secondary, #94a3b8);
+		line-height: 1.35;
+		margin-bottom: 0.625rem;
 	}
 
-	.scan-hero-secondary {
+	.scan-hero-actions {
 		display: flex;
-		gap: 0.75rem;
+		gap: 0.5rem;
 	}
 
-	.btn-secondary-action {
-		padding: 0.5rem 1rem;
-		border-radius: var(--radius-lg, 12px);
+	.btn-hero-secondary {
+		padding: 0.375rem 0.75rem;
+		border-radius: var(--radius-md, 8px);
 		background: var(--bg-elevated, #121d34);
 		border: 1px solid var(--border, rgba(148,163,184,0.10));
 		color: var(--text-secondary, #94a3b8);
-		font-size: 0.8rem;
+		font-size: 0.75rem;
 		font-weight: 500;
 		text-decoration: none;
 		cursor: pointer;
 		transition: border-color var(--transition-fast, 150ms), color var(--transition-fast, 150ms);
 	}
 
-	.btn-secondary-action:hover {
+	.btn-hero-secondary:hover {
 		border-color: var(--border-strong, rgba(148,163,184,0.20));
 		color: var(--text-primary, #e2e8f0);
 	}
 
-	.btn-secondary-action:disabled {
+	.btn-hero-secondary:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
-	/* Collection stats row */
-	.stats-row {
-		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.stat-tile {
-		flex: 1;
-		padding: 0.75rem 0.5rem;
-		background: rgba(18, 29, 52, 0.6);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		border: 1px solid var(--border, rgba(148,163,184,0.08));
-		border-radius: var(--radius-lg, 12px);
-		text-align: center;
-		text-decoration: none;
-		transition: border-color var(--transition-fast, 150ms);
-	}
-
-	.stat-tile:active {
-		transform: scale(0.97);
-	}
-
-	.stat-tile:hover {
-		border-color: var(--border-strong, rgba(148,163,184,0.20));
-	}
-
-	.stat-number {
-		display: block;
-		font-family: var(--font-display, 'Syne', sans-serif);
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: var(--text-primary, #e2e8f0);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.stat-label {
-		font-size: 0.7rem;
-		color: var(--text-muted, #475569);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		font-weight: 600;
-	}
-
-	/* Staggered block entrance */
-	.block-entrance {
-		animation: slideUpFade 0.4s ease-out both;
-	}
-
-	@keyframes slideUpFade {
-		from { opacity: 0; transform: translateY(20px); }
-		to { opacity: 1; transform: translateY(0); }
-	}
-
-	/* Section heading */
-	.section-heading {
-		font-size: 0.85rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--text-muted, #475569);
-		margin-bottom: 0.75rem;
-		text-align: left;
-	}
-
-	/* Recent scans */
-	.recent-scans {
-		margin-top: 1.5rem;
-		text-align: left;
-	}
-
+	/* RECENT SCANS */
 	.recent-scans-strip {
 		display: flex;
-		gap: 0.75rem;
+		gap: 0.625rem;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
-		padding-bottom: 0.5rem;
+		padding-bottom: 0.25rem;
 		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
 	}
 
-	.recent-scan-card {
+	.recent-scans-strip::-webkit-scrollbar {
+		display: none;
+	}
+
+	.scan-card {
 		flex-shrink: 0;
 		scroll-snap-align: start;
-		width: 80px;
-		text-align: center;
+		width: 100px;
+		border-radius: var(--radius-lg, 12px);
+		overflow: hidden;
+		background: var(--bg-surface, #0d1524);
+		border: 1px solid var(--border, rgba(148,163,184,0.06));
+		cursor: pointer;
+		transition: transform 0.12s ease;
 	}
 
-	.recent-scan-image-wrap {
-		display: block;
-		width: 64px;
-		height: 80px;
-		margin: 0 auto 0.25rem;
-		border-radius: 8px;
+	.scan-card:active {
+		transform: scale(0.96);
+	}
+
+	.scan-card-image {
+		width: 100%;
+		aspect-ratio: 5 / 7;
+		background: linear-gradient(135deg, var(--bg-elevated, #0f172a), rgba(148,163,184,0.03));
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		overflow: hidden;
 	}
 
-	.recent-scan-image {
+	.scan-card-img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		border-radius: 8px;
 	}
 
-	.recent-scan-placeholder {
-		width: 64px;
-		height: 80px;
-		margin: 0 auto 0.25rem;
-		border-radius: 8px;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	.scan-card-fallback {
+		width: 100%;
+		height: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		font-size: 1.5rem;
 	}
 
-	.recent-scan-name {
+	.scan-card-info {
+		padding: 0.375rem 0.5rem;
+	}
+
+	.scan-card-name {
+		display: block;
 		font-size: 0.7rem;
-		color: var(--text-secondary, #94a3b8);
+		font-weight: 600;
+		color: var(--text-primary, #e2e8f0);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		display: block;
 	}
 
-	.recent-scans-empty {
-		font-size: 0.85rem;
+	.scan-card-time {
+		font-size: 0.6rem;
 		color: var(--text-muted, #475569);
-		text-align: center;
-		padding: 1rem;
 	}
 
-	/* Block link cards */
-	.block-link-card {
-		margin-top: 1rem;
-	}
-
-	.block-link {
+	/* TOURNAMENTS */
+	.tournament-code-strip {
 		display: flex;
+		gap: 0.5rem;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.875rem 1rem;
-		border-radius: 10px;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		text-decoration: none;
-		color: var(--text-primary, #e2e8f0);
-		font-weight: 600;
-		font-size: 0.95rem;
-		transition: border-color 0.15s;
-	}
-
-	.block-link:hover {
-		border-color: var(--gold, #f59e0b);
-	}
-
-	.block-link.sub-link {
-		margin-top: 0.375rem;
-		background: transparent;
-		border-color: transparent;
-		padding: 0.5rem 1rem;
-		font-size: 0.85rem;
-		font-weight: 500;
-		color: var(--text-secondary, #94a3b8);
-	}
-
-	.block-link.sub-link:hover {
-		color: var(--text-primary, #e2e8f0);
-		border-color: transparent;
-		background: var(--bg-elevated, #121d34);
-	}
-
-	.block-link-icon {
-		font-size: 1.25rem;
-	}
-
-	.block-link-arrow {
-		margin-left: auto;
-		color: var(--text-muted, #475569);
-	}
-
-	/* Tournament block */
-	.tournament-block {
-		margin-top: 1.5rem;
-		text-align: left;
-	}
-
-	/* CTA section (unauthenticated) */
-	.cta-section {
-		margin-top: 1.5rem;
-	}
-
-	.btn-scan-cta {
-		display: block;
-		width: 100%;
-		max-width: 320px;
-		margin: 0 auto;
-		padding: 1rem 2rem;
-		border-radius: 12px;
-		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
-		color: #0d1524;
-		font-size: 1.15rem;
-		font-weight: 800;
-		text-align: center;
-		text-decoration: none;
-		box-shadow: 0 4px 20px rgba(245,158,11,0.35);
-		transition: transform 0.15s, box-shadow 0.15s;
-	}
-
-	.btn-scan-cta:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 32px rgba(245,158,11,0.45);
-	}
-
-	.cta-note {
-		font-size: 0.85rem;
-		color: var(--text-muted, #475569);
-		margin-top: 0.75rem;
-	}
-
-	/* Tournament lookup */
-	.tournament-lookup-section {
-		margin-top: 2rem;
-		text-align: center;
-	}
-
-	.tournament-lookup-section h2 {
-		font-family: 'Syne', sans-serif;
-		font-size: 1.1rem;
 		margin-bottom: 0.75rem;
-	}
-
-	.tournament-lookup-form {
-		display: flex;
-		gap: 0.75rem;
-		justify-content: center;
-		max-width: 400px;
-		margin: 0 auto;
 	}
 
 	.tournament-code-input {
 		flex: 1;
 		padding: 0.625rem 0.875rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--surface-secondary, #0d1524);
-		color: var(--text-primary, #f1f5f9);
-		font-family: monospace;
-		font-size: 1.1rem;
-		letter-spacing: 0.15em;
+		border-radius: var(--radius-md, 10px);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		background: var(--bg-base, #070b14);
+		color: var(--text-primary, #e2e8f0);
+		font-family: var(--font-mono, monospace);
+		font-size: 0.9rem;
+		letter-spacing: 0.1em;
 		text-transform: uppercase;
-		text-align: center;
 	}
 
 	.tournament-code-input::placeholder {
 		text-transform: none;
-		letter-spacing: 0.05em;
-		color: var(--text-secondary, #94a3b8);
+		letter-spacing: 0.02em;
+		color: var(--text-muted, #475569);
+		opacity: 0.6;
+	}
+
+	.btn-tournament-join {
+		padding: 0.625rem 1.25rem;
+		background: var(--primary, #3b82f6);
+		border: none;
+		border-radius: var(--radius-md, 10px);
+		color: white;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: opacity var(--transition-fast, 150ms);
+	}
+
+	.btn-tournament-join:disabled {
 		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.tournament-error {
 		color: #ef4444;
-		font-size: 0.85rem;
-		margin-top: 0.75rem;
-	}
-
-	.tournament-result {
-		margin-top: 1rem;
-		padding: 1.25rem;
-		border-radius: 12px;
-		background: var(--surface-secondary, #0d1524);
-		border: 1px solid var(--border-color, #1e293b);
-		max-width: 400px;
-		margin-left: auto;
-		margin-right: auto;
-		text-align: center;
-	}
-
-	.tournament-result-name {
-		font-weight: 700;
-		font-size: 1.1rem;
-		margin-bottom: 0.25rem;
-	}
-
-	.tournament-result-code {
-		font-family: monospace;
-		font-size: 0.85rem;
-		color: var(--accent-primary, #3b82f6);
-		letter-spacing: 0.1em;
+		font-size: 0.8rem;
 		margin-bottom: 0.75rem;
 	}
 
-	.tournament-result-params {
+	.tournament-result-card {
+		padding: 0.875rem 1rem;
+		background: linear-gradient(135deg, rgba(59,130,246,0.06), rgba(168,85,247,0.03));
+		border: 1px solid rgba(59,130,246,0.12);
+		border-radius: var(--radius-lg, 14px);
+		margin-bottom: 0.75rem;
+	}
+
+	.tournament-result-header {
 		display: flex;
-		justify-content: center;
-		gap: 1rem;
-		font-size: 0.85rem;
-		color: var(--text-secondary, #94a3b8);
-		margin-bottom: 1rem;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 0.625rem;
 	}
 
-	.btn-small-cta {
-		display: inline-block;
-		padding: 0.5rem 1.25rem;
+	.tournament-result-name {
+		font-weight: 600;
 		font-size: 0.9rem;
-		text-decoration: none;
-		border-radius: 8px;
 	}
 
-	.btn-primary {
-		background: var(--accent-primary, #3b82f6);
-		color: white;
+	.tournament-result-meta {
+		font-size: 0.75rem;
+		color: var(--text-secondary, #94a3b8);
+		margin-top: 0.125rem;
+	}
+
+	.tournament-status-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		color: #4ade80;
+		background: rgba(74,222,128,0.12);
+		padding: 0.125rem 0.5rem;
+		border-radius: 6px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		flex-shrink: 0;
+	}
+
+	.btn-tournament-enter {
+		display: block;
+		width: 100%;
+		padding: 0.5rem;
+		background: var(--primary, #3b82f6);
 		border: none;
+		border-radius: var(--radius-md, 8px);
+		color: white;
+		font-size: 0.85rem;
+		font-weight: 600;
+		text-align: center;
+		text-decoration: none;
+		cursor: pointer;
 	}
 
+	.link-subtle {
+		display: block;
+		font-size: 0.8rem;
+		color: var(--text-muted, #475569);
+		text-decoration: none;
+		margin-top: 0.25rem;
+		transition: color var(--transition-fast, 150ms);
+	}
+
+	.link-subtle:hover {
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	/* QUICK ACTIONS GRID */
+	.actions-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+
+	.action-tile {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.875rem 0.875rem;
+		background: var(--bg-surface, #0f172a);
+		border: 1px solid var(--border, rgba(148,163,184,0.06));
+		border-radius: var(--radius-lg, 14px);
+		text-decoration: none;
+		color: var(--text-primary, #e2e8f0);
+		transition: border-color var(--transition-fast, 150ms), background var(--transition-fast, 150ms);
+	}
+
+	.action-tile:active {
+		transform: scale(0.97);
+	}
+
+	.action-tile:hover {
+		border-color: var(--border-strong, rgba(148,163,184,0.15));
+		background: var(--bg-elevated, #121d34);
+	}
+
+	.action-icon {
+		font-size: 1.35rem;
+		flex-shrink: 0;
+	}
+
+	.action-text {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.action-label {
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+
+	.action-sub {
+		font-size: 0.65rem;
+		color: var(--text-muted, #475569);
+	}
+
+	/* UPLOAD STATUS */
 	.upload-status {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: 0.75rem;
-		margin: 2rem 0;
+		margin: 1rem 0;
 		padding: 1rem;
-		border-radius: 12px;
-		background: rgba(59, 130, 246, 0.1);
-		border: 1px solid rgba(59, 130, 246, 0.2);
-		color: var(--text-primary, #f1f5f9);
+		border-radius: var(--radius-lg, 12px);
+		background: rgba(59, 130, 246, 0.08);
+		border: 1px solid rgba(59, 130, 246, 0.15);
+		color: var(--text-primary, #e2e8f0);
 	}
 
 	.upload-spinner {
 		width: 18px;
 		height: 18px;
-		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: var(--accent-primary, #3b82f6);
+		border: 2px solid rgba(255, 255, 255, 0.2);
+		border-top-color: var(--primary, #3b82f6);
 		border-radius: 50%;
 		animation: spin 0.7s linear infinite;
 	}
 
-	@keyframes spin {
-		to { transform: rotate(360deg); }
+	@keyframes spin { to { transform: rotate(360deg); } }
+
+	/* UNAUTHENTICATED LANDING */
+	.landing-hero {
+		text-align: center;
+		padding: 2rem 0 1rem;
 	}
 
-	/* Persona suggestion */
+	.landing-title {
+		font-family: var(--font-display, 'Syne', sans-serif);
+		font-size: 2.25rem;
+		font-weight: 800;
+		margin-bottom: 0.5rem;
+	}
+
+	.landing-subtitle {
+		color: var(--text-secondary, #94a3b8);
+		font-size: 1rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.landing-cta {
+		display: block;
+		width: 100%;
+		max-width: 280px;
+		margin: 0 auto;
+		padding: 0.875rem 2rem;
+		border-radius: var(--radius-lg, 12px);
+		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
+		color: #0d1524;
+		font-size: 1.1rem;
+		font-weight: 800;
+		text-align: center;
+		text-decoration: none;
+		box-shadow: var(--shadow-gold, 0 4px 20px rgba(245,158,11,0.35));
+	}
+
+	.landing-note {
+		font-size: 0.8rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.75rem;
+		text-align: center;
+	}
+
+	/* PERSONA SUGGESTION */
 	.persona-suggestion {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
-		padding: 0.625rem 1rem;
-		margin: 1rem auto 0;
-		max-width: 500px;
-		border-radius: 10px;
-		background: rgba(59, 130, 246, 0.08);
-		border: 1px solid rgba(59, 130, 246, 0.2);
-		font-size: 0.85rem;
+		padding: 0.5rem 0.875rem;
+		margin-bottom: 0.5rem;
+		border-radius: var(--radius-md, 10px);
+		background: rgba(59, 130, 246, 0.06);
+		border: 1px solid rgba(59, 130, 246, 0.12);
+		font-size: 0.8rem;
 	}
 
 	.persona-suggestion-text {
@@ -1057,17 +1045,17 @@
 
 	.persona-suggestion-actions {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.375rem;
 		flex-shrink: 0;
 	}
 
 	.btn-suggestion-apply {
-		padding: 0.25rem 0.75rem;
+		padding: 0.25rem 0.625rem;
 		border-radius: 6px;
-		background: var(--accent-primary, #3b82f6);
+		background: var(--primary, #3b82f6);
 		color: white;
 		border: none;
-		font-size: 0.8rem;
+		font-size: 0.75rem;
 		font-weight: 600;
 		cursor: pointer;
 	}
@@ -1078,30 +1066,29 @@
 		background: transparent;
 		color: var(--text-muted, #475569);
 		border: none;
-		font-size: 0.8rem;
+		font-size: 0.75rem;
 		cursor: pointer;
 	}
 
-	/* Customize button */
+	/* CUSTOMIZE */
 	.customize-strip {
 		display: flex;
 		justify-content: flex-end;
-		margin: 1rem auto 0;
-		max-width: 500px;
+		margin-bottom: 0.5rem;
 	}
 
 	.btn-customize {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.35rem 0.75rem;
+		gap: 0.3rem;
+		padding: 0.3rem 0.625rem;
 		border-radius: 6px;
 		background: transparent;
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		border: 1px solid var(--border, rgba(148,163,184,0.08));
 		color: var(--text-muted, #475569);
-		font-size: 0.75rem;
+		font-size: 0.7rem;
 		cursor: pointer;
-		transition: color 0.15s, border-color 0.15s;
+		transition: color var(--transition-fast, 150ms), border-color var(--transition-fast, 150ms);
 	}
 
 	.btn-customize:hover {
@@ -1109,7 +1096,6 @@
 		border-color: var(--text-muted, #475569);
 	}
 
-	/* Customize modal */
 	.customize-overlay {
 		position: fixed;
 		inset: 0;
@@ -1123,7 +1109,7 @@
 	.customize-sheet {
 		width: 100%;
 		max-width: 500px;
-		max-height: 70vh;
+		max-height: 60vh;
 		background: var(--bg-elevated, #121d34);
 		border-radius: 16px 16px 0 0;
 		padding: 1.25rem 1rem 2rem;
@@ -1134,25 +1120,19 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 1rem;
-		position: sticky;
-		top: -1.25rem;
-		padding-top: 1.25rem;
-		padding-bottom: 0.5rem;
-		background: var(--bg-elevated, #121d34);
-		z-index: 1;
+		margin-bottom: 0.75rem;
 	}
 
 	.customize-header h3 {
 		margin: 0;
-		font-size: 1rem;
+		font-size: 0.95rem;
 	}
 
 	.btn-customize-close {
 		background: none;
 		border: none;
 		color: var(--text-muted, #475569);
-		font-size: 1.25rem;
+		font-size: 1.1rem;
 		cursor: pointer;
 		padding: 0.25rem;
 	}
@@ -1163,47 +1143,49 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.375rem;
 	}
 
 	.customize-item {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem;
+		gap: 0.625rem;
+		padding: 0.625rem 0.75rem;
 		border-radius: 8px;
 		background: var(--bg-surface, #0d1524);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		border: 1px solid var(--border, rgba(148,163,184,0.08));
 		cursor: grab;
 		touch-action: none;
 		user-select: none;
+		font-size: 0.85rem;
 	}
 
-	.customize-item.dragging {
-		opacity: 0.5;
-		border-color: var(--accent-primary, #3b82f6);
-	}
-
-	.customize-item.drag-over {
-		border-color: var(--gold, #f59e0b);
-	}
+	.customize-item.dragging { opacity: 0.5; border-color: var(--primary, #3b82f6); }
+	.customize-item.drag-over { border-color: var(--gold, #f59e0b); }
 
 	.drag-handle {
 		color: var(--text-muted, #475569);
-		font-size: 1rem;
+		font-size: 0.9rem;
 		flex-shrink: 0;
 	}
 
-	.customize-item-label {
-		font-size: 0.9rem;
-		font-weight: 500;
+	/* RESPONSIVE */
+	@media (max-width: 360px) {
+		.scan-hero-card {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.scan-hero-actions {
+			justify-content: center;
+		}
+
+		.actions-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	@media (max-width: 600px) {
-		.hero-section h1 {
-			font-size: 2rem;
-		}
-
 		.persona-suggestion {
 			flex-direction: column;
 			text-align: center;
