@@ -55,6 +55,12 @@ function playCardToCard(p: PlayCardRaw): Card {
  * Falls back to the bundled local JSON if Supabase is unavailable.
  */
 async function loadPlayCards(): Promise<Card[]> {
+	// Build a lookup from bundled local JSON for name fallback
+	const localByCardNumber = new Map<string, PlayCardRaw>();
+	for (const p of localPlayCards as PlayCardRaw[]) {
+		localByCardNumber.set(p.card_number, p);
+	}
+
 	// Try Supabase first
 	try {
 		const { getSupabase } = await import('./supabase');
@@ -66,15 +72,22 @@ async function loadPlayCards(): Promise<Card[]> {
 				.order('card_number') as { data: Array<Record<string, unknown>> | null; error: unknown };
 
 			if (!error && data && data.length > 0) {
-				return data.map(row => playCardToCard({
-					id: String(row.id),
-					card_number: String(row.card_number ?? ''),
-					name: String(row.name ?? ''),
-					release: String(row.release ?? ''),
-					dbs: (row.dbs as number) ?? 0,
-					hot_dog_cost: (row.hot_dog_cost as number) ?? 0,
-					ability: row.ability_text ? String(row.ability_text) : undefined,
-				}));
+				return data.map(row => {
+					const cardNumber = String(row.card_number ?? '');
+					const localFallback = localByCardNumber.get(cardNumber);
+					// Use Supabase name if present, otherwise fall back to bundled JSON
+					const name = (row.name ? String(row.name) : '') || localFallback?.name || '';
+					return playCardToCard({
+						id: String(row.id),
+						card_number: cardNumber,
+						name,
+						release: String(row.release ?? '') || localFallback?.release || '',
+						dbs: (row.dbs as number) ?? localFallback?.dbs ?? 0,
+						hot_dog_cost: (row.hot_dog_cost as number) ?? localFallback?.hot_dog_cost ?? 0,
+						ability: row.ability_text ? String(row.ability_text) : localFallback?.ability,
+						base_play_name: localFallback?.base_play_name,
+					});
+				});
 			}
 		}
 	} catch (err) {

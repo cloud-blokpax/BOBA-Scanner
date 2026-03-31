@@ -43,6 +43,9 @@
 	let shaking = $state(false);
 	let packCount = $state(0);
 
+	// Card detail modal
+	let selectedCard = $state<SimulatedCard | null>(null);
+
 	// Derived state
 	const availableBoxTypes = $derived(
 		Object.entries(DEFAULT_CONFIGS)
@@ -353,7 +356,7 @@
 						<div
 							class="card-wrapper"
 							class:is-revealed={revealed}
-							onclick={() => !revealed && revealCard(i)}
+							onclick={() => revealed ? (selectedCard = card) : revealCard(i)}
 						>
 							<div class="card-inner">
 								<!-- Back -->
@@ -499,7 +502,9 @@
 						<summary>Pack {packIdx + 1}{pack.bestCard ? ` — Best: ${pack.bestCard.heroName} (${pack.bestCard.weaponType})` : ''}</summary>
 						<div class="pack-cards-list">
 							{#each pack.cards as card}
-								<div class="list-card" style="--list-color: {rarityColor(card.weaponType)}">
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div class="list-card" style="--list-color: {rarityColor(card.weaponType)}; cursor: pointer;" onclick={() => (selectedCard = card)}>
 									<span class="list-hero">{card.heroName}</span>
 									<span class="list-num">{card.cardNumber}</span>
 									<span class="list-weapon" style="color: {rarityColor(card.weaponType)}">{card.weaponType}</span>
@@ -518,6 +523,99 @@
 				</div>
 			</div>
 		{/if}
+	{/if}
+
+	<!-- Card Detail Modal -->
+	{#if selectedCard}
+		{@const card = selectedCard}
+		{@const isHero = !isHotDog(card) && !isPlay(card) && !isBonusPlay(card)}
+		{@const borderColor = cardBorderColor(card)}
+		{@const rarity = weaponRarity(card)}
+		{@const wColor = weaponColor(card)}
+		{@const w = isHero ? getWeapon(card.weaponType) : null}
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={() => (selectedCard = null)}>
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="modal-card" onclick={(e) => e.stopPropagation()} style="border-color: {borderColor}; --modal-accent: {borderColor};">
+				<!-- Close button -->
+				<button class="modal-close" onclick={() => (selectedCard = null)}>&times;</button>
+
+				<!-- Card type badge -->
+				<div class="modal-type-badge" style="background: {borderColor}22; color: {borderColor}">
+					{#if isHotDog(card)}
+						Hot Dog
+					{:else if isBonusPlay(card)}
+						Bonus Play
+					{:else if isPlay(card)}
+						Play Card
+					{:else}
+						Hero Card
+					{/if}
+				</div>
+
+				<!-- Card icon / emoji -->
+				<div class="modal-icon">
+					{#if isHotDog(card)}
+						<span style="font-size: 3rem">🌭</span>
+					{:else if isPlay(card) || isBonusPlay(card)}
+						<span style="font-size: 3rem">{isBonusPlay(card) ? '⚡' : '📜'}</span>
+					{:else}
+						<div class="modal-power-circle" style="border-color: {wColor}; box-shadow: 0 0 20px {wColor}44">
+							{#if card.power}
+								<span class="modal-power" style="color: {wColor}">{card.power}</span>
+							{/if}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Card name -->
+				<h2 class="modal-name" style="color: {isHotDog(card) ? '#fbbf24' : isPlay(card) || isBonusPlay(card) ? '#93c5fd' : '#e2e8f0'}">
+					{card.heroName}
+				</h2>
+
+				<!-- Card number -->
+				<div class="modal-card-number">{card.cardNumber}</div>
+
+				<!-- Details grid -->
+				<div class="modal-details">
+					{#if isHero && w}
+						<div class="modal-detail-row">
+							<span class="modal-detail-label">Weapon</span>
+							<span class="modal-detail-value" style="color: {wColor}">{w.name}</span>
+						</div>
+					{/if}
+					{#if isHero && rarity}
+						<div class="modal-detail-row">
+							<span class="modal-detail-label">Rarity</span>
+							<span class="modal-detail-value" style="color: {wColor}; text-transform: capitalize">{rarity.replace(/_/g, ' ')}</span>
+						</div>
+					{/if}
+					{#if card.parallel && card.parallel !== 'base' && card.parallel !== 'paper'}
+						<div class="modal-detail-row">
+							<span class="modal-detail-label">Parallel</span>
+							<span class="modal-detail-value" style="color: {parallelColor(card)}; text-transform: capitalize">
+								{card.parallel.replace(/_/g, ' ')}
+							</span>
+						</div>
+					{/if}
+					<div class="modal-detail-row">
+						<span class="modal-detail-label">Set</span>
+						<span class="modal-detail-value">{card.setCode}</span>
+					</div>
+					<div class="modal-detail-row">
+						<span class="modal-detail-label">Slot</span>
+						<span class="modal-detail-value">{card.slotLabel}</span>
+					</div>
+				</div>
+
+				<!-- Glow effect for special cards -->
+				{#if rarity === 'legendary' || rarity === 'ultra_rare' || isSpecialParallel(card)}
+					<div class="modal-glow" style="background: radial-gradient(ellipse at center, {borderColor}22 0%, transparent 70%)"></div>
+				{/if}
+			</div>
+		</div>
 	{/if}
 
 	<div class="footer">boba.cards &mdash; AI Card Detection</div>
@@ -639,7 +737,7 @@
 		position: relative; width: 100%; aspect-ratio: 2.5 / 3.5;
 		perspective: 600px; cursor: pointer;
 	}
-	.card-wrapper.is-revealed { cursor: default; }
+	.card-wrapper.is-revealed { cursor: pointer; }
 	.card-inner {
 		width: 100%; height: 100%; position: relative;
 		transform-style: preserve-3d;
@@ -758,7 +856,70 @@
 	/* ── Footer ───────────────────────────────────── */
 	.footer { text-align: center; margin-top: 2rem; font-size: 0.6875rem; color: #334155; }
 
+	/* ── Card Detail Modal ────────────────────────── */
+	.modal-overlay {
+		position: fixed; inset: 0; z-index: 100;
+		background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(8px);
+		display: flex; align-items: center; justify-content: center;
+		padding: 1rem;
+		animation: fadeIn 0.2s ease-out;
+	}
+	.modal-card {
+		position: relative; width: 100%; max-width: 320px;
+		background: linear-gradient(135deg, #1e293b, #0f172a);
+		border-radius: 20px; border: 2px solid; padding: 2rem 1.5rem;
+		text-align: center; overflow: hidden;
+		animation: modalSlideUp 0.3s ease-out;
+	}
+	.modal-close {
+		position: absolute; top: 0.75rem; right: 0.75rem; z-index: 2;
+		width: 32px; height: 32px; border-radius: 50%; border: none;
+		background: rgba(255, 255, 255, 0.1); color: #94a3b8;
+		font-size: 1.25rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+		line-height: 1;
+	}
+	.modal-close:hover { background: rgba(255, 255, 255, 0.2); color: #e2e8f0; }
+	.modal-type-badge {
+		display: inline-block; font-size: 0.7rem; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 1.5px; padding: 0.25rem 0.75rem;
+		border-radius: 999px; margin-bottom: 1.25rem;
+	}
+	.modal-icon { margin-bottom: 1rem; }
+	.modal-power-circle {
+		width: 80px; height: 80px; border-radius: 50%; margin: 0 auto;
+		border: 3px solid; display: flex; align-items: center; justify-content: center;
+		background: rgba(0, 0, 0, 0.3);
+	}
+	.modal-power { font-size: 2rem; font-weight: 900; }
+	.modal-name {
+		font-size: 1.5rem; font-weight: 800; margin: 0 0 0.25rem; line-height: 1.2;
+	}
+	.modal-card-number {
+		font-size: 0.8rem; color: #64748b; font-family: monospace; margin-bottom: 1.25rem;
+	}
+	.modal-details {
+		background: rgba(0, 0, 0, 0.2); border-radius: 12px; padding: 0.75rem;
+		display: flex; flex-direction: column; gap: 0.5rem;
+	}
+	.modal-detail-row {
+		display: flex; justify-content: space-between; align-items: center;
+		font-size: 0.85rem;
+	}
+	.modal-detail-label { color: #64748b; font-weight: 500; }
+	.modal-detail-value { font-weight: 600; color: #e2e8f0; }
+	.modal-glow {
+		position: absolute; inset: 0; pointer-events: none; z-index: 0;
+	}
+
 	/* ── Keyframes ────────────────────────────────── */
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	@keyframes modalSlideUp {
+		from { opacity: 0; transform: translateY(40px) scale(0.95); }
+		to { opacity: 1; transform: translateY(0) scale(1); }
+	}
 	@keyframes floatIn {
 		from { opacity: 0; transform: translateY(20px); }
 		to { opacity: 1; transform: translateY(0); }

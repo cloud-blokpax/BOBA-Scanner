@@ -81,7 +81,7 @@ export function openPack(
 		if (card) {
 			cards.push({
 				cardId: card.id,
-				heroName: card.hero_name || card.name || 'Unknown',
+				heroName: card.hero_name || card.base_play_name || card.name || 'Unknown',
 				cardNumber: card.card_number || '',
 				power: card.power || null,
 				weaponType: card.weapon_type || '',
@@ -272,6 +272,7 @@ function findCandidates(
 		card_number?: string | null;
 		hero_name?: string | null;
 		name?: string | null;
+		base_play_name?: string;
 		power?: number | null;
 		set_code?: string | null;
 	}>,
