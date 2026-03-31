@@ -55,10 +55,22 @@ export const BOBA_RATE_LIMITS = {
 	maxScanHistoryEntries: 100,
 } as const;
 
-/** Maps release letter codes (from play-cards.json) to display set names */
+/**
+ * Maps set codes to display set names.
+ * Includes BOTH the short UI codes (A, G, U) used by the pack simulator
+ * AND the actual DB set_code values (AE, GE, AU) stored on cards.
+ * buildSetMatchers() uses this to cross-reference all forms.
+ */
 export const RELEASE_TO_SET_NAME: Record<string, string> = {
 	A: 'Alpha Edition',
+	AE: 'Alpha Edition',
 	G: 'Griffey Edition',
+	GE: 'Griffey Edition',
 	U: 'Alpha Update',
-	HTD: 'Alpha Blast'
+	AU: 'Alpha Update',
+	AB: 'Alpha Blast',
+	HTD: 'Alpha Blast',
+	BLC: 'Black Label Collection',
+	N24: 'National 2024',
+	T: 'Tecmo Bowl',
 };
