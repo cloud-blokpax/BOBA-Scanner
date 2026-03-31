@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { getFormatOptions } from '$lib/data/tournament-formats';
+	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	const { data } = $props();
@@ -14,13 +14,35 @@
 	let description = $state('');
 	let venue = $state('');
 	let eventDate = $state('');
-	let entryFee = $state('');
-	let prizePool = $state('');
 	let maxPlayers = $state('');
 	let deadlineMode = $state<'manual' | 'datetime' | 'both'>('manual');
 	let submissionDeadline = $state('');
+	let requireName = $state(false);
 	let requireDiscord = $state(false);
 	let creating = $state(false);
+
+	// Deck size fields — default from format, editable by organizer
+	let maxHeroes = $state(40);
+	let maxPlays = $state(20);
+	let maxBonus = $state(0);
+
+	// Auto-populate deck sizes when format or deck type changes
+	$effect(() => {
+		const format = getFormat(formatId);
+		if (format) {
+			if (deckType === 'sealed') {
+				// Sealed defaults: smaller deck from limited card pool
+				maxHeroes = 40;
+				maxPlays = 20;
+				maxBonus = 0;
+			} else {
+				// Constructed: use format's official rules
+				maxHeroes = format.heroDeckMin;
+				maxPlays = format.playDeckSize;
+				maxBonus = format.bonusPlaysAllowed ? format.maxBonusPlays : 0;
+			}
+		}
+	});
 
 	async function createTournament() {
 		if (!name.trim()) {
@@ -39,13 +61,15 @@
 					description: description.trim() || null,
 					venue: venue.trim() || null,
 					event_date: eventDate || null,
-					entry_fee: entryFee.trim() || null,
-					prize_pool: prizePool.trim() || null,
+					max_heroes: maxHeroes,
+					max_plays: maxPlays,
+					max_bonus: maxBonus,
 					max_players: maxPlayers ? parseInt(maxPlayers) : null,
 					deadline_mode: deadlineMode,
 					submission_deadline: (deadlineMode !== 'manual' && submissionDeadline)
 						? new Date(submissionDeadline).toISOString()
 						: null,
+					require_name: requireName,
 					require_discord: requireDiscord
 				})
 			});
@@ -121,31 +145,47 @@
 			</select>
 		</div>
 
-		<div class="form-row">
-			<div class="form-group">
-				<label for="t-date">Event Date</label>
-				<input id="t-date" type="date" bind:value={eventDate} />
+		{#if formatId !== 'custom'}
+			{@const fmt = getFormat(formatId)}
+			{#if fmt}
+				<p class="field-hint" style="margin-top: -0.25rem;">
+					{fmt.division} division · {fmt.description}
+				</p>
+			{/if}
+		{/if}
+
+		<div class="deck-sizes">
+			<h3 class="subsection-heading">Deck Requirements</h3>
+			<div class="form-row-3">
+				<div class="form-group">
+					<label for="t-heroes">Heroes <span class="required">*</span></label>
+					<input id="t-heroes" type="number" bind:value={maxHeroes} min="1" max="120" />
+				</div>
+				<div class="form-group">
+					<label for="t-plays">Plays <span class="required">*</span></label>
+					<input id="t-plays" type="number" bind:value={maxPlays} min="0" max="60" />
+				</div>
+				<div class="form-group">
+					<label for="t-bonus">Bonus Plays</label>
+					<input id="t-bonus" type="number" bind:value={maxBonus} min="0" max="50" />
+				</div>
 			</div>
-			<div class="form-group">
-				<label for="t-venue">Venue</label>
-				<input id="t-venue" type="text" bind:value={venue} placeholder="Location" />
-			</div>
+			<p class="field-hint">Defaults based on {deckType === 'sealed' ? 'sealed' : 'constructed'} {formatId !== 'custom' ? getFormat(formatId)?.name ?? formatId : 'custom'} format. Edit as needed.</p>
+		</div>
+
+		<div class="form-group">
+			<label for="t-date">Event Date</label>
+			<input id="t-date" type="date" bind:value={eventDate} />
+		</div>
+
+		<div class="form-group">
+			<label for="t-venue">Venue / Location</label>
+			<input id="t-venue" type="text" bind:value={venue} placeholder="Store name, city, or online" />
 		</div>
 
 		<div class="form-group">
 			<label for="t-desc">Description</label>
-			<textarea id="t-desc" bind:value={description} placeholder="Tournament details..." rows="3"></textarea>
-		</div>
-
-		<div class="form-row">
-			<div class="form-group">
-				<label for="t-fee">Entry Fee</label>
-				<input id="t-fee" type="text" bind:value={entryFee} placeholder="$25 or Free" />
-			</div>
-			<div class="form-group">
-				<label for="t-prize">Prize Pool</label>
-				<input id="t-prize" type="text" bind:value={prizePool} placeholder="$500 cash" />
-			</div>
+			<textarea id="t-desc" bind:value={description} placeholder="Tournament details, rules, prizes..." rows="3"></textarea>
 		</div>
 
 		<div class="form-group">
@@ -176,10 +216,24 @@
 			{/if}
 		</fieldset>
 
-		<label class="toggle-label">
-			<input type="checkbox" bind:checked={requireDiscord} />
-			Require Discord ID
-		</label>
+		<fieldset class="form-group">
+			<legend>Player Registration Info</legend>
+			<div class="reg-field-row">
+				<span class="reg-field-name">Email</span>
+				<span class="reg-field-badge required-badge">Required</span>
+			</div>
+			<label class="toggle-label">
+				<input type="checkbox" bind:checked={requireName} />
+				Name
+				<span class="reg-field-badge optional-badge">Optional</span>
+			</label>
+			<label class="toggle-label">
+				<input type="checkbox" bind:checked={requireDiscord} />
+				Discord ID
+				<span class="reg-field-badge optional-badge">Optional</span>
+			</label>
+			<p class="field-hint">Toggle to require name or Discord. Email is always required for communication.</p>
+		</fieldset>
 
 		<button class="primary-btn" onclick={createTournament} disabled={creating || !name.trim()}>
 			{creating ? 'Creating...' : 'Create Tournament'}
@@ -272,11 +326,6 @@
 	.form-group textarea {
 		resize: vertical;
 	}
-	.form-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.75rem;
-	}
 	.radio-label {
 		display: flex;
 		align-items: center;
@@ -323,6 +372,55 @@
 	.radio-label.disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+	.subsection-heading {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text-secondary);
+		margin-bottom: 0.5rem;
+	}
+	.form-row-3 {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 0.75rem;
+	}
+	.deck-sizes {
+		margin-bottom: 0.75rem;
+		padding: 0.75rem;
+		background: var(--bg-base);
+		border-radius: 8px;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+	.field-hint {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.375rem;
+		line-height: 1.3;
+	}
+	.reg-field-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		color: var(--text-primary);
+		margin-bottom: 0.375rem;
+		padding: 0.25rem 0;
+	}
+	.reg-field-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 1px 6px;
+		border-radius: 4px;
+	}
+	.required-badge {
+		background: rgba(239, 68, 68, 0.15);
+		color: #ef4444;
+	}
+	.optional-badge {
+		background: rgba(148, 163, 184, 0.1);
+		color: var(--text-muted, #475569);
 	}
 
 	/* My Tournaments */

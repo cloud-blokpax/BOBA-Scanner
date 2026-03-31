@@ -83,6 +83,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(500, 'Could not generate unique tournament code. Please try again.');
 	}
 
+	// Validate deck size values
+	const maxHeroes = typeof body.max_heroes === 'number' ? Math.max(1, Math.min(120, body.max_heroes)) : 60;
+	const maxPlays = typeof body.max_plays === 'number' ? Math.max(0, Math.min(60, body.max_plays)) : 30;
+	const maxBonus = typeof body.max_bonus === 'number' ? Math.max(0, Math.min(50, body.max_bonus)) : 25;
+
 	const { data: tournament, error: insertErr } = await supabase
 		.from('tournaments')
 		.insert({
@@ -94,16 +99,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			description: (body.description as string) || null,
 			venue: (body.venue as string) || null,
 			event_date: (body.event_date as string) || null,
-			entry_fee: (body.entry_fee as string) || null,
-			prize_pool: (body.prize_pool as string) || null,
 			max_players: (body.max_players as number) || null,
 			deadline_mode: deadlineMode,
 			submission_deadline: (body.submission_deadline as string) || null,
-			max_heroes: 60,
-			max_plays: 30,
-			max_bonus: 25,
+			max_heroes: maxHeroes,
+			max_plays: maxPlays,
+			max_bonus: maxBonus,
 			require_email: true,
-			require_name: true,
+			require_name: body.require_name === true,
 			require_discord: body.require_discord === true,
 			is_active: true
 		})
