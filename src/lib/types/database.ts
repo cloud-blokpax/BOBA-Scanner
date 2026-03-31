@@ -82,6 +82,8 @@ export interface Database {
 					scan_method: string;
 					confidence: number | null;
 					processing_ms: number | null;
+					hero_name: string | null;
+					card_number: string | null;
 					created_at: string;
 				};
 				Insert: {
@@ -92,6 +94,8 @@ export interface Database {
 					scan_method?: string;
 					confidence?: number | null;
 					processing_ms?: number | null;
+					hero_name?: string | null;
+					card_number?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['scans']['Insert']>;
 				Relationships: [];
