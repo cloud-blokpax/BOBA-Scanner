@@ -204,6 +204,14 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Tabular numbers for stats, prices, counters ─────────── */
+.price, .power, .dbs-score, .stat-value,
+.price-display, .stats-strip-summary,
+[data-tabular] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+}
+
 /* ── Layout ─────────────────────────────────────────────── */
 .app-container {
   display: flex;
@@ -2349,6 +2357,19 @@ a.listing-badge:hover { opacity: .85; }
 /* ── WCAG: touch-action fix (replaces user-scalable=no) ─────── */
 button, a, input, select, textarea, [role="button"] {
     touch-action: manipulation;
+}
+
+/* ── Universal press feedback ─────────────────────────────────── */
+button:not(.bottom-nav-item):not(.scan-fab):active,
+[role="button"]:active,
+a.btn:active,
+a.block-link:active,
+a.btn-quick-scan:active,
+a.btn-primary:active,
+.block-link-card:active {
+    transform: scale(0.97);
+    opacity: 0.88;
+    transition: transform 0.08s ease-out, opacity 0.08s ease-out;
 }
 
 /* ── Quick-nav row: tap feedback ───────────────────────────── */

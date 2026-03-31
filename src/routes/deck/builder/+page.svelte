@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getWeapon, WEAPON_HIERARCHY } from '$lib/data/boba-weapons';
 	import { TOURNAMENT_FORMATS } from '$lib/data/tournament-formats';
+	import { collectionItems } from '$lib/stores/collection.svelte';
 
 	/** Weapon icons for display */
 	const WEAPON_ICONS: Record<string, string> = {
@@ -180,6 +181,15 @@
 		return pool;
 	});
 
+	// ── Collection awareness ──────────────────────────────────
+	const ownedHeroNames = $derived(() => {
+		const names = new Set<string>();
+		for (const item of collectionItems()) {
+			if (item.card?.hero_name) names.add(item.card.hero_name.toLowerCase());
+		}
+		return names;
+	});
+
 	// ── Helpers ─────────────────────────────────────────────
 	function wColor(key: string): string { return getWeapon(key)?.color ?? '#9CA3AF'; }
 	function wIcon(key: string): string { return WEAPON_ICONS[key] ?? '⚔️'; }
@@ -348,13 +358,19 @@
 					<div class="add-list">
 						{#each filteredHeroes() as h}
 							{@const wouldViolate = format.powerCap != null && h.power > format.powerCap}
-							<button class="add-item" onclick={() => addHero(h)}>
+							{@const owned = ownedHeroNames().has(h.name.toLowerCase())}
+							<button class="add-item" class:owned onclick={() => addHero(h)}>
 								<div class="add-item-info">
 									<div class="add-item-name">{h.name}</div>
 									<div class="add-item-meta" style="color: {wColor(h.weapon)}">{wIcon(h.weapon)} {wLabel(h.weapon)} &middot; {h.set}</div>
 								</div>
 								<div class="add-item-right">
-									{#if wouldViolate}<span class="warn-icon">⚠️</span>{/if}
+									{#if owned}
+										<span class="own-badge" title="In your collection">{'\u2713'}</span>
+									{:else}
+										<span class="need-badge" title="Not in collection">Need</span>
+									{/if}
+									{#if wouldViolate}<span class="warn-icon">{'\u26A0\uFE0F'}</span>{/if}
 									<span class="add-item-power" style="color: {wColor(h.weapon)}">{h.power}</span>
 									<span class="add-icon">+</span>
 								</div>
@@ -677,6 +693,15 @@
 	.warn-icon { font-size: 0.5625rem; color: #ef4444; }
 	.warn-icon.pulse { animation: pulse 1s infinite; }
 	.play-add-dbs { font-size: 0.8125rem; font-weight: 800; }
+
+	/* Collection awareness */
+	.add-item.owned { border-left: 2px solid var(--success, #10b981); }
+	.own-badge { font-size: 0.7rem; color: var(--success, #10b981); font-weight: 700; flex-shrink: 0; }
+	.need-badge {
+		font-size: 0.65rem; color: var(--text-muted, #475569);
+		background: var(--bg-surface, #0d1524); padding: 2px 6px;
+		border-radius: 4px; flex-shrink: 0;
+	}
 
 	/* ── Validation badges ────────────────────── */
 	.validation-list { display: flex; flex-direction: column; gap: 6px; }

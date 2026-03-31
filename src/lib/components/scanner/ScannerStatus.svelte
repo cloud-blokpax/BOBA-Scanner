@@ -8,13 +8,42 @@
 		statusText: string;
 		statusType: string;
 	} = $props();
+
+	// Tier 3 escalation: show progressive messages after delays
+	let tier3Elapsed = $state(0);
+	let tier3Interval: ReturnType<typeof setInterval> | null = null;
+
+	$effect(() => {
+		const state = scanState();
+		if (state.status === 'tier3') {
+			if (!tier3Interval) {
+				tier3Elapsed = 0;
+				tier3Interval = setInterval(() => { tier3Elapsed += 1; }, 1000);
+			}
+		} else {
+			if (tier3Interval) {
+				clearInterval(tier3Interval);
+				tier3Interval = null;
+				tier3Elapsed = 0;
+			}
+		}
+	});
+
+	const displayText = $derived.by(() => {
+		const state = scanState();
+		if (state.status === 'tier3') {
+			if (tier3Elapsed >= 8) return 'Almost there...';
+			if (tier3Elapsed >= 4) return 'Still analyzing...';
+		}
+		return statusText;
+	});
 </script>
 
 <div class="status-overlay" class:status-success={statusType === 'success'} class:status-error={statusType === 'error'} class:status-scanning={statusType === 'scanning'}>
 	{#if statusType === 'scanning'}
-		<span class="status-spinner"></span>
+		<span class="status-dot"></span>
 	{/if}
-	<span class="status-text">{statusText}</span>
+	<span class="status-text">{displayText}</span>
 	{#if scanState().status === 'tier1' || scanState().status === 'tier2' || scanState().status === 'tier3'}
 		<div class="tier-progress">
 			<div class="tier-dot" class:active={scanState().status === 'tier1'} class:done={['tier2', 'tier3'].includes(scanState().status)}></div>
@@ -56,14 +85,18 @@
 		border-color: rgba(59, 130, 246, 0.2);
 	}
 
-	.status-spinner {
-		width: 14px;
-		height: 14px;
-		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: white;
+	.status-dot {
+		width: 8px;
+		height: 8px;
 		border-radius: 50%;
-		animation: spin 0.7s linear infinite;
+		background: var(--gold, #f59e0b);
+		animation: pulse-dot 1.2s ease-in-out infinite;
 		flex-shrink: 0;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 0.4; transform: scale(0.8); }
+		50% { opacity: 1; transform: scale(1.2); }
 	}
 
 	.status-text {
@@ -89,9 +122,5 @@
 	}
 	.tier-dot.done {
 		background: var(--success, #22c55e);
-	}
-
-	@keyframes spin {
-		to { transform: rotate(360deg); }
 	}
 </style>

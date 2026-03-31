@@ -16,6 +16,7 @@ interface TiltOptions {
 	gyro?: boolean;
 	weaponType?: string | null;
 	specular?: boolean;
+	holographic?: boolean;
 }
 
 // ── Weapon-specific holographic gradients ────────────────────────
@@ -103,7 +104,8 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 		shimmer = true,
 		gyro = false,
 		weaponType = null,
-		specular: specularOpt
+		specular: specularOpt,
+		holographic = false
 	} = options;
 
 	// Respect prefers-reduced-motion
@@ -170,6 +172,34 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 		node.appendChild(specularEl);
 	}
 
+	// Create holographic rainbow overlay (for parallel/foil cards)
+	let holoEl: HTMLDivElement | null = null;
+	if (holographic) {
+		holoEl = document.createElement('div');
+		holoEl.style.cssText = `
+			position: absolute;
+			inset: 0;
+			pointer-events: none;
+			border-radius: inherit;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+			z-index: 3;
+			background: linear-gradient(
+				115deg,
+				transparent 20%,
+				rgba(0, 231, 255, 0.2) 36%,
+				rgba(255, 128, 255, 0.15) 42%,
+				rgba(0, 231, 255, 0.15) 48%,
+				rgba(235, 139, 255, 0.2) 54%,
+				transparent 80%
+			);
+			background-size: 200% 200%;
+			mix-blend-mode: color-dodge;
+			filter: brightness(0.8) contrast(1.5);
+		`;
+		node.appendChild(holoEl);
+	}
+
 	// ── Gyroscope state ─────────────────────────────────────────
 	let gyroStarted = false;
 	let smoothBeta = 0;
@@ -208,6 +238,14 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 			specularEl.style.background =
 				`radial-gradient(circle at ${specX}% ${specY}%, rgba(255,255,255,0.35) 0%, transparent 50%)`;
 			specularEl.style.opacity = '0.7';
+		}
+
+		// Position holographic gradient
+		if (holoEl) {
+			const xPct = (smoothGamma + 1) * 50;
+			const yPct = (smoothBeta + 1) * 50;
+			holoEl.style.backgroundPosition = `${xPct}% ${yPct}%`;
+			holoEl.style.opacity = '0.8';
 		}
 	}
 
@@ -275,6 +313,14 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 				`radial-gradient(circle at ${specX}% ${specY}%, rgba(255,255,255,0.35) 0%, transparent 50%)`;
 			specularEl.style.opacity = '0.5';
 		}
+
+		// Position holographic gradient
+		if (holoEl) {
+			const xPct = (x / rect.width) * 100;
+			const yPct = (y / rect.height) * 100;
+			holoEl.style.backgroundPosition = `${xPct}% ${yPct}%`;
+			holoEl.style.opacity = '0.7';
+		}
 	}
 
 	function handleLeave() {
@@ -286,6 +332,9 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 		}
 		if (specularEl) {
 			specularEl.style.opacity = '0';
+		}
+		if (holoEl) {
+			holoEl.style.opacity = '0';
 		}
 	}
 
@@ -333,6 +382,10 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 			if (specularEl) {
 				specularEl.remove();
 				specularEl = null;
+			}
+			if (holoEl) {
+				holoEl.remove();
+				holoEl = null;
 			}
 		}
 	};

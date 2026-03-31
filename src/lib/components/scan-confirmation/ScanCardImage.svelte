@@ -26,13 +26,19 @@
 		imageUrl,
 		cardName,
 		rarity,
-		weaponType
+		weaponType,
+		parallel = null
 	}: {
 		imageUrl: string | null;
 		cardName: string;
 		rarity: string;
 		weaponType: string | null;
+		parallel?: string | null;
 	} = $props();
+
+	const isParallel = $derived(
+		parallel !== null && parallel !== 'Base'
+	);
 
 	let showGyroHint = $state(false);
 	const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -52,7 +58,8 @@
 			gyro: rarity !== 'common',
 			weaponType,
 			shimmer: true,
-			specular: rarity !== 'common'
+			specular: rarity !== 'common',
+			holographic: isParallel
 		}}
 	>
 		<CardFlipReveal
