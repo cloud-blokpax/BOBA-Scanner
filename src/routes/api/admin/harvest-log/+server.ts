@@ -4,6 +4,7 @@
  * Query params:
  *   run_id  — YYYY-MM-DD date string (defaults to most recent run)
  *   filter  — all | changed | new | zero | errors (default: all)
+ *   sort    — newest | oldest (default: newest)
  *   limit   — page size, max 200, default 50
  *   offset  — pagination offset, default 0
  */
@@ -36,6 +37,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const filter = (url.searchParams.get('filter') || 'all') as Filter;
 	if (!VALID_FILTERS.has(filter)) throw error(400, 'Invalid filter');
+
+	const sort = url.searchParams.get('sort') === 'oldest' ? 'oldest' : 'newest';
 
 	const limit = Math.min(
 		Math.max(1, parseInt(url.searchParams.get('limit') || String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT),
@@ -82,7 +85,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			.eq('run_id', runId),
 
 		// Detail: filtered + paginated rows
-		buildDetailQuery(adminAny, runId, filter, offset, limit)
+		buildDetailQuery(adminAny, runId, filter, sort, offset, limit)
 	]);
 
 	// Compute summary stats in JS
@@ -144,12 +147,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildDetailQuery(admin: any, runId: string, filter: Filter, offset: number, limit: number) {
+function buildDetailQuery(admin: any, runId: string, filter: Filter, sort: 'newest' | 'oldest', offset: number, limit: number) {
 	let query = admin
 		.from('price_harvest_log')
 		.select(DETAIL_COLUMNS, { count: 'exact' })
 		.eq('run_id', runId)
-		.order('processed_at', { ascending: true })
+		.order('processed_at', { ascending: sort === 'oldest' })
 		.range(offset, offset + limit - 1);
 
 	switch (filter) {

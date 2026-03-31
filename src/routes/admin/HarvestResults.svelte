@@ -46,6 +46,7 @@
 	let summary = $state<HarvestSummary | null>(null);
 	let rows = $state<HarvestRow[]>([]);
 	let filter = $state<Filter>('all');
+	let sort = $state<'newest' | 'oldest'>('newest');
 	let offset = $state(0);
 	let total = $state(0);
 
@@ -68,7 +69,7 @@
 	async function loadHarvestData() {
 		loading = true;
 		try {
-			const res = await fetch(`/api/admin/harvest-log?limit=${PAGE_SIZE}&offset=0`);
+			const res = await fetch(`/api/admin/harvest-log?limit=${PAGE_SIZE}&offset=0&sort=${sort}`);
 			if (!res.ok) throw new Error('Failed to load harvest data');
 			const data = await res.json();
 
@@ -91,6 +92,7 @@
 			const params = new URLSearchParams({
 				run_id: runId,
 				filter,
+				sort,
 				limit: String(PAGE_SIZE),
 				offset: String(offset)
 			});
@@ -116,6 +118,12 @@
 
 	function setFilter(f: Filter) {
 		filter = f;
+	}
+
+	function toggleSort() {
+		sort = sort === 'newest' ? 'oldest' : 'newest';
+		offset = 0;
+		loadDetail();
 	}
 
 	function nextPage() {
@@ -231,7 +239,7 @@
 			{/if}
 		{/if}
 
-		<!-- Filter pills -->
+		<!-- Filter pills + sort toggle -->
 		<div class="filter-bar">
 			{#each filterOptions as opt}
 				<button
@@ -240,6 +248,9 @@
 					onclick={() => setFilter(opt.key)}
 				>{opt.label}</button>
 			{/each}
+			<button class="sort-toggle" onclick={toggleSort} title="Sort by {sort === 'newest' ? 'oldest' : 'newest'} first">
+				{sort === 'newest' ? '↓ Newest' : '↑ Oldest'}
+			</button>
 		</div>
 
 		<!-- Results list -->
@@ -412,6 +423,24 @@
 		border-color: var(--gold);
 		color: var(--gold);
 		background: var(--bg-elevated);
+	}
+
+	.sort-toggle {
+		margin-left: auto;
+		padding: 0.35rem 0.7rem;
+		border-radius: 16px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		font-weight: 500;
+		transition: all 0.15s;
+	}
+
+	.sort-toggle:hover {
+		border-color: var(--border-strong);
+		color: var(--text-secondary);
 	}
 
 	/* Results list */
