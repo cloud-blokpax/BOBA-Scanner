@@ -17,7 +17,7 @@
 		card ? buildEbaySearchUrl({
 			card_number: card.card_number,
 			hero_name: card.hero_name,
-			set_code: card.set_code
+			athlete_name: card.athlete_name
 		}) : null
 	);
 

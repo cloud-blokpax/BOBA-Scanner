@@ -685,6 +685,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	const claudeHero = result.card.hero_name || result.card.card_name || null;
 	const claudeNumber = result.card.card_number;
 	const claudePower = result.card.power ? Number(result.card.power) : null;
+	const claudeAthlete: string | null = result.card.athlete_name || null;
 	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: card_number="${claudeNumber}", hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}`);
 
 	// ── Cross-validation: card_number is primary key, hero_name is verification ──
@@ -694,16 +695,20 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	);
 
 	if (validated.card) {
+		// Merge AI-provided athlete_name if the DB card doesn't have one (avoid mutating cached card)
+		const card = claudeAthlete && !validated.card.athlete_name
+			? { ...validated.card, athlete_name: claudeAthlete }
+			: validated.card;
 		console.debug(
-			`[scan:${ctx.traceId}:tier3] Validated: id=${validated.card.id}, number=${validated.card.card_number}, ` +
+			`[scan:${ctx.traceId}:tier3] Validated: id=${card.id}, number=${card.card_number}, ` +
 			`method=${validated.validationMethod}, confidence=${validated.confidence}`
 		);
 		if (validated.warnings.length > 0) {
 			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
 		}
 		return {
-			card_id: validated.card.id,
-			card: validated.card,
+			card_id: card.id,
+			card,
 			scan_method: 'claude',
 			confidence: validated.confidence,
 			processing_ms: 0,
