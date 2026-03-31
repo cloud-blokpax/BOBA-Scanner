@@ -769,6 +769,13 @@
 								<span class="action-sub">Architect</span>
 							</div>
 						</a>
+						<a href="/market" class="action-tile">
+							<span class="action-icon">📈</span>
+							<div class="action-text">
+								<span class="action-label">Market Pulse</span>
+								<span class="action-sub">Price intelligence</span>
+							</div>
+						</a>
 					</div>
 				</div>
 			{/if}
