@@ -38,12 +38,13 @@
 
 		const { data } = await sb
 			.from('users')
-			.select('id')
+			.select('id, is_organizer, is_admin')
 			.eq('auth_user_id', currentUser.id)
 			.maybeSingle();
 
 		if (data?.id) {
 			publicUserId = data.id;
+			isOrganizer = data.is_organizer === true || data.is_admin === true;
 		}
 		return publicUserId;
 	}
@@ -122,7 +123,10 @@
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
 			if (!res.ok) {
-				entryError = res.status === 404 ? 'Tournament not found' : 'Failed to look up tournament';
+				if (res.status === 404) entryError = 'Tournament not found';
+				else if (res.status === 410) entryError = 'This tournament is no longer active';
+				else if (res.status === 403) entryError = 'Registration for this tournament is closed';
+				else entryError = 'Failed to look up tournament';
 				return;
 			}
 			goto(`/tournaments/enter?code=${code}`);
@@ -143,6 +147,7 @@
 	);
 
 	onMount(() => {
+		resolvePublicUserId();
 		loadTournaments();
 	});
 </script>
