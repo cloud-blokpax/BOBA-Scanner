@@ -9,6 +9,7 @@
 	import type { ScanResult } from '$lib/types';
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
+	import { getCardById } from '$lib/services/card-db';
 	import {
 		visibleNavItems, hiddenNavItems,
 		navConfigLoaded, toggleNavItem, moveNavItem, resetNavConfig, navConfig
@@ -34,6 +35,27 @@
 	let uploadImageUrl = $state<string | null>(null);
 	let uploading = $state(false);
 	let tournamentCode = $state('');
+
+	// Recent scan detail state
+	let selectedScanResult = $state<ScanResult | null>(null);
+	let selectedScanImageUrl = $state<string | null>(null);
+
+	function openRecentScan(scan: typeof recentScans[number]) {
+		const card = scan.cardId ? getCardById(scan.cardId) ?? null : null;
+		selectedScanResult = {
+			card_id: scan.cardId ?? null,
+			card,
+			scan_method: scan.method === 'unknown' ? 'claude' : scan.method,
+			confidence: scan.confidence,
+			processing_ms: scan.processingMs
+		};
+		selectedScanImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null);
+	}
+
+	function dismissSelectedScan() {
+		selectedScanResult = null;
+		selectedScanImageUrl = null;
+	}
 
 	let tournamentLoading = $state(false);
 	let tournamentResult = $state<{
@@ -348,6 +370,17 @@
 
 <div class="dashboard">
 	{#if data.user}
+		<!-- Recent scan detail overlay -->
+		{#if selectedScanResult}
+			<ScanConfirmation
+				result={selectedScanResult}
+				capturedImageUrl={selectedScanImageUrl}
+				isAuthenticated={!!data.user}
+				onScanAnother={dismissSelectedScan}
+				onClose={dismissSelectedScan}
+			/>
+		{/if}
+
 		<!-- Upload scan result overlay -->
 		{#if uploadResult}
 			<ScanConfirmation
@@ -536,7 +569,7 @@
 							{#each recentScans as scan}
 								{@const resolvedImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null)}
 								{@const isDataUrl = resolvedImageUrl?.startsWith('data:')}
-								<div class="scan-card">
+								<div class="scan-card" role="button" tabindex="0" onclick={() => openRecentScan(scan)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRecentScan(scan); } }}>
 									<div class="scan-card-image">
 										{#if resolvedImageUrl}
 											{@const urls = isDataUrl ? { avif: null, webp: null, fallback: resolvedImageUrl, width: 100 } : getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
