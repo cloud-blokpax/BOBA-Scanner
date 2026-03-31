@@ -99,9 +99,9 @@ describe('card-db integration', () => {
 		await loadCardDatabase();
 	});
 
-	it('loads cards from mock IDB data', () => {
+	it('loads cards from mock IDB data plus play cards', () => {
 		const cards = getAllCards();
-		expect(cards.length).toBe(105); // 5 named + 100 filler
+		expect(cards.length).toBe(514); // 5 named + 100 filler + 409 play cards from local JSON fallback
 	});
 
 	it('findCard returns exact match by card number', () => {
@@ -186,5 +186,17 @@ describe('card-db integration', () => {
 
 	it('getCardById returns undefined for missing id', () => {
 		expect(getCardById('999')).toBeUndefined();
+	});
+
+	it('findCard finds play cards by card number', () => {
+		const found = findCard('PL-1');
+		expect(found).not.toBeNull();
+		expect(found!.name).toBe('Front Run');
+	});
+
+	it('searchCards finds play cards by name', () => {
+		const results = searchCards('Front Run');
+		expect(results.length).toBeGreaterThanOrEqual(1);
+		expect(results[0].name).toBe('Front Run');
 	});
 });

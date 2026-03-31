@@ -12,6 +12,83 @@
 import { idb } from './idb';
 import { loadParallelConfig, getParallelRarity } from './parallel-config';
 import type { Card } from '$lib/types';
+import localPlayCards from '$lib/data/play-cards.json';
+
+interface PlayCardRaw {
+	id: string;
+	card_number: string;
+	name: string;
+	release: string;
+	type?: string;
+	number?: number;
+	hot_dog_cost?: number;
+	dbs?: number;
+	ability?: string;
+	base_play_name?: string;
+}
+
+/**
+ * Map a play card record to the Card interface so it can be indexed
+ * alongside hero cards. Hero-specific fields are set to null.
+ */
+function playCardToCard(p: PlayCardRaw): Card {
+	return {
+		id: p.id,
+		name: p.name,
+		hero_name: null,
+		athlete_name: null,
+		set_code: p.release || '',
+		card_number: p.card_number,
+		parallel: null,
+		power: null,
+		rarity: null,
+		weapon_type: null,
+		battle_zone: null,
+		image_url: null,
+		created_at: '',
+		base_play_name: p.base_play_name,
+	};
+}
+
+/**
+ * Fetch play cards from Supabase play_cards table.
+ * Falls back to the bundled local JSON if Supabase is unavailable.
+ */
+async function loadPlayCards(): Promise<Card[]> {
+	// Try Supabase first
+	try {
+		const { getSupabase } = await import('./supabase');
+		const client = getSupabase();
+		if (client) {
+			const { data, error } = await client
+				.from('play_cards')
+				.select('id, card_number, name, release, hot_dog_cost, dbs, ability_text')
+				.order('card_number') as { data: Array<Record<string, unknown>> | null; error: unknown };
+
+			if (!error && data && data.length > 0) {
+				return data.map(row => playCardToCard({
+					id: String(row.id),
+					card_number: String(row.card_number ?? ''),
+					name: String(row.name ?? ''),
+					release: String(row.release ?? ''),
+					dbs: (row.dbs as number) ?? 0,
+					hot_dog_cost: (row.hot_dog_cost as number) ?? 0,
+					ability: row.ability_text ? String(row.ability_text) : undefined,
+				}));
+			}
+		}
+	} catch (err) {
+		console.debug('[card-db] Supabase play_cards fetch failed:', err);
+	}
+
+	// Fallback: bundled local JSON
+	try {
+		return (localPlayCards as PlayCardRaw[]).map(playCardToCard);
+	} catch (err) {
+		console.debug('[card-db] Local play-cards.json load failed:', err);
+		return [];
+	}
+}
 
 // ── In-memory indexes ──────────────────────────────────────
 let cards: Card[] = [];
@@ -81,6 +158,13 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 
 			if (isFirstValid && isLastValid && countReasonable) {
 				cards = cached as Card[];
+
+				// Merge play cards into the index
+				const playCards = await loadPlayCards();
+				if (playCards.length > 0) {
+					cards = cards.concat(playCards);
+				}
+
 				buildIndexes();
 				isLoaded = true;
 
@@ -125,11 +209,16 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 			}
 
 			if (allCards.length > 0) {
+				// Merge play cards
+				const playCards = await loadPlayCards();
+				if (playCards.length > 0) {
+					allCards = allCards.concat(playCards);
+				}
+
 				cards = allCards;
-	
+
 				buildIndexes();
 				isLoaded = true;
-
 
 				// Cache in IDB for offline use
 				try {
@@ -236,6 +325,14 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 
 			if (allCards.length === 0) return;
 			cards = allCards;
+		}
+
+		// Re-merge play cards on refresh
+		const playCards = await loadPlayCards();
+		if (playCards.length > 0) {
+			// Remove existing play cards before re-adding (play cards have null hero_name, power, weapon_type)
+			cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
+			cards = cards.concat(playCards);
 		}
 
 		buildIndexes();
