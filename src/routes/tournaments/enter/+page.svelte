@@ -121,7 +121,10 @@
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code.toUpperCase())}`);
 			if (!res.ok) {
-				fetchError = res.status === 404 ? 'Tournament not found or inactive' : 'Failed to load tournament';
+				if (res.status === 404) fetchError = 'Tournament not found';
+				else if (res.status === 410) fetchError = 'This tournament is no longer active';
+				else if (res.status === 403) fetchError = 'Registration for this tournament is closed';
+				else fetchError = 'Failed to load tournament';
 				loading = false;
 				return;
 			}

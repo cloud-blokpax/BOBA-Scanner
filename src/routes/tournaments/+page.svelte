@@ -27,7 +27,6 @@
 	let publicUserId = $state<string | null>(null);
 
 	let newName = $state('');
-	let newCode = $state('');
 	let newMaxHeroes = $state(30);
 	let newMaxPlays = $state(30);
 	let newMaxBonus = $state(15);
@@ -35,20 +34,12 @@
 	let newRequireName = $state(false);
 	let newRequireDiscord = $state(false);
 	let creating = $state(false);
+	let isOrganizer = $state(false);
 
 	// Tournament code entry
 	let entryCode = $state('');
 	let entryLoading = $state(false);
 	let entryError = $state<string | null>(null);
-
-	function generateCode(): string {
-		const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-		let code = '';
-		for (let i = 0; i < 8; i++) {
-			code += chars[Math.floor(Math.random() * chars.length)];
-		}
-		return code;
-	}
 
 	async function resolvePublicUserId(): Promise<string | null> {
 		if (publicUserId) return publicUserId;
@@ -58,12 +49,13 @@
 
 		const { data } = await sb
 			.from('users')
-			.select('id')
+			.select('id, is_organizer, is_admin')
 			.eq('auth_user_id', currentUser.id)
 			.maybeSingle();
 
 		if (data?.id) {
 			publicUserId = data.id;
+			isOrganizer = data.is_organizer === true || data.is_admin === true;
 		}
 		return publicUserId;
 	}
@@ -97,8 +89,8 @@
 	}
 
 	async function createTournament() {
-		if (!newName.trim() || !newCode.trim()) {
-			showToast('Name and code are required', 'x');
+		if (!newName.trim()) {
+			showToast('Tournament name is required', 'x');
 			return;
 		}
 		const currentUser = $page.data.user;
@@ -109,40 +101,34 @@
 
 		creating = true;
 		try {
-			const sb = getSupabase();
-			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
-
-			const pubId = await resolvePublicUserId();
-			if (!pubId) { showToast('User profile not found', 'x'); creating = false; return; }
-
-			// creator_id references public.users(id), not auth.users(id)
-			const { error } = await sb.from('tournaments').insert({
-				creator_id: pubId,
-				code: newCode.toUpperCase(),
-				name: newName.trim(),
-				max_heroes: newMaxHeroes,
-				max_plays: newMaxPlays,
-				max_bonus: newMaxBonus,
-				require_email: newRequireEmail,
-				require_name: newRequireName,
-				require_discord: newRequireDiscord,
-				is_active: true,
-				usage_count: 0
+			const res = await fetch('/api/organize/create', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: newName.trim(),
+					format_id: 'custom',
+					require_discord: newRequireDiscord
+				})
 			});
-			if (error) throw error;
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error(body.message || body.error || `HTTP ${res.status}`);
+			}
 			showToast('Tournament created!', 'check');
 			showCreate = false;
 			newName = '';
-			newCode = generateCode();
 			newRequireEmail = true;
 			newRequireName = false;
 			newRequireDiscord = false;
 			await loadTournaments();
 		} catch (err: unknown) {
-			const errObj = err as Record<string, unknown>;
-			const msg = errObj?.message || (err instanceof Error ? err.message : String(err));
+			const msg = err instanceof Error ? err.message : String(err);
 			console.error('Tournament creation failed:', err);
-			showToast(`Failed to create tournament: ${msg}`, 'x');
+			if (msg.includes('Organizer access required')) {
+				showToast('Organizer access is required to create tournaments', 'x');
+			} else {
+				showToast(`Failed to create tournament: ${msg}`, 'x');
+			}
 		}
 		creating = false;
 	}
@@ -193,7 +179,10 @@
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
 			if (!res.ok) {
-				entryError = res.status === 404 ? 'Tournament not found' : 'Failed to look up tournament';
+				if (res.status === 404) entryError = 'Tournament not found';
+				else if (res.status === 410) entryError = 'This tournament is no longer active';
+				else if (res.status === 403) entryError = 'Registration for this tournament is closed';
+				else entryError = 'Failed to look up tournament';
 				return;
 			}
 			goto(`/tournaments/enter?code=${code}`);
@@ -214,11 +203,9 @@
 	);
 
 	onMount(() => {
+		resolvePublicUserId();
 		loadTournaments();
 	});
-
-	// Init code
-	newCode = generateCode();
 </script>
 
 <svelte:head>
@@ -228,9 +215,11 @@
 <div class="tournaments-page">
 	<header class="page-header">
 		<h1>Tournaments</h1>
-		<button class="create-btn" onclick={() => (showCreate = !showCreate)}>
-			{showCreate ? 'Cancel' : '+ Create'}
-		</button>
+		{#if isOrganizer}
+			<button class="create-btn" onclick={() => (showCreate = !showCreate)}>
+				{showCreate ? 'Cancel' : '+ Create'}
+			</button>
+		{/if}
 	</header>
 
 	<!-- Enter tournament by code -->
@@ -260,14 +249,6 @@
 			<div class="form-group">
 				<label for="t-name">Tournament Name</label>
 				<input id="t-name" type="text" bind:value={newName} placeholder="Weekly Showdown" />
-			</div>
-
-			<div class="form-group">
-				<label for="t-code">Tournament Code</label>
-				<div class="code-row">
-					<input id="t-code" type="text" bind:value={newCode} maxlength="8" class="code-input" />
-					<button class="btn-small" onclick={() => (newCode = generateCode())}>Generate</button>
-				</div>
 			</div>
 
 			<div class="params-row">
@@ -488,26 +469,6 @@
 		background: var(--bg-base);
 		color: var(--text-primary);
 		font-size: 0.9rem;
-	}
-	.code-row {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.code-input {
-		flex: 1;
-		font-family: monospace;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-	}
-	.btn-small {
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: transparent;
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		cursor: pointer;
-		white-space: nowrap;
 	}
 	.params-row {
 		display: grid;

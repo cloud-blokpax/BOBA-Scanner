@@ -32,18 +32,52 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		throw error(503, 'Service unavailable');
 	}
 
+	interface TournamentRow {
+		id: string;
+		code: string;
+		name: string;
+		max_heroes: number;
+		max_plays: number;
+		max_bonus: number;
+		require_email: boolean;
+		require_name: boolean;
+		require_discord: boolean;
+		format_id: string | null;
+		deck_type: string | null;
+		description: string | null;
+		venue: string | null;
+		event_date: string | null;
+		entry_fee: string | null;
+		prize_pool: string | null;
+		max_players: number | null;
+		submission_deadline: string | null;
+		registration_closed: boolean;
+		deadline_mode: string | null;
+		is_active: boolean;
+	}
+
 	const { data, error: dbError } = await locals.supabase
 		.from('tournaments')
-		.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord, format_id, deck_type, description, venue, event_date, entry_fee, prize_pool, max_players, submission_deadline, registration_closed, deadline_mode')
+		.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord, format_id, deck_type, description, venue, event_date, entry_fee, prize_pool, max_players, submission_deadline, registration_closed, deadline_mode, is_active')
 		.eq('code', code)
-		.eq('is_active', true)
-		.single();
+		.maybeSingle() as { data: TournamentRow | null; error: { message: string } | null };
 
 	if (dbError || !data) {
 		throw error(404, 'Tournament not found');
 	}
 
-	return json(data, {
+	if (!data.is_active) {
+		throw error(410, 'Tournament is no longer active');
+	}
+
+	if (data.registration_closed) {
+		throw error(403, 'Registration for this tournament is closed');
+	}
+
+	// Strip internal fields before returning
+	const { is_active: _, ...tournament } = data;
+
+	return json(tournament, {
 		headers: { 'Cache-Control': 'public, max-age=60' }
 	});
 };

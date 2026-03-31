@@ -111,7 +111,10 @@
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
 			if (!res.ok) {
-				tournamentError = res.status === 404 ? 'Tournament not found' : 'Failed to look up tournament';
+				if (res.status === 404) tournamentError = 'Tournament not found';
+				else if (res.status === 410) tournamentError = 'This tournament is no longer active';
+				else if (res.status === 403) tournamentError = 'Registration for this tournament is closed';
+				else tournamentError = 'Failed to look up tournament';
 				return;
 			}
 			tournamentResult = await res.json();
