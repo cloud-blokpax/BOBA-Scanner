@@ -60,7 +60,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		.from('tournaments')
 		.select('*')
 		.eq('code', code)
-		.maybeSingle() as { data: TournamentRow | null; error: { message: string } | null };
+		.maybeSingle() as { data: TournamentRow | null; error: { message: string; code?: string } | null };
 
 	if (dbError || !data) {
 		if (dbError && dbError.code !== 'PGRST116') {

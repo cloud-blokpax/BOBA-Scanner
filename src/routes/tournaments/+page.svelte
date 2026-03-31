@@ -25,6 +25,8 @@
 	let loading = $state(true);
 	let publicUserId = $state<string | null>(null);
 
+	let isOrganizer = $state(false);
+
 	// Tournament code entry
 	let entryCode = $state('');
 	let entryLoading = $state(false);

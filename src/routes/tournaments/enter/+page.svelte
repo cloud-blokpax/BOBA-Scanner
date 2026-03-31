@@ -858,7 +858,7 @@
 	}
 	.required { color: #ef4444; }
 	.optional { font-weight: 400; color: var(--text-tertiary); }
-	.form-group input, .form-group textarea {
+	.form-group input {
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		border-radius: 8px;
