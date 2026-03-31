@@ -77,7 +77,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 	// Get card details for search query
 	const { data: card } = await locals.supabase
 		.from('cards')
-		.select('name, hero_name, card_number, set_code')
+		.select('name, hero_name, athlete_name, card_number, set_code')
 		.eq('id', cardId)
 		.single();
 
@@ -88,7 +88,8 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 	// Build eBay search query — "bo jackson battle arena" is the key phrase sellers use
 	const heroOrName = card.hero_name || card.name || '';
 	const cardNum = card.card_number || '';
-	const query = `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
+	const athlete = card.athlete_name || '';
+	const query = `bo jackson battle arena ${heroOrName} ${cardNum} ${athlete}`.trim();
 
 	// Check eBay daily API call limit (4,500/day with 500 headroom)
 	const withinLimit = await checkEbayDailyLimit();

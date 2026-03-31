@@ -37,12 +37,12 @@ export interface EbayListing {
 function buildEbayQuery(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
-	set_code?: string | null;
+	athlete_name?: string | null;
 }): string {
 	const parts: string[] = ['BOBA'];
 	if (card.card_number) parts.push(card.card_number);
 	if (card.hero_name) parts.push(card.hero_name);
-	if (card.set_code) parts.push(card.set_code);
+	if (card.athlete_name) parts.push(card.athlete_name);
 	return parts.join(' ');
 }
 
@@ -52,7 +52,7 @@ function buildEbayQuery(card: {
 export function buildEbaySearchUrl(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
-	set_code?: string | null;
+	athlete_name?: string | null;
 }): string {
 	const query = buildEbayQuery(card);
 	const params = new URLSearchParams({
@@ -68,7 +68,7 @@ export function buildEbaySearchUrl(card: {
 export function buildEbaySoldUrl(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
-	set_code?: string | null;
+	athlete_name?: string | null;
 }): string {
 	const query = buildEbayQuery(card);
 	const params = new URLSearchParams({

@@ -7,6 +7,7 @@
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import { tryAwardBadge } from '$lib/services/badges';
 	import type { ScanResult, Card } from '$lib/types';
+	import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
 
 	import ScanCardImage from './scan-confirmation/ScanCardImage.svelte';
 	import ScanCardHeader from './scan-confirmation/ScanCardHeader.svelte';
@@ -300,7 +301,7 @@
 							{#if card.set_code}
 								<div class="detail-row">
 									<span class="detail-label">Set / Release</span>
-									<span class="detail-value">{card.set_code}</span>
+									<span class="detail-value">{RELEASE_TO_SET_NAME[card.set_code] ?? card.set_code}</span>
 								</div>
 							{/if}
 							<div class="detail-row">
