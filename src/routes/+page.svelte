@@ -1038,6 +1038,12 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 1rem;
+		position: sticky;
+		top: -1.25rem;
+		padding-top: 1.25rem;
+		padding-bottom: 0.5rem;
+		background: var(--bg-elevated, #121d34);
+		z-index: 1;
 	}
 
 	.customize-header h3 {

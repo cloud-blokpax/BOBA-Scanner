@@ -73,6 +73,7 @@
 		<div class="card-detail-sheet">
 			<button class="close-btn" onclick={onClose} aria-label="Close">x</button>
 
+			<div class="detail-scroll">
 			<div class="detail-content">
 				<div class="detail-header">
 					{#if item.card}
@@ -169,6 +170,7 @@
 					</button>
 				</div>
 			</div>
+			</div>
 		</div>
 	</div>
 {/if}
@@ -214,10 +216,17 @@
 		width: 100%;
 		max-width: 500px;
 		max-height: 90vh;
-		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
 		background: var(--surface-secondary, #0d1524);
 		border-radius: 16px 16px 0 0;
 		padding: 1.5rem;
+	}
+
+	.detail-scroll {
+		overflow-y: auto;
+		flex: 1;
+		min-height: 0;
 	}
 
 	.close-btn {

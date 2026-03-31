@@ -82,6 +82,8 @@
 {#if open}
 <div class="modal-backdrop" role="presentation" onclick={handleBackdropClick} onkeydown={handleKeydown}>
 	<div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Go Pro">
+		<button class="modal-close" onclick={onclose} aria-label="Close">×</button>
+		<div class="modal-scroll">
 		{#if confirmation.shown}
 			<div class="confirmation">
 				<div class="confirmation-check">✓</div>
@@ -96,7 +98,6 @@
 			<div class="modal-header">
 				<h2>Go Pro</h2>
 				<p class="modal-subtitle">Choose the tier that matches your feeling on the app. Each choice provides Pro access for 30 days.</p>
-				<button class="modal-close" onclick={onclose} aria-label="Close">×</button>
 			</div>
 
 			<div class="tier-list">
@@ -129,6 +130,7 @@
 				{/each}
 			</div>
 		{/if}
+		</div>
 	</div>
 </div>
 {/if}
@@ -154,9 +156,15 @@
 		width: 100%;
 		max-width: 440px;
 		max-height: 85vh;
-		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
 		padding: 1.5rem;
 		position: relative;
+	}
+	.modal-scroll {
+		overflow-y: auto;
+		flex: 1;
+		min-height: 0;
 	}
 	@media (min-width: 640px) {
 		.modal-sheet {
@@ -181,8 +189,8 @@
 	}
 	.modal-close {
 		position: absolute;
-		top: 0;
-		right: 0;
+		top: 1rem;
+		right: 1rem;
 		background: none;
 		border: none;
 		font-size: 1.5rem;
@@ -190,6 +198,7 @@
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
 		line-height: 1;
+		z-index: 1;
 	}
 
 	.tier-list {

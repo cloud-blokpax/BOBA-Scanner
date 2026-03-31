@@ -182,6 +182,10 @@
 		justify-content: space-between;
 		padding: 1rem;
 		border-bottom: 1px solid var(--border-color, #334155);
+		position: sticky;
+		top: 0;
+		background: var(--bg-elevated, #1e293b);
+		z-index: 1;
 	}
 	.modal-header h2 {
 		font-size: 1.1rem;
