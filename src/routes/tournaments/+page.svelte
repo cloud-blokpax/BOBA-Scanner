@@ -23,32 +23,12 @@
 
 	let tournaments = $state<Tournament[]>([]);
 	let loading = $state(true);
-	let showCreate = $state(false);
 	let publicUserId = $state<string | null>(null);
-
-	let newName = $state('');
-	let newCode = $state('');
-	let newMaxHeroes = $state(30);
-	let newMaxPlays = $state(30);
-	let newMaxBonus = $state(15);
-	let newRequireEmail = $state(true);
-	let newRequireName = $state(false);
-	let newRequireDiscord = $state(false);
-	let creating = $state(false);
 
 	// Tournament code entry
 	let entryCode = $state('');
 	let entryLoading = $state(false);
 	let entryError = $state<string | null>(null);
-
-	function generateCode(): string {
-		const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-		let code = '';
-		for (let i = 0; i < 8; i++) {
-			code += chars[Math.floor(Math.random() * chars.length)];
-		}
-		return code;
-	}
 
 	async function resolvePublicUserId(): Promise<string | null> {
 		if (publicUserId) return publicUserId;
@@ -94,57 +74,6 @@
 			showToast('Failed to load tournaments', 'x');
 		}
 		loading = false;
-	}
-
-	async function createTournament() {
-		if (!newName.trim() || !newCode.trim()) {
-			showToast('Name and code are required', 'x');
-			return;
-		}
-		const currentUser = $page.data.user;
-		if (!currentUser) {
-			showToast('Sign in required', 'x');
-			return;
-		}
-
-		creating = true;
-		try {
-			const sb = getSupabase();
-			if (!sb) { showToast('Service unavailable', 'x'); creating = false; return; }
-
-			const pubId = await resolvePublicUserId();
-			if (!pubId) { showToast('User profile not found', 'x'); creating = false; return; }
-
-			// creator_id references public.users(id), not auth.users(id)
-			const { error } = await sb.from('tournaments').insert({
-				creator_id: pubId,
-				code: newCode.toUpperCase(),
-				name: newName.trim(),
-				max_heroes: newMaxHeroes,
-				max_plays: newMaxPlays,
-				max_bonus: newMaxBonus,
-				require_email: newRequireEmail,
-				require_name: newRequireName,
-				require_discord: newRequireDiscord,
-				is_active: true,
-				usage_count: 0
-			});
-			if (error) throw error;
-			showToast('Tournament created!', 'check');
-			showCreate = false;
-			newName = '';
-			newCode = generateCode();
-			newRequireEmail = true;
-			newRequireName = false;
-			newRequireDiscord = false;
-			await loadTournaments();
-		} catch (err: unknown) {
-			const errObj = err as Record<string, unknown>;
-			const msg = errObj?.message || (err instanceof Error ? err.message : String(err));
-			console.error('Tournament creation failed:', err);
-			showToast(`Failed to create tournament: ${msg}`, 'x');
-		}
-		creating = false;
 	}
 
 	async function toggleActive(tournament: Tournament) {
@@ -216,9 +145,6 @@
 	onMount(() => {
 		loadTournaments();
 	});
-
-	// Init code
-	newCode = generateCode();
 </script>
 
 <svelte:head>
@@ -228,9 +154,7 @@
 <div class="tournaments-page">
 	<header class="page-header">
 		<h1>Tournaments</h1>
-		<button class="create-btn" onclick={() => (showCreate = !showCreate)}>
-			{showCreate ? 'Cancel' : '+ Create'}
-		</button>
+		<a href="/organize" class="create-btn">+ Create</a>
 	</header>
 
 	<!-- Enter tournament by code -->
@@ -254,59 +178,6 @@
 			<p class="entry-error">{entryError}</p>
 		{/if}
 	</div>
-
-	{#if showCreate}
-		<div class="create-card">
-			<div class="form-group">
-				<label for="t-name">Tournament Name</label>
-				<input id="t-name" type="text" bind:value={newName} placeholder="Weekly Showdown" />
-			</div>
-
-			<div class="form-group">
-				<label for="t-code">Tournament Code</label>
-				<div class="code-row">
-					<input id="t-code" type="text" bind:value={newCode} maxlength="8" class="code-input" />
-					<button class="btn-small" onclick={() => (newCode = generateCode())}>Generate</button>
-				</div>
-			</div>
-
-			<div class="params-row">
-				<div class="form-group">
-					<label for="t-heroes">Max Heroes</label>
-					<input id="t-heroes" type="number" bind:value={newMaxHeroes} min="1" max="50" />
-				</div>
-				<div class="form-group">
-					<label for="t-plays">Max Plays</label>
-					<input id="t-plays" type="number" bind:value={newMaxPlays} min="1" max="50" />
-				</div>
-				<div class="form-group">
-					<label for="t-bonus">Max Bonus</label>
-					<input id="t-bonus" type="number" bind:value={newMaxBonus} min="0" max="30" />
-				</div>
-			</div>
-
-			<div class="requirements-section">
-				<h3>Registration Requirements</h3>
-				<label class="toggle-row">
-					<input type="checkbox" bind:checked={newRequireEmail} disabled />
-					<span>Require Email</span>
-					<span class="req-hint">(always required)</span>
-				</label>
-				<label class="toggle-row">
-					<input type="checkbox" bind:checked={newRequireName} />
-					<span>Require Name</span>
-				</label>
-				<label class="toggle-row">
-					<input type="checkbox" bind:checked={newRequireDiscord} />
-					<span>Require Discord ID</span>
-				</label>
-			</div>
-
-			<button class="submit-btn" onclick={createTournament} disabled={creating}>
-				{creating ? 'Creating...' : 'Create Tournament'}
-			</button>
-		</div>
-	{/if}
 
 	{#if loading}
 		<div class="loading">Loading tournaments...</div>
@@ -414,6 +285,7 @@
 		color: var(--text-primary);
 		font-size: 0.85rem;
 		cursor: pointer;
+		text-decoration: none;
 	}
 
 	/* Enter section */
@@ -462,99 +334,6 @@
 		font-size: 0.8rem;
 		margin-top: 0.5rem;
 	}
-
-	/* Create form */
-	.create-card {
-		background: var(--bg-elevated);
-		border-radius: 12px;
-		padding: 1.25rem;
-		margin-bottom: 1.5rem;
-	}
-	.form-group {
-		margin-bottom: 0.75rem;
-	}
-	.form-group label {
-		display: block;
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-		margin-bottom: 4px;
-	}
-	.form-group input {
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-base);
-		color: var(--text-primary);
-		font-size: 0.9rem;
-	}
-	.code-row {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.code-input {
-		flex: 1;
-		font-family: monospace;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-	}
-	.btn-small {
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: transparent;
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.params-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr;
-		gap: 0.75rem;
-	}
-	.params-row input { text-align: center; }
-
-	/* Requirements */
-	.requirements-section {
-		margin: 1rem 0 0.75rem;
-	}
-	.requirements-section h3 {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-		margin-bottom: 0.5rem;
-	}
-	.toggle-row {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.85rem;
-		padding: 0.25rem 0;
-		cursor: pointer;
-	}
-	.toggle-row input[disabled] {
-		cursor: not-allowed;
-	}
-	.req-hint {
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-	}
-
-	.submit-btn {
-		width: 100%;
-		padding: 0.75rem;
-		border-radius: 10px;
-		border: none;
-		background: var(--accent-primary);
-		color: #fff;
-		font-size: 0.95rem;
-		font-weight: 600;
-		cursor: pointer;
-		margin-top: 0.5rem;
-	}
-	.submit-btn:disabled { opacity: 0.6; }
 
 	/* Tournament list */
 	.section-title {
