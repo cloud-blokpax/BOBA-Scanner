@@ -6,6 +6,8 @@
 
 	let loading = $state(true);
 	let triggeringHarvest = $state(false);
+	let confidenceThreshold = $state(0);
+	let savingThreshold = $state(false);
 	let ebayMetrics = $state({
 		callsRemaining: null as number | null,
 		callsLimit: null as number | null,
@@ -25,6 +27,15 @@
 		if (!client) { loading = false; return; }
 
 		try {
+			// Load confidence threshold from Redis via admin API
+			try {
+				const configRes = await fetch('/api/admin/harvest-config');
+				if (configRes.ok) {
+					const configData = await configRes.json();
+					confidenceThreshold = configData.confidenceThreshold;
+				}
+			} catch { /* non-critical */ }
+
 			// ebay_api_log is not in generated Supabase types yet
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const [quotaRes, pricesRes, staleRes] = await Promise.all([
@@ -73,6 +84,26 @@
 		const hours = Math.floor(diff / 3600000);
 		const mins = Math.floor((diff % 3600000) / 60000);
 		return `${hours}h ${mins}m`;
+	}
+
+	async function saveThreshold() {
+		savingThreshold = true;
+		try {
+			const res = await fetch('/api/admin/harvest-config', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ confidenceThreshold })
+			});
+			if (!res.ok) {
+				showToast('Failed to save threshold', 'x');
+				return;
+			}
+			showToast(`Threshold set to ${confidenceThreshold}%`, 'check');
+		} catch {
+			showToast('Failed to save threshold', 'x');
+		} finally {
+			savingThreshold = false;
+		}
 	}
 
 	async function triggerHarvest() {
@@ -168,6 +199,26 @@
 						<strong>{Math.round(((ebayMetrics.totalPrices - ebayMetrics.stalePrices) / ebayMetrics.totalPrices) * 100)}%</strong>
 					</div>
 				{/if}
+			</div>
+		</div>
+
+		<!-- Confidence Threshold -->
+		<div class="info-section">
+			<h3 class="section-title">Confidence Threshold</h3>
+			<p class="threshold-desc">Prices below this confidence score will be logged but not cached. Currently: <strong>{confidenceThreshold}%</strong></p>
+			<div class="threshold-control">
+				<input
+					type="range"
+					min="0"
+					max="100"
+					step="5"
+					bind:value={confidenceThreshold}
+					class="threshold-slider"
+				/>
+				<span class="threshold-value">{confidenceThreshold}%</span>
+				<button class="action-btn" onclick={saveThreshold} disabled={savingThreshold}>
+					{savingThreshold ? 'Saving...' : 'Save'}
+				</button>
 			</div>
 		</div>
 
@@ -318,4 +369,30 @@
 	}
 
 	.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	.threshold-desc {
+		font-size: 0.8rem;
+		color: var(--text-tertiary);
+		margin-bottom: 0.75rem;
+	}
+
+	.threshold-control {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.threshold-slider {
+		flex: 1;
+		accent-color: var(--gold);
+		height: 6px;
+	}
+
+	.threshold-value {
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: var(--gold);
+		min-width: 3rem;
+		text-align: center;
+	}
 </style>

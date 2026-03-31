@@ -157,6 +157,37 @@ export function isRedisAvailable(): boolean {
 	return getRedis() !== null;
 }
 
+// ── Harvest Configuration ───────────────────────────────────
+
+const HARVEST_CONFIDENCE_KEY = 'harvest-config:confidence-threshold';
+
+/**
+ * Get the minimum confidence score required to accept a price.
+ * Returns 0 if not set (accept everything).
+ */
+export async function getHarvestConfidenceThreshold(): Promise<number> {
+	const r = getRedis();
+	if (!r) return 0;
+
+	try {
+		const val = await r.get<number>(HARVEST_CONFIDENCE_KEY);
+		return val ?? 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * Set the minimum confidence score threshold (0–100 integer stored as 0.0–1.0 float).
+ */
+export async function setHarvestConfidenceThreshold(percent: number): Promise<void> {
+	const r = getRedis();
+	if (!r) throw new Error('Redis unavailable');
+
+	const clamped = Math.max(0, Math.min(100, percent)) / 100;
+	await r.set(HARVEST_CONFIDENCE_KEY, clamped);
+}
+
 export async function checkGlobalAnonScanLimit(): Promise<boolean> {
 	const r = getRedis();
 	if (!r) return true; // No Redis = no tracking, allow the call

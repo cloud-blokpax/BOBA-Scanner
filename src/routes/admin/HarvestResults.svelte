@@ -29,12 +29,14 @@
 		listings_count: number;
 		success: boolean;
 		zero_results: boolean;
+		threshold_rejected: boolean;
+		search_query: string;
 		error_message: string | null;
 		duration_ms: number;
 		processed_at: string;
 	}
 
-	type Filter = 'all' | 'changed' | 'new' | 'zero' | 'errors';
+	type Filter = 'all' | 'changed' | 'new' | 'zero' | 'rejected' | 'errors';
 
 	const PAGE_SIZE = 50;
 
@@ -165,8 +167,13 @@
 		{ key: 'changed', label: 'Changed' },
 		{ key: 'new', label: 'New' },
 		{ key: 'zero', label: 'Zero Results' },
+		{ key: 'rejected', label: 'Rejected' },
 		{ key: 'errors', label: 'Errors' }
 	];
+
+	function ebaySearchUrl(query: string): string {
+		return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
+	}
 </script>
 
 <div class="harvest-results">
@@ -269,8 +276,14 @@
 									{(row.confidence_score * 100).toFixed(0)}%
 								</span>
 							{/if}
+							{#if row.threshold_rejected}
+								<span class="meta-item rejected-badge">REJECTED</span>
+							{/if}
 							{#if row.zero_results}
 								<span class="meta-item warn-text">0 results</span>
+							{/if}
+							{#if row.search_query}
+								<a href={ebaySearchUrl(row.search_query)} target="_blank" rel="noopener" class="meta-item ebay-link">eBay ↗</a>
 							{/if}
 							<span class="meta-item dim">{row.duration_ms}ms</span>
 						</div>
@@ -551,6 +564,26 @@
 	.confidence-dot.high { background: var(--success); }
 	.confidence-dot.mid { background: var(--warning); }
 	.confidence-dot.low { background: var(--danger); }
+
+	.ebay-link {
+		color: var(--gold);
+		text-decoration: none;
+		font-weight: 600;
+		font-size: 0.7rem;
+	}
+
+	.ebay-link:hover {
+		text-decoration: underline;
+	}
+
+	.rejected-badge {
+		color: var(--danger);
+		font-weight: 700;
+		font-size: 0.65rem;
+		padding: 0.1rem 0.3rem;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--danger) 15%, transparent);
+	}
 
 	/* Pagination */
 	.pagination {
