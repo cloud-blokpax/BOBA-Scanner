@@ -15,14 +15,12 @@
 		onResult,
 		isAuthenticated = true,
 		paused = false,
-		scanMode = 'single' as const,
-		onModeChange
+		scanMode = 'single' as const
 	}: {
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 		isAuthenticated?: boolean;
 		paused?: boolean;
 		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
-		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
 
 	// ── Scanner State Machine ───────────────────────────────
@@ -836,8 +834,6 @@
 			{cameraReady}
 			{scanning}
 			{stabilityProgress}
-			{scanMode}
-			{onModeChange}
 			onTorchToggle={handleTorchToggle}
 			onCapture={handleCapture}
 			onFoilCapture={handleFoilCapture}

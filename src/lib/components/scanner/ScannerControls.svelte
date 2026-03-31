@@ -5,22 +5,19 @@
 		cameraReady,
 		scanning,
 		stabilityProgress,
-		scanMode = 'single',
 		onTorchToggle,
 		onCapture,
 		onFoilCapture,
 		onFoilToggle,
 		onFileUpload,
 		onFileDialogOpen,
-		onFileDialogClose,
-		onModeChange
+		onFileDialogClose
 	}: {
 		torchOn: boolean;
 		foilMode: boolean;
 		cameraReady: boolean;
 		scanning: boolean;
 		stabilityProgress: number;
-		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
 		onTorchToggle: () => void;
 		onCapture: () => void;
 		onFoilCapture: () => void;
@@ -28,65 +25,45 @@
 		onFileUpload: (event: Event) => void;
 		onFileDialogOpen?: () => void;
 		onFileDialogClose?: () => void;
-		onModeChange?: (mode: 'single' | 'batch' | 'binder' | 'roll') => void;
 	} = $props();
 
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 </script>
 
 <div class="scanner-controls">
-	<!-- Mode switcher -->
-	{#if onModeChange}
-		<div class="mode-switcher">
-			<button
-				class="mode-btn"
-				class:mode-active={scanMode === 'single'}
-				onclick={() => onModeChange?.('single')}
-			>Single</button>
-			<button
-				class="mode-btn"
-				class:mode-active={scanMode === 'batch'}
-				onclick={() => onModeChange?.('batch')}
-			>Batch</button>
-			<button
-				class="mode-btn"
-				class:mode-active={scanMode === 'binder'}
-				onclick={() => onModeChange?.('binder')}
-			>Binder</button>
-			<button
-				class="mode-btn"
-				class:mode-active={scanMode === 'roll'}
-				onclick={() => onModeChange?.('roll')}
-			>Roll</button>
-		</div>
-	{/if}
-
-	<!-- Capture controls -->
-	<div class="capture-row">
-		<button type="button" class="control-btn upload-btn" onclick={() => { onFileDialogOpen?.(); fileInputEl?.click(); }}>
-			<span>📁</span>
+	<!-- Secondary tools (small, above capture button) -->
+	<div class="tools-row">
+		<button type="button" class="tool-btn" onclick={() => { onFileDialogOpen?.(); fileInputEl?.click(); }}
+			aria-label="Upload photo">
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
 		</button>
-		<input
-			bind:this={fileInputEl}
-			type="file"
-			accept="image/jpeg,image/png,image/webp"
-			onchange={onFileUpload}
-			onclick={(e) => {
-				const handler = () => {
-					setTimeout(() => onFileDialogClose?.(), 300);
-					window.removeEventListener('focus', handler);
-				};
-				window.addEventListener('focus', handler);
-			}}
-			hidden
-		/>
+		<button class="tool-btn" class:tool-active={foilMode} onclick={onFoilToggle}
+			aria-label="Toggle foil mode">
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+		</button>
+	</div>
+	<input
+		bind:this={fileInputEl}
+		type="file"
+		accept="image/jpeg,image/png,image/webp"
+		onchange={onFileUpload}
+		onclick={(e) => {
+			const handler = () => {
+				setTimeout(() => onFileDialogClose?.(), 300);
+				window.removeEventListener('focus', handler);
+			};
+			window.addEventListener('focus', handler);
+		}}
+		hidden
+	/>
 
+	<!-- Capture button — big, centered, unobstructed -->
+	<div class="capture-row">
 		<button
 			class="capture-btn"
 			onclick={foilMode ? onFoilCapture : onCapture}
 			disabled={!cameraReady || scanning}
 			aria-label="Capture"
-			style:--stability-progress="{stabilityProgress * 100}%"
 		>
 			{#if stabilityProgress > 0 && !scanning}
 				<div class="stability-ring" style:background="conic-gradient(#22C55E {stabilityProgress * 360}deg, transparent {stabilityProgress * 360}deg)"></div>
@@ -96,15 +73,6 @@
 					<div class="capture-spinner"></div>
 				{/if}
 			</div>
-		</button>
-
-		<button
-			class="control-btn"
-			class:foil-active={foilMode}
-			onclick={onFoilToggle}
-			aria-label="Toggle foil mode"
-		>
-			<span>✨</span>
 		</button>
 	</div>
 </div>
@@ -125,63 +93,41 @@
 		z-index: 8;
 	}
 
-	.mode-switcher {
+	.tools-row {
 		display: flex;
 		justify-content: center;
-		gap: 6px;
-		padding: 8px 12px;
-		background: rgba(0, 0, 0, 0.75);
-		border-radius: 28px;
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		width: 100%;
-		max-width: 300px;
+		gap: 1.5rem;
 	}
 
-	.mode-btn {
-		flex: 1;
-		padding: 8px 14px;
-		border: none;
-		border-radius: 20px;
-		background: transparent;
+	.tool-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		background: rgba(0, 0, 0, 0.5);
 		color: rgba(255, 255, 255, 0.6);
-		font-size: 0.8rem;
-		font-weight: 600;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all 0.15s;
 	}
 
-	.mode-btn:active {
-		transform: scale(0.95);
+	.tool-btn:active {
+		transform: scale(0.92);
 	}
 
-	.mode-active {
-		background: rgba(255, 255, 255, 0.2);
-		color: #fff;
-		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+	.tool-active {
+		background: rgba(245, 158, 11, 0.15);
+		border-color: rgba(245, 158, 11, 0.4);
+		color: #f59e0b;
 	}
 
 	.capture-row {
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		gap: 2rem;
 	}
-
-	.control-btn {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		border: 1px solid var(--border-color, #1e293b);
-		background: var(--surface-secondary, #0d1524);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		font-size: 1.2rem;
-	}
-
-	.upload-btn { cursor: pointer; }
 
 	.capture-btn {
 		width: 72px;
@@ -232,9 +178,4 @@
 		to { transform: rotate(360deg); }
 	}
 
-	.foil-active {
-		background: rgba(245, 158, 11, 0.15) !important;
-		border-color: rgba(245, 158, 11, 0.4) !important;
-		color: #f59e0b;
-	}
 </style>
