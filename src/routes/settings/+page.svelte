@@ -298,7 +298,7 @@
 							{ebayDisconnecting ? '...' : 'Disconnect'}
 						</button>
 					{:else if ebayConfigured}
-						<a href="/auth/ebay" class="row-action-btn row-action-connect">Connect</a>
+						<a href="/auth/ebay" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
 					{/if}
 				</div>
 			</div>
