@@ -199,9 +199,6 @@
 
 	onMount(() => {
 		initGrid();
-		return () => {
-			if (imageUrl) URL.revokeObjectURL(imageUrl);
-		};
 	});
 </script>
 

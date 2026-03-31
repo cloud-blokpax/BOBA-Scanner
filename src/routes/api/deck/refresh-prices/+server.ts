@@ -54,9 +54,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.maybeSingle();
 
 	const isPro = profile?.is_pro || profile?.is_admin || false;
-	let dailyLimit: number = isPro
+	const rawLimit = isPro
 		? Number(memberLimit?.value ?? 10)
 		: Number(freeLimit?.value ?? 3);
+	let dailyLimit: number = isNaN(rawLimit) ? (isPro ? 10 : 3) : rawLimit;
 
 	// 3. Check per-user override
 	const { data: userOverride } = await supabase
@@ -66,7 +67,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.maybeSingle();
 
 	if (userOverride?.value != null) {
-		dailyLimit = Number(userOverride.value);
+		const overrideLimit = Number(userOverride.value);
+		if (!isNaN(overrideLimit)) dailyLimit = overrideLimit;
 	}
 
 	// 4. Count today's refreshes for this user
@@ -100,8 +102,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({
 			error: 'eBay daily API limit reached. Try again tomorrow.',
 			results: [],
-			refreshes_remaining: refreshesRemaining - 1,
-			limit: Number(dailyLimit),
+			refreshes_remaining: refreshesRemaining,
+			limit: dailyLimit,
 			is_pro: isPro
 		}, { status: 503 });
 	}
