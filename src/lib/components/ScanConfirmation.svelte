@@ -204,6 +204,7 @@
 	<div class="confirmation-backdrop"></div>
 	<div class="confirmation-container">
 		<CloseButton onclick={onClose} position="top-right" variant="dark" />
+		<div class="confirmation-scroll">
 		<div class="sheet-handle"></div>
 		{#if card}
 			<ScanCardImage
@@ -360,6 +361,7 @@
 				onManualCorrection={handleManualCorrection}
 			/>
 		{/if}
+		</div>
 	</div>
 </div>
 
@@ -383,13 +385,18 @@
 	.confirmation-container {
 		position: relative;
 		max-height: 70vh;
-		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
-		padding-bottom: calc(var(--bottom-nav-height, 68px) + var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
 		background: var(--bg-base, #070b14);
 		border-radius: 20px 20px 0 0;
 		animation: sheet-slide-up 0.3s ease-out;
+	}
+
+	.confirmation-scroll {
+		overflow-y: auto;
+		flex: 1;
+		min-height: 0;
+		padding-bottom: calc(var(--bottom-nav-height, 68px) + var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
 	}
 
 	.card-details {
