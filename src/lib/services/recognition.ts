@@ -29,6 +29,32 @@ import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry, ValidationMethod } from '$lib/types';
 
+/**
+ * Create a small data-URL thumbnail from a bitmap for scan history display.
+ * Produces a ~2-5KB JPEG suitable for IndexedDB/localStorage persistence.
+ */
+function createThumbnailDataUrl(bitmap: ImageBitmap): string | null {
+	try {
+		const MAX_W = 80;
+		const MAX_H = 112;
+		const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);
+		const w = Math.round(bitmap.width * scale);
+		const h = Math.round(bitmap.height * scale);
+
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+
+		ctx.drawImage(bitmap, 0, 0, w, h);
+		return canvas.toDataURL('image/jpeg', 0.6);
+	} catch (err) {
+		console.debug('[recognition] Thumbnail creation failed:', err);
+		return null;
+	}
+}
+
 // ── Worker instances ────────────────────────────────────────
 
 let imageWorker: Comlink.Remote<{
@@ -248,10 +274,14 @@ export async function recognizeCard(
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
 		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId };
+		// Create a persistent thumbnail from the scanned bitmap for scan history display.
+		// This replaces the previous getCardImageUrl() call which pointed to non-existent
+		// reference images in Supabase Storage.
+		const thumbnail = bitmap instanceof ImageBitmap ? createThumbnailDataUrl(bitmap) : null;
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,
-			imageUrl: final.card ? getCardImageUrl(final.card) : null,
+			imageUrl: thumbnail || (final.card ? getCardImageUrl(final.card) : null),
 			cardId: final.card?.id ?? null,
 			method: final.scan_method || 'unknown',
 			confidence: final.confidence,

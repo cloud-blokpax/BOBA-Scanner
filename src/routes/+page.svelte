@@ -400,7 +400,8 @@
 									{@const resolvedImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null)}
 									<div class="recent-scan-card">
 									{#if resolvedImageUrl}
-											{@const urls = getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
+											{@const isDataUrl = resolvedImageUrl.startsWith('data:')}
+											{@const urls = isDataUrl ? { avif: null, webp: null, fallback: resolvedImageUrl, width: 80 } : getOptimizedImageUrls(resolvedImageUrl, 'thumb')}
 											<picture class="recent-scan-image-wrap">
 												{#if urls.avif}<source srcset={urls.avif} type="image/avif" />{/if}
 												{#if urls.webp}<source srcset={urls.webp} type="image/webp" />{/if}
