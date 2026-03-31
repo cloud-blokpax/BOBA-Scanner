@@ -5,9 +5,6 @@
 	import HarvestResults from './HarvestResults.svelte';
 
 	let loading = $state(true);
-	let triggeringHarvest = $state(false);
-	let confidenceThreshold = $state(0);
-	let savingThreshold = $state(false);
 	let ebayMetrics = $state({
 		callsRemaining: null as number | null,
 		callsLimit: null as number | null,
@@ -16,6 +13,25 @@
 		totalPrices: 0,
 		stalePrices: 0
 	});
+
+	// ── Harvest runner state ─────────────────────────────
+	let harvestRunning = $state(false);
+	let harvestStopping = $state(false);
+	let harvestMode = $state<'single' | 'continuous'>('continuous');
+	let harvestProgress = $state({
+		batches: 0,
+		processed: 0,
+		updated: 0,
+		errors: 0,
+		callsUsed: 0,
+		startedAt: null as number | null,
+		lastStatus: ''
+	});
+	let stopRequested = false;
+
+	// ── Confidence threshold ─────────────────────────────
+	let confidenceThreshold = $state(0);
+	let savingThreshold = $state(false);
 
 	$effect(() => {
 		loadEbay();
@@ -27,7 +43,7 @@
 		if (!client) { loading = false; return; }
 
 		try {
-			// Load confidence threshold from Redis via admin API
+			// Load confidence threshold
 			try {
 				const configRes = await fetch('/api/admin/harvest-config');
 				if (configRes.ok) {
@@ -36,7 +52,6 @@
 				}
 			} catch { /* non-critical */ }
 
-			// ebay_api_log is not in generated Supabase types yet
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const [quotaRes, pricesRes, staleRes] = await Promise.all([
 				(client as any).from('ebay_api_log')
@@ -86,6 +101,104 @@
 		return `${hours}h ${mins}m`;
 	}
 
+	function formatElapsed(): string {
+		if (!harvestProgress.startedAt) return '0s';
+		const elapsed = Math.round((Date.now() - harvestProgress.startedAt) / 1000);
+		if (elapsed < 60) return `${elapsed}s`;
+		const mins = Math.floor(elapsed / 60);
+		const secs = elapsed % 60;
+		return `${mins}m ${secs}s`;
+	}
+
+	// ── Harvest runner ───────────────────────────────────
+
+	async function startHarvest() {
+		harvestRunning = true;
+		harvestStopping = false;
+		stopRequested = false;
+		harvestProgress = {
+			batches: 0,
+			processed: 0,
+			updated: 0,
+			errors: 0,
+			callsUsed: 0,
+			startedAt: Date.now(),
+			lastStatus: 'Starting...'
+		};
+
+		const maxBatches = harvestMode === 'single' ? 1 : 10000;
+
+		for (let batch = 0; batch < maxBatches; batch++) {
+			if (stopRequested) {
+				harvestProgress.lastStatus = 'Stopped by user';
+				break;
+			}
+
+			try {
+				const res = await fetch('/api/admin/trigger-harvest', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ chainDepth: batch })
+				});
+
+				if (!res.ok) {
+					harvestProgress.lastStatus = `HTTP ${res.status}`;
+					harvestProgress.errors++;
+					break;
+				}
+
+				const data = await res.json();
+				const cron = data.cronResponse;
+
+				if (!cron) {
+					harvestProgress.lastStatus = 'No response from cron';
+					break;
+				}
+
+				// Cron returned a skip/stop
+				if (cron.skipped) {
+					harvestProgress.lastStatus = `Skipped: ${cron.reason}`;
+					break;
+				}
+				if (cron.stopped) {
+					harvestProgress.lastStatus = `Done: ${cron.reason}`;
+					break;
+				}
+
+				// Successful batch
+				harvestProgress.batches++;
+				harvestProgress.processed += cron.processed || 0;
+				harvestProgress.updated += cron.updated || 0;
+				harvestProgress.errors += cron.errors || 0;
+				harvestProgress.callsUsed = 5000 - (cron.remainingBefore || 5000) + (cron.processed || 0);
+				harvestProgress.lastStatus = `Batch ${batch + 1}: ${cron.processed} cards`;
+
+			} catch (err) {
+				harvestProgress.lastStatus = 'Network error';
+				harvestProgress.errors++;
+				// Retry once after a short delay
+				await new Promise(r => setTimeout(r, 2000));
+				continue;
+			}
+
+			// Small delay between batches to avoid overwhelming the API
+			if (harvestMode === 'continuous') {
+				await new Promise(r => setTimeout(r, 500));
+			}
+		}
+
+		harvestRunning = false;
+		harvestStopping = false;
+		showToast(`Harvest complete: ${harvestProgress.processed} cards processed`, 'check');
+		loadEbay();
+	}
+
+	function stopHarvest() {
+		stopRequested = true;
+		harvestStopping = true;
+		harvestProgress.lastStatus = 'Stopping after current batch...';
+	}
+
 	async function saveThreshold() {
 		savingThreshold = true;
 		try {
@@ -103,36 +216,6 @@
 			showToast('Failed to save threshold', 'x');
 		} finally {
 			savingThreshold = false;
-		}
-	}
-
-	async function triggerHarvest() {
-		triggeringHarvest = true;
-		try {
-			const res = await fetch('/api/admin/trigger-harvest', { method: 'POST' });
-			const data = await res.json();
-
-			if (!res.ok) {
-				showToast(data.error || `Trigger failed: ${res.status}`, 'x');
-				return;
-			}
-
-			if (data.cronResponse?.skipped) {
-				showToast(`Harvest skipped: ${data.cronResponse.reason}`, 'x');
-			} else if (data.cronResponse?.stopped) {
-				showToast(`Harvest stopped: ${data.cronResponse.reason}`, 'x');
-			} else {
-				const processed = data.cronResponse?.processed ?? 0;
-				const updated = data.cronResponse?.updated ?? 0;
-				showToast(`Harvest started! First batch: ${processed} processed, ${updated} updated`, 'check');
-			}
-
-			// Refresh the tab data after a short delay to let the first chain link finish
-			setTimeout(() => loadEbay(), 2000);
-		} catch {
-			showToast('Failed to trigger harvest', 'x');
-		} finally {
-			triggeringHarvest = false;
 		}
 	}
 </script>
@@ -222,15 +305,69 @@
 			</div>
 		</div>
 
-		<!-- Actions -->
+		<!-- Harvest Runner -->
 		<div class="actions-section">
-			<h3 class="section-title">Actions</h3>
-			<div class="actions-grid">
-				<button class="action-btn primary" onclick={triggerHarvest} disabled={triggeringHarvest}>
-					{triggeringHarvest ? 'Running...' : 'Trigger Price Harvest'}
-				</button>
-				<button class="action-btn" onclick={loadEbay}>Refresh Status</button>
-			</div>
+			<h3 class="section-title">Price Harvest</h3>
+
+			{#if !harvestRunning}
+				<div class="mode-selector">
+					<button
+						class="mode-btn"
+						class:active={harvestMode === 'single'}
+						onclick={() => harvestMode = 'single'}
+					>Single Batch (9 cards)</button>
+					<button
+						class="mode-btn"
+						class:active={harvestMode === 'continuous'}
+						onclick={() => harvestMode = 'continuous'}
+					>Run Until Done</button>
+				</div>
+
+				<div class="actions-grid">
+					<button class="action-btn primary" onclick={startHarvest}>
+						{harvestMode === 'single' ? 'Run Single Batch' : 'Start Harvest'}
+					</button>
+					<button class="action-btn" onclick={loadEbay}>Refresh Status</button>
+				</div>
+			{:else}
+				<!-- Live Progress -->
+				<div class="harvest-live">
+					<div class="live-header">
+						<span class="live-dot"></span>
+						<span class="live-label">Harvesting...</span>
+						<span class="live-elapsed">{formatElapsed()}</span>
+					</div>
+
+					<div class="live-stats">
+						<div class="live-stat">
+							<span class="ls-value">{harvestProgress.batches}</span>
+							<span class="ls-label">Batches</span>
+						</div>
+						<div class="live-stat">
+							<span class="ls-value">{harvestProgress.processed}</span>
+							<span class="ls-label">Cards</span>
+						</div>
+						<div class="live-stat">
+							<span class="ls-value">{harvestProgress.updated}</span>
+							<span class="ls-label">Priced</span>
+						</div>
+						<div class="live-stat">
+							<span class="ls-value" class:warn={harvestProgress.errors > 0}>{harvestProgress.errors}</span>
+							<span class="ls-label">Errors</span>
+						</div>
+					</div>
+
+					<div class="live-status">{harvestProgress.lastStatus}</div>
+
+					<button
+						class="action-btn stop-btn"
+						onclick={stopHarvest}
+						disabled={harvestStopping}
+					>
+						{harvestStopping ? 'Stopping...' : 'Stop Harvest'}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Harvest Results -->
@@ -394,5 +531,116 @@
 		color: var(--gold);
 		min-width: 3rem;
 		text-align: center;
+	}
+
+	.mode-selector {
+		display: flex;
+		gap: 0.35rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.mode-btn {
+		flex: 1;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-tertiary);
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.mode-btn:hover {
+		border-color: var(--border-strong);
+		color: var(--text-secondary);
+	}
+
+	.mode-btn.active {
+		border-color: var(--gold);
+		color: var(--gold);
+		background: var(--bg-elevated);
+	}
+
+	.harvest-live {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.live-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.live-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--success);
+		animation: pulse 1.5s infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
+	}
+
+	.live-label {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.live-elapsed {
+		margin-left: auto;
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.live-stats {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.35rem;
+	}
+
+	.live-stat {
+		text-align: center;
+		background: var(--bg-hover);
+		border-radius: 8px;
+		padding: 0.5rem 0.25rem;
+	}
+
+	.ls-value {
+		display: block;
+		font-size: 1rem;
+		font-weight: 700;
+		color: var(--gold);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.ls-value.warn { color: var(--warning); }
+
+	.ls-label {
+		display: block;
+		font-size: 0.65rem;
+		color: var(--text-tertiary);
+		margin-top: 1px;
+	}
+
+	.live-status {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stop-btn {
+		border-color: var(--danger) !important;
+		color: var(--danger) !important;
+		width: 100%;
 	}
 </style>
