@@ -17,6 +17,7 @@
 	} from '$lib/stores/pro.svelte';
 	import { scannerActive } from '$lib/stores/scanner.svelte';
 	import { loadPersona, resetPersona } from '$lib/stores/persona.svelte';
+	import { loadNavConfig, clearNavConfig, visibleNavItems } from '$lib/stores/nav-config.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -98,6 +99,10 @@
 		if (data.user) {
 			cleanupSync = setupAutoSync();
 			loadPersona();
+			loadNavConfig();
+		} else {
+			// Load from localStorage even when not logged in
+			loadNavConfig();
 		}
 
 		const authSubscription = client?.auth.onAuthStateChange((event, newSession) => {
@@ -110,8 +115,10 @@
 			if (newSession?.user) {
 				cleanupSync = setupAutoSync();
 				loadPersona();
+				loadNavConfig();
 			} else {
 				resetPersona();
+				clearNavConfig();
 			}
 
 			// Process pending card from pre-auth scan (Change 10)
@@ -275,22 +282,24 @@
 		eBay Partner: we may earn from qualifying purchases. <a href="/privacy#6-ebay-affiliate-links">Learn more</a>
 	</footer>
 
+	{@const items = visibleNavItems()}
+	{@const splitAt = Math.ceil(items.length / 2)}
 	<nav class="bottom-nav">
-		<a href="/" class="bottom-nav-item" class:active={currentPath === '/'}>
-			<span class="bottom-nav-icon">🏠</span>
-			<span class="bottom-nav-label">Home</span>
-		</a>
+		{#each items.slice(0, splitAt) as item (item.id)}
+			<a href={item.path} class="bottom-nav-item" class:active={item.matchPaths ? item.matchPaths.some(p => currentPath.startsWith(p)) : currentPath === item.path}>
+				<span class="bottom-nav-icon">{item.icon}</span>
+				<span class="bottom-nav-label">{item.label}</span>
+			</a>
+		{/each}
 		<a href="/scan" class="scan-fab" class:active={currentPath === '/scan'} aria-label="Scan Card">
 			<span class="scan-fab-icon">📷</span>
 		</a>
-		<a href="/collection" class="bottom-nav-item" class:active={currentPath === '/collection'}>
-			<span class="bottom-nav-icon">📚</span>
-			<span class="bottom-nav-label">Collection</span>
-		</a>
-		<a href="/deck" class="bottom-nav-item" class:active={currentPath.startsWith('/deck') || currentPath.startsWith('/tournaments') || currentPath.startsWith('/packs')}>
-			<span class="bottom-nav-icon">🃏</span>
-			<span class="bottom-nav-label">Decks</span>
-		</a>
+		{#each items.slice(splitAt) as item (item.id)}
+			<a href={item.path} class="bottom-nav-item" class:active={item.matchPaths ? item.matchPaths.some(p => currentPath.startsWith(p)) : currentPath === item.path}>
+				<span class="bottom-nav-icon">{item.icon}</span>
+				<span class="bottom-nav-label">{item.label}</span>
+			</a>
+		{/each}
 	</nav>
 	{/if}
 </div>

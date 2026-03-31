@@ -6,6 +6,10 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { personaWeights, togglePersona, personaLoaded, type PersonaId } from '$lib/stores/persona.svelte';
+	import {
+		visibleNavItems, hiddenNavItems, ALL_NAV_ITEMS,
+		navConfig, navConfigLoaded, toggleNavItem, moveNavItem, resetNavConfig
+	} from '$lib/stores/nav-config.svelte';
 	import { page } from '$app/stores';
 
 	const personaOptions: { id: PersonaId; icon: string; name: string }[] = [
@@ -319,6 +323,81 @@
 			</div>
 		{/if}
 
+		{#if navConfigLoaded()}
+			<div class="settings-card" style="margin-top: 1rem;">
+				<h2>Bottom Navigation</h2>
+				<p class="field-hint" style="margin-bottom: 0.75rem;">Drag to reorder, toggle to show/hide. Scan is always visible.</p>
+
+				<!-- Visible items (reorderable) -->
+				{#if visibleNavItems().length > 0}
+					<div class="nav-config-list">
+						{#each visibleNavItems() as item, i (item.id)}
+							<div class="nav-config-item">
+								<div class="nav-config-reorder">
+									<button
+										class="nav-reorder-btn"
+										onclick={() => moveNavItem(i, Math.max(0, i - 1))}
+										disabled={i === 0}
+										aria-label="Move up"
+										type="button"
+									>&uarr;</button>
+									<button
+										class="nav-reorder-btn"
+										onclick={() => moveNavItem(i, Math.min(visibleNavItems().length - 1, i + 1))}
+										disabled={i === visibleNavItems().length - 1}
+										aria-label="Move down"
+										type="button"
+									>&darr;</button>
+								</div>
+								<span class="nav-config-icon">{item.icon}</span>
+								<span class="nav-config-label">{item.label}</span>
+								<button
+									class="nav-toggle-btn nav-toggle-visible"
+									onclick={() => toggleNavItem(item.id)}
+									aria-label="Hide {item.label}"
+									type="button"
+								>Hide</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Scan FAB indicator (always visible, not removable) -->
+				<div class="nav-config-item nav-config-locked">
+					<div class="nav-config-reorder">
+						<span class="nav-lock-icon">&#128274;</span>
+					</div>
+					<span class="nav-config-icon">&#128247;</span>
+					<span class="nav-config-label">Scan Card</span>
+					<span class="nav-config-always">Always visible</span>
+				</div>
+
+				<!-- Hidden items -->
+				{#if hiddenNavItems().length > 0}
+					<p class="field-hint" style="margin-top: 0.75rem; margin-bottom: 0.5rem;">Hidden</p>
+					<div class="nav-config-list">
+						{#each hiddenNavItems() as item (item.id)}
+							<div class="nav-config-item nav-config-hidden">
+								<div class="nav-config-reorder"></div>
+								<span class="nav-config-icon">{item.icon}</span>
+								<span class="nav-config-label">{item.label}</span>
+								<button
+									class="nav-toggle-btn nav-toggle-hidden"
+									onclick={() => toggleNavItem(item.id)}
+									aria-label="Show {item.label}"
+									type="button"
+								>Show</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				{#if navConfig().visible.join(',') !== 'home,collection,decks'}
+					<button class="reset-nav-btn" onclick={resetNavConfig} type="button">Reset to Default</button>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="settings-card" style="margin-top: 1rem;">
 			<h2>eBay Seller Account</h2>
 
@@ -628,6 +707,114 @@
 	.persona-chip:disabled { opacity: 0.6; }
 	.persona-chip-icon { font-size: 1.15rem; }
 	.persona-chip-name { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+
+	/* Nav config */
+	.nav-config-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.nav-config-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.625rem;
+		border-radius: 8px;
+		background: var(--bg-base);
+		border: 1px solid var(--border-color, rgba(148,163,184,0.12));
+	}
+	.nav-config-item.nav-config-locked {
+		border-color: var(--gold, #f59e0b);
+		background: rgba(245, 158, 11, 0.06);
+		margin-top: 0.5rem;
+	}
+	.nav-config-item.nav-config-hidden {
+		opacity: 0.55;
+	}
+	.nav-config-reorder {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		width: 22px;
+		flex-shrink: 0;
+	}
+	.nav-reorder-btn {
+		background: none;
+		border: none;
+		color: var(--text-tertiary);
+		font-size: 0.7rem;
+		line-height: 1;
+		padding: 2px;
+		cursor: pointer;
+		border-radius: 4px;
+	}
+	.nav-reorder-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		background: var(--bg-hover, rgba(148,163,184,0.08));
+	}
+	.nav-reorder-btn:disabled {
+		opacity: 0.3;
+		cursor: default;
+	}
+	.nav-lock-icon {
+		font-size: 0.7rem;
+		text-align: center;
+		display: block;
+	}
+	.nav-config-icon {
+		font-size: 1.15rem;
+		flex-shrink: 0;
+	}
+	.nav-config-label {
+		flex: 1;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+	.nav-toggle-btn {
+		padding: 0.25rem 0.5rem;
+		border-radius: 6px;
+		border: none;
+		font-size: 0.7rem;
+		font-weight: 700;
+		cursor: pointer;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.nav-toggle-visible {
+		background: rgba(239, 68, 68, 0.1);
+		color: #ef4444;
+	}
+	.nav-toggle-visible:hover {
+		background: rgba(239, 68, 68, 0.2);
+	}
+	.nav-toggle-hidden {
+		background: rgba(59, 130, 246, 0.1);
+		color: #3b82f6;
+	}
+	.nav-toggle-hidden:hover {
+		background: rgba(59, 130, 246, 0.2);
+	}
+	.nav-config-always {
+		font-size: 0.7rem;
+		color: var(--gold, #f59e0b);
+		font-weight: 600;
+	}
+	.reset-nav-btn {
+		width: 100%;
+		margin-top: 0.75rem;
+		padding: 0.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color, rgba(148,163,184,0.12));
+		background: transparent;
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.reset-nav-btn:hover {
+		background: var(--bg-hover);
+	}
 
 	/* Sign out */
 	.export-btn {
