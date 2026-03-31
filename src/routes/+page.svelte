@@ -3,7 +3,7 @@
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { onMount } from 'svelte';
-	import { scanHistory } from '$lib/stores/scan-history.svelte';
+	import { scanHistory, removeFromScanHistory } from '$lib/stores/scan-history.svelte';
 	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
 	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult, ScanMethod } from '$lib/types';
@@ -122,16 +122,23 @@
 		supabaseScansLoaded = true;
 	}
 
-	async function removeScan(scanId: string) {
-		const client = getSupabase();
-		if (!client) return;
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-		try {
-			await client.from('scans').delete().eq('id', scanId);
-			supabaseScans = supabaseScans.filter(s => s.id !== scanId);
-		} catch (err) {
-			console.debug('[home] Failed to delete scan:', err);
+	async function removeScan(scanId: string) {
+		// Only attempt Supabase delete for valid UUIDs (Supabase scans).
+		// Local scan history entries may have short non-UUID IDs.
+		if (UUID_RE.test(scanId)) {
+			const client = getSupabase();
+			if (client) {
+				try {
+					await client.from('scans').delete().eq('id', scanId);
+				} catch (err) {
+					console.debug('[home] Failed to delete scan:', err);
+				}
+			}
 		}
+		supabaseScans = supabaseScans.filter(s => s.id !== scanId);
+		removeFromScanHistory(scanId);
 	}
 
 	// Persona suggestion state
