@@ -73,8 +73,26 @@
 	<CloseButton onclick={exitScanner} position="top-left" variant="dark" />
 
 	<ScannerErrorBoundary>
+		<!-- Mode selector — top bar, out of the way -->
+		{#if !scanResult}
+			<div class="mode-bar">
+				{#each [
+					{ id: 'single', label: 'Single' },
+					{ id: 'batch', label: 'Batch' },
+					{ id: 'binder', label: 'Binder' },
+					{ id: 'roll', label: 'Roll' },
+				] as mode}
+					<button
+						class="mode-pill"
+						class:mode-active={scanMode === mode.id}
+						onclick={() => handleModeChange(mode.id as 'single' | 'batch' | 'binder' | 'roll')}
+					>{mode.label}</button>
+				{/each}
+			</div>
+		{/if}
+
 		{#if scanMode === 'single'}
-			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} onModeChange={handleModeChange} />
+			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} />
 		{:else if scanMode === 'batch'}
 			{#await import('$lib/components/BatchScanner.svelte') then { default: BatchScanner }}
 				<BatchScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
@@ -97,12 +115,6 @@
 				onClose={handleClose}
 			/>
 		{/if}
-		{#if !scanResult && scanMode === 'single'}
-			<div class="scan-tools">
-				<a href="/speed" class="scan-tool-chip">⚡ Speed Challenge</a>
-				<a href="/grader" class="scan-tool-chip">🔍 Card Grader</a>
-			</div>
-		{/if}
 	</ScannerErrorBoundary>
 </div>
 
@@ -118,30 +130,40 @@
 		overflow: hidden;
 	}
 
-	.scan-tools {
+	.mode-bar {
 		position: fixed;
-		bottom: env(safe-area-inset-bottom, 16px);
+		top: calc(env(safe-area-inset-top, 0px) + 48px);
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
-		gap: 0.5rem;
+		gap: 4px;
 		z-index: 10;
-		padding-bottom: 1rem;
-	}
-	.scan-tool-chip {
-		padding: 0.4rem 0.75rem;
-		border-radius: 20px;
-		background: rgba(0, 0, 0, 0.7);
+		padding: 4px;
+		background: rgba(0, 0, 0, 0.6);
 		backdrop-filter: blur(8px);
 		-webkit-backdrop-filter: blur(8px);
-		border: 1px solid rgba(148,163,184,0.15);
-		color: var(--text-secondary);
-		font-size: 0.75rem;
-		font-weight: 500;
-		text-decoration: none;
-		white-space: nowrap;
+		border-radius: 24px;
 	}
-	.scan-tool-chip:active { background: rgba(0,0,0,0.85); }
+
+	.mode-pill {
+		padding: 6px 14px;
+		border: none;
+		border-radius: 20px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.5);
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+		font-family: var(--font-sans);
+		transition: all 0.15s;
+	}
+
+	.mode-pill:active { transform: scale(0.95); }
+
+	.mode-pill.mode-active {
+		background: rgba(255, 255, 255, 0.2);
+		color: #fff;
+	}
 
 	/* Make scanner full-bleed: remove .app-main padding on scan page */
 	:global(.app-main:has(.scan-page)) {
