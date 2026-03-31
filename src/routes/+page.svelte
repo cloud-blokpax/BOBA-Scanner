@@ -9,6 +9,10 @@
 	import type { ScanResult } from '$lib/types';
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
+	import {
+		visibleNavItems, hiddenNavItems,
+		navConfigLoaded, toggleNavItem, moveNavItem, resetNavConfig, navConfig
+	} from '$lib/stores/nav-config.svelte';
 
 	const RARITY_COLORS: Record<string, string> = {
 		common: '#94a3b8',
@@ -248,6 +252,7 @@
 
 	let showCustomize = $state(false);
 	let customOrder = $state<string[] | null>(null);
+	let hiddenBlocks = $state<string[]>([]);
 	let dragIndex = $state<number | null>(null);
 	let dragOverIndex = $state<number | null>(null);
 
@@ -258,21 +263,36 @@
 		quick_actions: 'Quick Actions'
 	};
 
-	// Load custom order from localStorage on mount
+	const BLOCK_ICONS: Record<string, string> = {
+		scan_hero: '\u{1F4F7}',
+		recent_scans: '\u{1F553}',
+		tournaments: '\u{1F3C6}',
+		quick_actions: '\u{26A1}'
+	};
+
+	// Load custom order + hidden blocks from localStorage on mount
 	$effect(() => {
 		if (data.user && browser) {
 			try {
 				const saved = localStorage.getItem('boba:home_block_order');
 				if (saved) customOrder = JSON.parse(saved);
 			} catch { /* ignore */ }
+			try {
+				const savedHidden = localStorage.getItem('boba:home_hidden_blocks');
+				if (savedHidden) hiddenBlocks = JSON.parse(savedHidden);
+			} catch { /* ignore */ }
 		}
 	});
 
-	const orderedBlocks = $derived.by(() => {
+	const allBlockIds = $derived.by(() => {
 		if (customOrder && data.user) return customOrder;
 		if (data.user && personaLoaded()) return sortBlocksForUser(HOME_BLOCKS, personaWeights());
 		return HOME_BLOCKS.map((b) => b.id);
 	});
+
+	const orderedBlocks = $derived(allBlockIds.filter(id => !hiddenBlocks.includes(id)));
+
+	const hiddenBlocksList = $derived(allBlockIds.filter(id => hiddenBlocks.includes(id) && id !== 'scan_hero'));
 
 	function handleDragStart(index: number) {
 		dragIndex = index;
@@ -288,7 +308,7 @@
 			dragOverIndex = null;
 			return;
 		}
-		const items = [...(customOrder || orderedBlocks)];
+		const items = [...(customOrder || allBlockIds)];
 		const [moved] = items.splice(dragIndex, 1);
 		items.splice(index, 0, moved);
 		customOrder = items;
@@ -297,9 +317,27 @@
 		dragOverIndex = null;
 	}
 
+	function toggleBlock(blockId: string) {
+		if (blockId === 'scan_hero') return; // Can't hide scan
+		if (hiddenBlocks.includes(blockId)) {
+			hiddenBlocks = hiddenBlocks.filter(id => id !== blockId);
+			// Ensure it's in the order list
+			if (customOrder && !customOrder.includes(blockId)) {
+				customOrder = [...customOrder, blockId];
+				localStorage.setItem('boba:home_block_order', JSON.stringify(customOrder));
+			}
+		} else {
+			hiddenBlocks = [...hiddenBlocks, blockId];
+		}
+		localStorage.setItem('boba:home_hidden_blocks', JSON.stringify(hiddenBlocks));
+	}
+
 	function resetCustomOrder() {
 		customOrder = null;
+		hiddenBlocks = [];
 		localStorage.removeItem('boba:home_block_order');
+		localStorage.removeItem('boba:home_hidden_blocks');
+		resetNavConfig();
 		showCustomize = false;
 	}
 </script>
@@ -353,31 +391,107 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="customize-sheet" onclick={(e) => e.stopPropagation()}>
 					<div class="customize-header">
-						<h3>Reorder Home Screen</h3>
+						<h3>Customize</h3>
 						<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
 					</div>
-					<ul class="customize-list">
-						{#each (customOrder || orderedBlocks) as blockId, i (blockId)}
-							<li
-								class="customize-item"
-								class:dragging={dragIndex === i}
-								class:drag-over={dragOverIndex === i}
-								draggable="true"
-								ondragstart={() => handleDragStart(i)}
-								ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
-								ondrop={() => handleDrop(i)}
-								ondragend={() => { dragIndex = null; dragOverIndex = null; }}
-							>
-								<span class="drag-handle">{'\u2630'}</span>
-								<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
-							</li>
-						{/each}
-					</ul>
-					{#if customOrder}
-						<button class="btn-suggestion-dismiss" style="margin-top: 1rem; width: 100%; text-align: center;" onclick={resetCustomOrder}>
-							Reset to Auto
-						</button>
-					{/if}
+
+					<div class="customize-scroll">
+						<!-- HOME SECTIONS -->
+						<h4 class="customize-section-title">Home Sections</h4>
+						<ul class="customize-list">
+							{#each (customOrder || allBlockIds).filter(id => !hiddenBlocks.includes(id)) as blockId, i (blockId)}
+								<li
+									class="customize-item"
+									class:dragging={dragIndex === i}
+									class:drag-over={dragOverIndex === i}
+									draggable="true"
+									ondragstart={() => handleDragStart(i)}
+									ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
+									ondrop={() => handleDrop(i)}
+									ondragend={() => { dragIndex = null; dragOverIndex = null; }}
+								>
+									<span class="drag-handle">{'\u2630'}</span>
+									<span class="customize-item-icon">{BLOCK_ICONS[blockId] || '\u{2699}'}</span>
+									<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
+									{#if blockId === 'scan_hero'}
+										<span class="customize-always">Always</span>
+									{:else}
+										<button class="customize-toggle-btn customize-toggle-hide" onclick={() => toggleBlock(blockId)} type="button">Hide</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+
+						{#if hiddenBlocksList.length > 0}
+							<p class="customize-hidden-label">Hidden</p>
+							<ul class="customize-list">
+								{#each hiddenBlocksList as blockId (blockId)}
+									<li class="customize-item customize-item-hidden">
+										<span class="customize-item-icon">{BLOCK_ICONS[blockId] || '\u{2699}'}</span>
+										<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
+										<button class="customize-toggle-btn customize-toggle-show" onclick={() => toggleBlock(blockId)} type="button">Show</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+
+						<!-- BOTTOM NAV -->
+						{#if navConfigLoaded()}
+							<h4 class="customize-section-title" style="margin-top: 1.25rem;">Bottom Navigation</h4>
+							<ul class="customize-list">
+								{#each visibleNavItems() as item, i (item.id)}
+									<li class="customize-item">
+										<div class="nav-reorder-arrows">
+											<button
+												class="nav-arrow-btn"
+												onclick={() => moveNavItem(i, Math.max(0, i - 1))}
+												disabled={i === 0}
+												aria-label="Move left"
+												type="button"
+											>&larr;</button>
+											<button
+												class="nav-arrow-btn"
+												onclick={() => moveNavItem(i, Math.min(visibleNavItems().length - 1, i + 1))}
+												disabled={i === visibleNavItems().length - 1}
+												aria-label="Move right"
+												type="button"
+											>&rarr;</button>
+										</div>
+										<span class="customize-item-icon">{item.icon}</span>
+										<span class="customize-item-label">{item.label}</span>
+										<button class="customize-toggle-btn customize-toggle-hide" onclick={() => toggleNavItem(item.id)} type="button">Hide</button>
+									</li>
+								{/each}
+							</ul>
+
+							<!-- Scan FAB (always visible) -->
+							<div class="customize-item customize-item-locked">
+								<span class="customize-item-icon">{'\u{1F4F7}'}</span>
+								<span class="customize-item-label">Scan Card</span>
+								<span class="customize-always">Always</span>
+							</div>
+
+							{#if hiddenNavItems().length > 0}
+								<p class="customize-hidden-label">Hidden</p>
+								<ul class="customize-list">
+									{#each hiddenNavItems() as item (item.id)}
+										<li class="customize-item customize-item-hidden">
+											<span class="customize-item-icon">{item.icon}</span>
+											<span class="customize-item-label">{item.label}</span>
+											<button class="customize-toggle-btn customize-toggle-show" onclick={() => toggleNavItem(item.id)} type="button">Show</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						{/if}
+
+						<!-- Reset -->
+						{#if customOrder || hiddenBlocks.length > 0 || navConfig().visible.join(',') !== 'home,collection,decks'}
+							<button class="customize-reset-btn" onclick={resetCustomOrder} type="button">
+								Reset All to Default
+							</button>
+						{/if}
+					</div>
 				</div>
 			</div>
 		{/if}
@@ -1099,8 +1213,9 @@
 	.customize-overlay {
 		position: fixed;
 		inset: 0;
+		bottom: calc(var(--bottom-nav-height, 60px) + var(--safe-bottom, 0px));
 		background: rgba(0, 0, 0, 0.6);
-		z-index: 100;
+		z-index: calc(var(--z-sticky, 100) + 20);
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
@@ -1109,11 +1224,12 @@
 	.customize-sheet {
 		width: 100%;
 		max-width: 500px;
-		max-height: 60vh;
+		max-height: 70vh;
 		background: var(--bg-elevated, #121d34);
 		border-radius: 16px 16px 0 0;
-		padding: 1.25rem 1rem 2rem;
-		overflow-y: auto;
+		padding: 1rem 1rem 0;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.customize-header {
@@ -1121,6 +1237,7 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 0.75rem;
+		flex-shrink: 0;
 	}
 
 	.customize-header h3 {
@@ -1137,20 +1254,37 @@
 		padding: 0.25rem;
 	}
 
+	.customize-scroll {
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		padding-bottom: 1.5rem;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.customize-section-title {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted, #475569);
+		margin: 0 0 0.5rem;
+	}
+
 	.customize-list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.375rem;
+		gap: 4px;
 	}
 
 	.customize-item {
 		display: flex;
 		align-items: center;
-		gap: 0.625rem;
-		padding: 0.625rem 0.75rem;
+		gap: 0.5rem;
+		padding: 0.5rem 0.625rem;
 		border-radius: 8px;
 		background: var(--bg-surface, #0d1524);
 		border: 1px solid var(--border, rgba(148,163,184,0.08));
@@ -1162,6 +1296,93 @@
 
 	.customize-item.dragging { opacity: 0.5; border-color: var(--primary, #3b82f6); }
 	.customize-item.drag-over { border-color: var(--gold, #f59e0b); }
+	.customize-item-hidden { opacity: 0.55; cursor: default; }
+	.customize-item-locked {
+		border-color: var(--gold, #f59e0b);
+		background: rgba(245, 158, 11, 0.06);
+		margin-top: 4px;
+		cursor: default;
+	}
+
+	.customize-item-icon {
+		font-size: 1.1rem;
+		flex-shrink: 0;
+	}
+
+	.customize-item-label {
+		flex: 1;
+		font-weight: 600;
+	}
+
+	.customize-always {
+		font-size: 0.65rem;
+		color: var(--gold, #f59e0b);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.customize-toggle-btn {
+		padding: 0.2rem 0.45rem;
+		border-radius: 5px;
+		border: none;
+		font-size: 0.65rem;
+		font-weight: 700;
+		cursor: pointer;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.customize-toggle-hide {
+		background: rgba(239, 68, 68, 0.12);
+		color: #ef4444;
+	}
+	.customize-toggle-hide:hover { background: rgba(239, 68, 68, 0.22); }
+	.customize-toggle-show {
+		background: rgba(59, 130, 246, 0.12);
+		color: #3b82f6;
+	}
+	.customize-toggle-show:hover { background: rgba(59, 130, 246, 0.22); }
+
+	.customize-hidden-label {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		margin: 0.5rem 0 0.35rem;
+	}
+
+	.nav-reorder-arrows {
+		display: flex;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+	.nav-arrow-btn {
+		background: none;
+		border: none;
+		color: var(--text-tertiary);
+		font-size: 0.8rem;
+		padding: 2px 4px;
+		cursor: pointer;
+		border-radius: 4px;
+		line-height: 1;
+	}
+	.nav-arrow-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		background: var(--bg-hover, rgba(148,163,184,0.08));
+	}
+	.nav-arrow-btn:disabled { opacity: 0.3; cursor: default; }
+
+	.customize-reset-btn {
+		width: 100%;
+		margin-top: 1rem;
+		padding: 0.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--border, rgba(148,163,184,0.12));
+		background: transparent;
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.customize-reset-btn:hover { background: var(--bg-hover); }
 
 	.drag-handle {
 		color: var(--text-muted, #475569);
