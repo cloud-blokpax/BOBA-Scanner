@@ -92,6 +92,14 @@ function saveToIdb(entries: ScanHistoryEntry[]): void {
 	saveToLocalStorage(entries);
 }
 
+export function removeFromScanHistory(id: string): void {
+	const updated = _scanHistory.filter(s => s.id !== id);
+	if (updated.length !== _scanHistory.length) {
+		saveToIdb(updated);
+		_scanHistory = updated;
+	}
+}
+
 export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp'>): void {
 	const newEntry: ScanHistoryEntry = {
 		...entry,
