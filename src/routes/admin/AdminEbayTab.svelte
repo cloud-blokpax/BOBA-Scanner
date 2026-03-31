@@ -2,6 +2,7 @@
 	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import Sparkline from './Sparkline.svelte';
+	import HarvestResults from './HarvestResults.svelte';
 
 	let loading = $state(true);
 	let triggeringHarvest = $state(false);
@@ -156,6 +157,9 @@
 				<button class="action-btn" onclick={loadEbay}>Refresh Status</button>
 			</div>
 		</div>
+
+		<!-- Harvest Results -->
+		<HarvestResults />
 	{/if}
 </div>
 
