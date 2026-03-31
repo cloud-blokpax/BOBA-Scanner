@@ -8,7 +8,7 @@
     "number": 1,
     "hot_dog_cost": 2,
     "dbs": 16,
-    "ability": "",
+    "ability": "If your opponent has not used a Play in this Battle, your Hero gets +20.",
     "base_play_name": "Front Run"
   },
   {
@@ -20,7 +20,7 @@
     "number": 2,
     "hot_dog_cost": 1,
     "dbs": 34,
-    "ability": "",
+    "ability": "If you win this Battle, recover up to 3 Hot Dogs from your Discard Pile.",
     "base_play_name": "Victory Dinner"
   },
   {
@@ -32,7 +32,7 @@
     "number": 3,
     "hot_dog_cost": 0,
     "dbs": 24,
-    "ability": "",
+    "ability": "Pay as many Hot Dogs as you want to run this Play. Your Hero gets +10 for each Hot Dog you pay. (Ex: Pay 3 Hot Dogs, your Hero gets +30.)",
     "base_play_name": "Get What You Pay For"
   },
   {
@@ -44,7 +44,7 @@
     "number": 4,
     "hot_dog_cost": 0,
     "dbs": 37,
-    "ability": "",
+    "ability": "Your Hero loses -15, but you can recover up to 2 Hot Dogs from your Discard Pile.",
     "base_play_name": "It's Gonna Cost Ya"
   },
   {
@@ -56,7 +56,7 @@
     "number": 5,
     "hot_dog_cost": 3,
     "dbs": 24,
-    "ability": "",
+    "ability": "Swap your Hero's current power with your opponent's current power in this Battle.",
     "base_play_name": "Deadline Deal"
   },
   {
@@ -68,7 +68,7 @@
     "number": 6,
     "hot_dog_cost": 2,
     "dbs": 16,
-    "ability": "",
+    "ability": "Play this on or before Battle 4. For the rest of the game, nothing changes until the start of Battle 7, when you recover all Hot Dogs from your Discard Pile.",
     "base_play_name": "Late Game Push"
   },
   {
@@ -80,7 +80,7 @@
     "number": 7,
     "hot_dog_cost": 0,
     "dbs": 39,
-    "ability": "",
+    "ability": "Each player gets up to 3 Hot Dogs back from their Discard Pile.",
     "base_play_name": "Back From The Dumps"
   },
   {
@@ -92,7 +92,7 @@
     "number": 8,
     "hot_dog_cost": 1,
     "dbs": 45,
-    "ability": "",
+    "ability": "Pick up 1 Play you used in a previous Battle and add it back to your Hand.",
     "base_play_name": "Reload"
   },
   {
@@ -104,7 +104,7 @@
     "number": 9,
     "hot_dog_cost": 5,
     "dbs": 35,
-    "ability": "",
+    "ability": "For the rest of the game, your opponent must roll a dice after paying the Hot Dog cost to run a Play. If they roll a 2-5, they can run the Play. If they roll anything else, they cannot.",
     "base_play_name": "Leave It To Chance"
   },
   {
@@ -116,7 +116,7 @@
     "number": 10,
     "hot_dog_cost": 2,
     "dbs": 52,
-    "ability": "",
+    "ability": "Shuffle all the Plays in your hand back into your Playbook, then draw 4 new Plays.",
     "base_play_name": "4 New Plays Baby!"
   },
   {
@@ -128,7 +128,7 @@
     "number": 11,
     "hot_dog_cost": 0,
     "dbs": 17,
-    "ability": "",
+    "ability": "Discard another Play from your hand and your Hero gets +10.",
     "base_play_name": "Burn That Play"
   },
   {
@@ -140,7 +140,7 @@
     "number": 12,
     "hot_dog_cost": 0,
     "dbs": 22,
-    "ability": "",
+    "ability": "Pick a number from 1 to 6 and roll a dice. If it lands on your number, Recover 4 Hot Dogs from your Discard Pile.",
     "base_play_name": "Cloudy With A Chance Of Hot Dogs"
   },
   {
@@ -152,7 +152,7 @@
     "number": 13,
     "hot_dog_cost": 2,
     "dbs": 80,
-    "ability": "",
+    "ability": "Draw the same number of Plays as you've used in this Battle, including this one. (Ex: If you have run 2 Plays this Battle, draw 2 Plays.)",
     "base_play_name": "Play Booster"
   },
   {
@@ -164,7 +164,7 @@
     "number": 14,
     "hot_dog_cost": 4,
     "dbs": 67,
-    "ability": "",
+    "ability": "For the rest of the game, whenever your opponent runs a Play, you can draw a Play from your Playbook.",
     "base_play_name": "You're Not Alone"
   },
   {
@@ -176,7 +176,7 @@
     "number": 15,
     "hot_dog_cost": 4,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your opponent can't Substitute for the rest of the game.",
     "base_play_name": "No More Subs"
   },
   {
@@ -188,7 +188,7 @@
     "number": 16,
     "hot_dog_cost": 1,
     "dbs": 30,
-    "ability": "",
+    "ability": "Reveal the top 5 Heroes from your Hero Deck. Add one to your hand and Discard the rest.",
     "base_play_name": "Locker Room Evacuation"
   },
   {
@@ -200,7 +200,7 @@
     "number": 17,
     "hot_dog_cost": 0,
     "dbs": 20,
-    "ability": "",
+    "ability": "For the rest of the Game, whenever a Player rolls a dice, they get to draw a Play from their Playbook.",
     "base_play_name": "Deep In The Playbook"
   },
   {
@@ -212,7 +212,7 @@
     "number": 18,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "For the rest of the Game, whenever a dice is rolled, the opponent's Hero loses -5.",
     "base_play_name": "Pay The Price"
   },
   {
@@ -224,7 +224,7 @@
     "number": 19,
     "hot_dog_cost": 4,
     "dbs": 22,
-    "ability": "",
+    "ability": "For the rest of the Game all of your Substitutions are free.",
     "base_play_name": "Unlimited Subs"
   },
   {
@@ -236,7 +236,7 @@
     "number": 20,
     "hot_dog_cost": 3,
     "dbs": 11,
-    "ability": "",
+    "ability": "Both players must send their Hero to the Discard Pile and replace them with the top card from their Hero Deck.",
     "base_play_name": "Leave It To Fate"
   },
   {
@@ -248,7 +248,7 @@
     "number": 21,
     "hot_dog_cost": 2,
     "dbs": 10,
-    "ability": "",
+    "ability": "For the rest of the game, all Heroes with Ice weapons get +10.",
     "base_play_name": "Ice Boost"
   },
   {
@@ -260,7 +260,7 @@
     "number": 22,
     "hot_dog_cost": 2,
     "dbs": 16,
-    "ability": "",
+    "ability": "For the rest of the game, all Heroes with Steel weapons get +10.",
     "base_play_name": "Steel Boost"
   },
   {
@@ -272,7 +272,7 @@
     "number": 23,
     "hot_dog_cost": 2,
     "dbs": 10,
-    "ability": "",
+    "ability": "For the rest of the game, all Heroes with Fire weapons get +10.",
     "base_play_name": "Fire Boost"
   },
   {
@@ -284,7 +284,7 @@
     "number": 24,
     "hot_dog_cost": 2,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, roll a dice. If you roll a 4-6, your Hero gets +30.",
     "base_play_name": "Fire Roll"
   },
   {
@@ -296,7 +296,7 @@
     "number": 25,
     "hot_dog_cost": 2,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, roll a dice. If you roll a 4-6 your Hero gets +30.",
     "base_play_name": "Ice Roll"
   },
   {
@@ -308,7 +308,7 @@
     "number": 26,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, roll a dice. If you roll a 5 or 6 your Hero gets +50.",
     "base_play_name": "Bigger Steel Roll"
   },
   {
@@ -320,7 +320,7 @@
     "number": 27,
     "hot_dog_cost": 6,
     "dbs": 21,
-    "ability": "",
+    "ability": "Search your Playbook and run any play for free. (Then, re-shuffle your Playbook.)",
     "base_play_name": "By Any Means Necessary"
   },
   {
@@ -332,7 +332,7 @@
     "number": 28,
     "hot_dog_cost": 2,
     "dbs": 8,
-    "ability": "",
+    "ability": "Your Hero now has the same power as your Opponent's Hero's current power.",
     "base_play_name": "Pick On Someone Your Own Size"
   },
   {
@@ -344,7 +344,7 @@
     "number": 29,
     "hot_dog_cost": 5,
     "dbs": 25,
-    "ability": "",
+    "ability": "Draw the top card from your Hero Deck and add its power to your Hero.",
     "base_play_name": "Dogpile"
   },
   {
@@ -356,7 +356,7 @@
     "number": 30,
     "hot_dog_cost": 2,
     "dbs": 25,
-    "ability": "",
+    "ability": "This Hero's Power is now 0. All your Heroes gain +10 for the rest of the Game.",
     "base_play_name": "Noble Sacrifice"
   },
   {
@@ -368,7 +368,7 @@
     "number": 31,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your Hero gets +15.",
     "base_play_name": "Buff Up 15"
   },
   {
@@ -380,7 +380,7 @@
     "number": 32,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your opponent's Hero loses -15.",
     "base_play_name": "Opp Loses 15"
   },
   {
@@ -392,7 +392,7 @@
     "number": 33,
     "hot_dog_cost": 2,
     "dbs": 22,
-    "ability": "",
+    "ability": "Your current Hero loses -50, but your next 2 Heroes each gain +15.",
     "base_play_name": "Lose 1 To Win 2 (Hopefully)"
   },
   {
@@ -404,7 +404,7 @@
     "number": 34,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "Both players roll a dice; whoever rolls the highest number gets to play the top card from their Playbook for free if able.",
     "base_play_name": "Luck Of The Draw"
   },
   {
@@ -416,7 +416,7 @@
     "number": 35,
     "hot_dog_cost": 1,
     "dbs": 20,
-    "ability": "",
+    "ability": "Your Hero gets +10 for each Hero in your Discard Pile. (Ex: 3 Heroes = +30)",
     "base_play_name": "Discarded Heroes"
   },
   {
@@ -428,7 +428,7 @@
     "number": 36,
     "hot_dog_cost": 1,
     "dbs": 9,
-    "ability": "",
+    "ability": "For the rest of the game, whenever you win a Battle, your Hero in the next Battle gets +5.",
     "base_play_name": "Make It, Take It"
   },
   {
@@ -440,7 +440,7 @@
     "number": 37,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Flip a coin: If heads, your Hero gets +15. If tails, your opponent's Hero loses -5.",
     "base_play_name": "Heads I Win, Tails You Lose"
   },
   {
@@ -452,7 +452,7 @@
     "number": 38,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Play this in Battle 5 or later. Your Hero gets +5 for each Battle you've won.",
     "base_play_name": "Fairweather Fan"
   },
   {
@@ -464,7 +464,7 @@
     "number": 39,
     "hot_dog_cost": 1,
     "dbs": 50,
-    "ability": "",
+    "ability": "For this Battle and the next, all your Plays cost 1 less Hot Dog (including this one).",
     "base_play_name": "Flash Sale"
   },
   {
@@ -476,7 +476,7 @@
     "number": 40,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "Any Plays currently affecting your Hero's power now also affect your opponent's Hero in this Battle.",
     "base_play_name": "Ha! Gotcha"
   },
   {
@@ -488,7 +488,7 @@
     "number": 41,
     "hot_dog_cost": 1,
     "dbs": 35,
-    "ability": "",
+    "ability": "If you choose to Substitute in the next Battle, your opponent must pay the 2 Hot Dog cost.",
     "base_play_name": "Pay It For Me"
   },
   {
@@ -500,7 +500,7 @@
     "number": 42,
     "hot_dog_cost": 1,
     "dbs": 25,
-    "ability": "",
+    "ability": "Pick a number from 1 to 6, then roll a dice. If it lands on your number, your Hero gets +20. If not, draw a Play from your Playbook.",
     "base_play_name": "Only Upside"
   },
   {
@@ -512,7 +512,7 @@
     "number": 43,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Your Hero gets +5 power for every card in your Discard Pile, except Hot Dogs.",
     "base_play_name": "Recycle For 5"
   },
   {
@@ -524,7 +524,7 @@
     "number": 44,
     "hot_dog_cost": 0,
     "dbs": 12,
-    "ability": "",
+    "ability": "Flip a coin: If heads, your Hero gets +10 power. If your Hero's weapon is Steel, draw 1 Play as well.",
     "base_play_name": "Steel Flipper"
   },
   {
@@ -536,7 +536,7 @@
     "number": 45,
     "hot_dog_cost": 2,
     "dbs": 21,
-    "ability": "",
+    "ability": "Your Hero in this Battle and the next Battle gets +10.",
     "base_play_name": "2 Get 10"
   },
   {
@@ -548,7 +548,7 @@
     "number": 46,
     "hot_dog_cost": 2,
     "dbs": 21,
-    "ability": "",
+    "ability": "Your opponent's Hero loses -10 in this Battle, and your Hero in the next Battle gets +10.",
     "base_play_name": "10/10 Unfair"
   },
   {
@@ -560,7 +560,7 @@
     "number": 47,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Your Hero gets +10, but your opponent's Hero in the next Battle also gets +10.",
     "base_play_name": "I Get Some, You Get Some."
   },
   {
@@ -572,7 +572,7 @@
     "number": 48,
     "hot_dog_cost": 2,
     "dbs": 31,
-    "ability": "",
+    "ability": "Draw a Play from your Playbook, then choose 1 random Play from your opponent's hand for them to Discard.",
     "base_play_name": "I Get 1. You Lose 1."
   },
   {
@@ -584,7 +584,7 @@
     "number": 49,
     "hot_dog_cost": 2,
     "dbs": 26,
-    "ability": "",
+    "ability": "Flip a coin 3 times. If all 3 flips land on heads, your Hero's Power is doubled. Each time the coin lands on tails, draw a Play.",
     "base_play_name": "3rd Time Charm"
   },
   {
@@ -596,7 +596,7 @@
     "number": 50,
     "hot_dog_cost": 1,
     "dbs": 16,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, after both players finish their turn, your Hero gets +10.",
     "base_play_name": "Baby Phoenix"
   },
   {
@@ -608,7 +608,7 @@
     "number": 51,
     "hot_dog_cost": 1,
     "dbs": 19,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, after both players finish their turn, your Hero gets +15.",
     "base_play_name": "Steel Resolve"
   },
   {
@@ -620,7 +620,7 @@
     "number": 52,
     "hot_dog_cost": 3,
     "dbs": 8,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Fire Weapons.",
     "base_play_name": "Only Fire"
   },
   {
@@ -632,7 +632,7 @@
     "number": 53,
     "hot_dog_cost": 3,
     "dbs": 8,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Ice Weapons.",
     "base_play_name": "Only Ice"
   },
   {
@@ -644,7 +644,7 @@
     "number": 54,
     "hot_dog_cost": 3,
     "dbs": 11,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Steel Weapons.",
     "base_play_name": "Only Steel"
   },
   {
@@ -656,7 +656,7 @@
     "number": 55,
     "hot_dog_cost": 1,
     "dbs": 94,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Flame Wall"
   },
   {
@@ -668,7 +668,7 @@
     "number": 56,
     "hot_dog_cost": 1,
     "dbs": 94,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Icy Shield"
   },
   {
@@ -680,7 +680,7 @@
     "number": 57,
     "hot_dog_cost": 1,
     "dbs": 95,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Steel Defense"
   },
   {
@@ -692,7 +692,7 @@
     "number": 58,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "This Hero can't have its power reduced by an opponent's Play.",
     "base_play_name": "Indestructible"
   },
   {
@@ -704,7 +704,7 @@
     "number": 59,
     "hot_dog_cost": 2,
     "dbs": 110,
-    "ability": "",
+    "ability": "Your opponent can't run any Plays this Battle.",
     "base_play_name": "Full Court Press"
   },
   {
@@ -716,7 +716,7 @@
     "number": 60,
     "hot_dog_cost": 3,
     "dbs": 12,
-    "ability": "",
+    "ability": "Replace your Hero with any Hero from your hand and draw 1 Hero.",
     "base_play_name": "Curveball"
   },
   {
@@ -728,7 +728,7 @@
     "number": 61,
     "hot_dog_cost": 2,
     "dbs": 39,
-    "ability": "",
+    "ability": "Flip a coin 4 times. For each heads, you can either draw a card (Hero or Play) or Recover a Hot Dog from your Discard Pile.",
     "base_play_name": "Add Firepower"
   },
   {
@@ -740,7 +740,7 @@
     "number": 62,
     "hot_dog_cost": 3,
     "dbs": 12,
-    "ability": "",
+    "ability": "This Hero gets any extra Power your previous Hero had.",
     "base_play_name": "Going Back to Back"
   },
   {
@@ -752,7 +752,7 @@
     "number": 63,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "Flip a coin: If heads, you draw 2 Plays. If tails, your opponent draws 2 Plays.",
     "base_play_name": "Flip Ya For 2 Plays"
   },
   {
@@ -764,7 +764,7 @@
     "number": 64,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "No matter the outcome of this Battle, you decide who gets Honors (goes first) in the next Battle.",
     "base_play_name": "Easy Choice"
   },
   {
@@ -776,7 +776,7 @@
     "number": 65,
     "hot_dog_cost": 1,
     "dbs": 90,
-    "ability": "",
+    "ability": "Your opponent's Plays each cost an extra 2 Hot Dogs for this Battle and the next Battle.",
     "base_play_name": "Dog Gone Inflation"
   },
   {
@@ -788,7 +788,7 @@
     "number": 66,
     "hot_dog_cost": 2,
     "dbs": 43,
-    "ability": "",
+    "ability": "Reveal the top 3 Plays of your Playbook; choose 1 and add it to your hand then Discard the other 2.",
     "base_play_name": "Tough Call"
   },
   {
@@ -800,7 +800,7 @@
     "number": 67,
     "hot_dog_cost": 1,
     "dbs": 21,
-    "ability": "",
+    "ability": "Replace this Hero with any Hero from your Discard Pile.",
     "base_play_name": "Don't Call It A Comeback"
   },
   {
@@ -812,7 +812,7 @@
     "number": 68,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "You can only run this Play in Battle 5 or later; give your Hero +20.",
     "base_play_name": "Late-Game Magic"
   },
   {
@@ -824,7 +824,7 @@
     "number": 69,
     "hot_dog_cost": 2,
     "dbs": 10,
-    "ability": "",
+    "ability": "For the rest of the Game if a coin is flipped, lower the opponent's Hero in the active Battle by -5.",
     "base_play_name": "Loan Sharked"
   },
   {
@@ -836,7 +836,7 @@
     "number": 70,
     "hot_dog_cost": 1,
     "dbs": 19,
-    "ability": "",
+    "ability": "Any Plays that are affecting the rest of the Game are now cancelled going forward (including your own).",
     "base_play_name": "Pulling The Plug"
   },
   {
@@ -848,7 +848,7 @@
     "number": 71,
     "hot_dog_cost": 2,
     "dbs": 10,
-    "ability": "",
+    "ability": "If your Hero in this Battle is losing by 15 or more it gets +20.",
     "base_play_name": "Rally Cap"
   },
   {
@@ -860,7 +860,7 @@
     "number": 72,
     "hot_dog_cost": 1,
     "dbs": 16,
-    "ability": "",
+    "ability": "This Hero gets +15, but your Hero in the next Battle gets -5.",
     "base_play_name": "Rob Peter Pay Paul"
   },
   {
@@ -872,7 +872,7 @@
     "number": 73,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "Flip a coin 4 times; your opponent's Hero gets -5 each time the coin lands on tails.",
     "base_play_name": "Shooters Shoot"
   },
   {
@@ -884,7 +884,7 @@
     "number": 74,
     "hot_dog_cost": 0,
     "dbs": 33,
-    "ability": "",
+    "ability": "Get 1 Hot Dog back from your Discard Pile for each Hot Dog your opponent uses (or has used) in this Battle.",
     "base_play_name": "The Champion's Lasso"
   },
   {
@@ -896,7 +896,7 @@
     "number": 75,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "If you lost the previous Battle, your Hero in the active Battle gets +20.",
     "base_play_name": "To Fight Another Day"
   },
   {
@@ -908,7 +908,7 @@
     "number": 76,
     "hot_dog_cost": 1,
     "dbs": 34,
-    "ability": "",
+    "ability": "Flip a coin; if heads, run the top Play from your Playbook in this Battle for free (0 Hot Dog cost).",
     "base_play_name": "Win The Toss"
   },
   {
@@ -920,7 +920,7 @@
     "number": 77,
     "hot_dog_cost": 4,
     "dbs": 7,
-    "ability": "",
+    "ability": "Lower the opponent's Hero by -30.",
     "base_play_name": "Gavel of Justice"
   },
   {
@@ -932,7 +932,7 @@
     "number": 78,
     "hot_dog_cost": 0,
     "dbs": 23,
-    "ability": "",
+    "ability": "If you ran a Play in the previous Battle, this Hero gets +15.",
     "base_play_name": "No Huddle"
   },
   {
@@ -944,7 +944,7 @@
     "number": 79,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "Draw a Hero from your Hero Deck.",
     "base_play_name": "1-4-1 Hero"
   },
   {
@@ -956,7 +956,7 @@
     "number": 80,
     "hot_dog_cost": 1,
     "dbs": 34,
-    "ability": "",
+    "ability": "Draw a Play from your Playbook.",
     "base_play_name": "1-4-1 Play"
   },
   {
@@ -968,7 +968,7 @@
     "number": 81,
     "hot_dog_cost": 2,
     "dbs": 32,
-    "ability": "",
+    "ability": "Draw a card from either your Playbook or your Hero Deck.",
     "base_play_name": "Adding Depth"
   },
   {
@@ -980,7 +980,7 @@
     "number": 82,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "Pick a number 1-6, then your opponent picks a different number 1-6; roll a die; if it lands on either player's number their Hero gets +30.",
     "base_play_name": "Crystal Ball"
   },
   {
@@ -992,7 +992,7 @@
     "number": 83,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin twice; if both land on heads, play the top card from your Hero Deck and add its power to the active Hero in this Battle.",
     "base_play_name": "Double or Nothin'"
   },
   {
@@ -1004,7 +1004,7 @@
     "number": 84,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "Flip a coin 4 times; your Hero gets +5 each time the coin lands on heads.",
     "base_play_name": "Heads-Up!"
   },
   {
@@ -1016,7 +1016,7 @@
     "number": 85,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "Flip a coin; if heads, your Hero gets +10, if tails, your Hero gets -10.",
     "base_play_name": "Jump Ball"
   },
   {
@@ -1028,7 +1028,7 @@
     "number": 86,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Your opponent cannot Substitute in Battle 7.",
     "base_play_name": "Late Game Lockdown"
   },
   {
@@ -1040,7 +1040,7 @@
     "number": 87,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "Roll a die two times; if the numbers add up to 7 your Hero gets +100; if any other number you must Discard a random Hero from your hand.",
     "base_play_name": "Lucky 7"
   },
   {
@@ -1052,7 +1052,7 @@
     "number": 88,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Roll a die; your Hero gets +5x the number; (ex. If you roll a 3 your Hero gets +15).",
     "base_play_name": "Lucky Bounce"
   },
   {
@@ -1064,7 +1064,7 @@
     "number": 89,
     "hot_dog_cost": 1,
     "dbs": 18,
-    "ability": "",
+    "ability": "Steal -5 from your opponent's Hero and give +5 to your own Hero.",
     "base_play_name": "Robin Who"
   },
   {
@@ -1076,7 +1076,7 @@
     "number": 90,
     "hot_dog_cost": 1,
     "dbs": 19,
-    "ability": "",
+    "ability": "Next Battle you can Substitute for free (0 Hot Dog cost).",
     "base_play_name": "Pinch Hitter"
   },
   {
@@ -1088,7 +1088,7 @@
     "number": 91,
     "hot_dog_cost": 3,
     "dbs": 29,
-    "ability": "",
+    "ability": "Your opponent can't run any Plays in Battle 7.",
     "base_play_name": "Prevent D"
   },
   {
@@ -1100,7 +1100,7 @@
     "number": 93,
     "hot_dog_cost": 2,
     "dbs": 8,
-    "ability": "",
+    "ability": "If you lost the previous Battle, Discard all Heroes in your hand and draw 4 new Heroes from your Hero Deck.",
     "base_play_name": "Rebuild"
   },
   {
@@ -1112,7 +1112,7 @@
     "number": 94,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "Search your Hero Deck for any Hero with up to 100 power and add it to your hand.",
     "base_play_name": "Waiver Wire Pickup"
   },
   {
@@ -1124,7 +1124,7 @@
     "number": 95,
     "hot_dog_cost": 0,
     "dbs": 17,
-    "ability": "",
+    "ability": "Recover 1 Hot Dog from your Discard Pile.",
     "base_play_name": "Trash Bandit"
   },
   {
@@ -1136,7 +1136,7 @@
     "number": 96,
     "hot_dog_cost": 1,
     "dbs": 11,
-    "ability": "",
+    "ability": "Roll a dice: if you get a 1 or 6, your Hero's power drops to 0. If you roll a 2-5, you gain +25.",
     "base_play_name": "Worth The Risk?"
   },
   {
@@ -1148,7 +1148,7 @@
     "number": 97,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "Send your Hero to the Discard Pile. Reveal the top 2 Heroes from your deck. Your opponent picks 1 to join the battle, and the other goes to your Discard Pile.",
     "base_play_name": "Opps' Choice"
   },
   {
@@ -1160,7 +1160,7 @@
     "number": 98,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "This Hero can't be affected in any way by your opponent's Plays.",
     "base_play_name": "Immunity"
   },
   {
@@ -1172,7 +1172,7 @@
     "number": 99,
     "hot_dog_cost": 2,
     "dbs": 2,
-    "ability": "",
+    "ability": "You can re-order your face-down Heroes in future Battles, but you can't look at them.",
     "base_play_name": "Change The Future"
   },
   {
@@ -1184,7 +1184,7 @@
     "number": 100,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "If this Battle is tied, your Hero gets +1.",
     "base_play_name": "QB Sneak"
   },
   {
@@ -1196,7 +1196,7 @@
     "number": 1,
     "hot_dog_cost": 5,
     "dbs": 44,
-    "ability": "",
+    "ability": "For the rest of the game, if your opponent would recover Hot Dogs, you recover them instead.",
     "base_play_name": "Grilled Bandit"
   },
   {
@@ -1208,7 +1208,7 @@
     "number": 2,
     "hot_dog_cost": 4,
     "dbs": 8,
-    "ability": "",
+    "ability": "If this is used in Battle 7, your Hero gets +40. If it's used in any other Battle, your Hero gets +25.",
     "base_play_name": "The Closer"
   },
   {
@@ -1220,7 +1220,7 @@
     "number": 3,
     "hot_dog_cost": 2,
     "dbs": 15,
-    "ability": "",
+    "ability": "After paying the Hot Dog cost of this Play, your Hero gets +5 for every Hot Dog you have left.",
     "base_play_name": "Banked Power"
   },
   {
@@ -1232,7 +1232,7 @@
     "number": 4,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "Your Hero's Power returns to its starting Power.",
     "base_play_name": "Hero Reset"
   },
   {
@@ -1244,7 +1244,7 @@
     "number": 5,
     "hot_dog_cost": 1,
     "dbs": 24,
-    "ability": "",
+    "ability": "This must be the only Play you use this Battle. Your Hero gets +20.",
     "base_play_name": "One And Done"
   },
   {
@@ -1256,7 +1256,7 @@
     "number": 6,
     "hot_dog_cost": 3,
     "dbs": 25,
-    "ability": "",
+    "ability": "If your opponent has 5 or more Hot Dogs, their Hero gets -15 and they lose 2 Hot Dogs.",
     "base_play_name": "Too Full To Fight"
   },
   {
@@ -1268,7 +1268,7 @@
     "number": 7,
     "hot_dog_cost": 2,
     "dbs": 9,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -5 for each Hero you've revealed so far.",
     "base_play_name": "Lineup Pressure"
   },
   {
@@ -1280,7 +1280,7 @@
     "number": 8,
     "hot_dog_cost": 1,
     "dbs": 40,
-    "ability": "",
+    "ability": "Draw 2 Plays and Discard 2 Heroes.",
     "base_play_name": "Sacrifice And Scheme"
   },
   {
@@ -1292,7 +1292,7 @@
     "number": 9,
     "hot_dog_cost": 1,
     "dbs": 37,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -5 and they Discard 1 random Play.",
     "base_play_name": "Momentum Breaker"
   },
   {
@@ -1304,7 +1304,7 @@
     "number": 10,
     "hot_dog_cost": 3,
     "dbs": 28,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -10 and they can't Recover Hot Dogs next Battle.",
     "base_play_name": "Drain And Deny"
   },
   {
@@ -1316,7 +1316,7 @@
     "number": 11,
     "hot_dog_cost": 3,
     "dbs": 24,
-    "ability": "",
+    "ability": "Your Hero gets +20. If you didn't run any Plays last Battle, this Play costs 0. This Play can't be used in Battle 1.",
     "base_play_name": "Free Booster"
   },
   {
@@ -1328,7 +1328,7 @@
     "number": 12,
     "hot_dog_cost": 0,
     "dbs": 25,
-    "ability": "",
+    "ability": "If you win this Battle, Recover Hot Dogs equal to the number of Plays you used this Battle which cost 2 or more. (Max 3).",
     "base_play_name": "Momentum Meal"
   },
   {
@@ -1340,7 +1340,7 @@
     "number": 13,
     "hot_dog_cost": 4,
     "dbs": 46,
-    "ability": "",
+    "ability": "Your opponent must pay 1 Hot Dog for each Hero in their hand. If they can't, they must Discard a random Hero instead.",
     "base_play_name": "Hero Tax"
   },
   {
@@ -1352,7 +1352,7 @@
     "number": 14,
     "hot_dog_cost": 3,
     "dbs": 17,
-    "ability": "",
+    "ability": "Roll a dice once. If you roll a 4-6, your opponent's Hero gets -15. You may roll again until you roll a 1-3.",
     "base_play_name": "Sack Streak"
   },
   {
@@ -1364,7 +1364,7 @@
     "number": 15,
     "hot_dog_cost": 0,
     "dbs": 14,
-    "ability": "",
+    "ability": "If you have 1 or 0 Hot Dogs left, your Hero gets +15.",
     "base_play_name": "Running On Fumes"
   },
   {
@@ -1376,7 +1376,7 @@
     "number": 16,
     "hot_dog_cost": 0,
     "dbs": 33,
-    "ability": "",
+    "ability": "If you have 6 or more Hot Dogs left, Recover 1 Hot Dog and Draw 1 Play.",
     "base_play_name": "Rich Get Richer"
   },
   {
@@ -1388,7 +1388,7 @@
     "number": 17,
     "hot_dog_cost": 2,
     "dbs": 15,
-    "ability": "",
+    "ability": "Next Battle, your opponent's Hero gets -5 for every Play they run.",
     "base_play_name": "Overcommited"
   },
   {
@@ -1400,7 +1400,7 @@
     "number": 18,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "If your opponent has an equal or greater number of Hot Dogs than you before paying this Play's Hot Dog cost, their Hero gets -10.",
     "base_play_name": "Belly Buster"
   },
   {
@@ -1412,7 +1412,7 @@
     "number": 19,
     "hot_dog_cost": 0,
     "dbs": 14,
-    "ability": "",
+    "ability": "If you have 2 or fewer Hot Dogs, cancel all Plays affecting the rest of the game.",
     "base_play_name": "Emergency Shutdown"
   },
   {
@@ -1424,7 +1424,7 @@
     "number": 20,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your opponent's Hero gets -15. If tails, your opponent's next Hero gets -15.",
     "base_play_name": "Double-Edged Flip"
   },
   {
@@ -1436,7 +1436,7 @@
     "number": 21,
     "hot_dog_cost": 2,
     "dbs": 13,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -10. If your opponent has used 2 or more Plays this Battle, they also lose 1 Hot Dog.",
     "base_play_name": "Overextended"
   },
   {
@@ -1448,7 +1448,7 @@
     "number": 22,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your Hero gets +15. If your opponent has won more Battles than you, Draw 1 Play.",
     "base_play_name": "Battle Back"
   },
   {
@@ -1460,7 +1460,7 @@
     "number": 23,
     "hot_dog_cost": 2,
     "dbs": 22,
-    "ability": "",
+    "ability": "If your opponent's Hero has a different weapon type than yours, your Hero gets +15. If they are the same, your Hero gets +20.",
     "base_play_name": "Weapon Tangle"
   },
   {
@@ -1472,7 +1472,7 @@
     "number": 24,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Your Hero gets +5 Power. If it has a Hex weapon, it gets +20.",
     "base_play_name": "Hexvantage"
   },
   {
@@ -1484,7 +1484,7 @@
     "number": 25,
     "hot_dog_cost": 2,
     "dbs": 39,
-    "ability": "",
+    "ability": "Discard a Play from your hand to Draw 2 new Plays.",
     "base_play_name": "Trade-Up"
   },
   {
@@ -1496,7 +1496,7 @@
     "number": 26,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "If your Hero's current Power is the same as its starting Power, your Hero gets +10.",
     "base_play_name": "Baseline Bonus"
   },
   {
@@ -1508,7 +1508,7 @@
     "number": 27,
     "hot_dog_cost": 0,
     "dbs": 31,
-    "ability": "",
+    "ability": "If your Hero loses this Battle, Draw 1 Play and Recover 1 Hot Dog.",
     "base_play_name": "Consolation Combo"
   },
   {
@@ -1520,7 +1520,7 @@
     "number": 28,
     "hot_dog_cost": 1,
     "dbs": 40,
-    "ability": "",
+    "ability": "If you run this Play before Battle 3, Draw 2 Plays. If not, Draw 1 Play.",
     "base_play_name": "Quick Draw"
   },
   {
@@ -1532,7 +1532,7 @@
     "number": 29,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "If your previous Hero and your current Hero share a weapon type, your Hero gets +20. Otherwise, Draw 1 Play.",
     "base_play_name": "Weapon-Sync"
   },
   {
@@ -1544,7 +1544,7 @@
     "number": 30,
     "hot_dog_cost": 0,
     "dbs": 34,
-    "ability": "",
+    "ability": "If your previous 2 revealed Heroes shared a weapon type, Recover 2 Hot Dogs.",
     "base_play_name": "Synergy Snacks"
   },
   {
@@ -1556,7 +1556,7 @@
     "number": 31,
     "hot_dog_cost": 0,
     "dbs": 33,
-    "ability": "",
+    "ability": "Draw 1 Play. If it costs 1 or less, you may play it immediately for free. If the cost is 2 or higher, Discard it.",
     "base_play_name": "Wildcard Wager"
   },
   {
@@ -1568,7 +1568,7 @@
     "number": 32,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "Reveal the top 3 Heroes of your Hero Deck. Choose one to add to your hand, then shuffle the rest back into your Hero Deck.",
     "base_play_name": "Big Time Recruit"
   },
   {
@@ -1580,7 +1580,7 @@
     "number": 33,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "If you lost the 2 previous Battles, your Hero gets +15.",
     "base_play_name": "Comeback Time"
   },
   {
@@ -1592,7 +1592,7 @@
     "number": 34,
     "hot_dog_cost": 0,
     "dbs": 4,
-    "ability": "",
+    "ability": "Both Players roll a dice. Whoever rolls a higher number gets +25. If tied, both get -10.",
     "base_play_name": "Dice Duel"
   },
   {
@@ -1604,7 +1604,7 @@
     "number": 35,
     "hot_dog_cost": 0,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +10. If you lose this Battle, your Hero in the next Battle gets -20.",
     "base_play_name": "High Stakes Pump-Up"
   },
   {
@@ -1616,7 +1616,7 @@
     "number": 36,
     "hot_dog_cost": 0,
     "dbs": 34,
-    "ability": "",
+    "ability": "If you lost the previous Battle, your opponent must pay 1 Hot Dog at the start of the next Battle or Discard a Play.",
     "base_play_name": "Pick Your Poison"
   },
   {
@@ -1628,7 +1628,7 @@
     "number": 37,
     "hot_dog_cost": 1,
     "dbs": 38,
-    "ability": "",
+    "ability": "For the rest of the game, neither Player can Recover more than 1 Hot Dog per Battle.",
     "base_play_name": "Snack Sanction"
   },
   {
@@ -1640,7 +1640,7 @@
     "number": 38,
     "hot_dog_cost": 3,
     "dbs": 30,
-    "ability": "",
+    "ability": "For the rest of the game, neither Player can Recover any Hot Dogs.",
     "base_play_name": "Bun Shortage"
   },
   {
@@ -1652,7 +1652,7 @@
     "number": 39,
     "hot_dog_cost": 1,
     "dbs": 30,
-    "ability": "",
+    "ability": "Discard a Play. If you do, your opponent loses 2 Hot Dogs.",
     "base_play_name": "Burn To Burn"
   },
   {
@@ -1664,7 +1664,7 @@
     "number": 40,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your Hero gets +10. If your opponent has more Hot Dogs than you after you've paid this Play's cost, Recover 1 Hot Dog.",
     "base_play_name": "Catch-Up Bonus"
   },
   {
@@ -1676,7 +1676,7 @@
     "number": 41,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "After paying this Play's cost, if your opponent has more Hot Dogs than you, your Hero gets +15. If you have more than them, their Hero gets -15.",
     "base_play_name": "Buff Or Debuff"
   },
   {
@@ -1688,7 +1688,7 @@
     "number": 42,
     "hot_dog_cost": 2,
     "dbs": 20,
-    "ability": "",
+    "ability": "Discard a Hero with a Glow weapon from your hand. Your Hero gets +25.",
     "base_play_name": "Glowaway"
   },
   {
@@ -1700,7 +1700,7 @@
     "number": 43,
     "hot_dog_cost": 1,
     "dbs": 19,
-    "ability": "",
+    "ability": "Reveal the top 2 Plays of your opponent's Playbook. Put one back on top and send 1 to the bottom.",
     "base_play_name": "Playbook Knowledge"
   },
   {
@@ -1712,7 +1712,7 @@
     "number": 44,
     "hot_dog_cost": 1,
     "dbs": 18,
-    "ability": "",
+    "ability": "If you have Honors, reveal a Play from your hand. You may use it for free next Battle if your opponent uses a Play with equal or greater cost.",
     "base_play_name": "Scare Tactics"
   },
   {
@@ -1724,7 +1724,7 @@
     "number": 45,
     "hot_dog_cost": 1,
     "dbs": 20,
-    "ability": "",
+    "ability": "Your current Hero gets +10 for every Hero in your Discard Pile with the same weapon type.",
     "base_play_name": "Weapon Lineage"
   },
   {
@@ -1736,7 +1736,7 @@
     "number": 46,
     "hot_dog_cost": 1,
     "dbs": 21,
-    "ability": "",
+    "ability": "Choose one of your unrevealed Heroes. When that Hero is revealed, it gets -10 but you Recover 2 Hot Dogs.",
     "base_play_name": "Delayed Recovery"
   },
   {
@@ -1748,7 +1748,7 @@
     "number": 47,
     "hot_dog_cost": 3,
     "dbs": 34,
-    "ability": "",
+    "ability": "Shuffle your entire Discard Pile (excluding Hot Dogs) back into your deck. Draw 2 Plays.",
     "base_play_name": "Second Wind"
   },
   {
@@ -1760,7 +1760,7 @@
     "number": 48,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +15. If you lose this Battle, Recover 1 Hot Dog.",
     "base_play_name": "Protein Bar"
   },
   {
@@ -1772,7 +1772,7 @@
     "number": 49,
     "hot_dog_cost": 1,
     "dbs": 12,
-    "ability": "",
+    "ability": "If your Hero's weapon type is different from your opponent's, their Hero gets -10.",
     "base_play_name": "Different Leagues"
   },
   {
@@ -1784,7 +1784,7 @@
     "number": 50,
     "hot_dog_cost": 1,
     "dbs": 38,
-    "ability": "",
+    "ability": "Shuffle 1 of your Plays from a previous Round into your Playbook to Draw 1 Play.",
     "base_play_name": "Refill And Reload"
   },
   {
@@ -1796,7 +1796,7 @@
     "number": 51,
     "hot_dog_cost": 0,
     "dbs": 7,
-    "ability": "",
+    "ability": "Flip a coin. If heads, you Recover 3 Hot Dogs. If tails, your opponent Recovers 3 Hot Dogs.",
     "base_play_name": "Dog Gone Flip"
   },
   {
@@ -1808,7 +1808,7 @@
     "number": 52,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +15. If this is your second Play this Battle, it gets an additional +5.",
     "base_play_name": "Combo Kick"
   },
   {
@@ -1820,7 +1820,7 @@
     "number": 53,
     "hot_dog_cost": 3,
     "dbs": 13,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -5 for every Play you have run this Battle.",
     "base_play_name": "Overprepared"
   },
   {
@@ -1832,7 +1832,7 @@
     "number": 54,
     "hot_dog_cost": 1,
     "dbs": 18,
-    "ability": "",
+    "ability": "Once this Play is run, if your opponent has more Plays in their hand than you, their Hero gets -10.",
     "base_play_name": "More Plays, Less Power"
   },
   {
@@ -1844,7 +1844,7 @@
     "number": 55,
     "hot_dog_cost": 2,
     "dbs": 19,
-    "ability": "",
+    "ability": "Discard the top card of your Hero Deck. If it has the same weapon type as your active Hero, your Hero gets +20.",
     "base_play_name": "Lucky Discard"
   },
   {
@@ -1856,7 +1856,7 @@
     "number": 56,
     "hot_dog_cost": 2,
     "dbs": 34,
-    "ability": "",
+    "ability": "Reveal the top 3 Plays of your Playbook. Add 1 to your hand and Discard the rest. If it's a Play with a cost of 3 or higher, your Hero gets +10.",
     "base_play_name": "Power Pick"
   },
   {
@@ -1868,7 +1868,7 @@
     "number": 57,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Flip a coin. If heads, send your current Hero to the Discard Pile and replace it with one from your hand. If tails, Discard 1 Play from your hand.",
     "base_play_name": "Toss And Trade"
   },
   {
@@ -1880,7 +1880,7 @@
     "number": 58,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin and roll a dice. If the coin lands on heads and you roll a 4-6 on the dice, your Hero gets +30. If not, Discard 2 Plays from your hand.",
     "base_play_name": "Lucky Shot"
   },
   {
@@ -1892,7 +1892,7 @@
     "number": 59,
     "hot_dog_cost": 3,
     "dbs": 16,
-    "ability": "",
+    "ability": "Your opponent's Hero gets -20. They can't Substitute next Battle.",
     "base_play_name": "Bench Blocker"
   },
   {
@@ -1904,7 +1904,7 @@
     "number": 60,
     "hot_dog_cost": 1,
     "dbs": 16,
-    "ability": "",
+    "ability": "Discard 1 Hero from your hand. Your current Hero gets +10 for every Hero in your Discard Pile with the same weapon type as the one you discarded.",
     "base_play_name": "Fallen Fighters"
   },
   {
@@ -1916,7 +1916,7 @@
     "number": 61,
     "hot_dog_cost": 3,
     "dbs": 22,
-    "ability": "",
+    "ability": "Name a weapon type. Now and for the rest of the game, if your opponent's Hero has that weapon type, they get -10. Otherwise, you Discard 1 Play.",
     "base_play_name": "Dead Red"
   },
   {
@@ -1928,7 +1928,7 @@
     "number": 62,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your opponent uses 3 or more Plays this Battle, your Hero gets +15.",
     "base_play_name": "Play Surge"
   },
   {
@@ -1940,7 +1940,7 @@
     "number": 63,
     "hot_dog_cost": 0,
     "dbs": 39,
-    "ability": "",
+    "ability": "If this is the first play you've run this Battle, Draw 1 Play.",
     "base_play_name": "First Draw"
   },
   {
@@ -1952,7 +1952,7 @@
     "number": 64,
     "hot_dog_cost": 1,
     "dbs": 27,
-    "ability": "",
+    "ability": "Look at the top 3 Plays of your Playbook. Place them back on top in any order you want.",
     "base_play_name": "Play Re-Order"
   },
   {
@@ -1964,7 +1964,7 @@
     "number": 65,
     "hot_dog_cost": 0,
     "dbs": 6,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your Hero gets +10. If tails, you must Discard a random Play from your hand.",
     "base_play_name": "Discard Or 10"
   },
   {
@@ -1976,7 +1976,7 @@
     "number": 66,
     "hot_dog_cost": 0,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +10 this Battle, but you can't use any Plays next Battle.",
     "base_play_name": "Maximum Effort"
   },
   {
@@ -1988,7 +1988,7 @@
     "number": 67,
     "hot_dog_cost": 0,
     "dbs": 10,
-    "ability": "",
+    "ability": "If you have exactly 3 Hot Dogs left, your Hero gets +10.",
     "base_play_name": "3-Dog-Special"
   },
   {
@@ -2000,7 +2000,7 @@
     "number": 68,
     "hot_dog_cost": 0,
     "dbs": 19,
-    "ability": "",
+    "ability": "For the rest of the game, any Hero that has been Substituted in gets +5.",
     "base_play_name": "Substitution Boost"
   },
   {
@@ -2012,7 +2012,7 @@
     "number": 69,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Reveal the top 4 Heroes of your Hero Deck. Add 1 to your hand. Shuffle the rest into your Hero Deck.",
     "base_play_name": "Bench Scout"
   },
   {
@@ -2024,7 +2024,7 @@
     "number": 70,
     "hot_dog_cost": 1,
     "dbs": 11,
-    "ability": "",
+    "ability": "Name a weapon type. If your opponent's next Hero has that weapon type, that Hero gets -15.",
     "base_play_name": "Good Guess"
   },
   {
@@ -2036,7 +2036,7 @@
     "number": 71,
     "hot_dog_cost": 1,
     "dbs": 30,
-    "ability": "",
+    "ability": "If you won the last Battle, your Hero gets +10. If you lost, Draw 1 Play.",
     "base_play_name": "Good Fortune"
   },
   {
@@ -2048,7 +2048,7 @@
     "number": 72,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If you Substituted this Battle, your Hero gets +10.",
     "base_play_name": "10 For A Sub"
   },
   {
@@ -2060,7 +2060,7 @@
     "number": 73,
     "hot_dog_cost": 2,
     "dbs": 26,
-    "ability": "",
+    "ability": "Reveal the top card of your Playbook. If it costs 2 or less, Draw it and your Hero gets +10. If not, shuffle it back into your Playbook.",
     "base_play_name": "Cheap Trick"
   },
   {
@@ -2072,7 +2072,7 @@
     "number": 74,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Your Hero gets +5 for every different weapon type revealed this game.",
     "base_play_name": "Weapon Mixer"
   },
   {
@@ -2084,7 +2084,7 @@
     "number": 75,
     "hot_dog_cost": 0,
     "dbs": 21,
-    "ability": "",
+    "ability": "If you've won 2 Battles in a row, your opponent's current Hero gets -10.",
     "base_play_name": "Streaky"
   },
   {
@@ -2096,7 +2096,7 @@
     "number": 1,
     "hot_dog_cost": 0,
     "dbs": 29,
-    "ability": "",
+    "ability": "Your Hero gets +5 for every Hot Dog you have Discarded this Battle, including Substitutions.",
     "base_play_name": "Hot Dog Dominance"
   },
   {
@@ -2108,7 +2108,7 @@
     "number": 2,
     "hot_dog_cost": 1,
     "dbs": 37,
-    "ability": "",
+    "ability": "Reveal the top 5 Plays of your Playbook. Add one to your hand and shuffle the rest back into your Playbook.",
     "base_play_name": "Cheap Addition"
   },
   {
@@ -2120,7 +2120,7 @@
     "number": 3,
     "hot_dog_cost": 5,
     "dbs": 24,
-    "ability": "",
+    "ability": "Set your Hero's Power to 5 higher than your opponent's current Power.",
     "base_play_name": "Edge Rush"
   },
   {
@@ -2132,7 +2132,7 @@
     "number": 4,
     "hot_dog_cost": 2,
     "dbs": 22,
-    "ability": "",
+    "ability": "Your Hero gets +30. If you lose this Battle, Discard all Plays in your hand.",
     "base_play_name": "Outside The Pocket"
   },
   {
@@ -2144,7 +2144,7 @@
     "number": 5,
     "hot_dog_cost": 2,
     "dbs": 21,
-    "ability": "",
+    "ability": "Your opponent's Heroes in the next 2 Battles get -10.",
     "base_play_name": "Dragging Anchor"
   },
   {
@@ -2156,7 +2156,7 @@
     "number": 6,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +10 for every Battle you have lost.",
     "base_play_name": "Saving Bullets"
   },
   {
@@ -2168,7 +2168,7 @@
     "number": 7,
     "hot_dog_cost": 1,
     "dbs": 36,
-    "ability": "",
+    "ability": "Your Hero gets +10 for every other Play you have used so far in this Battle.",
     "base_play_name": "10 Per Play"
   },
   {
@@ -2180,7 +2180,7 @@
     "number": 8,
     "hot_dog_cost": 2,
     "dbs": 19,
-    "ability": "",
+    "ability": "If you won the first Battle, your Hero gets +30.",
     "base_play_name": "Opening Strike"
   },
   {
@@ -2192,7 +2192,7 @@
     "number": 9,
     "hot_dog_cost": 3,
     "dbs": 60,
-    "ability": "",
+    "ability": "Roll a dice, draw Plays equivalent to that number. (Ex. If you roll a 3, draw 3 Plays.)",
     "base_play_name": "Roll Some Plays"
   },
   {
@@ -2204,7 +2204,7 @@
     "number": 10,
     "hot_dog_cost": 0,
     "dbs": 38,
-    "ability": "",
+    "ability": "Whichever player has fewer Hot Dogs Recovers 2 Hot Dogs and draws 1 Play.",
     "base_play_name": "Updog"
   },
   {
@@ -2216,7 +2216,7 @@
     "number": 11,
     "hot_dog_cost": 4,
     "dbs": 12,
-    "ability": "",
+    "ability": "Choose a future Battle. When your Hero in that Battle is revealed, it gets +35.",
     "base_play_name": "Plan Ahead"
   },
   {
@@ -2228,7 +2228,7 @@
     "number": 12,
     "hot_dog_cost": 2,
     "dbs": 13,
-    "ability": "",
+    "ability": "If your opponent has won more Battles than you so far, your Hero gets +30.",
     "base_play_name": "Comeback Season"
   },
   {
@@ -2240,7 +2240,7 @@
     "number": 13,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "Roll a dice. If it lands on 3 or 4, your Hero gets +40. If not, it gets +5.",
     "base_play_name": "Line Drive"
   },
   {
@@ -2252,7 +2252,7 @@
     "number": 14,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "Roll a dice, if it lands on 1, your Hero's Power goes to 0. Otherwise, your Hero gets +15.",
     "base_play_name": "1/6 For 15"
   },
   {
@@ -2264,7 +2264,7 @@
     "number": 15,
     "hot_dog_cost": 1,
     "dbs": 41,
-    "ability": "",
+    "ability": "If you win this Battle, draw 2 Plays.",
     "base_play_name": "Money Line"
   },
   {
@@ -2276,7 +2276,7 @@
     "number": 16,
     "hot_dog_cost": 0,
     "dbs": 24,
-    "ability": "",
+    "ability": "Recover 1 Hot Dog for every Battle you have lost.",
     "base_play_name": "Make Up Meal"
   },
   {
@@ -2288,7 +2288,7 @@
     "number": 17,
     "hot_dog_cost": 3,
     "dbs": 36,
-    "ability": "",
+    "ability": "Your Hero gets +10. Draw 2 Plays.",
     "base_play_name": "Combo Deal"
   },
   {
@@ -2300,7 +2300,7 @@
     "number": 18,
     "hot_dog_cost": 3,
     "dbs": 15,
-    "ability": "",
+    "ability": "For the rest of the game, Heroes with Steel weapons can't lose Power.",
     "base_play_name": "Steel Shield"
   },
   {
@@ -2312,7 +2312,7 @@
     "number": 19,
     "hot_dog_cost": 4,
     "dbs": 5,
-    "ability": "",
+    "ability": "For the rest of the game, Heroes with Ice weapons can't lose Power.",
     "base_play_name": "Unbreakable Ice"
   },
   {
@@ -2324,7 +2324,7 @@
     "number": 20,
     "hot_dog_cost": 4,
     "dbs": 8,
-    "ability": "",
+    "ability": "For the rest of the game, Heroes with Fire weapons can't lose Power.",
     "base_play_name": "Eternal Flame"
   },
   {
@@ -2336,7 +2336,7 @@
     "number": 21,
     "hot_dog_cost": 2,
     "dbs": 17,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your opponent's Hero gets -35.",
     "base_play_name": "Heavy Swing"
   },
   {
@@ -2348,7 +2348,7 @@
     "number": 22,
     "hot_dog_cost": 0,
     "dbs": 39,
-    "ability": "",
+    "ability": "Draw 1 additional Play, but your Hero loses -10.",
     "base_play_name": "1 For 10"
   },
   {
@@ -2360,7 +2360,7 @@
     "number": 23,
     "hot_dog_cost": 1,
     "dbs": 45,
-    "ability": "",
+    "ability": "Draw 2 additional Plays, but your Hero loses -20.",
     "base_play_name": "2 For 20"
   },
   {
@@ -2372,7 +2372,7 @@
     "number": 24,
     "hot_dog_cost": 4,
     "dbs": 41,
-    "ability": "",
+    "ability": "Your opponent must Discard 2 random Plays.",
     "base_play_name": "Overwhelm"
   },
   {
@@ -2384,7 +2384,7 @@
     "number": 25,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, your opponent can't Substitute next Battle.",
     "base_play_name": "Frozen Lineup"
   },
   {
@@ -2396,7 +2396,7 @@
     "number": 26,
     "hot_dog_cost": 0,
     "dbs": 4,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, your opponent can't Substitute next Battle.",
     "base_play_name": "Torched"
   },
   {
@@ -2408,7 +2408,7 @@
     "number": 27,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, your opponent can't Substitute next Battle.",
     "base_play_name": "Steel Cage"
   },
   {
@@ -2420,7 +2420,7 @@
     "number": 28,
     "hot_dog_cost": 3,
     "dbs": 15,
-    "ability": "",
+    "ability": "If you win this Battle, your next Hero gets +40.",
     "base_play_name": "Big Win Energy"
   },
   {
@@ -2432,7 +2432,7 @@
     "number": 29,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your Hero gets +5 for every Battle still remaining in the game. (Ex. You use this on Battle 3, there are 4 Battles left, your Hero gets +20.)",
     "base_play_name": "Early Round Magic"
   },
   {
@@ -2444,7 +2444,7 @@
     "number": 30,
     "hot_dog_cost": 3,
     "dbs": 5,
-    "ability": "",
+    "ability": "Swap your Hero with a Hero in your Discard Pile.",
     "base_play_name": "Another Man's Treasure"
   },
   {
@@ -2456,7 +2456,7 @@
     "number": 31,
     "hot_dog_cost": 0,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your Hero loses -20. But if you win this Battle, your Hero in the next Battle gets +20.",
     "base_play_name": "Save It For Later"
   },
   {
@@ -2468,7 +2468,7 @@
     "number": 32,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Discard one Hero from your hand. Draw 2 new Heroes.",
     "base_play_name": "Double Replacement"
   },
   {
@@ -2480,7 +2480,7 @@
     "number": 33,
     "hot_dog_cost": 3,
     "dbs": 7,
-    "ability": "",
+    "ability": "Your Hero loses -30. Your Hero in the next Battle gets +30.",
     "base_play_name": "Transfer Portal"
   },
   {
@@ -2492,7 +2492,7 @@
     "number": 34,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Discard 2 Plays from your hand. Your opponent's Hero gets -30.",
     "base_play_name": "Damage On Discard"
   },
   {
@@ -2504,7 +2504,7 @@
     "number": 35,
     "hot_dog_cost": 2,
     "dbs": 9,
-    "ability": "",
+    "ability": "Swap your Hero with a Glow weapon Hero in your Discard Pile.",
     "base_play_name": "Radiant Comeback"
   },
   {
@@ -2516,7 +2516,7 @@
     "number": 36,
     "hot_dog_cost": 2,
     "dbs": 9,
-    "ability": "",
+    "ability": "Swap your Hero with an Ice weapon Hero in your Discard Pile.",
     "base_play_name": "Icy Comeback"
   },
   {
@@ -2528,7 +2528,7 @@
     "number": 37,
     "hot_dog_cost": 2,
     "dbs": 9,
-    "ability": "",
+    "ability": "Swap your Hero with a Fire weapon Hero in your Discard Pile.",
     "base_play_name": "Fire Comeback"
   },
   {
@@ -2540,7 +2540,7 @@
     "number": 38,
     "hot_dog_cost": 1,
     "dbs": 16,
-    "ability": "",
+    "ability": "Swap your Hero with a Steel weapon Hero in your Discard Pile.",
     "base_play_name": "Polished Comeback"
   },
   {
@@ -2552,7 +2552,7 @@
     "number": 39,
     "hot_dog_cost": 1,
     "dbs": 14,
-    "ability": "",
+    "ability": "Your Hero gets +15 but you don't draw a Play at the start of next Battle.",
     "base_play_name": "Contract Limitations"
   },
   {
@@ -2564,7 +2564,7 @@
     "number": 40,
     "hot_dog_cost": 2,
     "dbs": 13,
-    "ability": "",
+    "ability": "Roll a dice; opponent's Hero gets -5x the number. (Ex. If you roll a 4, their Hero gets -20.)",
     "base_play_name": "High Fastball"
   },
   {
@@ -2576,7 +2576,7 @@
     "number": 41,
     "hot_dog_cost": 3,
     "dbs": 14,
-    "ability": "",
+    "ability": "Flip a coin. If Heads, Recover 6 Hot Dogs.",
     "base_play_name": "Greedy Gamble"
   },
   {
@@ -2588,7 +2588,7 @@
     "number": 42,
     "hot_dog_cost": 2,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your Hero has a Gum weapon, your opponent can't Substitute for the next 2 Battles.",
     "base_play_name": "Sticky Strength"
   },
   {
@@ -2600,7 +2600,7 @@
     "number": 43,
     "hot_dog_cost": 2,
     "dbs": 45,
-    "ability": "",
+    "ability": "Shuffle all Plays used in previous Battles back into your Playbook. Draw 2 Plays.",
     "base_play_name": "Recycle"
   },
   {
@@ -2612,7 +2612,7 @@
     "number": 44,
     "hot_dog_cost": 0,
     "dbs": 15,
-    "ability": "",
+    "ability": "If you lose this Battle, Recover 1 Hot Dog.",
     "base_play_name": "Make Up Call"
   },
   {
@@ -2624,7 +2624,7 @@
     "number": 45,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Draw the top Hero of your Hero Deck and Reveal it to your opponent. If its Power is 120 or lower, your Hero gets +30.",
     "base_play_name": "Might Of The Underdog"
   },
   {
@@ -2636,7 +2636,7 @@
     "number": 46,
     "hot_dog_cost": 1,
     "dbs": 9,
-    "ability": "",
+    "ability": "Discard a Hero with an Ice weapon from your hand and flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Frozen Flip"
   },
   {
@@ -2648,7 +2648,7 @@
     "number": 47,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Discard a Hero with a Fire weapon from your hand and flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Flaming Flip"
   },
   {
@@ -2660,7 +2660,7 @@
     "number": 48,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "Discard a Hero with a Steel weapon from your hand and flip a coin. If it's heads, your Hero gets +25.",
     "base_play_name": "Stainless Flip"
   },
   {
@@ -2672,7 +2672,7 @@
     "number": 49,
     "hot_dog_cost": 0,
     "dbs": 34,
-    "ability": "",
+    "ability": "If you win this Battle, Recover 2 Hot Dogs. If you lose, Discard 1 Hot Dog.",
     "base_play_name": "Feast Or Famine"
   },
   {
@@ -2684,7 +2684,7 @@
     "number": 50,
     "hot_dog_cost": 0,
     "dbs": 18,
-    "ability": "",
+    "ability": "If you've won at least 2 Battles, your Hero gets +15.",
     "base_play_name": "Winners Win"
   },
   {
@@ -2696,7 +2696,7 @@
     "number": 51,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Roll a dice. If it lands on 3-6, your Hero gets +25. If it lands on 1 or 2, your Hero gets -25.",
     "base_play_name": "Hollow Bat"
   },
   {
@@ -2708,7 +2708,7 @@
     "number": 52,
     "hot_dog_cost": 2,
     "dbs": 39,
-    "ability": "",
+    "ability": "Draw 2 Plays.",
     "base_play_name": "2 Plays"
   },
   {
@@ -2720,7 +2720,7 @@
     "number": 53,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "Both Players Discard the top 3 Plays of their Playbook.",
     "base_play_name": "Lost Plays"
   },
   {
@@ -2732,7 +2732,7 @@
     "number": 54,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your Hero gets +10. You may do this a second and final time if it lands on heads.",
     "base_play_name": "One-And-One"
   },
   {
@@ -2744,7 +2744,7 @@
     "number": 55,
     "hot_dog_cost": 1,
     "dbs": 18,
-    "ability": "",
+    "ability": "Look at your opponent's unrevealed Hero in the next Battle.",
     "base_play_name": "X-Ray Vision"
   },
   {
@@ -2756,7 +2756,7 @@
     "number": 56,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin. If heads, you can replace the Hero in the active Battle with one from your hand.",
     "base_play_name": "Risky Substitution"
   },
   {
@@ -2768,7 +2768,7 @@
     "number": 57,
     "hot_dog_cost": 3,
     "dbs": 24,
-    "ability": "",
+    "ability": "For every Hero with an Ice weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Ice Crew"
   },
   {
@@ -2780,7 +2780,7 @@
     "number": 58,
     "hot_dog_cost": 2,
     "dbs": 25,
-    "ability": "",
+    "ability": "For every Hero with a Steel weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Steel Crew"
   },
   {
@@ -2792,7 +2792,7 @@
     "number": 59,
     "hot_dog_cost": 3,
     "dbs": 24,
-    "ability": "",
+    "ability": "For every Hero with a Fire weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Fire Crew"
   },
   {
@@ -2804,7 +2804,7 @@
     "number": 60,
     "hot_dog_cost": 0,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, flip a coin. If heads, your Hero can't lose any more Power this Battle.",
     "base_play_name": "Steel Helmet"
   },
   {
@@ -2816,7 +2816,7 @@
     "number": 61,
     "hot_dog_cost": 3,
     "dbs": 5,
-    "ability": "",
+    "ability": "Discard your Hero. Replace it with the top card of your Hero Deck.",
     "base_play_name": "Blind Substitution"
   },
   {
@@ -2828,7 +2828,7 @@
     "number": 62,
     "hot_dog_cost": 0,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin twice. If it lands on heads both times, your Hero gets +20. If both flips are tails, your Hero loses -40. (Nothing happens for any other result.)",
     "base_play_name": "Double Down"
   },
   {
@@ -2840,7 +2840,7 @@
     "number": 63,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "For the rest of the game, if your Hero has a Steel weapon, it changes to an Ice weapon.",
     "base_play_name": "Frost-Hardened"
   },
   {
@@ -2852,7 +2852,7 @@
     "number": 64,
     "hot_dog_cost": 1,
     "dbs": 11,
-    "ability": "",
+    "ability": "Roll a dice 3 times. Your Hero gets +30 if you roll a 6.",
     "base_play_name": "Nasty Or Nada"
   },
   {
@@ -2864,7 +2864,7 @@
     "number": 65,
     "hot_dog_cost": 1,
     "dbs": 20,
-    "ability": "",
+    "ability": "Discard 1 Hero with an Ice weapon from your hand. Your opponent's Hero gets -15 this Battle.",
     "base_play_name": "Frostbiter"
   },
   {
@@ -2876,7 +2876,7 @@
     "number": 66,
     "hot_dog_cost": 0,
     "dbs": 18,
-    "ability": "",
+    "ability": "Discard 1 Hero with a Steel weapon from your hand. Your opponent's Hero gets -10 this Battle.",
     "base_play_name": "Scrap Metal"
   },
   {
@@ -2888,7 +2888,7 @@
     "number": 67,
     "hot_dog_cost": 1,
     "dbs": 12,
-    "ability": "",
+    "ability": "Discard 1 Hero with a Fire weapon from your hand. Your opponent's Hero gets -15 this Battle.",
     "base_play_name": "Burnout"
   },
   {
@@ -2900,7 +2900,7 @@
     "number": 68,
     "hot_dog_cost": 1,
     "dbs": 9,
-    "ability": "",
+    "ability": "For the rest of the game, if your Hero has a Steel weapon, it changes to a Fire weapon.",
     "base_play_name": "Molten Steel"
   },
   {
@@ -2912,7 +2912,7 @@
     "number": 69,
     "hot_dog_cost": 2,
     "dbs": 18,
-    "ability": "",
+    "ability": "Your opponent must Discard their current Hero, and replace it with one from their hand.",
     "base_play_name": "Forced Retreat"
   },
   {
@@ -2924,7 +2924,7 @@
     "number": 70,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Steel weapon, your Hero gets +15.",
     "base_play_name": "Rusted Edge"
   },
   {
@@ -2936,7 +2936,7 @@
     "number": 71,
     "hot_dog_cost": 1,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Fire weapon, your Hero gets +15.",
     "base_play_name": "Fire Hose"
   },
   {
@@ -2948,7 +2948,7 @@
     "number": 72,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your opponent's Hero has an Ice weapon, your Hero gets +15.",
     "base_play_name": "Icevantage"
   },
   {
@@ -2960,7 +2960,7 @@
     "number": 73,
     "hot_dog_cost": 3,
     "dbs": 6,
-    "ability": "",
+    "ability": "This must be used in Battle 7, your opponent's Hero gets -35.",
     "base_play_name": "Late Hit"
   },
   {
@@ -2972,7 +2972,7 @@
     "number": 74,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin 3 times; your Hero gets +15 if the coin lands on heads 2 or more times.",
     "base_play_name": "Pre-Game Ritual"
   },
   {
@@ -2984,7 +2984,7 @@
     "number": 75,
     "hot_dog_cost": 2,
     "dbs": 6,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, it can't drop below its current Power.",
     "base_play_name": "Burning Fever"
   },
   {
@@ -2996,7 +2996,7 @@
     "number": 76,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, it can't drop below its current Power.",
     "base_play_name": "Frozen Resolve"
   },
   {
@@ -3008,7 +3008,7 @@
     "number": 77,
     "hot_dog_cost": 1,
     "dbs": 8,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, it can't drop below its current Power.",
     "base_play_name": "Chrome Will"
   },
   {
@@ -3020,7 +3020,7 @@
     "number": 78,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "If your Hero has a Super weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Super Lucky"
   },
   {
@@ -3032,7 +3032,7 @@
     "number": 79,
     "hot_dog_cost": 1,
     "dbs": 4,
-    "ability": "",
+    "ability": "If your Hero has a Hex weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Hex Flipper"
   },
   {
@@ -3044,7 +3044,7 @@
     "number": 80,
     "hot_dog_cost": 1,
     "dbs": 8,
-    "ability": "",
+    "ability": "If your Hero has a Gum weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Lucky Gum"
   },
   {
@@ -3056,7 +3056,7 @@
     "number": 81,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has a Glow weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Flip & Glow"
   },
   {
@@ -3068,7 +3068,7 @@
     "number": 82,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Steel Smash"
   },
   {
@@ -3080,7 +3080,7 @@
     "number": 83,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Firework"
   },
   {
@@ -3092,7 +3092,7 @@
     "number": 84,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, flip a coin. If it's heads, your Hero gets +20.",
     "base_play_name": "Ice Blast"
   },
   {
@@ -3104,7 +3104,7 @@
     "number": 85,
     "hot_dog_cost": 3,
     "dbs": 24,
-    "ability": "",
+    "ability": "Your opponent must pay 2 Hot Dogs and Substitute next Battle.",
     "base_play_name": "Forced Substitution"
   },
   {
@@ -3116,7 +3116,7 @@
     "number": 86,
     "hot_dog_cost": 2,
     "dbs": 8,
-    "ability": "",
+    "ability": "If your opponent has played a Hero with the same weapon type as yours, your Hero gets +20.",
     "base_play_name": "Brothers In Arms"
   },
   {
@@ -3128,7 +3128,7 @@
     "number": 87,
     "hot_dog_cost": 1,
     "dbs": 17,
-    "ability": "",
+    "ability": "If you don't Substitute your Hero next Battle, it gets +10.",
     "base_play_name": "No Retreat"
   },
   {
@@ -3140,7 +3140,7 @@
     "number": 88,
     "hot_dog_cost": 2,
     "dbs": 11,
-    "ability": "",
+    "ability": "Flip a coin 3 times; opponent's Hero gets -10 each time the coin lands on heads.",
     "base_play_name": "Cursed Coin"
   },
   {
@@ -3152,7 +3152,7 @@
     "number": 89,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Fire weapon, give it -20.",
     "base_play_name": "Fire Extinguisher"
   },
   {
@@ -3164,7 +3164,7 @@
     "number": 90,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "If your opponent's Hero has an Ice weapon, give it -20.",
     "base_play_name": "Ice Pick"
   },
   {
@@ -3176,7 +3176,7 @@
     "number": 91,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Steel weapon, give it -15.",
     "base_play_name": "Stain-Less-Steel"
   },
   {
@@ -3188,7 +3188,7 @@
     "number": 92,
     "hot_dog_cost": 3,
     "dbs": 5,
-    "ability": "",
+    "ability": "Discard the top 3 Heroes of your Hero Deck.",
     "base_play_name": "Roster Cuts"
   },
   {
@@ -3200,7 +3200,7 @@
     "number": 93,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon and your opponent has Steel, your Hero gets +35.",
     "base_play_name": "Ice Climber"
   },
   {
@@ -3212,7 +3212,7 @@
     "number": 94,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon and your opponent has Steel, your Hero gets +35.",
     "base_play_name": "Smitty"
   },
   {
@@ -3224,7 +3224,7 @@
     "number": 95,
     "hot_dog_cost": 3,
     "dbs": 6,
-    "ability": "",
+    "ability": "Swap your Hero with another one of your face-down Heroes from a future Battle.",
     "base_play_name": "Last-Minute Re-Org"
   },
   {
@@ -3236,7 +3236,7 @@
     "number": 96,
     "hot_dog_cost": 2,
     "dbs": 35,
-    "ability": "",
+    "ability": "Send 2 Heroes from your hand to your Discard Pile. Draw 1 Play and 1 Hero.",
     "base_play_name": "Over Under"
   },
   {
@@ -3248,7 +3248,7 @@
     "number": 97,
     "hot_dog_cost": 0,
     "dbs": 4,
-    "ability": "",
+    "ability": "Shuffle a Hero from your Discard Pile back into your Hero Deck.",
     "base_play_name": "Discard Rebate"
   },
   {
@@ -3260,7 +3260,7 @@
     "number": 98,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Discard a Hero from your hand. Flip a coin 3 times. If it lands on heads 3 times in a row, set opponent's Hero's Power to 0.",
     "base_play_name": "Three Strikes You're Out"
   },
   {
@@ -3272,7 +3272,7 @@
     "number": 99,
     "hot_dog_cost": 0,
     "dbs": 4,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your Hero gets +20. If tails, opponent's Hero gets +20.",
     "base_play_name": "Even Money"
   },
   {
@@ -3284,7 +3284,7 @@
     "number": 100,
     "hot_dog_cost": 0,
     "dbs": 35,
-    "ability": "",
+    "ability": "You and your opponent each discard 2 Hot Dogs.",
     "base_play_name": "Mutually Assured Dogstruction"
   },
   {
@@ -3296,7 +3296,7 @@
     "number": 1,
     "hot_dog_cost": 3,
     "dbs": 5,
-    "ability": "",
+    "ability": "All your Heroes get +10 for the rest of the game.",
     "base_play_name": "Member Bounce"
   },
   {
@@ -3308,7 +3308,7 @@
     "number": 2,
     "hot_dog_cost": 3,
     "dbs": 5,
-    "ability": "",
+    "ability": "All your Opponent's Heroes get -10 for the rest of the game.",
     "base_play_name": "The 12th Man"
   },
   {
@@ -3320,7 +3320,7 @@
     "number": 3,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "Recover a Hot Dog from your Discard Pile for every Hero in your Discard Pile.",
     "base_play_name": "The Heroes Favorite Hot Dogs"
   },
   {
@@ -3332,7 +3332,7 @@
     "number": 4,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "For every Play you used this Battle, Recover 1 Hot Dog from your Discard Pile. (Ex: If you ran 2 Plays, you get 2 Hot Dogs back.)",
     "base_play_name": "Instant Refund"
   },
   {
@@ -3344,7 +3344,7 @@
     "number": 5,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "Roll a dice to Recover Hot Dogs from your Discard Pile: 1 or 2 = 1 Hot Dog, 3 or 4 = 2 Hot Dogs, 5 or 6 = 3 Hot Dogs.",
     "base_play_name": "Roller Dogs"
   },
   {
@@ -3356,7 +3356,7 @@
     "number": 6,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Heroes in the 2 previous Battles had the same weapon type as this one, your Hero gets +25.",
     "base_play_name": "3 Weapon Streak"
   },
   {
@@ -3368,7 +3368,7 @@
     "number": 7,
     "hot_dog_cost": 3,
     "dbs": 1,
-    "ability": "",
+    "ability": "If your Heroes in the 5 previous Battles had the same weapon type as this one, your Hero gets +40.",
     "base_play_name": "5 Weapon Streak"
   },
   {
@@ -3380,7 +3380,7 @@
     "number": 8,
     "hot_dog_cost": 3,
     "dbs": 69,
-    "ability": "",
+    "ability": "The Hero with the highest current Power wins this Battle now (or it's a tie). Both players draw a Play and move to the next Battle.",
     "base_play_name": "Call it a Day"
   },
   {
@@ -3392,7 +3392,7 @@
     "number": 9,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "Your opponent's Hero loses -10, and your Hero gets +5 for each Hero in your opponent's Discard Pile.",
     "base_play_name": "Power Drain"
   },
   {
@@ -3404,7 +3404,7 @@
     "number": 10,
     "hot_dog_cost": 2,
     "dbs": 2,
-    "ability": "",
+    "ability": "If you win this Battle, your Hero's power can't be reduced by an opponent's Play in the next 2 Battles.",
     "base_play_name": "Hero's Resolve"
   },
   {
@@ -3416,7 +3416,7 @@
     "number": 11,
     "hot_dog_cost": 0,
     "dbs": 2,
-    "ability": "",
+    "ability": "If you have 3 or more Heroes in your Discard Pile, shuffle them into your Hero Deck, then draw 2 new Heroes.",
     "base_play_name": "Return from the Depths"
   },
   {
@@ -3428,7 +3428,7 @@
     "number": 12,
     "hot_dog_cost": 0,
     "dbs": 3,
-    "ability": "",
+    "ability": "Discard a Play from your hand and draw a new one.",
     "base_play_name": "Tear a Page"
   },
   {
@@ -3440,7 +3440,7 @@
     "number": 13,
     "hot_dog_cost": 3,
     "dbs": 3,
-    "ability": "",
+    "ability": "Your current Hero gets +5 for every Hero and Play card in your Hand.",
     "base_play_name": "Strength in Numbers"
   },
   {
@@ -3452,7 +3452,7 @@
     "number": 14,
     "hot_dog_cost": 0,
     "dbs": 2,
-    "ability": "",
+    "ability": "If your Hero in this Battle has a Hex weapon, draw a Play.",
     "base_play_name": "Hex Draw Play"
   },
   {
@@ -3464,7 +3464,7 @@
     "number": 15,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero in this Battle has an Glow weapon, draw a Play.",
     "base_play_name": "Glow Draw Play"
   },
   {
@@ -3476,7 +3476,7 @@
     "number": 16,
     "hot_dog_cost": 0,
     "dbs": 3,
-    "ability": "",
+    "ability": "If your Hero in this Battle has a Gum weapon, draw a Play.",
     "base_play_name": "Gum Draw Play"
   },
   {
@@ -3488,7 +3488,7 @@
     "number": 17,
     "hot_dog_cost": 0,
     "dbs": 3,
-    "ability": "",
+    "ability": "Your next Play costs 1 less Hot Dog.",
     "base_play_name": "Bundle Deal"
   },
   {
@@ -3500,7 +3500,7 @@
     "number": 18,
     "hot_dog_cost": 0,
     "dbs": 7,
-    "ability": "",
+    "ability": "Discard 2 Heroes from your hand and Recover 1 Hot Dog from your Discard Pile.",
     "base_play_name": "Sacrificed Heroes"
   },
   {
@@ -3512,7 +3512,7 @@
     "number": 19,
     "hot_dog_cost": 2,
     "dbs": 6,
-    "ability": "",
+    "ability": "Reduce your Hero's power to 0. In the next Battle, your first Play is free.",
     "base_play_name": "Sacrifice it All to Win"
   },
   {
@@ -3524,7 +3524,7 @@
     "number": 20,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Next Battle, your opponent can only run a maximum of 1 Play.",
     "base_play_name": "Restricted List"
   },
   {
@@ -3536,7 +3536,7 @@
     "number": 21,
     "hot_dog_cost": 1,
     "dbs": 43,
-    "ability": "",
+    "ability": "Your opponent can't draw any Plays this Battle, including at the end of their turn.",
     "base_play_name": "Locked Playbook"
   },
   {
@@ -3548,7 +3548,7 @@
     "number": 22,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "Your opponent can't Substitute next Battle.",
     "base_play_name": "Bench Lock"
   },
   {
@@ -3560,7 +3560,7 @@
     "number": 23,
     "hot_dog_cost": 2,
     "dbs": 47,
-    "ability": "",
+    "ability": "Both players shuffle all their Plays back into their Playbooks and draw the same number of Plays again. (Ex: Shuffle 3 Plays, draw 3 Plays.)",
     "base_play_name": "Play Reset"
   },
   {
@@ -3572,7 +3572,7 @@
     "number": 24,
     "hot_dog_cost": 0,
     "dbs": 1,
-    "ability": "",
+    "ability": "Flip a coin. If heads, Recover 3 Hot Dogs from your Discard Pile. Your opponent draws 2 Plays no matter the result.",
     "base_play_name": "Risky Recovery"
   },
   {
@@ -3584,7 +3584,7 @@
     "number": 25,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "Draw 3 Plays from your Playbook, but your opponent also draws 1 Play.",
     "base_play_name": "Cheap Draw"
   },
   {
@@ -3596,7 +3596,7 @@
     "number": 1,
     "hot_dog_cost": 0,
     "dbs": 10,
-    "ability": "",
+    "ability": "Your opponent loses 1 Hot Dog. You gain 1 Hot Dog.",
     "base_play_name": "Hot Dog Thief"
   },
   {
@@ -3608,7 +3608,7 @@
     "number": 2,
     "hot_dog_cost": 2,
     "dbs": 30,
-    "ability": "",
+    "ability": "Your opponent loses 2 Hot Dogs and can't Recover any Hot Dogs this Battle or next Battle.",
     "base_play_name": "Drought"
   },
   {
@@ -3620,7 +3620,7 @@
     "number": 3,
     "hot_dog_cost": 0,
     "dbs": 8,
-    "ability": "",
+    "ability": "For the rest of the game, whenever a Player Recovers any Hot Dogs, they Recover an extra Hot Dog. (Ex. If you would Recover 3 Hot Dogs, you get 4.)",
     "base_play_name": "Bonus Recovery"
   },
   {
@@ -3632,7 +3632,7 @@
     "number": 4,
     "hot_dog_cost": 3,
     "dbs": 4,
-    "ability": "",
+    "ability": "Declare the name of 1 Play. If your opponent has a Play in their hand with that name, they must Discard it.",
     "base_play_name": "Called Shot"
   },
   {
@@ -3644,7 +3644,7 @@
     "number": 5,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "Choose one of these options: Draw 2 Plays or Discard 2 Plays and Recover 3 Hot Dogs.",
     "base_play_name": "Plays Or Dogs?"
   },
   {
@@ -3656,7 +3656,7 @@
     "number": 6,
     "hot_dog_cost": 1,
     "dbs": 31,
-    "ability": "",
+    "ability": "If you lose this Battle, Recover 2 Hot Dogs. If you win, Draw a Play.",
     "base_play_name": "Win or Weiners"
   },
   {
@@ -3668,7 +3668,7 @@
     "number": 7,
     "hot_dog_cost": 2,
     "dbs": 13,
-    "ability": "",
+    "ability": "Your opponent's current Hero gets -10 for every Battle they've won.",
     "base_play_name": "Competitive Disadvantage"
   },
   {
@@ -3680,7 +3680,7 @@
     "number": 8,
     "hot_dog_cost": 3,
     "dbs": 22,
-    "ability": "",
+    "ability": "For the rest of the game, whenever a Player loses a Battle, they must also Discard a Hot Dog.",
     "base_play_name": "Lose And Discard"
   },
   {
@@ -3692,7 +3692,7 @@
     "number": 9,
     "hot_dog_cost": 2,
     "dbs": 14,
-    "ability": "",
+    "ability": "At the start of the next Battle, your opponent loses 2 Hot Dogs.",
     "base_play_name": "Rotten Dogs"
   },
   {
@@ -3704,7 +3704,7 @@
     "number": 10,
     "hot_dog_cost": 4,
     "dbs": 2,
-    "ability": "",
+    "ability": "If possible, both Players replace their Hero in the active Battle with a Hero from their Discard Pile.",
     "base_play_name": "Dumpster Battle"
   },
   {
@@ -3716,7 +3716,7 @@
     "number": 11,
     "hot_dog_cost": 3,
     "dbs": 2,
-    "ability": "",
+    "ability": "Both Heroes in this Battle return to their starting Power, then your Hero gets +10.",
     "base_play_name": "Head Start"
   },
   {
@@ -3728,7 +3728,7 @@
     "number": 12,
     "hot_dog_cost": 1,
     "dbs": 12,
-    "ability": "",
+    "ability": "Your opponent Recovers 1 Hot Dog. Draw 2 Plays.",
     "base_play_name": "Fair Trade"
   },
   {
@@ -3740,7 +3740,7 @@
     "number": 13,
     "hot_dog_cost": 2,
     "dbs": 1,
-    "ability": "",
+    "ability": "Discard all Heroes and Plays from your hand. Your Hero gets +5 for every card discarded this way.",
     "base_play_name": "Storm The Field"
   },
   {
@@ -3752,7 +3752,7 @@
     "number": 14,
     "hot_dog_cost": 3,
     "dbs": 3,
-    "ability": "",
+    "ability": "Swap your current Hero with one from your hand. Your new Hero gets +10.",
     "base_play_name": "Sub And Power-Up"
   },
   {
@@ -3764,7 +3764,7 @@
     "number": 15,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "Send 1 random Play from your opponent's hand to their Discard Pile.",
     "base_play_name": "Play Pluck"
   },
   {
@@ -3776,7 +3776,7 @@
     "number": 16,
     "hot_dog_cost": 0,
     "dbs": 7,
-    "ability": "",
+    "ability": "This can only be played in Battle 5 or 6. Your Hero gets +20. If you lose this battle, Discard 2 Plays from your hand.",
     "base_play_name": "Surging Power"
   },
   {
@@ -3788,7 +3788,7 @@
     "number": 17,
     "hot_dog_cost": 1,
     "dbs": 3,
-    "ability": "",
+    "ability": "You get Honors next turn. Draw a Play.",
     "base_play_name": "Honorable"
   },
   {
@@ -3800,7 +3800,7 @@
     "number": 18,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "Both Players reveal the top card of their Hero Deck. Whichever Player reveals a Hero with higher Power Draws 1 Play. Both Players Discard their revealed Heroes.",
     "base_play_name": "A Game Of War"
   },
   {
@@ -3812,7 +3812,7 @@
     "number": 19,
     "hot_dog_cost": 2,
     "dbs": 1,
-    "ability": "",
+    "ability": "Discard the top 5 Plays of your Playbook. Your Hero gets +10 for any of those Plays with a cost of 3 or more.",
     "base_play_name": "Big Spender Bonus"
   },
   {
@@ -3824,7 +3824,7 @@
     "number": 20,
     "hot_dog_cost": 0,
     "dbs": 1,
-    "ability": "",
+    "ability": "If your Hero has a Super weapon, Draw 2 Plays.",
     "base_play_name": "Super Draw"
   },
   {
@@ -3836,7 +3836,7 @@
     "number": 21,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has a Hex weapon, Draw 2 Plays.",
     "base_play_name": "Hex Draw"
   },
   {
@@ -3848,7 +3848,7 @@
     "number": 22,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "If your Hero has a Gum weapon, Draw 2 Plays.",
     "base_play_name": "Gum Draw"
   },
   {
@@ -3860,7 +3860,7 @@
     "number": 23,
     "hot_dog_cost": 1,
     "dbs": 49,
-    "ability": "",
+    "ability": "Both Players Discard all the Plays in their hands and Draw 3 new Plays.",
     "base_play_name": "Clean Slate"
   },
   {
@@ -3872,7 +3872,7 @@
     "number": 24,
     "hot_dog_cost": 2,
     "dbs": 20,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your opponent's Plays cost 1 extra Hot Dog this Battle and next Battle.",
     "base_play_name": "Bull Market"
   },
   {
@@ -3884,7 +3884,7 @@
     "number": 25,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "Choose up to 2 Plays in your opponent's hand. Your opponent reveals them.",
     "base_play_name": "Transparency Clause"
   },
   {
@@ -3896,7 +3896,7 @@
     "number": 1,
     "hot_dog_cost": null,
     "dbs": 25,
-    "ability": "",
+    "ability": "This card copies the effect and Hot Dog cost of the last Play you used.",
     "base_play_name": "Copycat"
   },
   {
@@ -3908,7 +3908,7 @@
     "number": 2,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "Set your Hero's power to the same as your opponent's Hero's starting power.",
     "base_play_name": "My Idol"
   },
   {
@@ -3920,7 +3920,7 @@
     "number": 3,
     "hot_dog_cost": 2,
     "dbs": 20,
-    "ability": "",
+    "ability": "Next Battle only, you can spend up to 3 Hot Dogs more than what you have.",
     "base_play_name": "Student Loan"
   },
   {
@@ -3932,7 +3932,7 @@
     "number": 4,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "This is now a Hot Dog. It can't be removed by your opponent's Plays. Discard this Play when you spend it.",
     "base_play_name": "Ghost Dog"
   },
   {
@@ -3944,7 +3944,7 @@
     "number": 5,
     "hot_dog_cost": 3,
     "dbs": 4,
-    "ability": "",
+    "ability": "This must be played on or after Battle 4. You and your opponent both lose 1 Hot Dog at the start of each Battle.",
     "base_play_name": "Incendiary Dog"
   },
   {
@@ -3956,7 +3956,7 @@
     "number": 6,
     "hot_dog_cost": 5,
     "dbs": 3,
-    "ability": "",
+    "ability": "For the rest of the game, Players lose any Battle in which they have 0 Hot Dogs left at the end of their turn.",
     "base_play_name": "Ultimatum Dog"
   },
   {
@@ -3968,7 +3968,7 @@
     "number": 7,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Discard a Hero with a Glow weapon from your hand and Recover 3 Hot Dogs.",
     "base_play_name": "Lunch Break"
   },
   {
@@ -3980,7 +3980,7 @@
     "number": 8,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "For the rest of the game, any time you have a Hero with a Fire weapon in the active Battle, your opponent's Hero loses -10.",
     "base_play_name": "Scorching Pressure"
   },
   {
@@ -3992,7 +3992,7 @@
     "number": 9,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "For the rest of the game, any time you have a Hero with an Ice weapon in the active Battle, your opponent's Hero loses -10.",
     "base_play_name": "Cold Pressure"
   },
   {
@@ -4004,7 +4004,7 @@
     "number": 10,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "For the rest of the game, any time you have a Hero with a Steel weapon in the active Battle, your opponent's Hero loses -10.",
     "base_play_name": "Steel Pressure"
   },
   {
@@ -4016,7 +4016,7 @@
     "number": 11,
     "hot_dog_cost": 0,
     "dbs": 8,
-    "ability": "",
+    "ability": "If your Hero has a Glow weapon, it gets +20.",
     "base_play_name": "Glow-Up"
   },
   {
@@ -4028,7 +4028,7 @@
     "number": 12,
     "hot_dog_cost": 5,
     "dbs": 2,
-    "ability": "",
+    "ability": "Your opponent must Discard their unrevealed Heroes in future Battles and replace them with the top cards from their Hero Deck in order.",
     "base_play_name": "Lineup Randomizer"
   },
   {
@@ -4040,7 +4040,7 @@
     "number": 13,
     "hot_dog_cost": 4,
     "dbs": 45,
-    "ability": "",
+    "ability": "Your opponent can't draw Plays until they win a Battle.",
     "base_play_name": "Play Lockdown"
   },
   {
@@ -4052,7 +4052,7 @@
     "number": 14,
     "hot_dog_cost": 6,
     "dbs": 1,
-    "ability": "",
+    "ability": "Cancel every Play your opponent used this Battle.",
     "base_play_name": "The Perfect Offense"
   },
   {
@@ -4064,7 +4064,7 @@
     "number": 15,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "This must be played in Battle 7. Your opponent switches their number of unused Hot Dogs with you.",
     "base_play_name": "Hot Dog Stock Exchange"
   },
   {
@@ -4076,7 +4076,7 @@
     "number": 16,
     "hot_dog_cost": 4,
     "dbs": 3,
-    "ability": "",
+    "ability": "Any of your opponent's plays which lower your Power this Battle now raise your Power by that amount.",
     "base_play_name": "Sweet Relish"
   },
   {
@@ -4088,7 +4088,7 @@
     "number": 17,
     "hot_dog_cost": 2,
     "dbs": 73,
-    "ability": "",
+    "ability": "Your opponent flips the top card of their Hero Deck. If its Power is 130 or higher, they can't run any additional Plays this Battle. Discard the drawn Hero.",
     "base_play_name": "A Hard Bargain"
   },
   {
@@ -4100,7 +4100,7 @@
     "number": 18,
     "hot_dog_cost": 2,
     "dbs": 4,
-    "ability": "",
+    "ability": "Look at 2 random Plays in your opponent's hand.",
     "base_play_name": "Pre-Game Spy"
   },
   {
@@ -4112,7 +4112,7 @@
     "number": 19,
     "hot_dog_cost": 3,
     "dbs": 34,
-    "ability": "",
+    "ability": "Your opponent must Discard 2 Hot Dogs.",
     "base_play_name": "Hungry Demands"
   },
   {
@@ -4124,7 +4124,7 @@
     "number": 20,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "Roll a dice. If you roll a 6, swap current Power with your opponent.",
     "base_play_name": "Roll And Hope"
   },
   {
@@ -4136,7 +4136,7 @@
     "number": 21,
     "hot_dog_cost": 4,
     "dbs": 1,
-    "ability": "",
+    "ability": "If you lost the first 3 Battles, give your Hero +60.",
     "base_play_name": "Turn the Tide"
   },
   {
@@ -4148,7 +4148,7 @@
     "number": 22,
     "hot_dog_cost": 4,
     "dbs": 2,
-    "ability": "",
+    "ability": "If your opponent's Hero in the next Battle has a starting power above 160, it must be discarded and replaced with the top card of their Hero Deck.",
     "base_play_name": "Drop The Giant"
   },
   {
@@ -4160,7 +4160,7 @@
     "number": 23,
     "hot_dog_cost": 1,
     "dbs": 2,
-    "ability": "",
+    "ability": "If there are 0 Heroes in your Discard Pile, give your Hero +15.",
     "base_play_name": "Low Turnover"
   },
   {
@@ -4172,7 +4172,7 @@
     "number": 24,
     "hot_dog_cost": 2,
     "dbs": 3,
-    "ability": "",
+    "ability": "If you have 3 or more Heroes in your Discard Pile, give your Hero +25.",
     "base_play_name": "High Turnover"
   },
   {
@@ -4184,7 +4184,7 @@
     "number": 25,
     "hot_dog_cost": 2,
     "dbs": 5,
-    "ability": "",
+    "ability": "Give your Hero +20. All players get 2 Hot Dogs back from their Discard Pile at the start of next Battle.",
     "base_play_name": "Lunch Table"
   },
   {
@@ -4196,7 +4196,7 @@
     "number": 1,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "Your Hero loses -30. Your Hero in the next Battle gets +30.",
     "base_play_name": "Transfer Portal"
   },
   {
@@ -4208,7 +4208,7 @@
     "number": 2,
     "hot_dog_cost": 1,
     "dbs": 51,
-    "ability": "",
+    "ability": "Shuffle all Plays used in previous Battles back into your Playbook. Draw 2 Plays.",
     "base_play_name": "Recycle"
   },
   {
@@ -4220,7 +4220,7 @@
     "number": 3,
     "hot_dog_cost": 0,
     "dbs": 17,
-    "ability": "",
+    "ability": "Your Hero gets +15 but you don't draw a Play at the start of next Battle.",
     "base_play_name": "Contract Limitations"
   },
   {
@@ -4232,7 +4232,7 @@
     "number": 4,
     "hot_dog_cost": 1,
     "dbs": 19,
-    "ability": "",
+    "ability": "Roll a dice. If it lands on 3-6, your Hero gets +25. If it lands on 1 or 2, your Hero gets -25.",
     "base_play_name": "Hollow Bat"
   },
   {
@@ -4244,7 +4244,7 @@
     "number": 5,
     "hot_dog_cost": 0,
     "dbs": 8,
-    "ability": "",
+    "ability": "Both Players Discard the top 3 Plays of their Playbook.",
     "base_play_name": "Lost Plays"
   },
   {
@@ -4256,7 +4256,7 @@
     "number": 6,
     "hot_dog_cost": 0,
     "dbs": 8,
-    "ability": "",
+    "ability": "Flip a coin. If heads, your Hero gets +10. You may do this a second and final time if it lands on heads.",
     "base_play_name": "One-And-One"
   },
   {
@@ -4268,7 +4268,7 @@
     "number": 7,
     "hot_dog_cost": 2,
     "dbs": 30,
-    "ability": "",
+    "ability": "For every Hero with an Ice weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Ice Crew"
   },
   {
@@ -4280,7 +4280,7 @@
     "number": 8,
     "hot_dog_cost": 1,
     "dbs": 33,
-    "ability": "",
+    "ability": "For every Hero with a Steel weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Steel Crew"
   },
   {
@@ -4292,7 +4292,7 @@
     "number": 9,
     "hot_dog_cost": 2,
     "dbs": 30,
-    "ability": "",
+    "ability": "For every Hero with a Fire weapon you've used in all Battles so far, your Hero gets +10.",
     "base_play_name": "Fire Crew"
   },
   {
@@ -4304,7 +4304,7 @@
     "number": 10,
     "hot_dog_cost": 2,
     "dbs": 8,
-    "ability": "",
+    "ability": "Discard your Hero. Replace it with the top card of your Hero Deck.",
     "base_play_name": "Blind Substitution"
   },
   {
@@ -4316,7 +4316,7 @@
     "number": 11,
     "hot_dog_cost": 0,
     "dbs": 19,
-    "ability": "",
+    "ability": "For the rest of the game, if your Hero has a Steel weapon, it changes to an Ice weapon.",
     "base_play_name": "Frost-Hardened"
   },
   {
@@ -4328,7 +4328,7 @@
     "number": 12,
     "hot_dog_cost": 0,
     "dbs": 15,
-    "ability": "",
+    "ability": "Roll a dice 3 times. Your Hero gets +30 if you roll a 6.",
     "base_play_name": "Nasty Or Nada"
   },
   {
@@ -4340,7 +4340,7 @@
     "number": 13,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "For the rest of the game, if your Hero has a Steel weapon, it changes to a Fire weapon.",
     "base_play_name": "Molten Steel"
   },
   {
@@ -4352,7 +4352,7 @@
     "number": 14,
     "hot_dog_cost": 1,
     "dbs": 23,
-    "ability": "",
+    "ability": "Your opponent must Discard their current Hero, and replace it with one from their hand.",
     "base_play_name": "Forced Retreat"
   },
   {
@@ -4364,7 +4364,7 @@
     "number": 15,
     "hot_dog_cost": 1,
     "dbs": 8,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, it can't drop below its current Power.",
     "base_play_name": "Burning Fever"
   },
   {
@@ -4376,7 +4376,7 @@
     "number": 16,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, it can't drop below its current Power.",
     "base_play_name": "Frozen Resolve"
   },
   {
@@ -4388,7 +4388,7 @@
     "number": 17,
     "hot_dog_cost": 2,
     "dbs": 28,
-    "ability": "",
+    "ability": "Your opponent must pay 2 Hot Dogs and Substitute next Battle.",
     "base_play_name": "Forced Substitution"
   },
   {
@@ -4400,7 +4400,7 @@
     "number": 18,
     "hot_dog_cost": 1,
     "dbs": 11,
-    "ability": "",
+    "ability": "If your opponent has played a Hero with the same weapon type as yours, your Hero gets +20.",
     "base_play_name": "Brothers In Arms"
   },
   {
@@ -4412,7 +4412,7 @@
     "number": 19,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "Flip a coin 3 times; opponent's Hero gets -10 each time the coin lands on heads.",
     "base_play_name": "Cursed Coin"
   },
   {
@@ -4424,7 +4424,7 @@
     "number": 20,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Fire weapon, give it -20.",
     "base_play_name": "Fire Extinguisher"
   },
   {
@@ -4436,7 +4436,7 @@
     "number": 21,
     "hot_dog_cost": 1,
     "dbs": 5,
-    "ability": "",
+    "ability": "If your opponent's Hero has an Ice weapon, give it -20.",
     "base_play_name": "Ice Pick"
   },
   {
@@ -4448,7 +4448,7 @@
     "number": 22,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your opponent's Hero has a Steel weapon, give it -15.",
     "base_play_name": "Stain-Less-Steel"
   },
   {
@@ -4460,7 +4460,7 @@
     "number": 23,
     "hot_dog_cost": 2,
     "dbs": 8,
-    "ability": "",
+    "ability": "Discard the top 3 Heroes of your Hero Deck.",
     "base_play_name": "Roster Cuts"
   },
   {
@@ -4472,7 +4472,7 @@
     "number": 24,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon and your opponent has Steel, your Hero gets +35.",
     "base_play_name": "Ice Climber"
   },
   {
@@ -4484,7 +4484,7 @@
     "number": 25,
     "hot_dog_cost": 1,
     "dbs": 7,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon and your opponent has Steel, your Hero gets +35.",
     "base_play_name": "Smitty"
   },
   {
@@ -4496,7 +4496,7 @@
     "number": 26,
     "hot_dog_cost": 2,
     "dbs": 7,
-    "ability": "",
+    "ability": "Swap your Hero with another one of your face-down Heroes from a future Battle.",
     "base_play_name": "Last-Minute Re-Org"
   },
   {
@@ -4508,7 +4508,7 @@
     "number": 27,
     "hot_dog_cost": 1,
     "dbs": 43,
-    "ability": "",
+    "ability": "Send 2 Heroes from your hand to your Discard Pile. Draw 1 Play and 1 Hero.",
     "base_play_name": "Over Under"
   },
   {
@@ -4520,7 +4520,7 @@
     "number": 28,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "Swap your Hero with a Glow weapon Hero in your Discard Pile.",
     "base_play_name": "Radiant Comeback"
   },
   {
@@ -4532,7 +4532,7 @@
     "number": 29,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "Swap your Hero with an Ice weapon Hero in your Discard Pile.",
     "base_play_name": "Icy Comeback"
   },
   {
@@ -4544,7 +4544,7 @@
     "number": 30,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "Swap your Hero with a Fire weapon Hero in your Discard Pile.",
     "base_play_name": "Fire Comeback"
   },
   {
@@ -4556,7 +4556,7 @@
     "number": 31,
     "hot_dog_cost": 3,
     "dbs": 13,
-    "ability": "",
+    "ability": "Lower the opponent's Hero by -30.",
     "base_play_name": "Gavel of Justice"
   },
   {
@@ -4568,7 +4568,7 @@
     "number": 32,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "Flip a coin: If heads, your Hero gets +15. If tails, your opponent's Hero loses -5.",
     "base_play_name": "Heads I Win, Tails You Lose"
   },
   {
@@ -4580,7 +4580,7 @@
     "number": 33,
     "hot_dog_cost": 0,
     "dbs": 31,
-    "ability": "",
+    "ability": "Pick a number from 1 to 6, then roll a dice. If it lands on your number, your Hero gets +20. If not, draw a Play from your Playbook.",
     "base_play_name": "Only Upside"
   },
   {
@@ -4592,7 +4592,7 @@
     "number": 34,
     "hot_dog_cost": 1,
     "dbs": 39,
-    "ability": "",
+    "ability": "Flip a coin 3 times. If all 3 flips land on heads, your Hero's Power is doubled. Each time the coin lands on tails, draw a Play.",
     "base_play_name": "3rd Time Charm"
   },
   {
@@ -4604,7 +4604,7 @@
     "number": 35,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Fire Weapons.",
     "base_play_name": "Only Fire"
   },
   {
@@ -4616,7 +4616,7 @@
     "number": 36,
     "hot_dog_cost": 2,
     "dbs": 12,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Ice Weapons.",
     "base_play_name": "Only Ice"
   },
   {
@@ -4628,7 +4628,7 @@
     "number": 37,
     "hot_dog_cost": 2,
     "dbs": 15,
-    "ability": "",
+    "ability": "For the rest of the game all Heroes have Steel Weapons.",
     "base_play_name": "Only Steel"
   },
   {
@@ -4640,7 +4640,7 @@
     "number": 38,
     "hot_dog_cost": 0,
     "dbs": 106,
-    "ability": "",
+    "ability": "If your Hero has a Fire weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Flame Wall"
   },
   {
@@ -4652,7 +4652,7 @@
     "number": 39,
     "hot_dog_cost": 0,
     "dbs": 106,
-    "ability": "",
+    "ability": "If your Hero has an Ice weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Icy Shield"
   },
   {
@@ -4664,7 +4664,7 @@
     "number": 40,
     "hot_dog_cost": 0,
     "dbs": 108,
-    "ability": "",
+    "ability": "If your Hero has a Steel weapon, your opponent can't run any Plays this Battle.",
     "base_play_name": "Steel Defense"
   },
   {
@@ -4676,7 +4676,7 @@
     "number": 41,
     "hot_dog_cost": 2,
     "dbs": 16,
-    "ability": "",
+    "ability": "Replace your Hero with any Hero from your hand and draw 1 Hero.",
     "base_play_name": "Curveball"
   },
   {
@@ -4688,7 +4688,7 @@
     "number": 42,
     "hot_dog_cost": 1,
     "dbs": 16,
-    "ability": "",
+    "ability": "For the rest of the Game if a coin is flipped, lower the opponent's Hero in the active Battle by -5.",
     "base_play_name": "Loan Sharked"
   },
   {
@@ -4700,7 +4700,7 @@
     "number": 43,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "Flip a coin 4 times; your opponent's Hero gets -5 each time the coin lands on tails.",
     "base_play_name": "Shooters Shoot"
   },
   {
@@ -4712,7 +4712,7 @@
     "number": 44,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "Flip a coin 4 times; your Hero gets +5 each time the coin lands on heads.",
     "base_play_name": "Heads-Up!"
   },
   {
@@ -4724,7 +4724,7 @@
     "number": 45,
     "hot_dog_cost": 1,
     "dbs": 15,
-    "ability": "",
+    "ability": "If you lost the previous Battle, your Hero in the active Battle gets +20.",
     "base_play_name": "To Fight Another Day"
   },
   {
@@ -4736,7 +4736,7 @@
     "number": 46,
     "hot_dog_cost": 0,
     "dbs": 40,
-    "ability": "",
+    "ability": "Draw a Play from your Playbook.",
     "base_play_name": "1-4-1 Play"
   },
   {
@@ -4748,7 +4748,7 @@
     "number": 47,
     "hot_dog_cost": 1,
     "dbs": 38,
-    "ability": "",
+    "ability": "Draw a card from either your Playbook or your Hero Deck.",
     "base_play_name": "Adding Depth"
   },
   {
@@ -4760,7 +4760,7 @@
     "number": 48,
     "hot_dog_cost": 1,
     "dbs": 10,
-    "ability": "",
+    "ability": "Your opponent cannot Substitute in Battle 7.",
     "base_play_name": "Late Game Lockdown"
   },
   {
@@ -4772,7 +4772,7 @@
     "number": 49,
     "hot_dog_cost": 2,
     "dbs": 34,
-    "ability": "",
+    "ability": "Your opponent can't run any Plays in Battle 7.",
     "base_play_name": "Prevent D"
   },
   {
@@ -4784,7 +4784,7 @@
     "number": 50,
     "hot_dog_cost": 1,
     "dbs": 12,
-    "ability": "",
+    "ability": "If you lost the previous Battle, Discard all Heroes in your hand and draw 4 new Heroes from your Hero Deck.",
     "base_play_name": "Rebuild"
   },
   {
@@ -4796,7 +4796,7 @@
     "number": 51,
     "hot_dog_cost": 0,
     "dbs": 14,
-    "ability": "",
+    "ability": "Roll a dice: if you get a 1 or 6, your Hero's power drops to 0. If you roll a 2-5, you gain +25.",
     "base_play_name": "Worth The Risk?"
   },
   {
@@ -4808,7 +4808,7 @@
     "number": 52,
     "hot_dog_cost": 1,
     "dbs": 49,
-    "ability": "",
+    "ability": "Reveal the top 3 Plays of your Playbook; choose 1 and add it to your hand then Discard the other 2.",
     "base_play_name": "Tough Call"
   },
   {
@@ -4820,7 +4820,7 @@
     "number": 53,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "This Hero can't have its power reduced by an opponent's Play.",
     "base_play_name": "Indestructible"
   },
   {
@@ -4832,7 +4832,7 @@
     "number": 54,
     "hot_dog_cost": 2,
     "dbs": 16,
-    "ability": "",
+    "ability": "This Hero gets any extra Power your previous Hero had.",
     "base_play_name": "Going Back to Back"
   },
   {
@@ -4844,7 +4844,7 @@
     "number": 55,
     "hot_dog_cost": 0,
     "dbs": 20,
-    "ability": "",
+    "ability": "No matter the outcome of this Battle, you decide who gets Honors (goes first) in the next Battle.",
     "base_play_name": "Easy Choice"
   },
   {
@@ -4856,7 +4856,7 @@
     "number": 56,
     "hot_dog_cost": 0,
     "dbs": 24,
-    "ability": "",
+    "ability": "Any Plays that are affecting the rest of the Game are now cancelled going forward (including your own).",
     "base_play_name": "Pulling The Plug"
   },
   {
@@ -4868,7 +4868,7 @@
     "number": 57,
     "hot_dog_cost": 1,
     "dbs": 13,
-    "ability": "",
+    "ability": "If your Hero in this Battle is losing by 15 or more it gets +20.",
     "base_play_name": "Rally Cap"
   },
   {
@@ -4880,7 +4880,7 @@
     "number": 58,
     "hot_dog_cost": 0,
     "dbs": 23,
-    "ability": "",
+    "ability": "This Hero gets +15, but your Hero in the next Battle gets -5.",
     "base_play_name": "Rob Peter Pay Paul"
   },
   {
@@ -4892,7 +4892,7 @@
     "number": 59,
     "hot_dog_cost": 0,
     "dbs": 13,
-    "ability": "",
+    "ability": "For the rest of the game, whenever you win a Battle, your Hero in the next Battle gets +5.",
     "base_play_name": "Make It, Take It"
   },
   {
@@ -4904,7 +4904,7 @@
     "number": 60,
     "hot_dog_cost": 0,
     "dbs": 5,
-    "ability": "",
+    "ability": "If this Battle is tied, your Hero gets +1.",
     "base_play_name": "QB Sneak"
   }
 ]
