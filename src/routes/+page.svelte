@@ -8,6 +8,7 @@
 	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult } from '$lib/types';
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
+	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
 
 	let { data } = $props();
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -165,9 +166,9 @@
 	const statusText = $derived.by(() => {
 		const state = scanState();
 		switch (state.status) {
-			case 'tier1': return 'Checking cache...';
-			case 'tier2': return 'Running OCR...';
-			case 'tier3': return 'AI identifying...';
+			case 'tier1': return 'Checking memory...';
+			case 'tier2': return 'Reading card number...';
+			case 'tier3': return 'AI analyzing card...';
 			case 'processing': return 'Processing...';
 			case 'error': return state.error || 'Scan failed';
 			default: return '';
@@ -175,6 +176,7 @@
 	});
 
 	const recentScans = $derived(scanHistory().filter(s => s.success).slice(0, 5));
+	const collectionCount = $derived(getCollectionCount());
 
 	// ── Content Block Ordering ──────────────────────────────────
 
@@ -328,6 +330,24 @@
 				</div>
 			{/if}
 
+			<!-- Collection stats row -->
+			{#if collectionCount > 0}
+				<div class="stats-row">
+					<a href="/collection" class="stat-tile">
+						<span class="stat-number" data-tabular>{collectionCount}</span>
+						<span class="stat-label">Cards</span>
+					</a>
+					<a href="/set-completion" class="stat-tile">
+						<span class="stat-number" data-tabular>&mdash;</span>
+						<span class="stat-label">Sets</span>
+					</a>
+					<a href="/deck" class="stat-tile">
+						<span class="stat-number" data-tabular>&mdash;</span>
+						<span class="stat-label">Decks</span>
+					</a>
+				</div>
+			{/if}
+
 			<!-- Customize button -->
 			<div class="customize-strip">
 				<button class="btn-customize" onclick={() => showCustomize = true}>
@@ -372,13 +392,22 @@
 			{/if}
 
 			<!-- Persona-ordered content blocks -->
-			{#each orderedBlocks as blockId (blockId)}
+			{#each orderedBlocks as blockId, i (blockId)}
+				<div class="block-entrance" style="animation-delay: {80 * i}ms">
 				{#if blockId === 'scan_upload'}
-					<div class="quick-scan-strip">
-						<a href="/scan" class="btn-quick-scan">Scan Card</a>
-						<button class="btn-quick-upload" onclick={handleUploadClick} disabled={uploading}>
-							Upload Photo
-						</button>
+					<div class="scan-hero-card">
+						<a href="/scan" class="scan-hero-btn">
+							<span class="scan-hero-icon">{'\u{1F4F7}'}</span>
+							<span class="scan-hero-label">Scan Card</span>
+						</a>
+						<div class="scan-hero-secondary">
+							<button class="btn-secondary-action" onclick={handleUploadClick} disabled={uploading}>
+								Upload Photo
+							</button>
+							<a href="/scan?mode=roll" class="btn-secondary-action">
+								Camera Roll
+							</a>
+						</div>
 						<input
 							bind:this={fileInput}
 							type="file"
@@ -386,9 +415,6 @@
 							onchange={handleFileSelected}
 							hidden
 						/>
-					</div>
-					<div class="import-strip">
-						<a href="/scan?mode=roll" class="btn-import-photos">Import from Photos</a>
 					</div>
 
 				{:else if blockId === 'recent_scans'}
@@ -511,6 +537,7 @@
 						</a>
 					</div>
 				{/if}
+				</div>
 			{/each}
 
 		{:else}
@@ -586,71 +613,139 @@
 		margin-bottom: 1.5rem;
 	}
 
-	/* Quick-scan strip (authenticated) */
-	.quick-scan-strip {
+	/* Hero scan CTA */
+	.scan-hero-card {
 		display: flex;
-		gap: 0.75rem;
-		margin: 1.5rem auto 0;
-		max-width: 400px;
+		flex-direction: column;
+		align-items: center;
+		gap: 1rem;
+		padding: 1.5rem;
+		background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(59,130,246,0.05));
+		border: 1px solid rgba(245,158,11,0.15);
+		border-radius: var(--radius-xl, 16px);
 	}
 
-	.btn-quick-scan {
-		flex: 1;
-		padding: 0.75rem;
-		border-radius: 10px;
+	.scan-hero-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100px;
+		height: 100px;
+		border-radius: 50%;
 		background: linear-gradient(135deg, var(--gold, #f59e0b), var(--gold-dark, #d97706));
 		color: #0d1524;
-		font-weight: 700;
-		font-size: 0.95rem;
-		text-align: center;
 		text-decoration: none;
-		border: none;
-		cursor: pointer;
-		box-shadow: 0 4px 16px rgba(245,158,11,0.3);
+		justify-content: center;
+		box-shadow: 0 0 0 0 rgba(245,158,11,0.3), var(--shadow-gold, 0 4px 16px rgba(245,158,11,0.3));
+		animation: scan-breathe 3s ease-in-out infinite;
+		transition: transform 0.15s ease;
 	}
 
-	.btn-quick-upload {
-		flex: 1;
-		padding: 0.75rem;
-		border-radius: 10px;
+	.scan-hero-btn:active {
+		transform: scale(0.93);
+		animation: none;
+	}
+
+	.scan-hero-icon {
+		font-size: 2rem;
+		line-height: 1;
+	}
+
+	.scan-hero-label {
+		font-family: var(--font-display, 'Syne', sans-serif);
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	@keyframes scan-breathe {
+		0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3), var(--shadow-gold, 0 4px 16px rgba(245,158,11,0.3)); }
+		50% { box-shadow: 0 0 0 14px rgba(245,158,11,0), var(--shadow-gold-lg, 0 8px 32px rgba(245,158,11,0.4)); }
+	}
+
+	.scan-hero-secondary {
+		display: flex;
+		gap: 0.75rem;
+	}
+
+	.btn-secondary-action {
+		padding: 0.5rem 1rem;
+		border-radius: var(--radius-lg, 12px);
 		background: var(--bg-elevated, #121d34);
 		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		color: var(--text-primary, #e2e8f0);
-		font-weight: 600;
-		font-size: 0.95rem;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.8rem;
+		font-weight: 500;
+		text-decoration: none;
 		cursor: pointer;
+		transition: border-color var(--transition-fast, 150ms), color var(--transition-fast, 150ms);
 	}
 
-	.btn-quick-upload:disabled {
+	.btn-secondary-action:hover {
+		border-color: var(--border-strong, rgba(148,163,184,0.20));
+		color: var(--text-primary, #e2e8f0);
+	}
+
+	.btn-secondary-action:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
-	.import-strip {
-		margin-top: 0.5rem;
-		max-width: 400px;
-		margin-left: auto;
-		margin-right: auto;
+	/* Collection stats row */
+	.stats-row {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
 	}
 
-	.btn-import-photos {
-		display: block;
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: transparent;
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		color: var(--text-secondary, #94a3b8);
-		font-weight: 600;
-		font-size: 0.85rem;
+	.stat-tile {
+		flex: 1;
+		padding: 0.75rem 0.5rem;
+		background: rgba(18, 29, 52, 0.6);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		border: 1px solid var(--border, rgba(148,163,184,0.08));
+		border-radius: var(--radius-lg, 12px);
 		text-align: center;
 		text-decoration: none;
-		cursor: pointer;
+		transition: border-color var(--transition-fast, 150ms);
 	}
 
-	.btn-import-photos:hover {
-		border-color: var(--gold, #f59e0b);
-		color: var(--gold, #f59e0b);
+	.stat-tile:active {
+		transform: scale(0.97);
+	}
+
+	.stat-tile:hover {
+		border-color: var(--border-strong, rgba(148,163,184,0.20));
+	}
+
+	.stat-number {
+		display: block;
+		font-family: var(--font-display, 'Syne', sans-serif);
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--text-primary, #e2e8f0);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stat-label {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 600;
+	}
+
+	/* Staggered block entrance */
+	.block-entrance {
+		animation: slideUpFade 0.4s ease-out both;
+	}
+
+	@keyframes slideUpFade {
+		from { opacity: 0; transform: translateY(20px); }
+		to { opacity: 1; transform: translateY(0); }
 	}
 
 	/* Section heading */

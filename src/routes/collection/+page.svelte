@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
+	import SkeletonCardGrid from '$lib/components/SkeletonCardGrid.svelte';
 	import {
 		collectionItems,
 		collectionLoading,
@@ -180,14 +181,7 @@
 				<h1>Loading...</h1>
 			</div>
 		</div>
-		<div class="skeleton-grid">
-			{#each Array(8) as _}
-				<div class="skeleton-card">
-					<div class="skeleton-image shimmer"></div>
-					<div class="skeleton-text shimmer"></div>
-				</div>
-			{/each}
-		</div>
+		<SkeletonCardGrid count={9} columns={3} />
 	{:else}
 		<!-- Header -->
 		<div class="dash-header">
@@ -532,7 +526,6 @@
 <style>
 	/* ── Layout ───────────────────────────────────── */
 	.collection-page { max-width: 480px; margin: 0 auto; padding: 0; }
-	.loading { text-align: center; padding: 3rem; color: var(--text-tertiary, #475569); }
 
 	/* ── Header ───────────────────────────────────── */
 	.dash-header {
@@ -694,18 +687,7 @@
 	/* ── Footer ───────────────────────────────────── */
 	.footer { text-align: center; padding: 0 1rem 1rem; font-size: 0.6875rem; color: #1e293b; }
 
-	/* ── Skeleton ──────────────────────────────────── */
-	.skeleton-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 1rem; }
-	.skeleton-card { display: flex; flex-direction: column; gap: 6px; }
-	.skeleton-image { aspect-ratio: 5/7; border-radius: 8px; background: var(--bg-elevated, #121d34); }
-	.skeleton-text { height: 12px; width: 70%; border-radius: 4px; background: var(--bg-elevated, #121d34); }
-	.shimmer {
-		background: linear-gradient(90deg, var(--bg-elevated, #121d34) 25%, var(--bg-hover, #182540) 50%, var(--bg-elevated, #121d34) 75%);
-		background-size: 200% 100%; animation: shimmer 1.8s linear infinite;
-	}
-
 	/* ── Keyframes ────────────────────────────────── */
 	@keyframes countUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 	@keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
-	@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 </style>

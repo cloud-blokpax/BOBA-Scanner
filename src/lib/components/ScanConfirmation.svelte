@@ -54,6 +54,17 @@
 	let listingUrl = $state<string | null>(null);
 	let listingError = $state<string | null>(null);
 
+	// Fire haptic on scan result arrival (in addition to the flip haptic for rare+)
+	$effect(() => {
+		if (result?.card) {
+			// Small confirmation tap for all successful scans
+			triggerHaptic('tap');
+		} else if (result && !result.card) {
+			// Error buzz for failed scans
+			triggerHaptic('error');
+		}
+	});
+
 	let manualCard = $state<Card | null>(null);
 	let autoAddAttempted = $state(false);
 
@@ -212,6 +223,7 @@
 				cardName={card.name}
 				rarity={card.rarity ?? 'common'}
 				weaponType={card.weapon_type ?? null}
+				parallel={card.parallel ?? null}
 			/>
 
 			<div class="card-details">
