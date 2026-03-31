@@ -15,6 +15,7 @@ import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
+import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby = 10s max
@@ -236,9 +237,7 @@ async function refreshCardPrice(
 	chainDepth: number,
 	confidenceThreshold: number
 ): Promise<RefreshResult> {
-	const heroOrName = card.hero_name || card.name || '';
-	const cardNum = card.card_number || '';
-	const query = `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
+	const query = buildEbaySearchQuery(card);
 	const callStart = Date.now();
 
 	// Increment Redis counter BEFORE the call
@@ -285,12 +284,16 @@ async function refreshCardPrice(
 		}
 
 		const data = await res.json();
-		const items: Array<{
+		const rawItems: Array<{
+			title?: string;
 			price?: { value?: string };
 			buyingOptions?: string[];
 		}> = data.itemSummaries || [];
 
-		const ebayResultsRaw = items.length;
+		const ebayResultsRaw = rawItems.length;
+
+		// Filter to listings that actually match this card
+		const items = filterRelevantListings(rawItems, card);
 
 		// Separate by buying option
 		const fixedPriceItems = items.filter(item =>
@@ -311,7 +314,6 @@ async function refreshCardPrice(
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
-		// price_cache only has these columns — extra fields go in harvest log only
 		const priceData = {
 			card_id: card.id,
 			source: 'ebay',
@@ -319,6 +321,11 @@ async function refreshCardPrice(
 			price_mid: allStats?.median ?? null,
 			price_high: allStats?.high ?? null,
 			listings_count: allPrices.length,
+			buy_now_low: fixedStats?.low ?? null,
+			buy_now_mid: fixedStats?.median ?? null,
+			buy_now_count: fixedPrices.length,
+			filtered_count: allStats?.filteredCount ?? 0,
+			confidence_score: allStats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
 
