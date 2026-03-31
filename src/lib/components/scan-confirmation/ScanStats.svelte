@@ -78,7 +78,7 @@
 {:else if isFuzzyMatch}
 	<div class="confidence-warning fuzzy-warning">
 		<span class="warning-icon">~</span>
-		<span>Card number was fuzzy-matched — please confirm</span>
+		<span>Card number was fuzzy-matched</span>
 	</div>
 {:else if isLowConfidence}
 	<div class="confidence-warning">
