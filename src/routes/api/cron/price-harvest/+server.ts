@@ -146,19 +146,23 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	} catch { /* best-effort */ }
 
 	// ── Fire next chain link (non-blocking) ─────────────
-	const selfUrl = `${url.origin}/api/cron/price-harvest`;
-	try {
-		fetch(selfUrl, {
-			method: 'GET',
-			headers: {
-				'Authorization': `Bearer ${cronSecret}`,
-				'X-Harvest-Chain-Depth': String(chainDepth + 1)
-			}
-		}).catch(() => {
-			// Chain break is OK — next cron trigger will resume
-		});
-	} catch {
-		// fetch() itself failed — chain ends here
+	// Skip self-chaining when triggered manually (browser handles the loop)
+	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
+	if (!noChain) {
+		const selfUrl = `${url.origin}/api/cron/price-harvest`;
+		try {
+			fetch(selfUrl, {
+				method: 'GET',
+				headers: {
+					'Authorization': `Bearer ${cronSecret}`,
+					'X-Harvest-Chain-Depth': String(chainDepth + 1)
+				}
+			}).catch(() => {
+				// Chain break is OK — next cron trigger will resume
+			});
+		} catch {
+			// fetch() itself failed — chain ends here
+		}
 	}
 
 	// ── Log quota snapshot to ebay_api_log ────────────────

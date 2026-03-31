@@ -1,8 +1,10 @@
 /**
- * POST /api/admin/trigger-harvest — Manually trigger the price harvest cron
+ * POST /api/admin/trigger-harvest — Manually trigger one harvest batch
  *
- * Admin-only endpoint. Kicks off the self-chaining harvest by calling
- * the cron endpoint with CRON_SECRET auth.
+ * Admin-only. Fires a single cron invocation with no-chain flag.
+ * The browser loops calling this endpoint for continuous harvesting.
+ *
+ * Returns the cron's response so the browser can decide whether to continue.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -10,13 +12,20 @@ import { env } from '$env/dynamic/private';
 import { requireAdmin } from '$lib/server/admin-guard';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ locals, url }) => {
+export const POST: RequestHandler = async ({ locals, url, request }) => {
 	await requireAdmin(locals);
 
 	const cronSecret = env.CRON_SECRET;
 	if (!cronSecret) {
 		throw error(503, 'CRON_SECRET not configured');
 	}
+
+	// Read optional chain depth from request body
+	let chainDepth = 0;
+	try {
+		const body = await request.json();
+		chainDepth = Number(body.chainDepth) || 0;
+	} catch { /* no body = depth 0 */ }
 
 	const cronUrl = `${url.origin}/api/cron/price-harvest`;
 
@@ -25,7 +34,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			method: 'GET',
 			headers: {
 				'Authorization': `Bearer ${cronSecret}`,
-				'X-Harvest-Chain-Depth': '0'
+				'X-Harvest-Chain-Depth': String(chainDepth),
+				'X-Harvest-No-Chain': 'true'
 			}
 		});
 
