@@ -78,16 +78,11 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 	const callBudget = Math.min(remainingCalls, BATCH_SIZE * MAX_WAVES);
 
-	// ── Get offset for this chain link ───────────────────
-	const offsetKey = `harvest-offset:${today}`;
-	let offset = 0;
-	try {
-		const stored = await redis.get<number>(offsetKey);
-		offset = stored ?? 0;
-	} catch { /* start from 0 */ }
+	// (offset tracking removed — candidate selection uses price_harvest_log
+	// to skip already-processed cards, so no offset needed)
 
 	// ── Fetch prioritized card list ─────────────────────
-	const candidates = await getPrioritizedCards(admin, callBudget, offset);
+	const candidates = await getPrioritizedCards(admin, callBudget, today);
 	if (candidates.length === 0) {
 		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
@@ -140,11 +135,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		}
 	}
 
-	// ── Update offset for next chain link ────────────────
-	// Only advance by successfully updated cards so failed/rejected cards get retried
-	try {
-		await redis.set(offsetKey, offset + updated, { ex: 86400 });
-	} catch { /* best-effort */ }
+	// (offset tracking removed — no longer needed)
 
 	// ── Fire next chain link (non-blocking) ─────────────
 	// Skip self-chaining when triggered manually (browser handles the loop)
@@ -194,8 +185,6 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		processed,
 		updated,
 		errors,
-		offset,
-		nextOffset: offset + processed,
 		remainingBefore: remainingCalls,
 		durationMs: Date.now() - startTime
 	});
@@ -214,7 +203,7 @@ interface CardCandidate {
 async function getPrioritizedCards(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	limit: number,
-	offset: number
+	today: string
 ): Promise<CardCandidate[]> {
 	const candidates: CardCandidate[] = [];
 	const seenIds = new Set<string>();
@@ -230,7 +219,23 @@ async function getPrioritizedCards(
 		pricedMap.set(row.card_id, row.fetched_at);
 	}
 
-	// Step 2: Get all distinct card_ids in user collections
+	// Step 2: Get card_ids already processed today (prevents re-trying threshold-rejected cards)
+	const processedToday = new Set<string>();
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data: todayRows } = await (admin as any)
+			.from('price_harvest_log')
+			.select('card_id')
+			.eq('run_id', today);
+
+		for (const row of todayRows || []) {
+			processedToday.add(row.card_id);
+		}
+	} catch {
+		// If this fails, we might re-process some cards — acceptable
+	}
+
+	// Step 3: Get all distinct card_ids in user collections
 	const { data: collectionRows } = await admin
 		.from('collections')
 		.select('card_id');
@@ -240,10 +245,15 @@ async function getPrioritizedCards(
 		collectedIds.add(row.card_id);
 	}
 
+	// Helper: should this card be considered?
+	function isCandidate(id: string): boolean {
+		return !seenIds.has(id) && !processedToday.has(id);
+	}
+
 	// Priority 1: Cards in collections with NO price cache
 	const unpricedCollected = [...collectedIds].filter(id => !pricedMap.has(id));
 	for (const id of unpricedCollected) {
-		if (!seenIds.has(id)) {
+		if (isCandidate(id)) {
 			candidates.push({ id, hero_name: null, name: null, card_number: null, priority: 1 });
 			seenIds.add(id);
 		}
@@ -254,7 +264,7 @@ async function getPrioritizedCards(
 	const staleCollected = [...collectedIds]
 		.filter(id => {
 			const fetched = pricedMap.get(id);
-			return fetched && new Date(fetched).getTime() < staleThreshold24h && !seenIds.has(id);
+			return fetched && new Date(fetched).getTime() < staleThreshold24h && isCandidate(id);
 		})
 		.sort((a, b) => {
 			return new Date(pricedMap.get(a)!).getTime() - new Date(pricedMap.get(b)!).getTime();
@@ -265,19 +275,25 @@ async function getPrioritizedCards(
 		seenIds.add(id);
 	}
 
-	// Priority 3: Any card with no price data
+	// Early exit: if we already have enough candidates, skip the heavy query
+	if (candidates.length >= limit) {
+		return hydrateCards(admin, candidates.slice(0, limit));
+	}
+
+	// Priority 3: Any card with no price data (ALL cards, no range limit)
 	try {
 		const { data: allCards } = await admin
 			.from('cards')
 			.select('id')
-			.order('id')
-			.range(0, 5000);
+			.order('id');
 
 		if (allCards) {
 			for (const card of allCards) {
-				if (!seenIds.has(card.id) && !pricedMap.has(card.id)) {
+				if (isCandidate(card.id) && !pricedMap.has(card.id)) {
 					candidates.push({ id: card.id, hero_name: null, name: null, card_number: null, priority: 3 });
 					seenIds.add(card.id);
+					// Stop accumulating once we have enough — no need to load all 17K into memory
+					if (candidates.length >= limit * 3) break;
 				}
 			}
 		}
@@ -285,11 +301,15 @@ async function getPrioritizedCards(
 		console.debug('[harvest] Priority 3 query failed:', err);
 	}
 
+	if (candidates.length >= limit) {
+		return hydrateCards(admin, candidates.slice(0, limit));
+	}
+
 	// Priority 4: Any card with stale prices (oldest first)
 	const staleThreshold48h = Date.now() - 48 * 60 * 60 * 1000;
 	const staleAny = [...pricedMap.entries()]
 		.filter(([id, fetched]) =>
-			!seenIds.has(id) && new Date(fetched).getTime() < staleThreshold48h
+			isCandidate(id) && new Date(fetched).getTime() < staleThreshold48h
 		)
 		.sort((a, b) => new Date(a[1]).getTime() - new Date(b[1]).getTime());
 
@@ -298,9 +318,7 @@ async function getPrioritizedCards(
 		seenIds.add(id);
 	}
 
-	// Apply offset and limit, then hydrate with card details
-	const finalSlice = candidates.slice(offset, offset + limit);
-	return hydrateCards(admin, finalSlice);
+	return hydrateCards(admin, candidates.slice(0, limit));
 }
 
 async function hydrateCards(
