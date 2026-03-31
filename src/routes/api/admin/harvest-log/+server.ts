@@ -77,65 +77,28 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const adminAny = admin as any;
 
+	// Run summary aggregation in SQL (avoids 1,000-row client limit)
+	// and detail pagination in parallel
 	const [summaryRes, detailRes] = await Promise.all([
-		// Summary: lightweight columns for the entire run
-		adminAny
-			.from('price_harvest_log')
-			.select('success, price_changed, is_new_price, zero_results, duration_ms, chain_depth, processed_at')
-			.eq('run_id', runId),
-
-		// Detail: filtered + paginated rows
+		adminAny.rpc('get_harvest_summary', { p_run_id: runId }),
 		buildDetailQuery(adminAny, runId, filter, sort, offset, limit)
 	]);
 
-	// Compute summary stats in JS
-	const summaryRows: Array<{
-		success: boolean;
-		price_changed: boolean;
-		is_new_price: boolean;
-		zero_results: boolean;
-		duration_ms: number | null;
-		chain_depth: number;
-		processed_at: string;
-	}> = summaryRes.data || [];
-
-	let totalDuration = 0;
-	let durationCount = 0;
-	let maxChainDepth = 0;
-	let startedAt: string | null = null;
-	let endedAt: string | null = null;
-	let changed = 0;
-	let newPrices = 0;
-	let zeroResults = 0;
-	let errors = 0;
-
-	for (const row of summaryRows) {
-		if (row.price_changed) changed++;
-		if (row.is_new_price) newPrices++;
-		if (row.zero_results) zeroResults++;
-		if (!row.success) errors++;
-		if (row.duration_ms != null) {
-			totalDuration += row.duration_ms;
-			durationCount++;
-		}
-		if (row.chain_depth > maxChainDepth) maxChainDepth = row.chain_depth;
-		if (!startedAt || row.processed_at < startedAt) startedAt = row.processed_at;
-		if (!endedAt || row.processed_at > endedAt) endedAt = row.processed_at;
-	}
+	const s = summaryRes.data?.[0] ?? summaryRes.data ?? {};
 
 	return json({
 		runId,
 		availableRuns,
 		summary: {
-			total: summaryRows.length,
-			changed,
-			newPrices,
-			zeroResults,
-			errors,
-			avgDurationMs: durationCount > 0 ? Math.round(totalDuration / durationCount) : 0,
-			maxChainDepth,
-			startedAt,
-			endedAt
+			total: Number(s.total ?? 0),
+			changed: Number(s.changed ?? 0),
+			newPrices: Number(s.new_prices ?? 0),
+			zeroResults: Number(s.zero_results ?? 0),
+			errors: Number(s.errors ?? 0),
+			avgDurationMs: Number(s.avg_duration ?? 0),
+			maxChainDepth: Number(s.max_depth ?? 0),
+			startedAt: s.started_at ?? null,
+			endedAt: s.ended_at ?? null
 		},
 		rows: detailRes.data || [],
 		pagination: {
