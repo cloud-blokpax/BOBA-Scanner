@@ -31,12 +31,22 @@ function buildSetMatchers(code: string): Set<string> {
 	const matchers = new Set<string>();
 	const upper = code.toUpperCase();
 	matchers.add(upper);
-	const displayName = RELEASE_TO_SET_NAME[code];
+
+	// Find the canonical display name for this code
+	const displayName = RELEASE_TO_SET_NAME[code] || RELEASE_TO_SET_NAME[upper];
 	if (displayName) matchers.add(displayName.toUpperCase());
-	// Also add reverse lookup — if someone passes the display name directly
+
+	// Add ALL keys that share the same display name (cross-references A↔AE, G↔GE, etc.)
+	const targetName = displayName?.toUpperCase();
 	for (const [key, val] of Object.entries(RELEASE_TO_SET_NAME)) {
-		if (val.toUpperCase() === upper) matchers.add(key.toUpperCase());
+		const keyUpper = key.toUpperCase();
+		const valUpper = val.toUpperCase();
+		if (valUpper === targetName || keyUpper === upper || valUpper === upper) {
+			matchers.add(keyUpper);
+			matchers.add(valUpper);
+		}
 	}
+
 	return matchers;
 }
 
@@ -51,7 +61,7 @@ export function openPack(
 	const packSeed = seed || crypto.randomUUID();
 	const rng = seedrandom(packSeed);
 	const allCards = getAllCards();
-	// Match cards whose set_code matches any known form of this set code
+	// Match hero cards whose set_code matches any known form of this set code
 	const matchers = buildSetMatchers(setCode);
 	const setCards = allCards.filter(
 		(c) => matchers.has((c.set_code || '').toUpperCase())
@@ -60,7 +70,9 @@ export function openPack(
 
 	for (const slot of slots) {
 		const outcome = rollWeightedOutcome(slot.outcomes, rng);
-		const candidates = findCandidates(setCards, outcome);
+		// Play cards and hot dogs are set-agnostic — search the full card pool
+		const pool = outcome.type === 'card_type' ? allCards : setCards;
+		const candidates = findCandidates(pool, outcome);
 		const card =
 			candidates.length > 0
 				? candidates[Math.floor(rng() * candidates.length)]
@@ -79,6 +91,26 @@ export function openPack(
 						? outcome.value
 						: card.parallel || 'base',
 				setCode: card.set_code || '',
+				slotNumber: slot.slotNumber,
+				slotLabel: slot.label,
+				outcomeType: outcome.type,
+				outcomeValue: outcome.value,
+				price: null
+			});
+		} else {
+			// Defensive fallback: ensure pack always has the correct card count.
+			// This should never trigger after the set code and card_type fixes above,
+			// but prevents silent slot drops if the DB is missing expected cards.
+			console.warn(`[pack-sim] No candidates found for slot ${slot.slotNumber} (${slot.label}), outcome: ${outcome.type}=${outcome.value}, set: ${setCode}`);
+			cards.push({
+				cardId: '',
+				heroName: slot.label.includes('Play') ? 'Unknown Play' : slot.label.includes('Hot Dog') ? 'Hot Dog' : 'Unknown Hero',
+				cardNumber: '',
+				power: null,
+				weaponType: '',
+				rarity: 'common',
+				parallel: 'base',
+				setCode,
 				slotNumber: slot.slotNumber,
 				slotLabel: slot.label,
 				outcomeType: outcome.type,
