@@ -125,18 +125,19 @@
 	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 	async function removeScan(scanId: string) {
-		// Only attempt Supabase delete for valid UUIDs (Supabase scans).
-		// Local scan history entries may have short non-UUID IDs.
+		// Attempt Supabase delete for valid UUIDs (Supabase-originated scans).
 		if (UUID_RE.test(scanId)) {
 			const client = getSupabase();
 			if (client) {
 				try {
-					await client.from('scans').delete().eq('id', scanId);
+					const { error: delError } = await client.from('scans').delete().eq('id', scanId);
+					if (delError) console.warn('[home] Supabase scan delete failed:', delError.message);
 				} catch (err) {
-					console.debug('[home] Failed to delete scan:', err);
+					console.warn('[home] Scan delete error:', err);
 				}
 			}
 		}
+		// Update in-memory state immediately
 		supabaseScans = supabaseScans.filter(s => s.id !== scanId);
 		removeFromScanHistory(scanId);
 	}
@@ -290,13 +291,22 @@
 		}
 	});
 
-	// Prefer Supabase scans for logged-in users (consistent across devices).
-	// Fall back to IndexedDB for anonymous users or while Supabase loads.
+	// Merge Supabase scans (cross-device) with local scan history (this device).
+	// Deduplicate by cardId, prefer Supabase entries when both exist.
 	const recentScans = $derived.by(() => {
-		if (data.user && supabaseScansLoaded && supabaseScans.length > 0) {
-			return supabaseScans.slice(0, 5);
+		const local = scanHistory().filter(s => s.success);
+		if (!data.user || !supabaseScansLoaded) {
+			return local.slice(0, 5);
 		}
-		return scanHistory().filter(s => s.success).slice(0, 5);
+
+		// Merge: Supabase scans first, then local scans not already represented
+		const seen = new Set(supabaseScans.map(s => s.cardId).filter(Boolean));
+		const localOnly = local.filter(s => s.cardId && !seen.has(s.cardId));
+		const merged = [...supabaseScans, ...localOnly]
+			.sort((a, b) => b.timestamp - a.timestamp)
+			.slice(0, 5);
+
+		return merged;
 	});
 	const collectionCount = $derived(getCollectionCount());
 

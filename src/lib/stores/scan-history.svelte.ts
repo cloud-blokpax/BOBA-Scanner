@@ -48,24 +48,27 @@ function loadFromLocalStorage(): ScanHistoryEntry[] | null {
 }
 
 if (browser) {
-	// Primary: load from IndexedDB
-	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((entries) => {
-		if (Array.isArray(entries) && entries.length > 0) {
-			_scanHistory = entries;
-			saveToLocalStorage(entries);
-		} else {
-			// IDB empty (possibly wiped by health check) — restore from localStorage backup
-			const backup = loadFromLocalStorage();
-			if (backup) {
-				_scanHistory = backup;
-				// Re-persist to IDB so future loads are fast
-				idb.setMeta(IDB_KEY, backup).catch(() => {});
-			}
+	// localStorage is synchronous and always reflects the last successful save.
+	// IDB is async and may contain stale data if a write was interrupted by
+	// navigation. Therefore: localStorage is authoritative, IDB is the fast cache.
+	const lsData = loadFromLocalStorage();
+
+	idb.getMeta<ScanHistoryEntry[]>(IDB_KEY).then((idbEntries) => {
+		const idbValid = Array.isArray(idbEntries) && idbEntries.length > 0;
+
+		if (lsData) {
+			// localStorage wins — it's always the most recent successful write
+			_scanHistory = lsData;
+			// Sync IDB to match localStorage (non-blocking)
+			idb.setMeta(IDB_KEY, lsData).catch(() => {});
+		} else if (idbValid) {
+			// No localStorage data — use IDB and create a backup
+			_scanHistory = idbEntries;
+			saveToLocalStorage(idbEntries);
 		}
 	}).catch(() => {
-		// IDB failed — try localStorage backup
-		const backup = loadFromLocalStorage();
-		if (backup) _scanHistory = backup;
+		// IDB failed entirely — use localStorage if available
+		if (lsData) _scanHistory = lsData;
 	});
 
 	// Migrate legacy localStorage key (one-time)
@@ -95,8 +98,13 @@ function saveToIdb(entries: ScanHistoryEntry[]): void {
 export function removeFromScanHistory(id: string): void {
 	const updated = _scanHistory.filter(s => s.id !== id);
 	if (updated.length !== _scanHistory.length) {
-		saveToIdb(updated);
 		_scanHistory = updated;
+		// Write localStorage synchronously FIRST (authoritative store)
+		saveToLocalStorage(updated);
+		// Then fire async IDB write (best-effort cache)
+		idb.setMeta(IDB_KEY, updated).catch((err) => {
+			console.debug('[scan-history] IDB save failed:', err);
+		});
 	}
 }
 
