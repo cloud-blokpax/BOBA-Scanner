@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	interface ScanFlag {
@@ -28,34 +27,16 @@
 
 	async function loadCards() {
 		loading = true;
-		const client = getSupabase();
-		if (!client) { loading = false; return; }
-
-		const sevenDaysAgo = new Date();
-		sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
 		try {
-			const [cardsRes, pricesRes, stalePricesRes, flagsCountRes, flagsRes] = await Promise.all([
-				client.from('system_settings').select('value').eq('key', 'total_cards').maybeSingle(),
-				client.from('price_cache').select('id', { count: 'exact', head: true }),
-				client.from('price_cache').select('id', { count: 'exact', head: true })
-					.lt('fetched_at', sevenDaysAgo.toISOString()),
-				client.from('scan_flags').select('id', { count: 'exact', head: true })
-					.eq('status', 'pending'),
-				client.from('scan_flags').select('*')
-					.eq('status', 'pending')
-					.order('created_at', { ascending: false })
-					.limit(50)
-			]);
+			const res = await fetch('/api/admin/card-health');
+			if (!res.ok) throw new Error('Failed to load card health');
+			const data = await res.json();
 
-			cardMetrics.totalCards = Number(cardsRes.data?.value) || 0;
-			cardMetrics.withPrices = pricesRes.count || 0;
-			cardMetrics.stalePrices = stalePricesRes.count || 0;
-			cardMetrics.pendingFlags = flagsCountRes.count || 0;
-
-			if (flagsRes.data) {
-				scanFlags = flagsRes.data as ScanFlag[];
-			}
+			cardMetrics.totalCards = data.metrics.totalCards;
+			cardMetrics.withPrices = data.metrics.withPrices;
+			cardMetrics.stalePrices = data.metrics.stalePrices;
+			cardMetrics.pendingFlags = data.metrics.pendingFlags;
+			scanFlags = data.flags as ScanFlag[];
 		} catch {
 			showToast('Failed to load card data', 'x');
 		}

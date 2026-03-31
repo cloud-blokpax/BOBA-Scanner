@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	let freeRefreshLimit = $state(3);
@@ -11,29 +10,31 @@
 	});
 
 	async function loadDeckShopConfig() {
-		const client = getSupabase();
-		if (!client) return;
-		const { data } = await client
-			.from('app_config')
-			.select('key, value')
-			.in('key', ['deck_shop_daily_refreshes_free', 'deck_shop_daily_refreshes_member']);
-		if (data) {
-			for (const row of data) {
+		try {
+			const res = await fetch('/api/admin/app-config?keys=deck_shop_daily_refreshes_free,deck_shop_daily_refreshes_member');
+			if (!res.ok) return;
+			const data = await res.json();
+			for (const row of data.config) {
 				if (row.key === 'deck_shop_daily_refreshes_free') freeRefreshLimit = Number(row.value);
 				if (row.key === 'deck_shop_daily_refreshes_member') memberRefreshLimit = Number(row.value);
 			}
-		}
+		} catch { /* use defaults */ }
 	}
 
 	async function saveDeckShopConfig() {
-		const client = getSupabase();
-		if (!client) return;
 		configLoading = true;
 		try {
-			await client.from('app_config').upsert([
-				{ key: 'deck_shop_daily_refreshes_free', value: freeRefreshLimit as unknown, updated_at: new Date().toISOString() },
-				{ key: 'deck_shop_daily_refreshes_member', value: memberRefreshLimit as unknown, updated_at: new Date().toISOString() }
-			], { onConflict: 'key' });
+			const res = await fetch('/api/admin/app-config', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					entries: [
+						{ key: 'deck_shop_daily_refreshes_free', value: freeRefreshLimit },
+						{ key: 'deck_shop_daily_refreshes_member', value: memberRefreshLimit }
+					]
+				})
+			});
+			if (!res.ok) throw new Error('Save failed');
 			showToast('Config saved', 'check');
 		} catch {
 			showToast('Failed to save', 'x');

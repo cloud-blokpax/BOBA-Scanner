@@ -448,13 +448,14 @@
 		gap: 0.25rem;
 		border-bottom: 1px solid var(--border);
 		margin-bottom: 1.25rem;
-		overflow-x: auto;
+		flex-wrap: wrap;
 		position: relative;
 	}
 
 	.tab-group {
 		display: flex;
 		gap: 0.125rem;
+		flex-wrap: wrap;
 	}
 
 	.tab-btn {

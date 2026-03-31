@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import Sparkline from './Sparkline.svelte';
 	import HarvestResults from './HarvestResults.svelte';
@@ -39,11 +38,8 @@
 
 	async function loadEbay() {
 		loading = true;
-		const client = getSupabase();
-		if (!client) { loading = false; return; }
-
 		try {
-			// Load confidence threshold
+			// Load confidence threshold (non-critical)
 			try {
 				const configRes = await fetch('/api/admin/harvest-config');
 				if (configRes.ok) {
@@ -52,27 +48,15 @@
 				}
 			} catch { /* non-critical */ }
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const [quotaRes, pricesRes, staleRes] = await Promise.all([
-				(client as any).from('ebay_api_log')
-					.select('calls_remaining, calls_limit, reset_at, status, chain_depth, cards_processed, cards_updated, recorded_at')
-					.order('recorded_at', { ascending: false })
-					.limit(1)
-					.maybeSingle(),
-				client.from('price_cache').select('id', { count: 'exact', head: true }),
-				client.from('price_cache').select('id', { count: 'exact', head: true })
-					.lt('fetched_at', new Date(Date.now() - 7 * 86400000).toISOString())
-			]);
+			const res = await fetch('/api/admin/ebay-metrics');
+			if (!res.ok) throw new Error('Failed to load eBay metrics');
+			const data = await res.json();
 
-			if (quotaRes.data) {
-				const q = quotaRes.data as Record<string, unknown>;
-				ebayMetrics.callsRemaining = q.calls_remaining as number | null;
-				ebayMetrics.callsLimit = q.calls_limit as number | null;
-				ebayMetrics.resetAt = q.reset_at as string | null;
-			}
-
-			ebayMetrics.totalPrices = pricesRes.count || 0;
-			ebayMetrics.stalePrices = staleRes.count || 0;
+			ebayMetrics.callsRemaining = data.callsRemaining;
+			ebayMetrics.callsLimit = data.callsLimit;
+			ebayMetrics.resetAt = data.resetAt;
+			ebayMetrics.totalPrices = data.totalPrices;
+			ebayMetrics.stalePrices = data.stalePrices;
 		} catch {
 			showToast('Failed to load eBay data', 'x');
 		}

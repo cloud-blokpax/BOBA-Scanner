@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import Sparkline from './Sparkline.svelte';
 
@@ -40,83 +39,19 @@
 
 	async function loadScans() {
 		loading = true;
-		const client = getSupabase();
-		if (!client) { loading = false; return; }
-
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const todayIso = today.toISOString();
-
-		const weekAgo = new Date();
-		weekAgo.setDate(weekAgo.getDate() - 7);
-		const weekAgoIso = weekAgo.toISOString();
-
-		const monthAgo = new Date();
-		monthAgo.setDate(monthAgo.getDate() - 30);
-		const monthAgoIso = monthAgo.toISOString();
-
-		const fourteenDaysAgo = new Date();
-		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-
 		try {
-			const [todayRes, weekRes, monthRes, errorsRes, recentRes, todayAllRes] = await Promise.all([
-				client.from('api_call_logs').select('id', { count: 'exact', head: true })
-					.gte('created_at', todayIso).eq('call_type', 'scan'),
-				client.from('api_call_logs').select('id', { count: 'exact', head: true })
-					.gte('created_at', weekAgoIso).eq('call_type', 'scan'),
-				client.from('api_call_logs').select('id', { count: 'exact', head: true })
-					.gte('created_at', monthAgoIso).eq('call_type', 'scan'),
-				client.from('api_call_logs').select('id', { count: 'exact', head: true })
-					.gte('created_at', todayIso).eq('success', false),
-				client.from('api_call_logs').select('*')
-					.order('created_at', { ascending: false })
-					.limit(100),
-				client.from('api_call_logs').select('created_at, success')
-					.gte('created_at', todayIso)
-					.eq('call_type', 'scan')
-			]);
+			const res = await fetch('/api/admin/scan-analytics');
+			if (!res.ok) throw new Error('Failed to load scan analytics');
+			const data = await res.json();
 
-			scanMetrics.totalToday = todayRes.count || 0;
-			scanMetrics.totalWeek = weekRes.count || 0;
-			scanMetrics.totalMonth = monthRes.count || 0;
-			scanMetrics.errorsToday = errorsRes.count || 0;
-
-			if (todayAllRes.data && todayAllRes.data.length > 0) {
-				const total = todayAllRes.data.length;
-				const successes = todayAllRes.data.filter((s: { success: boolean }) => s.success).length;
-				scanMetrics.successRate = Math.round((successes / total) * 100);
-
-				// Build hourly heatmap
-				const hourly = new Array(24).fill(0);
-				for (const scan of todayAllRes.data) {
-					const hour = new Date(scan.created_at).getHours();
-					hourly[hour]++;
-				}
-				hourlyData = hourly;
-			}
-
-			if (recentRes.data) {
-				recentScans = recentRes.data as ScanLog[];
-			}
-
-			// Build 14-day trend
-			const { data: trendRows } = await client
-				.from('api_call_logs')
-				.select('created_at')
-				.gte('created_at', fourteenDaysAgo.toISOString())
-				.eq('call_type', 'scan')
-				.order('created_at', { ascending: true });
-
-			if (trendRows) {
-				const counts = new Array(14).fill(0);
-				const now = Date.now();
-				for (const row of trendRows) {
-					const daysAgoIdx = Math.floor((now - new Date(row.created_at).getTime()) / 86400000);
-					const idx = 13 - daysAgoIdx;
-					if (idx >= 0 && idx < 14) counts[idx]++;
-				}
-				trendData = counts;
-			}
+			scanMetrics.totalToday = data.metrics.totalToday;
+			scanMetrics.totalWeek = data.metrics.totalWeek;
+			scanMetrics.totalMonth = data.metrics.totalMonth;
+			scanMetrics.errorsToday = data.metrics.errorsToday;
+			scanMetrics.successRate = data.metrics.successRate;
+			hourlyData = data.hourlyData;
+			trendData = data.trendData;
+			recentScans = data.recentScans as ScanLog[];
 		} catch {
 			showToast('Failed to load scan data', 'x');
 		}
