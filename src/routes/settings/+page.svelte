@@ -3,7 +3,6 @@
 	import { idb } from '$lib/services/idb';
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
-	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { personaWeights, togglePersona, personaLoaded, type PersonaId } from '$lib/stores/persona.svelte';
 	import { page } from '$app/stores';
@@ -28,29 +27,13 @@
 		personaSaving = false;
 	}
 
-	const hasScanToList = featureEnabled('scan_to_list');
-
-	// Donation history
-	let donations = $state<Array<{ tier_key: string; tier_amount: number; time_added: boolean; created_at: string }>>([]);
-
-	async function loadDonations() {
-		const client = getSupabase();
-		if (!client || !user()) return;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const { data } = await (client as any)
-			.from('donations')
-			.select('tier_key, tier_amount, time_added, created_at')
-			.eq('user_id', user()!.id)
-			.order('created_at', { ascending: false })
-			.limit(20);
-		donations = data || [];
-	}
-
 	let loading = $state(true);
 	let saving = $state(false);
 	let profileName = $state('');
 	let discordId = $state('');
 	let email = $state('');
+	let showProfile = $state(false);
+	let showPersona = $state(false);
 
 	// Badges state
 	let badges = $state<Array<{ badge_key: string; badge_name: string; badge_description: string; badge_icon: string; earned_at: string }>>([]);
@@ -60,7 +43,6 @@
 	let ebayConnected = $state(false);
 	let ebayLoading = $state(true);
 	let ebayDisconnecting = $state(false);
-	let ebayMessage = $state<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
 	async function loadProfile() {
 		loading = true;
@@ -121,6 +103,7 @@
 
 			if (error) throw error;
 			showToast('Profile saved', 'check');
+			showProfile = false;
 		} catch (err) {
 			console.debug('[settings] Profile save failed:', err);
 			showToast('Failed to save profile', 'x');
@@ -161,30 +144,16 @@
 
 	$effect(() => {
 		loadProfile();
-		loadDonations();
 	});
 
 	// Check eBay OAuth callback params
 	$effect(() => {
 		const ebayParam = $page.url.searchParams.get('ebay');
 		if (ebayParam === 'connected') {
-			ebayMessage = { type: 'success', text: 'eBay account connected successfully!' };
+			showToast('eBay account connected!', 'check');
 			ebayConnected = true;
-		} else if (ebayParam === 'declined') {
-			ebayMessage = { type: 'info', text: 'eBay authorization was declined.' };
-		} else if (ebayParam === 'setup') {
-			ebayMessage = { type: 'info', text: 'Connect your eBay seller account below to start listing cards directly from scans.' };
-		} else if (ebayParam === 'not_configured') {
-			ebayMessage = { type: 'info', text: 'eBay seller integration is not yet available. Check back soon!' };
 		} else if (ebayParam === 'error') {
-			const reason = $page.url.searchParams.get('reason') || 'unknown';
-			const reasonMessages: Record<string, string> = {
-				session_expired: 'Your session expired during the eBay connection process. Please try again.',
-				state_mismatch: 'Security verification failed. Please try connecting again.',
-				no_code: 'eBay did not return an authorization code. Please try again.',
-				token_exchange: 'Failed to complete eBay authorization. Please try again.'
-			};
-			ebayMessage = { type: 'error', text: reasonMessages[reason] || `eBay connection failed: ${reason}` };
+			showToast('eBay connection failed', 'x');
 		}
 	});
 
@@ -222,229 +191,245 @@
 </svelte:head>
 
 <div class="settings-page">
-	<header class="page-header">
-		<h1>Settings</h1>
-		<p class="subtitle">Manage your profile and preferences</p>
-	</header>
-
 	{#if loading}
-		<div class="loading">Loading profile...</div>
+		<div class="loading">Loading...</div>
 	{:else}
-		<!-- Pro Status Section -->
-		<div class="settings-card pro-status-card">
-			{#if isPro()}
-				<div class="pro-status-row">
-					<span class="pro-badge-large">PRO</span>
-					<div class="pro-status-info">
-						<span class="pro-until">Pro until {proUntil()?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-						<span class="pro-days">{daysRemaining()} days remaining</span>
-					</div>
-					<button class="renew-btn" onclick={() => setShowGoProModal(true)}>Renew</button>
+		<!-- User Identity Card -->
+		<div class="identity-card">
+			<div class="identity-avatar">
+				{(email?.[0] || '?').toUpperCase()}
+			</div>
+			<div class="identity-info">
+				<div class="identity-name-row">
+					<span class="identity-name">{profileName || email?.split('@')[0] || 'Coach'}</span>
+					{#if isPro()}
+						<span class="identity-pro-badge">PRO</span>
+					{/if}
 				</div>
-				{#if donations.length > 0}
-					<div class="donation-history">
-						<h3>Donation History</h3>
-						<table class="donation-table">
-							<thead><tr><th>Tier</th><th>Date</th><th>Time Added</th></tr></thead>
-							<tbody>
-								{#each donations as d}
-									<tr>
-										<td class="tier-cell">{d.tier_key}</td>
-										<td>{new Date(d.created_at).toLocaleDateString()}</td>
-										<td>{d.time_added ? 'Yes' : 'No'}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
+				<span class="identity-sub">
+					{#if isPro()}
+						{daysRemaining()} days remaining
+					{:else if proExpired()}
+						Pro expired
+					{:else}
+						Free plan
+					{/if}
+				</span>
+			</div>
+			<svg class="chevron" viewBox="0 0 20 20" width="20" height="20">
+				<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+			</svg>
+		</div>
+
+		<!-- Account Group -->
+		<div class="settings-group">
+			<div class="group-label">Account</div>
+			<div class="group-card">
+				<button class="settings-row" onclick={() => showProfile = !showProfile}>
+					<div class="row-icon" style="background: rgba(59,130,246,0.12);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #3b82f6;">
+							<path d="M10 10a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 0114 0H3z"/>
+						</svg>
+					</div>
+					<div class="row-content">
+						<span class="row-title">Profile</span>
+						<span class="row-sub">Name, email, Discord</span>
+					</div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</button>
+
+				{#if showProfile}
+					<div class="profile-form">
+						<div>
+							<label for="s-email">Email</label>
+							<input id="s-email" type="email" value={email} disabled style="opacity: 0.6;" />
+						</div>
+						<div>
+							<label for="s-name">Name</label>
+							<input id="s-name" type="text" bind:value={profileName} placeholder="Your name" />
+						</div>
+						<div>
+							<label for="s-discord">Discord ID</label>
+							<input id="s-discord" type="text" bind:value={discordId} placeholder="username#1234" />
+						</div>
+						<button class="save-btn" onclick={saveProfile} disabled={saving}>
+							{saving ? 'Saving...' : 'Save Changes'}
+						</button>
 					</div>
 				{/if}
-			{:else if proExpired()}
-				<div class="pro-status-row">
-					<div class="pro-status-info">
-						<span class="pro-expired-text">Your Pro access expired on {proUntil()?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+
+				<button class="settings-row" onclick={() => setShowGoProModal(true)}>
+					<div class="row-icon" style="background: rgba(245,158,11,0.12);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #f59e0b;">
+							<path d="M10 2l2.5 5.5L18 8.5l-4 4 1 5.5-5-2.5-5 2.5 1-5.5-4-4 5.5-1z"/>
+						</svg>
 					</div>
-					<button class="renew-btn" onclick={() => setShowGoProModal(true)}>Renew</button>
-				</div>
-			{:else}
-				<div class="pro-promo">
-					<h2>Go Pro</h2>
-					<p>Unlock AI grading, price trends, eBay listings, and more.</p>
-					<button class="go-pro-btn" onclick={() => setShowGoProModal(true)}>Go Pro</button>
-				</div>
-			{/if}
-		</div>
-
-		<div class="settings-card">
-			<h2>Profile</h2>
-
-			<div class="form-group">
-				<label for="s-email">Email</label>
-				<input id="s-email" type="email" value={email} disabled class="disabled-input" />
-				<span class="field-hint">Email is managed by your Google account</span>
-			</div>
-
-			<div class="form-group">
-				<label for="s-name">Name <span class="optional">(optional)</span></label>
-				<input id="s-name" type="text" bind:value={profileName} placeholder="Your name" />
-			</div>
-
-			<div class="form-group">
-				<label for="s-discord">Discord ID <span class="optional">(optional)</span></label>
-				<input id="s-discord" type="text" bind:value={discordId} placeholder="username#1234 or username" />
-			</div>
-
-			<button class="save-btn" onclick={saveProfile} disabled={saving}>
-				{saving ? 'Saving...' : 'Save Changes'}
-			</button>
-		</div>
-
-		{#if personaLoaded()}
-			<div class="settings-card" style="margin-top: 1rem;">
-				<h2>My Persona</h2>
-				<p class="field-hint" style="margin-bottom: 0.75rem;">Controls what you see first on the home screen</p>
-				<div class="persona-grid">
-					{#each personaOptions as p}
-						<button
-							class="persona-chip"
-							class:selected={personaWeights()[p.id] > 0}
-							onclick={() => toggleAndSave(p.id)}
-							disabled={personaSaving}
-							type="button"
-						>
-							<span class="persona-chip-icon">{p.icon}</span>
-							<span class="persona-chip-name">{p.name}</span>
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-
-		<div class="settings-card" style="margin-top: 1rem;">
-			<h2>eBay Seller Account</h2>
-
-			{#if ebayMessage}
-				<div class="ebay-message ebay-message-{ebayMessage.type}">
-					{ebayMessage.text}
-				</div>
-			{/if}
-
-			{#if ebayLoading}
-				<p class="field-hint">Checking eBay connection...</p>
-			{:else if ebayConnected}
-				<div class="ebay-status">
-					<span class="ebay-badge ebay-connected">Connected</span>
-					<p class="field-hint">Your eBay seller account is linked. You can create listings directly from scan results.</p>
-				</div>
-				<button class="save-btn ebay-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
-					{ebayDisconnecting ? 'Disconnecting...' : 'Disconnect eBay'}
+					<div class="row-content">
+						<span class="row-title">Subscription</span>
+						<span class="row-sub">
+							{#if isPro()}Pro until {proUntil()?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{:else}Free plan{/if}
+						</span>
+					</div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
 				</button>
-			{:else if ebayConfigured}
-				<p class="field-hint">Connect your eBay seller account to create listings directly from scanned cards.</p>
-				<a href="/auth/ebay" class="save-btn ebay-connect">Connect eBay Account</a>
-			{:else}
-				<p class="field-hint">eBay seller integration is coming soon. You'll be able to connect your eBay account and list cards directly from scans.</p>
-			{/if}
+
+				<div class="settings-row">
+					<div class="row-icon" style="background: rgba(16,185,129,0.12);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #10b981;">
+							<path d="M4 4h12v2H4V4zm0 5h12v2H4V9zm0 5h8v2H4v-2z"/>
+						</svg>
+					</div>
+					<div class="row-content">
+						<span class="row-title">eBay seller</span>
+						<span class="row-sub" class:connected={ebayConnected}>
+							{#if ebayLoading}Checking...
+							{:else if ebayConnected}Connected
+							{:else if ebayConfigured}Not connected
+							{:else}Coming soon
+							{/if}
+						</span>
+					</div>
+					{#if ebayConnected}
+						<button class="row-action-btn" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+							{ebayDisconnecting ? '...' : 'Disconnect'}
+						</button>
+					{:else if ebayConfigured}
+						<a href="/auth/ebay" class="row-action-btn row-action-connect">Connect</a>
+					{/if}
+				</div>
+			</div>
 		</div>
 
-		<section class="badges-section">
-			<h3>Badges</h3>
-			{#if badges.length === 0}
-				<p class="no-badges">No badges yet. Scan cards to earn your first!</p>
-			{:else}
-				<div class="badge-grid">
+		<!-- Preferences Group -->
+		<div class="settings-group">
+			<div class="group-label">Preferences</div>
+			<div class="group-card">
+				<button class="settings-row" onclick={() => showPersona = !showPersona}>
+					<div class="row-icon" style="background: rgba(168,85,247,0.12);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #a855f7;">
+							<path d="M3 3h6v6H3V3zm8 0h6v6h-6V3zM3 11h6v6H3v-6zm8 0h6v6h-6v-6z"/>
+						</svg>
+					</div>
+					<div class="row-content">
+						<span class="row-title">Home screen</span>
+						<span class="row-sub">Layout and persona</span>
+					</div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</button>
+				{#if showPersona && personaLoaded()}
+					<div class="persona-section">
+						<div class="persona-grid">
+							{#each personaOptions as p}
+								<button
+									class="persona-chip"
+									class:selected={personaWeights()[p.id] > 0}
+									onclick={() => toggleAndSave(p.id)}
+									disabled={personaSaving}
+									type="button"
+								>
+									{p.icon} {p.name}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Badges -->
+		{#if badges.length > 0}
+			<div class="settings-group">
+				<div class="group-label">Badges</div>
+				<div class="badges-strip">
 					{#each badges as badge}
-						<div class="badge-card">
-							<span class="badge-icon">{badge.badge_icon}</span>
-							<div class="badge-info">
-								<span class="badge-name">{badge.badge_name}</span>
-								<span class="badge-desc">{badge.badge_description}</span>
-							</div>
+						<div class="badge-tile">
+							<div class="badge-icon-wrap">{badge.badge_icon}</div>
+							<span class="badge-name">{badge.badge_name}</span>
 						</div>
 					{/each}
 				</div>
-			{/if}
-		</section>
-
-		<!-- My Stuff -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">My Stuff</h3>
-			<a href="/collection" class="settings-link">My Collection</a>
-			<a href="/deck" class="settings-link">My Decks</a>
-			<a href="/export" class="settings-link">Export Collection</a>
-		</section>
-
-		<!-- Scanning Tools -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Scanning Tools</h3>
-			<a href="/scan" class="settings-link">Single Scan</a>
-			<a href="/scan?mode=batch" class="settings-link">Batch Scanner</a>
-			<a href="/scan?mode=binder" class="settings-link">Binder Scanner</a>
-			<a href="/scan?mode=roll" class="settings-link">Camera Roll Import</a>
-			<a href="/grader" class="settings-link">Card Grader</a>
-		</section>
-
-		<!-- Card Tools -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Card Tools</h3>
-			<a href="/set-completion" class="settings-link">Set Completion</a>
-			<a href="/organize" class="settings-link">Organize Collection</a>
-		</section>
-
-		<!-- Competitive -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Competitive</h3>
-			<a href="/deck/new" class="settings-link">Deck Builder</a>
-			<a href="/tournaments" class="settings-link">Tournaments</a>
-		</section>
-
-		<!-- Community -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Community</h3>
-			<a href="/speed" class="settings-link">Speed Challenge</a>
-			<a href="/leaderboard" class="settings-link">Leaderboard</a>
-			<a href="/marketplace/monitor" class="settings-link">Seller Monitor</a>
-		</section>
-
-		<!-- Sell -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Sell</h3>
-			<a href="/sell" class="settings-link">Sell Cards</a>
-		</section>
-
-		{#if isAdmin}
-			<section class="settings-section">
-				<h3 class="settings-section-title">Admin</h3>
-				<a href="/admin" class="settings-link">Admin Dashboard</a>
-			</section>
+			</div>
 		{/if}
 
-		<!-- Legal -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Legal</h3>
-			<a href="/privacy" class="settings-link">Privacy Policy</a>
-			<a href="/terms" class="settings-link">Terms of Service</a>
-		</section>
+		<!-- Data Group -->
+		<div class="settings-group">
+			<div class="group-label">Data</div>
+			<div class="group-card">
+				<a href="/export" class="settings-row">
+					<div class="row-icon" style="background: rgba(59,130,246,0.12);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #3b82f6;">
+							<path d="M3 17h14v-2H3v2zm7-4l5-5h-3V2H8v6H5l5 5z"/>
+						</svg>
+					</div>
+					<div class="row-content">
+						<span class="row-title">Export collection</span>
+					</div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</a>
+				<button class="settings-row" onclick={exportCardDatabase} disabled={exporting}>
+					<div class="row-icon" style="background: rgba(148,163,184,0.08);">
+						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #94a3b8;">
+							<path d="M4 4h12v2H4V4zm0 5h12v2H4V9zm0 5h8v2H4v-2z"/>
+						</svg>
+					</div>
+					<div class="row-content">
+						<span class="row-title">Export card database</span>
+						<span class="row-sub">JSON backup of local cache</span>
+					</div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		<!-- About Group -->
+		<div class="settings-group">
+			<div class="group-label">About</div>
+			<div class="group-card">
+				<a href="/privacy" class="settings-row">
+					<div class="row-content"><span class="row-title dim">Privacy policy</span></div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</a>
+				<a href="/terms" class="settings-row">
+					<div class="row-content"><span class="row-title dim">Terms of service</span></div>
+					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+					</svg>
+				</a>
+				<div class="settings-row">
+					<div class="row-content"><span class="row-title dim">Version</span></div>
+					<span class="row-version">1.0.0-beta</span>
+				</div>
+			</div>
+		</div>
 
 		{#if isAdmin}
-			<!-- Admin -->
-			<section class="settings-section">
-				<h3 class="settings-section-title">Admin</h3>
-				<a href="/admin" class="settings-link">Admin Dashboard</a>
-			</section>
+			<div class="settings-group">
+				<div class="group-label">Admin</div>
+				<div class="group-card">
+					<a href="/admin" class="settings-row">
+						<div class="row-content"><span class="row-title">Admin dashboard</span></div>
+						<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
+							<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+						</svg>
+					</a>
+				</div>
+			</div>
 		{/if}
-
-		<!-- Data Management -->
-		<section class="settings-section">
-			<h3 class="settings-section-title">Data Management</h3>
-			<button class="export-btn" onclick={exportCardDatabase} disabled={exporting}>
-				{exporting ? 'Exporting...' : 'Export Card Database (JSON)'}
-			</button>
-			<p class="export-hint">Download the local card database from your browser cache. Use this to re-seed your Supabase cards table.</p>
-		</section>
 
 		<!-- Sign Out -->
-		<button class="sign-out-btn" onclick={handleSignOut}>Sign Out</button>
+		<button class="sign-out-btn" onclick={handleSignOut}>Sign out</button>
 	{/if}
 </div>
 
@@ -452,217 +437,231 @@
 	.settings-page {
 		max-width: 500px;
 		margin: 0 auto;
-		padding: 1rem;
+		padding: 1rem 1rem 3rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
 	}
-	.page-header { margin-bottom: 1.5rem; }
-	h1 { font-size: 1.5rem; font-weight: 700; }
-	.subtitle {
-		font-size: 0.85rem;
-		color: var(--text-secondary);
-		margin-top: 0.25rem;
-	}
-	.loading {
-		text-align: center;
-		padding: 3rem;
-		color: var(--text-tertiary);
-	}
-	.settings-card {
-		background: var(--bg-elevated);
-		border-radius: 12px;
+
+	/* Identity Card */
+	.identity-card {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 		padding: 1.25rem;
+		background: var(--bg-elevated);
+		border-radius: 16px;
+		border: 1px solid rgba(245,158,11,0.12);
+		cursor: pointer;
 	}
-	.settings-card h2 {
-		font-size: 1rem;
-		font-weight: 600;
-		margin-bottom: 1rem;
+	.identity-avatar {
+		width: 52px;
+		height: 52px;
+		border-radius: 50%;
+		background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 1.25rem;
+		color: var(--bg-base);
+		flex-shrink: 0;
+	}
+	.identity-info { flex: 1; min-width: 0; }
+	.identity-name-row { display: flex; align-items: center; gap: 0.5rem; }
+	.identity-name { font-size: 1rem; font-weight: 600; }
+	.identity-pro-badge {
+		font-size: 0.625rem;
+		font-weight: 800;
+		letter-spacing: 0.05em;
+		padding: 2px 7px;
+		border-radius: 4px;
+		background: var(--gold);
+		color: var(--bg-base);
+	}
+	.identity-sub { font-size: 0.75rem; color: var(--text-secondary); display: block; margin-top: 2px; }
+
+	/* Groups */
+	.settings-group { display: flex; flex-direction: column; gap: 0; }
+	.group-label {
+		font-size: 0.6875rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--text-muted);
+		margin-bottom: 0.5rem;
+		padding-left: 0.25rem;
+	}
+	.group-card {
+		background: var(--bg-elevated);
+		border-radius: 14px;
+		overflow: hidden;
+	}
+
+	/* Rows */
+	.settings-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.875rem 1rem;
+		width: 100%;
+		border: none;
+		background: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		text-decoration: none;
+		text-align: left;
+		transition: background var(--transition-fast);
+	}
+	.settings-row:not(:last-child) {
+		border-bottom: 1px solid rgba(148,163,184,0.06);
+	}
+	.settings-row:hover { background: var(--bg-hover); }
+	.settings-row:active { background: var(--bg-hover); }
+
+	.row-icon {
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.row-content { flex: 1; min-width: 0; }
+	.row-title { font-size: 0.875rem; font-weight: 500; display: block; }
+	.row-title.dim { color: var(--text-secondary); }
+	.row-sub { font-size: 0.6875rem; color: var(--text-muted); display: block; margin-top: 1px; }
+	.row-sub.connected { color: var(--success); }
+	.row-version { font-size: 0.8125rem; color: var(--text-muted); }
+
+	.row-action-btn {
+		padding: 0.3rem 0.6rem;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: none;
 		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-decoration: none;
 	}
-	.form-group {
-		margin-bottom: 1rem;
+	.row-action-connect { border-color: var(--success); color: var(--success); }
+
+	.chevron { color: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
+
+	/* Profile form (expanded) */
+	.profile-form {
+		padding: 0 1rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		border-bottom: 1px solid rgba(148,163,184,0.06);
 	}
-	.form-group label {
+	.profile-form label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-secondary);
 		display: block;
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-		margin-bottom: 4px;
+		margin-bottom: 0.25rem;
 	}
-	.optional {
-		font-weight: 400;
-		color: var(--text-tertiary);
-	}
-	.form-group input {
+	.profile-form input {
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		border-radius: 8px;
-		border: 1px solid var(--border-color);
+		border: 1px solid var(--border);
 		background: var(--bg-base);
 		color: var(--text-primary);
-		font-size: 0.9rem;
-	}
-	.disabled-input {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-	.field-hint {
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-		margin-top: 2px;
-		display: block;
+		font-size: 0.875rem;
 	}
 	.save-btn {
-		width: 100%;
-		padding: 0.75rem;
+		padding: 0.625rem;
 		border-radius: 10px;
 		border: none;
-		background: var(--accent-primary);
-		color: #fff;
-		font-size: 0.95rem;
+		background: var(--gold);
+		color: var(--bg-base);
+		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
-		margin-top: 0.5rem;
 	}
-	.save-btn:disabled { opacity: 0.6; }
-	.ebay-status { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
-	.ebay-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; width: fit-content; }
-	.ebay-connected { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-	.ebay-disconnect { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); }
-	.ebay-connect { display: block; text-align: center; text-decoration: none; background: var(--success, #10b981); }
-	.ebay-message { padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 0.75rem; }
-	.ebay-message-success { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-	.ebay-message-error { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
-	.ebay-message-info { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+	.save-btn:disabled { opacity: 0.5; }
 
-	/* Pro Status */
-	.pro-status-card { margin-bottom: 1rem; }
-	.pro-status-row {
-		display: flex; align-items: center; gap: 0.75rem;
+	/* Persona */
+	.persona-section {
+		padding: 0 1rem 1rem;
+		border-bottom: 1px solid rgba(148,163,184,0.06);
 	}
-	.pro-badge-large {
-		display: inline-block; padding: 4px 10px; border-radius: 6px;
-		font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em;
-		background: var(--gold); color: #000;
-	}
-	.pro-status-info { flex: 1; display: flex; flex-direction: column; }
-	.pro-until { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
-	.pro-days { font-size: 0.75rem; color: var(--text-secondary); }
-	.pro-expired-text { font-size: 0.9rem; color: var(--text-secondary); }
-	.renew-btn {
-		padding: 0.375rem 0.75rem; border-radius: 8px; border: none;
-		background: var(--gold); color: #000; font-size: 0.8rem; font-weight: 700;
-		cursor: pointer;
-	}
-	.pro-promo { text-align: center; }
-	.pro-promo h2 { font-size: 1rem; font-weight: 700; color: var(--gold); margin-bottom: 0.25rem; }
-	.pro-promo p { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
-	.go-pro-btn {
-		padding: 0.5rem 1.5rem; border-radius: 10px; border: none;
-		background: var(--gold); color: #000; font-size: 0.9rem; font-weight: 700;
-		cursor: pointer; box-shadow: var(--shadow-gold);
-	}
-	.donation-history { margin-top: 1rem; }
-	.donation-history h3 { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem; }
-	.donation-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; }
-	.donation-table th { text-align: left; color: var(--text-tertiary); font-size: 0.7rem; font-weight: 600; padding: 0.25rem 0.5rem; }
-	.donation-table td { padding: 0.25rem 0.5rem; color: var(--text-secondary); }
-	.tier-cell { text-transform: capitalize; }
-
-	.badges-section { margin-top: 2rem; }
-	.badges-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
-	.no-badges { font-size: 0.85rem; color: var(--text-secondary); }
-	.badge-grid { display: flex; flex-direction: column; gap: 0.5rem; }
-	.badge-card {
-		display: flex; align-items: center; gap: 0.75rem;
-		padding: 0.75rem; border-radius: 10px;
-		background: var(--bg-elevated); border: 1px solid var(--border-color);
-	}
-	.badge-icon { font-size: 1.5rem; }
-	.badge-name { display: block; font-weight: 600; font-size: 0.9rem; }
-	.badge-desc { display: block; font-size: 0.75rem; color: var(--text-secondary); }
-
-	/* Settings sections */
-	.settings-section {
-		margin-top: 1.5rem;
-	}
-	.settings-section-title {
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-muted);
-		margin-bottom: 0.5rem;
-	}
-	.settings-link {
-		display: block;
-		padding: 0.625rem 0.75rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		color: var(--text-primary);
-		text-decoration: none;
-	}
-	.settings-link:hover {
-		background: var(--bg-hover);
-	}
-
-	/* Persona grid */
-	.persona-grid {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
+	.persona-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 	.persona-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.4rem;
 		padding: 0.5rem 0.75rem;
 		border-radius: 10px;
-		border: 2px solid var(--border-color, rgba(148,163,184,0.15));
+		border: 2px solid var(--border);
 		background: var(--bg-base);
+		color: var(--text-primary);
+		font-size: 0.8125rem;
+		font-weight: 600;
 		cursor: pointer;
-		transition: border-color 0.15s, background 0.15s;
+		transition: border-color var(--transition-fast), background var(--transition-fast);
 	}
 	.persona-chip:hover { border-color: var(--text-secondary); }
 	.persona-chip.selected {
-		border-color: var(--accent-primary, #3b82f6);
-		background: rgba(59, 130, 246, 0.08);
+		border-color: var(--gold);
+		background: var(--gold-light);
 	}
-	.persona-chip:disabled { opacity: 0.6; }
-	.persona-chip-icon { font-size: 1.15rem; }
-	.persona-chip-name { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+	.persona-chip:disabled { opacity: 0.5; }
 
-	/* Sign out */
-	.export-btn {
-		width: 100%;
-		padding: 0.75rem;
-		border-radius: 10px;
-		border: 1px solid rgba(59, 130, 246, 0.3);
-		background: rgba(59, 130, 246, 0.1);
-		color: var(--primary, #3b82f6);
-		font-size: 0.9rem;
-		font-weight: 600;
-		cursor: pointer;
+	/* Badges Strip */
+	.badges-strip {
+		display: flex;
+		gap: 0.625rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+		padding-bottom: 4px;
 	}
-	.export-btn:hover { background: rgba(59, 130, 246, 0.2); }
-	.export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.export-hint {
-		font-size: 0.75rem;
-		color: var(--text-muted, #475569);
-		margin-top: 0.5rem;
+	.badges-strip::-webkit-scrollbar { display: none; }
+	.badge-tile {
+		flex-shrink: 0;
+		width: 72px;
+		text-align: center;
 	}
+	.badge-icon-wrap {
+		width: 52px;
+		height: 52px;
+		margin: 0 auto 0.375rem;
+		border-radius: 12px;
+		background: var(--gold-light);
+		border: 1px solid rgba(245,158,11,0.2);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.375rem;
+	}
+	.badge-name {
+		font-size: 0.625rem;
+		color: var(--text-secondary);
+		line-height: 1.2;
+	}
+
+	/* Sign Out */
 	.sign-out-btn {
 		width: 100%;
-		padding: 0.75rem;
-		margin-top: 2rem;
-		border-radius: 10px;
-		border: 1px solid var(--border-color);
-		background: transparent;
-		color: var(--text-secondary);
-		font-size: 0.95rem;
+		padding: 0.875rem;
+		border-radius: 12px;
+		border: 1px solid rgba(239,68,68,0.2);
+		background: rgba(239,68,68,0.06);
+		color: var(--danger);
+		font-size: 0.9375rem;
 		font-weight: 600;
 		cursor: pointer;
+		font-family: inherit;
+		transition: background var(--transition-fast);
 	}
-	.sign-out-btn:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-	}
+	.sign-out-btn:hover { background: rgba(239,68,68,0.12); }
+
+	.loading { text-align: center; padding: 3rem; color: var(--text-muted); }
 </style>

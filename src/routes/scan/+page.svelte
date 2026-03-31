@@ -97,6 +97,12 @@
 				onClose={handleClose}
 			/>
 		{/if}
+		{#if !scanResult && scanMode === 'single'}
+			<div class="scan-tools">
+				<a href="/speed" class="scan-tool-chip">⚡ Speed Challenge</a>
+				<a href="/grader" class="scan-tool-chip">🔍 Card Grader</a>
+			</div>
+		{/if}
 	</ScannerErrorBoundary>
 </div>
 
@@ -111,6 +117,31 @@
 		background: #000;
 		overflow: hidden;
 	}
+
+	.scan-tools {
+		position: fixed;
+		bottom: env(safe-area-inset-bottom, 16px);
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 0.5rem;
+		z-index: 10;
+		padding-bottom: 1rem;
+	}
+	.scan-tool-chip {
+		padding: 0.4rem 0.75rem;
+		border-radius: 20px;
+		background: rgba(0, 0, 0, 0.7);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		border: 1px solid rgba(148,163,184,0.15);
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.scan-tool-chip:active { background: rgba(0,0,0,0.85); }
 
 	/* Make scanner full-bleed: remove .app-main padding on scan page */
 	:global(.app-main:has(.scan-page)) {
