@@ -141,8 +141,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	// ── Update offset for next chain link ────────────────
+	// Only advance by successfully updated cards so failed/rejected cards get retried
 	try {
-		await redis.set(offsetKey, offset + processed, { ex: 86400 });
+		await redis.set(offsetKey, offset + updated, { ex: 86400 });
 	} catch { /* best-effort */ }
 
 	// ── Fire next chain link (non-blocking) ─────────────
@@ -420,6 +421,7 @@ async function refreshCardPrice(
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
+		// price_cache only has these columns — extra fields go in harvest log only
 		const priceData = {
 			card_id: card.id,
 			source: 'ebay',
@@ -427,11 +429,6 @@ async function refreshCardPrice(
 			price_mid: allStats?.median ?? null,
 			price_high: allStats?.high ?? null,
 			listings_count: allPrices.length,
-			buy_now_low: fixedStats?.low ?? null,
-			buy_now_mid: fixedStats?.median ?? null,
-			buy_now_count: fixedPrices.length,
-			filtered_count: allStats?.filteredCount ?? allPrices.length,
-			confidence_score: allStats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
 
