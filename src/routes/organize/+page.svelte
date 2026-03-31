@@ -75,7 +75,7 @@
 			});
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({}));
-				throw new Error(err.message || 'Failed to create tournament');
+				throw new Error(err.error || err.message || 'Failed to create tournament');
 			}
 			const result = await res.json();
 			showToast('Tournament created!', 'check');

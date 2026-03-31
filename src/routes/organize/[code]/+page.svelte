@@ -115,7 +115,10 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ tournament_id: tournament.id })
 			});
-			if (!res.ok) throw new Error('Failed to close registration');
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error || err.message || 'Failed to close registration');
+			}
 			await invalidateAll();
 			showToast('Registration closed', 'check');
 		} catch (err) {
