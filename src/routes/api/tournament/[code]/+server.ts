@@ -34,12 +34,18 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 	const { data, error: dbError } = await locals.supabase
 		.from('tournaments')
-		.select('id, code, name, max_heroes, max_plays, max_bonus, require_email, require_name, require_discord, format_id, deck_type, description, venue, event_date, entry_fee, prize_pool, max_players, submission_deadline, registration_closed, deadline_mode')
+		.select('*')
 		.eq('code', code)
 		.eq('is_active', true)
 		.single();
 
 	if (dbError || !data) {
+		if (dbError && dbError.code !== 'PGRST116') {
+			// PGRST116 = "The result contains 0 rows" (expected for not found)
+			// Any other error is unexpected — log it
+			console.error('[tournament/code] DB error:', dbError);
+			throw error(500, 'Failed to look up tournament');
+		}
 		throw error(404, 'Tournament not found');
 	}
 
