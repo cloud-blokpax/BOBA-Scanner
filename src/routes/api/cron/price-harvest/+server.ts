@@ -13,7 +13,7 @@ import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
-import { getRedis } from '$lib/server/redis';
+import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import type { RequestHandler } from './$types';
 
@@ -56,6 +56,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
+	const confidenceThreshold = await getHarvestConfidenceThreshold();
 	let usedToday = 0;
 	try {
 		const count = await redis.get<number>(`ebay-calls:${today}`);
@@ -112,7 +113,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		if (waveCards.length === 0) break;
 
 		const results = await Promise.allSettled(
-			waveCards.map(card => refreshCardPrice(admin, card, redis, today, chainDepth))
+			waveCards.map(card => refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold))
 		);
 
 		for (const result of results) {
@@ -337,7 +338,8 @@ async function refreshCardPrice(
 	card: CardCandidate,
 	redis: NonNullable<ReturnType<typeof getRedis>>,
 	today: string,
-	chainDepth: number
+	chainDepth: number,
+	confidenceThreshold: number
 ): Promise<RefreshResult> {
 	const heroOrName = card.hero_name || card.name || '';
 	const cardNum = card.card_number || '';
@@ -429,14 +431,19 @@ async function refreshCardPrice(
 			fetched_at: new Date().toISOString()
 		};
 
-		// Upsert price cache
-		await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+		// Check confidence threshold before accepting price
+		const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
 
-		// Write price history only if price changed
+		// Upsert price cache ONLY if confidence meets threshold
+		if (meetsThreshold) {
+			await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+		}
+
+		// Write price history only if price changed AND meets threshold
 		const newMid = priceData.price_mid !== null ? Number(priceData.price_mid) : null;
 		const priceChanged = previousMid !== newMid;
 
-		if (!previousMid || priceChanged) {
+		if (meetsThreshold && (!previousMid || priceChanged)) {
 			await admin.from('price_history').insert({
 				card_id: card.id,
 				source: 'ebay',
@@ -493,6 +500,7 @@ async function refreshCardPrice(
 				is_new_price: isNewPrice,
 				success: true,
 				zero_results: ebayResultsRaw === 0,
+				threshold_rejected: !meetsThreshold,
 				error_message: null,
 				duration_ms: Date.now() - callStart,
 				processed_at: new Date().toISOString()

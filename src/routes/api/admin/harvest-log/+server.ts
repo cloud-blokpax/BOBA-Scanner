@@ -20,12 +20,13 @@ const DETAIL_COLUMNS = [
 	'card_id', 'hero_name', 'card_name', 'card_number', 'priority',
 	'price_mid', 'previous_mid', 'price_changed', 'price_delta', 'price_delta_pct',
 	'is_new_price', 'confidence_score', 'listings_count',
-	'success', 'zero_results', 'error_message', 'duration_ms', 'processed_at'
+	'success', 'zero_results', 'threshold_rejected', 'error_message',
+	'search_query', 'duration_ms', 'processed_at'
 ].join(', ');
 
-type Filter = 'all' | 'changed' | 'new' | 'zero' | 'errors';
+type Filter = 'all' | 'changed' | 'new' | 'zero' | 'rejected' | 'errors';
 
-const VALID_FILTERS = new Set<Filter>(['all', 'changed', 'new', 'zero', 'errors']);
+const VALID_FILTERS = new Set<Filter>(['all', 'changed', 'new', 'zero', 'rejected', 'errors']);
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	await requireAdmin(locals);
@@ -155,6 +156,7 @@ function buildDetailQuery(admin: any, runId: string, filter: Filter, offset: num
 		case 'changed': query = query.eq('price_changed', true); break;
 		case 'new': query = query.eq('is_new_price', true); break;
 		case 'zero': query = query.eq('zero_results', true); break;
+		case 'rejected': query = query.eq('threshold_rejected', true); break;
 		case 'errors': query = query.eq('success', false); break;
 	}
 
