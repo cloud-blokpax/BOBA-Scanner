@@ -14,7 +14,7 @@ export const BOBA_OCR_REGIONS = [
 export const BOBA_SCAN_CONFIG = {
 	quality: 0.85,
 	ocrConfidenceThreshold: 30,
-	blurThreshold: 35,
+	blurThreshold: 25, // Lowered from 35 — mobile cameras with slight motion were failing auto-detect
 	maxUploadSize: 1024,
 	aiCostPerScan: 0.003,
 	/** Maximum file size for API upload (bytes) */

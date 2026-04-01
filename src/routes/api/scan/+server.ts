@@ -19,24 +19,25 @@ const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: AL
 // ── Structured output tool definition ──────────────────────────
 const CARD_ID_TOOL: Anthropic.Messages.Tool = {
 	name: 'identify_card',
-	description: 'Identify a BoBA trading card from an image',
+	description: 'Identify a BoBA trading card from an image. Cards are either HERO cards (character cards with a power value) or PLAY cards (action/bonus/hot dog cards with no power value).',
 	input_schema: {
 		type: 'object' as const,
 		properties: {
-			card_name: { type: 'string', description: 'Full card name as printed' },
-			hero_name: { type: 'string', description: 'BoBA hero name' },
+			card_type: { type: 'string', enum: ['hero', 'play', 'bonus_play', 'hot_dog'], description: 'Type of card: hero (character with power), play (PL- prefix), bonus_play (BPL- prefix), or hot_dog (HTD- prefix)' },
+			card_name: { type: 'string', description: 'Full card name as printed at the top of the card' },
+			hero_name: { type: 'string', description: 'BoBA hero name. For play/bonus/hot dog cards, set to empty string.' },
 			athlete_name: { type: 'string', description: 'Real athlete name if known, or null' },
 			set_code: { type: 'string', description: 'Set identifier, or null' },
 			card_number: { type: 'string', description: 'PREFIX-NUMBER from BOTTOM-LEFT. Null if unreadable.' },
-			power: { type: 'number', description: 'Large number from TOP-RIGHT corner, or null' },
+			power: { type: 'number', description: 'Large number from TOP-RIGHT corner. Only hero cards have this. Null for play cards.' },
 			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
 			variant: { type: 'string', enum: ['base', 'foil', 'battlefoil', 'paper', 'inspired_ink'] },
 			parallel: { type: 'string', description: 'Specific parallel name if identifiable, or null' },
-			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null' },
+			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null. Only hero cards have weapons.' },
 			confidence: { type: 'number', description: '0.0 to 1.0' },
 			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection' }
 		},
-		required: ['card_name', 'hero_name', 'confidence', 'rarity', 'variant']
+		required: ['card_type', 'card_name', 'confidence', 'rarity', 'variant']
 	}
 };
 
@@ -135,13 +136,29 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			max_tokens: 512,
 			system: `You are a BoBA (Bo Jackson Battle Arena) trading card identification expert.
 
-CRITICAL INSTRUCTIONS FOR READING THE CARD:
-1. CARD NUMBER: Look at the BOTTOM LEFT corner of the card. Read the EXACT text printed there. This is the card number (format: PREFIX-NUMBER like "AB-123", "HW-567", "GR-042"). Do NOT guess this from memory. Do NOT use the power value (top right number) as the card number.
-2. HERO NAME: Read the large title text at the TOP LEFT of the card. This is the hero name.
-3. POWER: Read the number in the TOP RIGHT corner. This is the power value.
-4. PARALLEL/VARIANT: Look for any special text, treatment indicators, or visual cues that identify this as a parallel variant. Common BoBA parallels include: Inspired Ink Battlefoil, 80's Rad Battlefoil, Grandma's Linoleum Battlefoil, Blizzard Battlefoil, Color Battlefoil (Orange/Blue/Green/Pink), Bubblegum Battlefoil, Mixtape Battlefoil, Miami Ice Battlefoil, Fire Tracks Battlefoil. Also look for foil/holo treatments, special borders, or alternate art indicators.
+There are TWO types of BoBA cards:
 
-If a field is unclear, return null rather than guessing. It is MUCH better to return null for card_number than to fabricate one you are not certain about.`,
+HERO CARDS (character cards):
+- Have a hero name (large title at TOP LEFT)
+- Have a power value (large number at TOP RIGHT)
+- Have a weapon type (indicated by color/icon)
+- Card number prefix: BF-, ABF-, GBF-, OBF-, etc.
+
+PLAY CARDS / BONUS PLAY CARDS / HOT DOG CARDS (action cards):
+- Have a play name (title at TOP of card) but NO hero name
+- Have NO power value in the top right
+- Have a hot dog cost (small number showing how many hot dogs to activate)
+- Card number prefix: PL- (plays), BPL- (bonus plays), HTD- (hot dogs)
+- Set hero_name to empty string for these cards
+
+CRITICAL INSTRUCTIONS FOR READING ANY CARD:
+1. CARD TYPE: First determine if this is a hero card or a play/bonus/hot dog card.
+2. CARD NUMBER: Look at the BOTTOM LEFT corner. Read the EXACT text. Format: PREFIX-NUMBER (like "BF-108", "PL-46", "BPL-12", "HTD-5"). Do NOT guess. Do NOT use the power value as the card number.
+3. CARD NAME: Read the large title text at the TOP of the card. For hero cards this is the hero name. For play cards this is the play name.
+4. POWER: ONLY for hero cards — read the number in the TOP RIGHT corner. For play cards, set to null.
+5. PARALLEL/VARIANT: Look for special treatments. Common parallels: Inspired Ink Battlefoil, 80's Rad Battlefoil, Grandma's Linoleum Battlefoil, Blizzard Battlefoil, Color Battlefoil, Bubblegum Battlefoil, Mixtape Battlefoil, Miami Ice Battlefoil, Fire Tracks Battlefoil.
+
+If a field is unclear, return null rather than guessing.`,
 			tools: [CARD_ID_TOOL],
 			tool_choice: { type: 'tool' as const, name: 'identify_card' },
 			messages: [{
@@ -168,9 +185,11 @@ If a field is unclear, return null rather than guessing. It is MUCH better to re
 <weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1, Alt=purple alternate art, Cyber=cyan/teal digital circuit</weapons>
 
 <examples>
-card_number="BF-108", hero_name="BoJax", power=200, weapon_type="Super"
-card_number="PL-46", hero_name=null (Play card), power=null
-card_number=null (unreadable), hero_name="The Kid", power=180, flags=["foil_reflection"]
+card_type="hero", card_number="BF-108", card_name="BoJax", hero_name="BoJax", power=200, weapon_type="Super"
+card_type="play", card_number="PL-46", card_name="Front Run", hero_name="", power=null
+card_type="bonus_play", card_number="BPL-12", card_name="Bonus Card Name", hero_name="", power=null
+card_type="hot_dog", card_number="HTD-5", card_name="Hot Dog Card Name", hero_name="", power=null
+card_type="hero", card_number=null (unreadable), card_name="The Kid", hero_name="The Kid", power=180, flags=["foil_reflection"]
 </examples>`
 					}
 				]

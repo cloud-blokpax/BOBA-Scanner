@@ -55,6 +55,12 @@ const DEFAULT_CONFIG: CameraConfig = {
  * Start the camera and return the MediaStream.
  */
 export async function startCamera(config: CameraConfig = {}): Promise<MediaStream> {
+	// Reuse existing active stream to avoid re-prompting on iOS
+	// iOS PWA/Safari re-triggers the permission dialog on every new getUserMedia() call
+	if (currentStream && currentStream.active && currentStream.getVideoTracks().length > 0) {
+		return currentStream;
+	}
+
 	await stopCamera();
 
 	const settings = { ...DEFAULT_CONFIG, ...config };
