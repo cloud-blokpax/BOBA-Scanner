@@ -36,6 +36,8 @@ import type { Card, ScanResult, ScanMethod, HashCacheEntry, ValidationMethod } f
  */
 function createThumbnailDataUrl(bitmap: ImageBitmap): string | null {
 	try {
+		if (typeof document === 'undefined') return null;
+
 		const MAX_W = 80;
 		const MAX_H = 112;
 		const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);

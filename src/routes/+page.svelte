@@ -511,10 +511,10 @@
 
 		<!-- Customize modal -->
 		{#if showCustomize}
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="customize-overlay" onclick={() => showCustomize = false}>
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div class="customize-sheet" onclick={(e) => e.stopPropagation()}>
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="customize-overlay" role="button" tabindex="-1" onclick={() => showCustomize = false}>
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<div class="customize-sheet" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
 					<div class="customize-header">
 						<h3>Customize</h3>
 						<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>

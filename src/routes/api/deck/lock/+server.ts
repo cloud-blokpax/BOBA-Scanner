@@ -38,98 +38,98 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	try {
-	const body = await parseJsonBody(request);
-	const deckId = requireString(body.deck_id, 'deck_id');
-	const formatId = requireString(body.format_id, 'format_id');
+		const body = await parseJsonBody(request);
+		const deckId = requireString(body.deck_id, 'deck_id');
+		const formatId = requireString(body.format_id, 'format_id');
 
-	// Fetch the deck from user_decks (JSONB-based storage)
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const { data: rawDeck, error: deckErr } = await (supabase as any)
-		.from('user_decks')
-		.select('*')
-		.eq('id', deckId)
-		.eq('user_id', user.id)
-		.single();
-
-	if (deckErr || !rawDeck) throw error(404, 'Deck not found');
-
-	const deck = rawDeck as {
-		id: string;
-		name: string;
-		hero_card_ids: string[];
-		play_entries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
-	};
-
-	// Resolve hero card IDs to full Card objects for validation
-	const heroCardIds = deck.hero_card_ids || [];
-	let heroCards: Card[] = [];
-	if (heroCardIds.length > 0) {
-		const { data: heroData } = await supabase
-			.from('cards')
+		// Fetch the deck from user_decks (JSONB-based storage)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data: rawDeck, error: deckErr } = await (supabase as any)
+			.from('user_decks')
 			.select('*')
-			.in('id', heroCardIds);
-		heroCards = (heroData || []) as Card[];
-	}
+			.eq('id', deckId)
+			.eq('user_id', user.id)
+			.single();
 
-	// Run validation
-	const { validateDeck } = await import('$lib/services/deck-validator');
+		if (deckErr || !rawDeck) throw error(404, 'Deck not found');
 
-	// Play and hot dog cards are stored as entries, not full Card objects
-	const playCards: Card[] = [];
-	const hotDogCards: Card[] = [];
+		const deck = rawDeck as {
+			id: string;
+			name: string;
+			hero_card_ids: string[];
+			play_entries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
+		};
 
-	const validation = validateDeck(heroCards, formatId, playCards, hotDogCards);
+		// Resolve hero card IDs to full Card objects for validation
+		const heroCardIds = deck.hero_card_ids || [];
+		let heroCards: Card[] = [];
+		if (heroCardIds.length > 0) {
+			const { data: heroData } = await supabase
+				.from('cards')
+				.select('*')
+				.in('id', heroCardIds);
+			heroCards = (heroData || []) as Card[];
+		}
 
-	// Generate a unique verification code
-	const code = generateCode(8);
-	const origin = new URL(request.url).origin;
-	const verifyUrl = `${origin}/deck/verify/${code}`;
+		// Run validation
+		const { validateDeck } = await import('$lib/services/deck-validator');
 
-	// Store the immutable snapshot — use admin client to bypass RLS
-	// The table may not be in the generated types yet, so use .from() with
-	// a type assertion to work around the typed client restriction.
-	const adminClient = getAdminClient() || supabase;
+		// Play and hot dog cards are stored as entries, not full Card objects
+		const playCards: Card[] = [];
+		const hotDogCards: Card[] = [];
 
-	const snapshotData = {
-		code,
-		user_id: user.id,
-		deck_id: deckId,
-		deck_name: deck.name || 'Unnamed Deck',
-		format_id: formatId,
-		format_name: validation.formatName,
-		is_valid: validation.isValid,
-		violations: validation.violations,
-		stats: validation.stats,
-		hero_cards: heroCards.map((c) => ({
-			card_number: c.card_number,
-			hero_name: c.hero_name,
-			power: c.power,
-			weapon_type: c.weapon_type,
-			parallel: c.parallel
-		})),
-		play_cards: (deck.play_entries || []).map((p) => ({
-			card_number: p.cardNumber,
-			name: p.name
-		})),
-		player_name: user.email?.split('@')[0] || 'Player',
-		locked_at: new Date().toISOString()
-	};
+		const validation = validateDeck(heroCards, formatId, playCards, hotDogCards);
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const { error: snapErr } = await (adminClient as any).from('deck_snapshots').insert(snapshotData);
+		// Generate a unique verification code
+		const code = generateCode(8);
+		const origin = new URL(request.url).origin;
+		const verifyUrl = `${origin}/deck/verify/${code}`;
 
-	if (snapErr) {
-		console.error('[deck/lock] Snapshot insert failed:', snapErr);
-		throw error(500, 'Failed to lock deck');
-	}
+		// Store the immutable snapshot — use admin client to bypass RLS
+		// The table may not be in the generated types yet, so use .from() with
+		// a type assertion to work around the typed client restriction.
+		const adminClient = getAdminClient() || supabase;
 
-	return json({
-		code,
-		verify_url: verifyUrl,
-		is_valid: validation.isValid,
-		violations: validation.violations,
-		stats: validation.stats
-	});
+		const snapshotData = {
+			code,
+			user_id: user.id,
+			deck_id: deckId,
+			deck_name: deck.name || 'Unnamed Deck',
+			format_id: formatId,
+			format_name: validation.formatName,
+			is_valid: validation.isValid,
+			violations: validation.violations,
+			stats: validation.stats,
+			hero_cards: heroCards.map((c) => ({
+				card_number: c.card_number,
+				hero_name: c.hero_name,
+				power: c.power,
+				weapon_type: c.weapon_type,
+				parallel: c.parallel
+			})),
+			play_cards: (deck.play_entries || []).map((p) => ({
+				card_number: p.cardNumber,
+				name: p.name
+			})),
+			player_name: user.email?.split('@')[0] || 'Player',
+			locked_at: new Date().toISOString()
+		};
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { error: snapErr } = await (adminClient as any).from('deck_snapshots').insert(snapshotData);
+
+		if (snapErr) {
+			console.error('[deck/lock] Snapshot insert failed:', snapErr);
+			throw error(500, 'Failed to lock deck');
+		}
+
+		return json({
+			code,
+			verify_url: verifyUrl,
+			is_valid: validation.isValid,
+			violations: validation.violations,
+			stats: validation.stats
+		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err;
 		console.error('[deck/lock] Unexpected error:', err);
