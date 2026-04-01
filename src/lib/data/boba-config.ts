@@ -14,7 +14,7 @@ export const BOBA_OCR_REGIONS = [
 export const BOBA_SCAN_CONFIG = {
 	quality: 0.85,
 	ocrConfidenceThreshold: 30,
-	blurThreshold: 60,
+	blurThreshold: 35,
 	maxUploadSize: 1024,
 	aiCostPerScan: 0.003,
 	/** Maximum file size for API upload (bytes) */
