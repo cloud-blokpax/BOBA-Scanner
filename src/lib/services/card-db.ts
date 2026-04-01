@@ -309,7 +309,10 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 					.from('cards')
 					.select('*', { count: 'exact', head: true });
 
-				if (remoteCount !== null && cards.length > remoteCount + 10) {
+				// cards array includes play cards (~409) which aren't in the hero 'cards' table,
+			// so exclude them from the comparison to avoid false full-refresh triggers
+			const heroCardCount = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null).length;
+			if (remoteCount !== null && heroCardCount > remoteCount + 10) {
 					console.debug(`[card-db] Local (${cards.length}) exceeds remote (${remoteCount}) — triggering full refresh for cleanup`);
 					// Fall through to full refresh below
 				} else {
@@ -350,16 +353,22 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 			cards = allCards;
 		}
 
-		// Re-merge play cards on refresh
+		// Re-merge play cards on refresh.
+		// Preserve existing play cards if loadPlayCards() fails — on full refresh
+		// (non-incremental), cards was replaced with hero-only data, so we must
+		// capture existing play cards BEFORE filtering.
+		const existingPlayCards = cards.filter(c => c.hero_name === null && c.power === null && c.weapon_type === null);
 		const playCards = await loadPlayCards();
+		// Strip any existing play cards before re-adding
+		cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
 		if (playCards.length > 0) {
-			// Remove existing play cards before re-adding (play cards have null hero_name, power, weapon_type)
-			cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
 			cards = cards.concat(playCards);
+		} else if (existingPlayCards.length > 0) {
+			// loadPlayCards() failed — restore previously loaded play cards
+			console.warn('[card-db] Play card reload returned 0 — restoring previous play cards');
+			cards = cards.concat(existingPlayCards);
 		} else {
-			// loadPlayCards() failed — do NOT strip existing play cards from the array.
-			// They survive as-is from the previous load or IDB cache.
-			console.warn('[card-db] Play card reload returned 0 — keeping existing play cards in index');
+			console.warn('[card-db] Play card reload returned 0 and no existing play cards to restore');
 		}
 
 		buildIndexes();
