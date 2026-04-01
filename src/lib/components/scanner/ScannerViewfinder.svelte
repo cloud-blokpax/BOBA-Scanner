@@ -66,8 +66,8 @@
 	></div>
 {/each}
 
-<!-- Scan line animation -->
-{#if cameraReady && !scanSuccess && !scanFailed}
+<!-- Scan line animation — hide during capture/processing -->
+{#if cameraReady && !scanSuccess && !scanFailed && !scanning}
 	<div class="scan-line"></div>
 {/if}
 

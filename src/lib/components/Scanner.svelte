@@ -63,8 +63,8 @@
 	// Frame stability detection
 	let lastFrameHash = $state<string | null>(null);
 	let stableFrameCount = $state(0);
-	const STABLE_FRAMES_REQUIRED = 4;
-	const STABILITY_THRESHOLD = 3;
+	const STABLE_FRAMES_REQUIRED = 3; // Reduced from 4 — mobile phones can't hold perfectly still for 1s
+	const STABILITY_THRESHOLD = 5;    // Increased from 3 — allow more micro-jitter between frames
 
 	let _visibilityHandler: (() => void) | null = null;
 
@@ -155,11 +155,17 @@
 				phase = 'idle';
 				startAutoAnalyze();
 
-				// First-run check
+				// First-run check — show briefly then auto-dismiss
 				const { idb } = await import('$lib/services/idb');
 				const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
 				if (!hasScanned) {
 					showFirstRunGuide = true;
+					// Auto-dismiss after 3 seconds so it doesn't block the scanner
+					setTimeout(() => {
+						showFirstRunGuide = false;
+						// Mark as seen so it doesn't show again
+						idb.setMeta('has_completed_first_scan', true);
+					}, 3000);
 				}
 			}
 		} catch (err) {
@@ -201,21 +207,27 @@
 
 		_visibilityHandler = () => {
 			if (document.visibilityState === 'hidden') {
-				stopCamera();
+				// Don't stop the camera — just pause analysis.
+				// Stopping the stream on iOS kills the permission grant,
+				// causing a re-prompt when the user returns.
 				stopAutoAnalyze();
 				torchOn = false;
 			} else if (document.visibilityState === 'visible' && phase !== 'error') {
-				startCamera().then((stream) => {
-					if (videoEl) {
-						videoEl.srcObject = stream;
-						videoEl.play().then(() => {
-							phase = 'idle';
-							startAutoAnalyze();
-						});
-					}
-				}).catch((err) => {
-					console.warn('[Scanner] Camera resume after tab switch failed:', err);
-				});
+				// Stream should still be alive — just restart analysis.
+				// If the stream died (rare), re-acquire it.
+				const existing = getActiveStream();
+				if (existing && videoEl) {
+					videoEl.srcObject = existing;
+					videoEl.play().then(() => {
+						phase = 'idle';
+						startAutoAnalyze();
+					}).catch(() => {
+						// Stream died, re-acquire
+						initCamera();
+					});
+				} else {
+					initCamera();
+				}
 			}
 		};
 		document.addEventListener('visibilitychange', _visibilityHandler);
@@ -502,6 +514,10 @@
 	let lastFailReason = $state<string | null>(null);
 
 	function handleScanResult(result: ScanResult | null, imageUrl?: string) {
+		// Resume video feed (was paused during capture for freeze-frame effect)
+		if (videoEl && videoEl.paused) {
+			videoEl.play().catch(() => { /* stream may have ended */ });
+		}
 		if (result?.card) {
 			revealedCard = result.card;
 			phase = 'result_success';
@@ -567,6 +583,11 @@
 		phase = 'capturing';
 		blurWarning = false;
 		glareRegions = [];
+
+		// Visual feedback: flash + freeze the video feed
+		showFlash = true;
+		setTimeout(() => { showFlash = false; }, 150);
+		videoEl.pause(); // Freeze the frame so user sees what was captured
 		triggerHaptic('tap');
 
 		try {

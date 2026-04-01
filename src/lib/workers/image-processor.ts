@@ -251,8 +251,10 @@ const imageProcessor = {
 		const mean = sum / totalPx;
 		const contentVariance = sumSq / totalPx - mean * mean;
 
-		// Card presence: needs sufficient visual content (variance > 500)
-		const cardDetected = contentVariance > 500;
+		// Card presence: needs sufficient visual content
+		// Lowered from 500 → 300 — mobile cameras in indoor lighting often produce
+		// lower variance than expected, especially with matte-finish cards
+		const cardDetected = contentVariance > 300;
 
 		// Blur check (Laplacian variance on the same region)
 		let lapSum = 0;

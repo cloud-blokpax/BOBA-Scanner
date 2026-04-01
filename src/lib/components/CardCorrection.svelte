@@ -23,11 +23,29 @@
 		if (!searchQuery.trim()) return;
 		searching = true;
 		try {
-			// Ensure card database is loaded before searching — searchCards() is
-			// synchronous and returns [] if the database hasn't loaded yet
-			const { loadCardDatabase } = await import('$lib/services/card-db');
+			const { loadCardDatabase, findCard, getAllCards } = await import('$lib/services/card-db');
 			await loadCardDatabase();
-			searchResults = searchCards(searchQuery.trim(), 10);
+
+			const query = searchQuery.trim();
+			let results = searchCards(query, 10);
+
+			// If text search returned nothing, try direct card number lookup
+			// (handles cases where the query IS a card number like "PL-1")
+			if (results.length === 0) {
+				const direct = findCard(query);
+				if (direct) {
+					results = [direct];
+				}
+			}
+
+			// Debug: log play card availability for troubleshooting
+			if (results.length === 0) {
+				const allCards = getAllCards();
+				const playCount = allCards.filter(c => c.hero_name === null && c.power === null).length;
+				console.warn(`[CardCorrection] No results for "${query}". DB has ${allCards.length} cards (${playCount} play cards).`);
+			}
+
+			searchResults = results;
 		} catch (err) {
 			console.debug('[CardCorrection] Card search failed:', err);
 			searchResults = [];

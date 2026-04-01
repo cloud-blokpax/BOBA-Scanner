@@ -684,7 +684,11 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 		return null;
 	}
 
-	const claudeHero = result.card.hero_name || result.card.card_name || null;
+	// For play cards, hero_name will be empty/""/null — use card_name as the identifier.
+	// Filter out garbage values like "N/A", "null", "Play Card" that Claude might return.
+	const rawHero = result.card.hero_name;
+	const isGarbageHero = !rawHero || rawHero.length < 2 || /^(n\/?a|null|none|play|bonus|hot\s*dog)/i.test(rawHero);
+	const claudeHero = isGarbageHero ? (result.card.card_name || null) : rawHero;
 	const claudeNumber = result.card.card_number;
 	const claudePower = result.card.power ? Number(result.card.power) : null;
 	const claudeAthlete: string | null = result.card.athlete_name || null;
