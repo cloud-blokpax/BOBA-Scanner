@@ -40,12 +40,15 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (rpcRes.data && Array.isArray(rpcRes.data) && rpcRes.data.length > 0) {
 		priceStatus = rpcRes.data;
 	} else {
-		// Fallback: fetch play_cards ids + card_numbers and price_cache entries,
-		// then cross-reference in JS to avoid unreliable pattern matching.
-		const [heroTotalRes, playCardsRes, priceCacheRes] = await Promise.all([
+		// Fallback: fetch play_cards, price_cache, and harvest log entries,
+		// then cross-reference in JS. Cards searched by the harvester but
+		// rejected by the confidence threshold only appear in price_harvest_log,
+		// not in price_cache, so we need both sources.
+		const [heroTotalRes, playCardsRes, priceCacheRes, harvestLogRes] = await Promise.all([
 			admin.from('cards').select('id', { count: 'exact', head: true }),
 			admin.from('play_cards').select('id, card_number'),
-			admin.from('price_cache').select('card_id, price_mid').eq('source', 'ebay').limit(50000)
+			admin.from('price_cache').select('card_id, price_mid').eq('source', 'ebay').limit(50000),
+			admin.from('price_harvest_log').select('card_id').limit(50000)
 		]);
 
 		// Build lookup sets from play_cards
@@ -54,29 +57,55 @@ export const GET: RequestHandler = async ({ locals }) => {
 		for (const pc of playCardsRes.data ?? []) {
 			const id = pc.id as string;
 			const cn = pc.card_number as string;
-			if (cn.startsWith('HTD-') || cn.startsWith('HTD')) {
+			if (cn.startsWith('HTD')) {
 				hotdogIds.add(id);
 			} else {
 				playIds.add(id);
 			}
 		}
 
-		// Tally price_cache entries by card type
+		// Track all cards that appear in price_cache, keyed by card_id
+		// Value: true = has price, false = searched but no price
+		const cacheStatus = new Map<string, boolean>();
+		for (const row of priceCacheRes.data ?? []) {
+			const cid = row.card_id as string;
+			cacheStatus.set(cid, row.price_mid != null);
+		}
+
+		// Collect distinct card_ids from harvest log that aren't in price_cache
+		// These are cards that were searched but threshold-rejected
+		const harvestOnly = new Set<string>();
+		for (const row of harvestLogRes.data ?? []) {
+			const cid = row.card_id as string;
+			if (!cacheStatus.has(cid)) {
+				harvestOnly.add(cid);
+			}
+		}
+
+		// Tally by card type
 		let heroPriced = 0, heroSearched = 0;
 		let playPriced = 0, playSearched = 0;
 		let hdPriced = 0, hdSearched = 0;
 
-		for (const row of priceCacheRes.data ?? []) {
-			const cid = row.card_id as string;
-			const hasMid = row.price_mid != null;
-
+		// Count from price_cache
+		for (const [cid, hasMid] of cacheStatus) {
 			if (playIds.has(cid)) {
 				if (hasMid) playPriced++; else playSearched++;
 			} else if (hotdogIds.has(cid)) {
 				if (hasMid) hdPriced++; else hdSearched++;
 			} else {
-				// Must be a hero card
 				if (hasMid) heroPriced++; else heroSearched++;
+			}
+		}
+
+		// Count harvest-only cards (searched but threshold-rejected → "searched, no price")
+		for (const cid of harvestOnly) {
+			if (playIds.has(cid)) {
+				playSearched++;
+			} else if (hotdogIds.has(cid)) {
+				hdSearched++;
+			} else {
+				heroSearched++;
 			}
 		}
 
