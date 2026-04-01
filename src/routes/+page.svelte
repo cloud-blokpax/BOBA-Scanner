@@ -755,35 +755,28 @@
 							<span class="action-icon">📦</span>
 							<div class="action-text">
 								<span class="action-label">Collection</span>
-								<span class="action-sub">View & manage</span>
-							</div>
-						</a>
-						<a href="/deck" class="action-tile">
-							<span class="action-icon">🃏</span>
-							<div class="action-text">
-								<span class="action-label">My Decks</span>
-								<span class="action-sub">Build & edit</span>
-							</div>
-						</a>
-						<a href="/set-completion" class="action-tile">
-							<span class="action-icon">📊</span>
-							<div class="action-text">
-								<span class="action-label">Set Progress</span>
-								<span class="action-sub">Track completion</span>
-							</div>
-						</a>
-						<a href="/deck/architect" class="action-tile">
-							<span class="action-icon">🧠</span>
-							<div class="action-text">
-								<span class="action-label">Playbook</span>
-								<span class="action-sub">Architect</span>
+								<span class="action-sub">Set progress · Grading · Export</span>
 							</div>
 						</a>
 						<a href="/market" class="action-tile">
 							<span class="action-icon">📈</span>
 							<div class="action-text">
 								<span class="action-label">Market Pulse</span>
-								<span class="action-sub">Price intelligence</span>
+								<span class="action-sub">War Room · Explorer · Pack sim</span>
+							</div>
+						</a>
+						<a href="/deck" class="action-tile">
+							<span class="action-icon">🧠</span>
+							<div class="action-text">
+								<span class="action-label">Playbook</span>
+								<span class="action-sub">Decks · Architect · Meta · Speed</span>
+							</div>
+						</a>
+						<a href="/sell" class="action-tile">
+							<span class="action-icon">🏷️</span>
+							<div class="action-text">
+								<span class="action-label">Sell</span>
+								<span class="action-sub">eBay listings · Export · Monitor</span>
 							</div>
 						</a>
 					</div>

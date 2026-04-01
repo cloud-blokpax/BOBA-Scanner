@@ -22,6 +22,8 @@
 	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
+	import CategoryTabs from '$lib/components/CategoryTabs.svelte';
+	import { getCategoryForPath } from '$lib/data/category-tabs';
 	import '../styles/index.css';
 
 	let { children, data } = $props();
@@ -221,6 +223,7 @@
 	});
 
 	const currentPath = $derived($page.url.pathname);
+	const categoryInfo = $derived(getCategoryForPath(currentPath));
 </script>
 
 <div class="app-container" class:scanner-fullscreen={scannerActive()}>
@@ -274,6 +277,9 @@
 	{/if}
 
 	<main class="app-main">
+		{#if !scannerActive() && categoryInfo}
+			<CategoryTabs tabs={categoryInfo.tabs} category={categoryInfo.category} />
+		{/if}
 		{@render children()}
 	</main>
 
