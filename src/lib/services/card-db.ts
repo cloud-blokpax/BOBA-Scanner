@@ -57,6 +57,7 @@ function playCardToCard(p: PlayCardRaw): Card {
 async function loadPlayCards(): Promise<Card[]> {
 	// Build a lookup from bundled local JSON for name fallback
 	const localByCardNumber = new Map<string, PlayCardRaw>();
+	const localCount = (localPlayCards as PlayCardRaw[]).length;
 	for (const p of localPlayCards as PlayCardRaw[]) {
 		localByCardNumber.set(p.card_number, p);
 	}
@@ -71,11 +72,13 @@ async function loadPlayCards(): Promise<Card[]> {
 				.select('id, card_number, name, release, hot_dog_cost, dbs, ability_text')
 				.order('card_number') as { data: Array<Record<string, unknown>> | null; error: unknown };
 
-			if (!error && data && data.length > 0) {
+			if (error) {
+				console.warn('[card-db] Supabase play_cards query error:', error);
+			} else if (data && data.length > 0) {
+				console.debug(`[card-db] Loaded ${data.length} play cards from Supabase`);
 				return data.map(row => {
 					const cardNumber = String(row.card_number ?? '');
 					const localFallback = localByCardNumber.get(cardNumber);
-					// Use Supabase name if present, otherwise fall back to bundled JSON
 					const name = (row.name ? String(row.name) : '') || localFallback?.name || '';
 					return playCardToCard({
 						id: String(row.id),
@@ -88,17 +91,24 @@ async function loadPlayCards(): Promise<Card[]> {
 						base_play_name: localFallback?.base_play_name,
 					});
 				});
+			} else {
+				console.warn(`[card-db] Supabase play_cards returned 0 rows (table may be empty)`);
 			}
 		}
 	} catch (err) {
-		console.debug('[card-db] Supabase play_cards fetch failed:', err);
+		console.warn('[card-db] Supabase play_cards fetch failed:', err);
 	}
 
 	// Fallback: bundled local JSON
+	console.debug(`[card-db] Using bundled play-cards.json (${localCount} cards)`);
 	try {
-		return (localPlayCards as PlayCardRaw[]).map(playCardToCard);
+		const result = (localPlayCards as PlayCardRaw[]).map(playCardToCard);
+		if (result.length === 0) {
+			console.error('[card-db] CRITICAL: Bundled play-cards.json produced 0 cards');
+		}
+		return result;
 	} catch (err) {
-		console.debug('[card-db] Local play-cards.json load failed:', err);
+		console.error('[card-db] CRITICAL: Bundled play-cards.json mapping failed:', err);
 		return [];
 	}
 }
@@ -346,6 +356,10 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 			// Remove existing play cards before re-adding (play cards have null hero_name, power, weapon_type)
 			cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
 			cards = cards.concat(playCards);
+		} else {
+			// loadPlayCards() failed — do NOT strip existing play cards from the array.
+			// They survive as-is from the previous load or IDB cache.
+			console.warn('[card-db] Play card reload returned 0 — keeping existing play cards in index');
 		}
 
 		buildIndexes();

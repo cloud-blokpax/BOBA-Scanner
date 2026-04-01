@@ -185,6 +185,7 @@
 				onResult={handleScanResult}
 				scanMode="batch"
 				paused={false}
+				embedded={true}
 			/>
 		</div>
 	{/if}
@@ -351,7 +352,8 @@
 		border-radius: 10px;
 		overflow: hidden;
 		margin-bottom: 1rem;
-		max-height: 50vh;
+		height: 50vh;
+		min-height: 280px;
 	}
 
 	/* Search */
