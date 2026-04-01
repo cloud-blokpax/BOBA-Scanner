@@ -4,13 +4,22 @@
 	import HarvestResults from './HarvestResults.svelte';
 
 	let loading = $state(true);
+	interface PriceStatusGroup {
+		card_type: string;
+		has_price: number;
+		searched_no_price: number;
+		not_searched: number;
+		total: number;
+	}
+
 	let ebayMetrics = $state({
 		callsRemaining: null as number | null,
 		callsLimit: null as number | null,
 		resetAt: null as string | null,
 		cacheHits: 0,
 		totalPrices: 0,
-		stalePrices: 0
+		stalePrices: 0,
+		priceStatus: [] as PriceStatusGroup[]
 	});
 
 	// ── Harvest runner state ─────────────────────────────
@@ -57,6 +66,7 @@
 			ebayMetrics.resetAt = data.resetAt;
 			ebayMetrics.totalPrices = data.totalPrices;
 			ebayMetrics.stalePrices = data.stalePrices;
+			ebayMetrics.priceStatus = data.priceStatus ?? [];
 		} catch {
 			showToast('Failed to load eBay data', 'x');
 		}
@@ -269,6 +279,49 @@
 			</div>
 		</div>
 
+		<!-- Price Status Summary -->
+		{#if ebayMetrics.priceStatus.length > 0}
+			<div class="info-section">
+				<h3 class="section-title">Price Status Summary</h3>
+				{#each ebayMetrics.priceStatus as group}
+					{@const label = group.card_type === 'heroes' ? 'Heroes' : group.card_type === 'plays' ? 'Plays' : 'Hot Dogs'}
+					{@const pricedPct = group.total > 0 ? Math.round((group.has_price / group.total) * 100) : 0}
+					{@const searchedPct = group.total > 0 ? Math.round(((group.has_price + group.searched_no_price) / group.total) * 100) : 0}
+					<div class="status-group">
+						<div class="status-group-header">
+							<span class="status-group-title">{label}</span>
+							<span class="status-group-total">{group.total.toLocaleString()} cards</span>
+						</div>
+						<div class="info-rows">
+							<div class="info-row">
+								<span>Has a price</span>
+								<strong class="success">{group.has_price.toLocaleString()}</strong>
+							</div>
+							<div class="info-row">
+								<span>Searched, none found</span>
+								<strong class="warn">{group.searched_no_price.toLocaleString()}</strong>
+							</div>
+							<div class="info-row">
+								<span>Not yet searched</span>
+								<strong>{group.not_searched.toLocaleString()}</strong>
+							</div>
+						</div>
+						{#if group.total > 0}
+							<div class="status-gauge">
+								<div class="gauge-bar">
+									<div class="gauge-fill low" style:width="{pricedPct}%"></div>
+								</div>
+								<div class="gauge-labels">
+									<span>{pricedPct}% priced</span>
+									<span>{searchedPct}% searched</span>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		<!-- Confidence Threshold -->
 		<div class="info-section">
 			<h3 class="section-title">Confidence Threshold</h3>
@@ -456,6 +509,37 @@
 
 	.info-row span { color: var(--text-secondary); }
 	.warn { color: var(--warning); }
+	.success { color: var(--success); }
+
+	.status-group {
+		margin-bottom: 1rem;
+	}
+
+	.status-group:last-child {
+		margin-bottom: 0;
+	}
+
+	.status-group-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		margin-bottom: 0.375rem;
+	}
+
+	.status-group-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.status-group-total {
+		font-size: 0.7rem;
+		color: var(--text-tertiary);
+	}
+
+	.status-gauge {
+		margin-top: 0.375rem;
+	}
 
 	.actions-section {
 		background: var(--bg-elevated);
