@@ -15,12 +15,15 @@
 		onResult,
 		isAuthenticated = true,
 		paused = false,
-		scanMode = 'single' as const
+		scanMode = 'single' as const,
+		embedded = false
 	}: {
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 		isAuthenticated?: boolean;
 		paused?: boolean;
 		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
+		/** When true, scanner fits its parent container instead of taking 100dvh */
+		embedded?: boolean;
 	} = $props();
 
 	// ── Scanner State Machine ───────────────────────────────
@@ -183,8 +186,8 @@
 		// Check permission state before prompting
 		const permission = await checkCameraPermission();
 
-		if (permission === 'granted') {
-			// Already granted — go straight to camera
+		if (permission === 'granted' || embedded) {
+			// Already granted, or embedded mode (skip explainer) — go straight to camera
 			await initCamera();
 		} else if (permission === 'denied') {
 			// Blocked — show help to re-enable
@@ -726,7 +729,7 @@
 	}
 </script>
 
-<div class="scanner">
+<div class="scanner" class:scanner-embedded={embedded}>
 	<div class="viewfinder" style="flex:1">
 		<video
 			bind:this={videoEl}
@@ -856,6 +859,12 @@
 		height: 100%;
 		height: 100dvh;
 		background: black;
+	}
+
+	.scanner.scanner-embedded {
+		height: 100%;
+		min-height: 280px;
+		max-height: 100%;
 	}
 
 	.viewfinder {

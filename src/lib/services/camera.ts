@@ -19,8 +19,11 @@ export async function checkCameraPermission(): Promise<'granted' | 'denied' | 'p
 		const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
 		return result.state;
 	} catch {
-		// Permissions API not supported (some iOS browsers)
-		return 'prompt';
+		// Permissions API not supported (iOS Safari, Firefox on iOS, etc.)
+		// Return 'granted' to skip the custom explainer — if permission is
+		// actually denied, getUserMedia() in initCamera() will throw
+		// NotAllowedError which is already handled with a proper error message.
+		return 'granted';
 	}
 }
 

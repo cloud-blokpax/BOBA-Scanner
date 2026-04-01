@@ -720,8 +720,12 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 		};
 	}
 
-	console.warn(`[scan:${ctx.traceId}:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${getAllCards().length} cards loaded)`);
-	ctx.lastTier3FailReason = `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
+	const totalCards = getAllCards().length;
+	const playCardCount = getAllCards().filter(c => c.hero_name === null && c.power === null).length;
+	console.warn(`[scan:${ctx.traceId}:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${totalCards} total, ${playCardCount} play cards)`);
+	ctx.lastTier3FailReason = playCardCount === 0
+		? `AI identified "${claudeNumber}" (${claudeHero}) — play cards not loaded, please reload the app`
+		: `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 
 	// Negative cache: prevent repeated Tier 3 calls for unrecognized cards
 	if (claudeNumber) {
