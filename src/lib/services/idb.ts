@@ -335,5 +335,7 @@ if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
 	navigator.storage.persist().then((granted) => {
 		if (granted) console.debug('[idb] Persistent storage granted');
 		else console.debug('[idb] Persistent storage denied — data may be evicted');
+	}).catch((err) => {
+		console.debug('[idb] Persistent storage request failed:', err);
 	});
 }
