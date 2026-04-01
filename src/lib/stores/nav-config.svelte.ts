@@ -21,12 +21,12 @@ export interface NavItem {
 /** All available nav items (excluding scan FAB which is always shown) */
 export const ALL_NAV_ITEMS: NavItem[] = [
 	{ id: 'home', path: '/', icon: '\u{1F3E0}', label: 'Home' },
-	{ id: 'collection', path: '/collection', icon: '\u{1F4DA}', label: 'Collection', matchPaths: ['/collection', '/set-completion', '/organize', '/sell', '/leaderboard', '/marketplace'] },
-	{ id: 'decks', path: '/deck', icon: '\u{1F0CF}', label: 'Decks', matchPaths: ['/deck', '/tournaments', '/packs'] },
+	{ id: 'collection', path: '/collection', icon: '\u{1F4DA}', label: 'Collection', matchPaths: ['/collection', '/set-completion', '/grader', '/leaderboard', '/export'] },
+	{ id: 'playbook', path: '/deck', icon: '\u{1F9E0}', label: 'Playbook', matchPaths: ['/deck', '/speed'] },
 ];
 
 /** Default visible item IDs (matches current hardcoded nav) */
-const DEFAULT_VISIBLE: string[] = ['home', 'collection', 'decks'];
+const DEFAULT_VISIBLE: string[] = ['home', 'collection', 'playbook'];
 
 const STORAGE_KEY = 'boba_nav_config';
 
