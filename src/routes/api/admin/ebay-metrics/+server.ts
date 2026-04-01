@@ -45,7 +45,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		const [heroTotalRes, playCardsRes, priceCacheRes] = await Promise.all([
 			admin.from('cards').select('id', { count: 'exact', head: true }),
 			admin.from('play_cards').select('id, card_number'),
-			admin.from('price_cache').select('card_id, price_mid').eq('source', 'ebay')
+			admin.from('price_cache').select('card_id, price_mid').eq('source', 'ebay').limit(50000)
 		]);
 
 		// Build lookup sets from play_cards
