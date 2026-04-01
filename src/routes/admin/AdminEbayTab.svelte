@@ -280,9 +280,9 @@
 		</div>
 
 		<!-- Price Status Summary -->
-		{#if ebayMetrics.priceStatus.length > 0}
-			<div class="info-section">
-				<h3 class="section-title">Price Status Summary</h3>
+		<div class="info-section">
+			<h3 class="section-title">Price Status Summary</h3>
+			{#if ebayMetrics.priceStatus.length > 0}
 				{#each ebayMetrics.priceStatus as group}
 					{@const label = group.card_type === 'heroes' ? 'Heroes' : group.card_type === 'plays' ? 'Plays' : 'Hot Dogs'}
 					{@const pricedPct = group.total > 0 ? Math.round((group.has_price / group.total) * 100) : 0}
@@ -319,8 +319,10 @@
 						{/if}
 					</div>
 				{/each}
-			</div>
-		{/if}
+			{:else}
+				<p class="empty-status">Loading price status...</p>
+			{/if}
+		</div>
 
 		<!-- Confidence Threshold -->
 		<div class="info-section">
@@ -539,6 +541,13 @@
 
 	.status-gauge {
 		margin-top: 0.375rem;
+	}
+
+	.empty-status {
+		font-size: 0.8rem;
+		color: var(--text-tertiary);
+		text-align: center;
+		padding: 0.5rem 0;
 	}
 
 	.actions-section {
