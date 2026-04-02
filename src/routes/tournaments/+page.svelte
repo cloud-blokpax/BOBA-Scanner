@@ -96,16 +96,6 @@
 		}
 	}
 
-	async function copyCode(code: string) {
-		try {
-			await navigator.clipboard.writeText(code);
-			showToast('Code copied', 'check');
-		} catch (err) {
-			console.debug('[tournaments] Clipboard copy failed:', err);
-			showToast('Copy failed', 'x');
-		}
-	}
-
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', {
 			month: 'short',
@@ -197,9 +187,9 @@
 						<div class="tournament-header">
 							<div>
 								<div class="tournament-name">{t.name}</div>
-								<button class="tournament-code" onclick={() => copyCode(t.code)}>
+								<a href="/tournaments/enter?code={t.code}" class="tournament-code">
 									{t.code}
-								</button>
+								</a>
 							</div>
 							<span class="status-badge" class:active={t.is_active}>
 								{t.is_active ? 'Active' : 'Inactive'}
@@ -239,9 +229,9 @@
 						<div class="tournament-header">
 							<div>
 								<div class="tournament-name">{t.name}</div>
-								<button class="tournament-code" onclick={() => copyCode(t.code)}>
+								<a href="/tournaments/enter?code={t.code}" class="tournament-code">
 									{t.code}
-								</button>
+								</a>
 							</div>
 							<span class="status-badge" class:active={t.is_active}>
 								{t.is_active ? 'Active' : 'Inactive'}
@@ -382,6 +372,7 @@
 		font-size: 0.85rem;
 		color: var(--accent-primary);
 		cursor: pointer;
+		text-decoration: none;
 		letter-spacing: 0.05em;
 		margin-top: 4px;
 	}

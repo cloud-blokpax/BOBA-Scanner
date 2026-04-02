@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { requireAuth, requireSupabase, parseJsonBody, requireString, requireEmail } from '$lib/server/validate';
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { calculateTotalDbs } from '$lib/data/boba-dbs-scores';
 import type { RequestHandler } from './$types';
 import type { Card } from '$lib/types';
 
@@ -180,7 +181,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				averagePower: heroCards.length > 0
 					? Math.round((heroCards.reduce((sum, c) => sum + (c.power || 0), 0) / heroCards.length) * 10) / 10
 					: 0,
-				dbsTotal: playEntries.reduce((sum, p) => sum + (p.dbs_score || 0), 0)
+				dbsTotal: calculateTotalDbs(playEntries.map(p => ({ cardNumber: p.card_number, setCode: p.set_code })))?.total
+					?? playEntries.reduce((sum, p) => sum + (p.dbs_score || 0), 0)
 			}
 		};
 	} else {

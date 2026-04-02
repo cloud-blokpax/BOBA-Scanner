@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Scanner from '$components/Scanner.svelte';
 	import { searchCards } from '$lib/services/card-db';
+	import { getDbs } from '$lib/data/boba-dbs-scores';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import type { Card, ScanResult } from '$lib/types';
 
@@ -103,7 +104,7 @@
 				card_number: card.card_number || '',
 				name: card.hero_name || card.name || '',
 				set_code: card.set_code || '',
-				dbs_score: 0
+				dbs_score: getDbs(card.card_number || '', card.set_code || '') ?? 0
 			}];
 		}
 	}
