@@ -99,6 +99,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	let processed = 0;
 	let updated = 0;
 	let errors = 0;
+	let rateLimited = false;
 	const harvestLogs: Record<string, unknown>[] = [];
 
 	for (let wave = 0; wave < MAX_WAVES; wave++) {
@@ -112,14 +113,26 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			waveCards.map(card => refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold))
 		);
 
+		let wave429s = 0;
 		for (const result of results) {
 			processed++;
 			if (result.status === 'fulfilled') {
 				if (result.value.success) updated++;
-				if (result.value.logEntry) harvestLogs.push(result.value.logEntry);
+				if (result.value.logEntry) {
+					harvestLogs.push(result.value.logEntry);
+					// Track 429 errors even after ebayFetch retries
+					const msg = result.value.logEntry.error_message;
+					if (typeof msg === 'string' && msg.includes('429')) wave429s++;
+				}
 			} else {
 				errors++;
 			}
+		}
+
+		// If every card in this wave hit 429 (after retries), stop — eBay is rate-limiting us
+		if (wave429s > 0 && wave429s >= waveCards.length) {
+			rateLimited = true;
+			break;
 		}
 
 		if (wave < MAX_WAVES - 1 && waveCards.length === BATCH_SIZE) {
@@ -140,8 +153,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 	// ── Fire next chain link (non-blocking) ─────────────
 	// Skip self-chaining when triggered manually (browser handles the loop)
+	// or when eBay is actively rate-limiting us (429s will just continue)
 	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
-	if (!noChain) {
+	if (!noChain && !rateLimited) {
 		const selfUrl = `${url.origin}/api/cron/price-harvest`;
 		try {
 			fetch(selfUrl, {
@@ -175,7 +189,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			cards_processed: processed,
 			cards_updated: updated,
 			cards_errored: errors,
-			status: 'running',
+			status: rateLimited ? 'rate_limited' : 'running',
 			recorded_at: new Date().toISOString()
 		});
 	} catch { /* non-critical */ }
@@ -186,6 +200,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		processed,
 		updated,
 		errors,
+		rateLimited,
 		remainingBefore: remainingCalls,
 		durationMs: Date.now() - startTime
 	});

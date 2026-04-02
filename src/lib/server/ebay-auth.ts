@@ -53,33 +53,49 @@ export async function getEbayToken(): Promise<string> {
 }
 
 /**
- * Execute a fetch against the eBay API with automatic token retry on 401.
- * Clears the cached token and retries once if eBay returns 401 Unauthorized.
+ * Execute a fetch against the eBay API with automatic retry on 401 and 429.
+ * - 401: Clears cached token and retries once with a fresh token.
+ * - 429: Retries up to 2 times with exponential backoff, respecting Retry-After.
  */
 export async function ebayFetch(url: string | URL, init?: RequestInit): Promise<Response> {
-	const token = await getEbayToken();
-	const headers = {
-		...init?.headers,
-		Authorization: `Bearer ${token}`,
-		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-		'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
-	};
+	const MAX_429_RETRIES = 2;
+	const MAX_RETRY_DELAY_MS = 3000; // Cap delay to stay within Vercel's 10s limit
 
-	const response = await fetch(url.toString(), { ...init, headers });
+	let response: Response | null = null;
 
-	if (response.status === 401) {
-		// Token was revoked or expired prematurely — clear cache and retry once
-		_token = null;
-		_tokenExp = 0;
-		const freshToken = await getEbayToken();
-		const retryHeaders = {
+	for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+		const token = await getEbayToken();
+		const headers = {
 			...init?.headers,
-			Authorization: `Bearer ${freshToken}`,
+			Authorization: `Bearer ${token}`,
 			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
 			'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
 		};
-		return fetch(url.toString(), { ...init, headers: retryHeaders });
+
+		response = await fetch(url.toString(), { ...init, headers });
+
+		if (response.status === 401 && attempt === 0) {
+			// Token was revoked or expired prematurely — clear cache and retry once
+			_token = null;
+			_tokenExp = 0;
+			continue;
+		}
+
+		if (response.status === 429 && attempt < MAX_429_RETRIES) {
+			const retryAfter = response.headers.get('Retry-After');
+			let delayMs = Math.min(1000 * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
+			if (retryAfter) {
+				const retrySeconds = parseInt(retryAfter, 10);
+				if (!isNaN(retrySeconds)) {
+					delayMs = Math.min(retrySeconds * 1000, MAX_RETRY_DELAY_MS);
+				}
+			}
+			await new Promise(r => setTimeout(r, delayMs));
+			continue;
+		}
+
+		break;
 	}
 
-	return response;
+	return response!;
 }
