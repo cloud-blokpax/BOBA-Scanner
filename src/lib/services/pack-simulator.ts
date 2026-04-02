@@ -151,6 +151,32 @@ function filterOutcomesBySet(
 	return filtered;
 }
 
+// ── Card Format Inference ─────────────────────────────────────
+
+/**
+ * Infer the cardFormat from a slot's outcomes when it's missing.
+ * This handles backwards-compatibility with Supabase-stored configs
+ * that were saved before the cardFormat field was added.
+ */
+function inferCardFormat(slot: SlotConfig): 'paper' | 'battlefoil' | 'bonus' | 'any' {
+	if (slot.cardFormat) return slot.cardFormat;
+
+	// If any outcome is a card_type (play, hotdog, bonus_play), it's 'any'
+	if (slot.outcomes.some(o => o.type === 'card_type')) return 'any';
+
+	// If any outcome is a parallel type, it's a bonus/insert slot
+	if (slot.outcomes.some(o => o.type === 'parallel')) return 'bonus';
+
+	// All weapon_rarity outcomes — infer from label
+	const label = slot.label.toLowerCase();
+	if (label.includes('battlefoil') && !label.includes('insert') && !label.includes('parallel')) {
+		return 'battlefoil';
+	}
+
+	// Default hero slots are paper
+	return 'paper';
+}
+
 // ── Card Selection ────────────────────────────────────────────
 
 type CardRecord = {
@@ -319,7 +345,7 @@ export function openPack(
 		const outcome = rollWeightedOutcome(validOutcomes, rng);
 		// Play cards and hot dogs are set-agnostic — search the full card pool
 		const pool = outcome.type === 'card_type' ? allCards : setCards;
-		const cardFormat = slot.cardFormat || 'any';
+		const cardFormat = inferCardFormat(slot);
 		const candidates = findCandidates(pool, outcome, cardFormat);
 		const card =
 			candidates.length > 0
