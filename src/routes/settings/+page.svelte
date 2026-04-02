@@ -5,6 +5,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { personaWeights, togglePersona, personaLoaded, type PersonaId } from '$lib/stores/persona.svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
 	const personaOptions: { id: PersonaId; icon: string; name: string }[] = [
@@ -140,6 +141,7 @@
 	async function handleSignOut() {
 		const client = getSupabase();
 		await client?.auth.signOut();
+		goto('/');
 	}
 
 	$effect(() => {
