@@ -302,18 +302,6 @@ BOBA-Scanner/
 │   ├── manifest.json               # PWA manifest
 │   ├── version.json                # App version metadata
 │   └── robots.txt                  # Disallow all crawlers
-├── supabase/migrations/
-│   ├── 001-full-schema.sql         # Canonical schema (all tables, indexes, RLS)
-│   ├── 002-enable-rls.sql          # RLS policy definitions
-│   ├── 003-check-constraints.sql   # Check constraints
-│   ├── 004-go-pro.sql              # Pro subscription tables
-│   ├── 005-tournament-deck-submissions.sql # Tournament deck submission tables
-│   ├── 20260324000000_add_deck_snapshots.sql # Deck snapshot support
-│   ├── 20260324000000_add_pack_configurations.sql # Pack config tables
-│   ├── 20260327000000_admin_dashboard_tables.sql # Admin tables: scan_flags, changelog_entries, admin_activity_log, ebay_api_log
-│   ├── 20260327000001_add_persona_column.sql # Persona JSONB column on users table
-│   ├── 20260329000000_add_submit_reference_image_rpc.sql # RPC function for reference image submission with champion tracking
-│   └── README.md                   # Migration documentation
 ├── scripts/
 │   ├── generate-card-seed.js       # Generate SQL seed from card-database.json
 │   └── json-to-card-seed.js        # JSON to SQL seed conversion utility
@@ -470,15 +458,124 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - Image uploads sanitized via sharp CDR (Content Disarm & Reconstruction): EXIF stripping, pixel bomb protection, re-encoding
 - Bot/scraper protection via Vercel Edge Middleware (`middleware.ts`) — blocks bots, missing User-Agent, suspicious headers, and AI training crawlers (GPTBot, ClaudeBot, etc.)
 - CSP headers configured in `vercel.json`
-- RLS enabled on all tables via Supabase Auth — policies in migrations `001-full-schema.sql` and `002-enable-rls.sql`
+- RLS enabled on all tables via Supabase Auth (see Database Schema section below)
 - Rate limiting on all mutation endpoints
 
-### Database
+### Database Schema
 
-- Schema defined across numbered migrations in `supabase/migrations/` (canonical schema in `001-full-schema.sql`)
-- Key tables: `users` (with `persona` JSONB column), `collections` (JSONB), `cards`, `tournaments`, `feature_flags`, `api_call_logs`, `price_cache`, `scan_flags`, `changelog_entries`, `admin_activity_log`, `ebay_api_log`
-- RLS is enabled on all tables. The anon key has read-only access to public data (cards, prices, feature flags, tournaments). User-scoped data (collections, decks, badges) is restricted to the owning user via auth.uid(). Server-only tables (ebay_seller_tokens, error_logs) have no client-accessible policies — they are accessed exclusively via the service role key.
-- Card seed data generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo)
+Schema changes are applied manually via the Supabase SQL Editor (no CLI, no automated migrations). This section is the canonical reference for the production database schema. Card seed data is generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo).
+
+#### Extensions
+- `uuid-ossp` — UUID generation
+- `pg_trgm` — Trigram search
+
+#### Tables — Users & Auth
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `users` | Auth + profile | `auth_user_id`, `email`, `name`, `is_admin`, `is_pro`, `pro_until`, `is_organizer`, `persona` (JSONB), `nav_config` (JSONB) |
+| `donations` | Pro tier payments | `user_id`, `tier_key`, `tier_amount`, `payment_method`, `time_added` |
+| `user_badges` | Achievement badges | `user_id`, `badge_key`, `badge_name`, `icon`, `awarded_at` — unique on (user_id, badge_key) |
+| `user_feature_overrides` | Per-user feature toggles | `user_id`, `feature_key`, `enabled` — PK (user_id, feature_key) |
+| `ebay_seller_tokens` | eBay OAuth creds (service_role only) | `user_id` (PK), `access_token`, `refresh_token`, expiry timestamps |
+| `error_logs` | Client error reporting (service_role only) | `type`, `message`, `stack`, `url`, `user_agent`, `session_id` |
+
+#### Tables — Cards & Collections
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `cards` | Hero card database | `id` (TEXT PK), `name`, `hero_name`, `athlete_name`, `set_code`, `card_number`, `power`, `weapon_type`, `parallel`, `search_vector` (TSVECTOR), `updated_at` |
+| `play_cards` | Play/Hot Dog cards | `card_number` (UNIQUE), `name`, `release`, `dbs`, `hot_dog_cost`, `ability_text` |
+| `dbs_scores` | DBS point values | `set_code`, `card_number`, `dbs_score` — unique on (set_code, card_number) |
+| `collections` | User card collections | `user_id`, `card_id` (FK cards CASCADE), `quantity`, `condition` — unique on (user_id, card_id, condition) |
+| `scans` | Image recognition results | `user_id`, `card_id`, `hero_name`, `card_number`, `scan_method`, `confidence`, `processing_ms` |
+| `hash_cache` | Perceptual hash cache | `phash` (TEXT PK), `card_id`, `confidence`, `scan_count`, `phash_256` |
+| `card_reference_images` | Reference image competition | `card_id` (TEXT PK), `image_path`, `phash`, `confidence`, `contributed_by` |
+| `community_corrections` | OCR correction crowdsourcing | `ocr_reading`, `correct_card_number`, `confirmation_count` — unique on (ocr_reading, correct_card_number) |
+| `scan_metrics` | Aggregate scan performance | `scan_method`, `processing_ms`, `confidence`, `cache_hit` |
+| `pack_configurations` | Pack simulator config | `box_type`, `set_code`, `display_name`, `slots` (JSONB), `packs_per_box`, `is_active` |
+
+#### Tables — Pricing & Commerce
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `price_cache` | Current eBay prices | `card_id`, `source` — PK (card_id, source). `price_low/mid/high`, `buy_now_low/mid`, `buy_now_count`, `confidence_score`, `fetched_at` |
+| `price_history` | Historical price tracking | `card_id`, `source`, `price_low/mid/high`, `recorded_at` |
+| `price_harvest_log` | Nightly eBay harvest results | `run_id`, `card_id`, `priority` (1-4), `search_query`, full eBay result data, `price_changed`, `threshold_rejected`, `duration_ms` |
+| `listing_templates` | eBay listing drafts | `user_id`, `card_id`, `title`, `description`, `price`, `status` (draft/listed/sold/expired/error), `ebay_listing_id` |
+| `ebay_api_log` | eBay quota tracking | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (running/quota_exhausted/no_cards_remaining/triggered_manual) |
+
+#### Tables — Tournaments
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `tournaments` | Tournament definitions | `creator_id`, `code` (UNIQUE), `name`, `format_id`, `deck_type` (constructed/sealed), `max_players`, `submission_deadline`, `registration_closed`, `deadline_mode` (manual/datetime/both) |
+| `tournament_registrations` | Player registrations | `tournament_id`, `user_id`, `email`, `discord_id`, `deck_csv` |
+| `deck_submissions` | Tournament deck submissions | `tournament_id`, `user_id`, `hero_cards` (JSONB), `play_entries` (JSONB), `is_valid`, `validation_violations` (JSONB), `status` (submitted/locked/withdrawn), `verification_code` (UNIQUE) |
+| `tournament_results` | Organizer-entered results | `tournament_id`, `submission_id`, `player_name`, `final_standing`, `match_wins/losses/draws` |
+
+#### Tables — Decks
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `user_decks` | Saved deck lists | `user_id`, `name`, `format_id`, `hero_card_ids` (TEXT[]), `play_entries` (JSONB), `hot_dog_count`, `dbs_cap`, `spec_power_cap`, `combined_power_cap`, `is_shared` |
+| `shared_decks` | Public deck directory | `user_id`, `name`, `format_id`, `hero_card_ids`, `play_entries`, `view_count` |
+| `deck_snapshots` | QR verification snapshots | `code` (UNIQUE), `deck_id`, `format_id`, `is_valid`, `violations` (JSONB), `hero_cards` (JSONB), `play_cards` (JSONB) |
+| `deck_shop_refresh_log` | Deck shop refresh events | `user_id`, `card_count` (1-10) |
+
+#### Tables — System & Admin
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `system_settings` | Global app config | `key` (TEXT PK), `value` — seeds: maintenance_mode, max_daily_scans, app_version |
+| `app_config` | Application config | `key` (TEXT PK), `value` (JSONB), `description` |
+| `feature_flags` | Feature gating | `feature_key` (PK), `enabled_globally`, `enabled_for_guest/authenticated/pro/admin` |
+| `api_call_logs` | API usage tracking | `user_id`, `call_type`, `success` |
+| `scan_flags` | Wrong card reports | `user_id`, `scan_id`, `card_identified`, `card_suggested`, `status` (pending/confirmed_user/confirmed_ai/resolved) |
+| `changelog_entries` | What's new notifications | `title`, `body`, `published`, `is_notification`, `published_at` |
+| `admin_activity_log` | Admin audit trail | `admin_id`, `action`, `entity_type`, `entity_id`, `details` (JSONB) |
+| `admin_actions` | Legacy audit trail | `admin_id`, `action_type`, `target_id`, `details` (JSONB) |
+| `system_stats` | System-wide statistics | `stat_key`, `stat_value` (JSONB) |
+| `themes` | Theme definitions | `name`, `config` (JSONB), `is_public`, `created_by` |
+| `admin_templates` | Admin-managed templates | `name`, `content` (JSONB) |
+| `user_admin_template_assignments` | Template assignments | `user_id`, `template_id` — unique on (user_id, template_id) |
+| `parallel_rarity_config` | Parallel card rarity | `parallel_name` (UNIQUE), `rarity`, `sort_order` |
+
+#### RPC Functions
+
+| Function | Purpose |
+|----------|---------|
+| `find_similar_hash(query_hash, max_distance)` | Hamming distance fuzzy hash lookup (Tier 1 matching, validates 16-char hex) |
+| `upsert_hash_cache()` | Atomic hash cache insert/update with scan_count increment |
+| `award_badge_if_new()` | Idempotent badge awarding |
+| `lookup_correction()` | Community OCR corrections (requires 3+ confirmations) |
+| `increment_tournament_usage()` | Atomic tournament usage counter |
+| `increment_shared_deck_views()` | Atomic shared deck view counter |
+| `activate_pro(user_id, tier_key, tier_amount, payment_method)` | Pro activation with 7-day cooldown, 30-day blocks, 60-day cap |
+| `submit_reference_image(card_id, image_path, confidence, user_id, user_name, blur_variance)` | Atomic reference image submission with champion comparison |
+| `get_harvest_candidates(run_id, limit)` | SQL-based card selection for eBay price harvesting (priority 1-4: collected+unpriced, collected+stale, any+unpriced, any+stale). Includes hero cards and play cards. |
+| `get_price_status_summary()` | Returns pricing coverage stats by card type (heroes/plays/hotdogs) |
+| `cleanup_old_records()` | Retention cleanup: purges old scan_metrics (90d), api_call_logs (90d), price_history (365d), deck_shop_refresh_log (90d), admin_actions (365d) |
+| `protect_privilege_columns()` | Trigger preventing non-service-role modification of is_admin, is_pro, pro_until |
+
+#### RLS Summary
+
+- **All 37 tables** have RLS enabled
+- **Anon**: read-only access to public data (cards, prices, feature_flags, tournaments, deck_snapshots, pack_configurations)
+- **Authenticated**: read/write own data (collections, decks, scans, badges, submissions), read public data
+- **Service role**: full access — used for ebay_seller_tokens, error_logs, price_harvest_log, admin tables, and the `activate_pro` / `protect_privilege_columns` functions
+
+#### Key Constraints
+
+- `users`: valid email format, card_limit 0-10000, api_calls limits
+- `collections`: quantity > 0, condition enum (mint/near_mint/excellent/good/fair/poor)
+- `cards`: power 0-500, set_code non-empty, name non-empty
+- `hash_cache`: confidence 0-1, scan_count >= 0
+- `price_cache`: prices non-negative, low <= mid <= high
+- `scans`: confidence 0-1, processing_ms >= 0, scan_method enum (hash/ocr/ai/manual)
+- `tournaments`: deck sizes positive, usage_count >= 0
+- `listing_templates`: price > 0, status enum (draft/listed/sold/expired/error)
+- `user_decks`: deck sizes positive, dbs_cap/hot_dog_count >= 0
 
 ## Environment Variables
 
