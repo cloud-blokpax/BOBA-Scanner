@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { addToCollection, ownedCardCounts } from '$lib/stores/collection.svelte';
+	import { addToCollection, ownedCardCounts, getScanImageUrl } from '$lib/stores/collection.svelte';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { getCardImageUrl } from '$lib/utils/image-url';
@@ -173,7 +173,8 @@
 					title: template.title,
 					description: template.description,
 					price: template.suggested_price || (priceData.price_mid ?? 1.99),
-					condition: template.condition
+					condition: template.condition,
+					scanImageUrl: getScanImageUrl(card.id)
 				})
 			});
 			if (!res.ok) {
@@ -194,7 +195,12 @@
 		addError = null;
 		addSuccess = false;
 		try {
-			await addToCollection(card.id);
+			// Await the listing image blob from the scan pipeline (if available)
+			let scanBlob: Blob | null = null;
+			if (result?._listingImagePromise) {
+				try { scanBlob = await result._listingImagePromise; } catch { /* non-critical */ }
+			}
+			await addToCollection(card.id, undefined, undefined, scanBlob);
 			addSuccess = true;
 			triggerHaptic('successAdd');
 			showConfetti = true;
