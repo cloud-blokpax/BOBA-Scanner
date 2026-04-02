@@ -178,9 +178,14 @@
 					.maybeSingle();
 
 				if (data?.slots) {
-					slots = data.slots as SlotConfig[];
-					packsPerBox = data.packs_per_box || getBoxConfig(selectedBox, selectedSet)?.packsPerBox || 10;
-					guarantees = data.box_guarantees || getBoxConfig(selectedBox, selectedSet)?.guarantees || [];
+					const defaultConfig = getBoxConfig(selectedBox, selectedSet);
+					// Merge cardFormat from defaults for configs saved before the field existed
+					slots = (data.slots as SlotConfig[]).map((slot: SlotConfig, i: number) => ({
+						...slot,
+						cardFormat: slot.cardFormat || defaultConfig?.slots[i]?.cardFormat || 'any'
+					}));
+					packsPerBox = data.packs_per_box || defaultConfig?.packsPerBox || 10;
+					guarantees = data.box_guarantees || defaultConfig?.guarantees || [];
 					return;
 				}
 			} catch {
