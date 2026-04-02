@@ -72,7 +72,11 @@ export function openPack(
 		const outcome = rollWeightedOutcome(slot.outcomes, rng);
 		// Play cards and hot dogs are set-agnostic — search the full card pool
 		const pool = outcome.type === 'card_type' ? allCards : setCards;
-		const candidates = findCandidates(pool, outcome);
+		let candidates = findCandidates(pool, outcome);
+		// Fallback: if a weapon type (e.g. brawl) doesn't exist in this set, use steel
+		if (candidates.length === 0 && outcome.type === 'weapon_rarity') {
+			candidates = findCandidates(pool, { ...outcome, value: 'steel' });
+		}
 		const card =
 			candidates.length > 0
 				? candidates[Math.floor(rng() * candidates.length)]
