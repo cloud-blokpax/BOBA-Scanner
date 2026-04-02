@@ -5,7 +5,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	// ── Types ────────────────────────────────────────
-	interface FacetValue { value: string; count: number }
+	interface FacetValue { value: string; count: number; pricedCount?: number }
 	interface Facets {
 		parallel: FacetValue[];
 		weapon: FacetValue[];
@@ -24,9 +24,9 @@
 		weapon: string;
 		parallel: string;
 		athlete: string;
-		priceMid: number;
-		priceLow: number;
-		priceHigh: number;
+		priceMid: number | null;
+		priceLow: number | null;
+		priceHigh: number | null;
 		bnMid: number | null;
 		bnLow: number | null;
 		bnCount: number;
@@ -37,6 +37,7 @@
 		pricePerPower: number | null;
 		bnPremium: number | null;
 		liquidity: string;
+		hasPriceData: boolean;
 	}
 	interface PlayCard {
 		id: string;
@@ -46,9 +47,9 @@
 		dbs: number;
 		hotDogCost: number;
 		ability: string;
-		priceMid: number;
-		priceLow: number;
-		priceHigh: number;
+		priceMid: number | null;
+		priceLow: number | null;
+		priceHigh: number | null;
 		bnMid: number | null;
 		bnLow: number | null;
 		bnCount: number;
@@ -58,9 +59,11 @@
 		fetchedAt: string | null;
 		pricePerDbs: number | null;
 		liquidity: string;
+		hasPriceData: boolean;
 	}
 	interface Aggregates {
 		totalResults: number;
+		pricedCount: number;
 		avgPrice: number;
 		totalListings: number;
 		totalBnAvailable: number;
@@ -80,6 +83,7 @@
 	let filterPriceMax = $state($page.url.searchParams.get('price_max') || '');
 	let filterSort = $state($page.url.searchParams.get('sort') || 'price_asc');
 	let filterCardType = $state<'hero' | 'play'>(($page.url.searchParams.get('card_type') as 'hero' | 'play') || 'hero');
+	let filterPricedOnly = $state($page.url.searchParams.get('priced_only') === 'true');
 
 	// ── Data state ───────────────────────────────────
 	let facets = $state<Facets | null>(null);
@@ -107,6 +111,7 @@
 		limited: { label: 'Limited', color: 'var(--warning)' },
 		scarce: { label: 'Scarce', color: 'var(--danger)' },
 		none: { label: 'None Listed', color: 'var(--text-muted)' },
+		unknown: { label: 'Not Priced', color: 'var(--text-muted)' },
 	};
 
 	// Active filter count for the badge
@@ -130,6 +135,7 @@
 		if (filterPriceMax) params.set('price_max', filterPriceMax);
 		if (filterSort !== 'price_asc') params.set('sort', filterSort);
 		if (filterCardType !== 'hero') params.set('card_type', filterCardType);
+		if (filterPricedOnly) params.set('priced_only', 'true');
 		return params;
 	}
 
@@ -219,6 +225,7 @@
 		filterPriceMin = '';
 		filterPriceMax = '';
 		filterSort = 'price_asc';
+		filterPricedOnly = false;
 		triggerSearch();
 	}
 
@@ -237,7 +244,7 @@
 
 	// ── Helpers ──────────────────────────────────────
 	function fmt(n: number | null | undefined): string {
-		if (n == null) return '--';
+		if (n == null || n === 0) return '--';
 		return n < 1 ? `$${n.toFixed(2)}` : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
@@ -261,6 +268,7 @@
 		void filterPowerMin; void filterPowerMax;
 		void filterPriceMin; void filterPriceMax;
 		void filterCardType;
+		void filterPricedOnly;
 		// Don't trigger on initial mount — onMount handles that
 	});
 </script>
@@ -276,20 +284,21 @@
 		{#if aggregates}
 			<div class="stats-bar">
 				<span class="stat">
-					<strong>{aggregates.totalResults}</strong> cards
+					<strong>{aggregates.totalResults.toLocaleString()}</strong> cards
+					{#if aggregates.pricedCount < aggregates.totalResults}
+						<span class="stat-detail">({aggregates.pricedCount} priced)</span>
+					{/if}
 				</span>
-				<span class="stat-sep">&middot;</span>
-				<span class="stat">
-					<strong>{aggregates.totalListings.toLocaleString()}</strong> listings
-				</span>
-				<span class="stat-sep">&middot;</span>
-				<span class="stat">
-					Avg <strong>{fmt(aggregates.avgPrice)}</strong>
-				</span>
-				<span class="stat-sep">&middot;</span>
-				<span class="stat">
-					<strong>{aggregates.avgConfidence}%</strong> conf
-				</span>
+				{#if aggregates.pricedCount > 0}
+					<span class="stat-sep">&middot;</span>
+					<span class="stat">
+						<strong>{aggregates.totalListings.toLocaleString()}</strong> listings
+					</span>
+					<span class="stat-sep">&middot;</span>
+					<span class="stat">
+						Avg <strong>{fmt(aggregates.avgPrice)}</strong>
+					</span>
+				{/if}
 			</div>
 		{:else if loading}
 			<div class="stats-bar"><span class="stat">Loading market data...</span></div>
@@ -315,6 +324,11 @@
 			{/if}
 			<span class="filter-arrow" class:open={filtersExpanded}>{'\u25BE'}</span>
 		</button>
+
+		<label class="priced-toggle">
+			<input type="checkbox" bind:checked={filterPricedOnly} onchange={triggerSearch} />
+			Priced
+		</label>
 
 		<select class="sort-select" bind:value={filterSort} onchange={triggerSearch}>
 			{#each SORT_OPTIONS as opt}
@@ -492,7 +506,7 @@
 		<div class="results-list">
 			{#each cards as card (card.id)}
 				{@const c = card as ExploreCard}
-				<div class="card-row">
+				<div class="card-row" class:unpriced={!c.hasPriceData}>
 					<div class="card-main">
 						<div class="card-name">{c.hero}</div>
 						<div class="card-meta">
@@ -504,29 +518,38 @@
 							<span class="meta-sep">&middot;</span> {c.power} pwr
 						</div>
 					</div>
-					<div class="card-pricing">
-						<div class="price-main">{fmt(c.priceMid)}</div>
-						<div class="price-details">
-							{#if c.bnLow != null}
-								BIN {fmt(c.bnLow)}
+					{#if c.hasPriceData}
+						<div class="card-pricing">
+							<div class="price-main">{fmt(c.priceMid)}</div>
+							<div class="price-details">
+								{#if c.bnLow != null}
+									BIN {fmt(c.bnLow)}
+								{/if}
+								<span class="meta-sep">&middot;</span>
+								{c.listings} listed
+							</div>
+						</div>
+						<div class="card-metrics">
+							{#if c.pricePerPower != null}
+								<span class="metric" title="Price per power point">
+									{fmt(c.pricePerPower)}/pwr
+								</span>
 							{/if}
-							<span class="meta-sep">&middot;</span>
-							{c.listings} listed
-						</div>
-					</div>
-					<div class="card-metrics">
-						{#if c.pricePerPower != null}
-							<span class="metric" title="Price per power point">
-								{fmt(c.pricePerPower)}/pwr
+							<span class="liquidity-badge" style="color: {LIQUIDITY_LABELS[c.liquidity]?.color}">
+								{LIQUIDITY_LABELS[c.liquidity]?.label}
 							</span>
-						{/if}
-						<span class="liquidity-badge" style="color: {LIQUIDITY_LABELS[c.liquidity]?.color}">
-							{LIQUIDITY_LABELS[c.liquidity]?.label}
-						</span>
-						<div class="confidence-bar" title="{Math.round(c.confidence * 100)}% confidence">
-							<div class="confidence-fill" style="width: {c.confidence * 100}%; background: {confColor(c.confidence)}"></div>
+							<div class="confidence-bar" title="{Math.round(c.confidence * 100)}% confidence">
+								<div class="confidence-fill" style="width: {c.confidence * 100}%; background: {confColor(c.confidence)}"></div>
+							</div>
 						</div>
-					</div>
+					{:else}
+						<div class="card-pricing">
+							<div class="price-none">--</div>
+						</div>
+						<div class="card-metrics">
+							<span class="liquidity-badge" style="color: var(--text-muted)">Not Priced</span>
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -534,7 +557,7 @@
 		<div class="results-list">
 			{#each cards as card (card.id)}
 				{@const c = card as PlayCard}
-				<div class="card-row">
+				<div class="card-row" class:unpriced={!c.hasPriceData}>
 					<div class="card-main">
 						<div class="card-name">{c.name}</div>
 						<div class="card-meta">
@@ -543,29 +566,38 @@
 							<span class="meta-sep">&middot;</span> {c.hotDogCost} HD
 						</div>
 					</div>
-					<div class="card-pricing">
-						<div class="price-main">{fmt(c.priceMid)}</div>
-						<div class="price-details">
-							{#if c.bnLow != null}
-								BIN {fmt(c.bnLow)}
+					{#if c.hasPriceData}
+						<div class="card-pricing">
+							<div class="price-main">{fmt(c.priceMid)}</div>
+							<div class="price-details">
+								{#if c.bnLow != null}
+									BIN {fmt(c.bnLow)}
+								{/if}
+								<span class="meta-sep">&middot;</span>
+								{c.listings} listed
+							</div>
+						</div>
+						<div class="card-metrics">
+							{#if c.pricePerDbs != null}
+								<span class="metric" title="Price per DBS point">
+									{fmt(c.pricePerDbs)}/DBS
+								</span>
 							{/if}
-							<span class="meta-sep">&middot;</span>
-							{c.listings} listed
-						</div>
-					</div>
-					<div class="card-metrics">
-						{#if c.pricePerDbs != null}
-							<span class="metric" title="Price per DBS point">
-								{fmt(c.pricePerDbs)}/DBS
+							<span class="liquidity-badge" style="color: {LIQUIDITY_LABELS[c.liquidity]?.color}">
+								{LIQUIDITY_LABELS[c.liquidity]?.label}
 							</span>
-						{/if}
-						<span class="liquidity-badge" style="color: {LIQUIDITY_LABELS[c.liquidity]?.color}">
-							{LIQUIDITY_LABELS[c.liquidity]?.label}
-						</span>
-						<div class="confidence-bar" title="{Math.round(c.confidence * 100)}% confidence">
-							<div class="confidence-fill" style="width: {c.confidence * 100}%; background: {confColor(c.confidence)}"></div>
+							<div class="confidence-bar" title="{Math.round(c.confidence * 100)}% confidence">
+								<div class="confidence-fill" style="width: {c.confidence * 100}%; background: {confColor(c.confidence)}"></div>
+							</div>
 						</div>
-					</div>
+					{:else}
+						<div class="card-pricing">
+							<div class="price-none">--</div>
+						</div>
+						<div class="card-metrics">
+							<span class="liquidity-badge" style="color: var(--text-muted)">Not Priced</span>
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -689,6 +721,21 @@
 	.filter-arrow.open {
 		transform: rotate(180deg);
 	}
+	.priced-toggle {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+		padding: var(--space-2) var(--space-2);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--text-secondary);
+		white-space: nowrap;
+		cursor: pointer;
+		user-select: none;
+	}
+	.priced-toggle input {
+		accent-color: var(--gold);
+	}
 	.sort-select {
 		padding: var(--space-2) var(--space-3);
 		background: var(--bg-surface);
@@ -803,6 +850,19 @@
 	}
 	.card-row:hover {
 		border-color: var(--border-strong);
+	}
+	.card-row.unpriced {
+		opacity: 0.7;
+	}
+	.price-none {
+		font-family: var(--font-mono);
+		font-weight: 700;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+	.stat-detail {
+		font-weight: 400;
+		color: var(--text-muted);
 	}
 	.card-name {
 		font-weight: 700;

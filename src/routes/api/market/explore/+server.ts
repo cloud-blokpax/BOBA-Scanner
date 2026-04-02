@@ -56,25 +56,34 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		throw error(400, 'Invalid sort parameter');
 	}
 
+	const pricedOnly = url.searchParams.get('priced_only') === 'true';
+
 	if (cardType === 'play') {
-		return handlePlayCards(admin, { priceMin, priceMax, sort, limit, offset });
+		return handlePlayCards(admin, { priceMin, priceMax, sort, limit, offset, pricedOnly: pricedOnly || priceMin > 0 || priceMax > 0 });
 	}
 
 	// ── Build hero card query ────────────────────────
+	// Use LEFT JOIN so all cards appear, even without price data.
+	// The `!left` hint tells PostgREST to use a LEFT JOIN instead of INNER.
+
 	let query = admin
 		.from('cards')
 		.select(`
 			id, hero_name, name, card_number, set_code, power, rarity,
 			weapon_type, parallel, athlete_name,
-			price_cache!inner (
+			price_cache!left (
 				price_low, price_mid, price_high,
 				buy_now_low, buy_now_mid, buy_now_count,
 				listings_count, filtered_count, confidence_score,
 				fetched_at
 			)
 		`)
-		.eq('price_cache.source', 'ebay')
-		.not('price_cache.price_mid', 'is', null);
+		.eq('price_cache.source', 'ebay');
+
+	// When priced_only is set or price filters are active, only show cards with prices
+	if (pricedOnly || priceMin > 0 || priceMax > 0) {
+		query = query.not('price_cache.price_mid', 'is', null);
+	}
 
 	// Apply filters
 	if (parallel) query = query.eq('parallel', parallel);
@@ -89,22 +98,23 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	if (priceMin > 0) query = query.gte('price_cache.price_mid', priceMin);
 	if (priceMax > 0) query = query.lte('price_cache.price_mid', priceMax);
 
-	// Sorting (power_per_dollar sorted client-side after fetch)
+	// Sorting — with LEFT JOIN, nulls from unpriced cards sort last via nullsFirst: false
 	switch (sort) {
 		case 'price_desc':
-			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: false });
+			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: false, nullsFirst: false });
 			break;
 		case 'power_desc':
-			query = query.order('power', { ascending: false });
+			query = query.order('power', { ascending: false, nullsFirst: false });
 			break;
 		case 'listings':
-			query = query.order('listings_count', { referencedTable: 'price_cache', ascending: false });
+			query = query.order('listings_count', { referencedTable: 'price_cache', ascending: false, nullsFirst: false });
 			break;
 		case 'confidence':
-			query = query.order('confidence_score', { referencedTable: 'price_cache', ascending: false });
+			query = query.order('confidence_score', { referencedTable: 'price_cache', ascending: false, nullsFirst: false });
 			break;
 		default:
-			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: true });
+			// Default: priced cards first (cheapest), unpriced cards last
+			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: true, nullsFirst: false });
 	}
 
 	query = query.range(offset, offset + limit - 1);
@@ -119,8 +129,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// ── Transform results ────────────────────────────
 	const cards = (rows || []).map((row: Record<string, unknown>) => {
 		const priceRaw = row.price_cache;
-		const price = (Array.isArray(priceRaw) ? priceRaw[0] : priceRaw) as Record<string, unknown> | undefined;
-		const mid = Number(price?.price_mid ?? 0);
+		// LEFT JOIN: price_cache may be null, an empty array, or an array with one null entry
+		const priceEntry = Array.isArray(priceRaw) ? priceRaw[0] : priceRaw;
+		const price = (priceEntry && typeof priceEntry === 'object' && priceEntry.price_mid != null)
+			? priceEntry as Record<string, unknown>
+			: null;
+		const hasPriceData = price !== null;
+		const mid = hasPriceData ? Number(price.price_mid) : null;
 		const power = (row.power as number) ?? 0;
 		const bnMid = price?.buy_now_mid != null ? Number(price.buy_now_mid) : null;
 		const bnCount = (price?.buy_now_count as number) ?? 0;
@@ -137,19 +152,22 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			parallel: row.parallel || '',
 			athlete: row.athlete_name || '',
 			priceMid: mid,
-			priceLow: Number(price?.price_low ?? 0),
-			priceHigh: Number(price?.price_high ?? 0),
+			priceLow: hasPriceData ? Number(price.price_low ?? 0) : null,
+			priceHigh: hasPriceData ? Number(price.price_high ?? 0) : null,
 			bnMid,
 			bnLow: price?.buy_now_low != null ? Number(price.buy_now_low) : null,
 			bnCount,
 			listings,
 			filtered: (price?.filtered_count as number) ?? 0,
-			confidence: Number(price?.confidence_score ?? 0),
+			confidence: hasPriceData ? Number(price.confidence_score ?? 0) : 0,
 			fetchedAt: price?.fetched_at || null,
+			hasPriceData,
 			// Computed metrics
-			pricePerPower: power > 0 ? Math.round((mid / power) * 100) / 100 : null,
-			bnPremium: bnMid && mid > 0 ? Math.round(((bnMid - mid) / mid) * 10000) / 100 : null,
-			liquidity: listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none',
+			pricePerPower: mid != null && power > 0 ? Math.round((mid / power) * 100) / 100 : null,
+			bnPremium: bnMid && mid && mid > 0 ? Math.round(((bnMid - mid) / mid) * 10000) / 100 : null,
+			liquidity: hasPriceData
+				? (listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none')
+				: 'unknown',
 		};
 	});
 
@@ -173,7 +191,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 /** Handle play card queries (separate table, two-query approach) */
 async function handlePlayCards(
 	admin: ReturnType<typeof getAdminClient> & object,
-	opts: { priceMin: number; priceMax: number; sort: string; limit: number; offset: number }
+	opts: { priceMin: number; priceMax: number; sort: string; limit: number; offset: number; pricedOnly: boolean }
 ) {
 	// PostgREST can't join play_cards → price_cache (no FK relationship),
 	// so we use a two-query approach: fetch prices, fetch play card details, merge.
@@ -272,17 +290,19 @@ async function handlePlayCards(
 	});
 }
 
-function buildAggregates(cards: { priceMid: number; listings: number; bnCount: number; confidence: number }[]) {
+function buildAggregates(cards: { priceMid: number | null; listings: number; bnCount: number; confidence: number; hasPriceData?: boolean }[]) {
 	if (cards.length === 0) {
-		return { totalResults: 0, avgPrice: 0, totalListings: 0, totalBnAvailable: 0, avgConfidence: 0, priceRange: null };
+		return { totalResults: 0, pricedCount: 0, avgPrice: 0, totalListings: 0, totalBnAvailable: 0, avgConfidence: 0, priceRange: null };
 	}
-	const prices = cards.map(c => c.priceMid);
+	const pricedCards = cards.filter(c => c.priceMid != null);
+	const prices = pricedCards.map(c => c.priceMid as number);
 	return {
 		totalResults: cards.length,
-		avgPrice: Math.round(prices.reduce((s, p) => s + p, 0) / cards.length * 100) / 100,
+		pricedCount: pricedCards.length,
+		avgPrice: prices.length > 0 ? Math.round(prices.reduce((s, p) => s + p, 0) / prices.length * 100) / 100 : 0,
 		totalListings: cards.reduce((s, c) => s + c.listings, 0),
 		totalBnAvailable: cards.reduce((s, c) => s + c.bnCount, 0),
-		avgConfidence: Math.round(cards.reduce((s, c) => s + c.confidence, 0) / cards.length * 100),
-		priceRange: { min: Math.min(...prices), max: Math.max(...prices) },
+		avgConfidence: pricedCards.length > 0 ? Math.round(pricedCards.reduce((s, c) => s + c.confidence, 0) / pricedCards.length * 100) : 0,
+		priceRange: prices.length > 0 ? { min: Math.min(...prices), max: Math.max(...prices) } : null,
 	};
 }
