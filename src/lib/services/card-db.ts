@@ -69,7 +69,7 @@ async function loadPlayCards(): Promise<Card[]> {
 		if (client) {
 			const { data, error } = await client
 				.from('play_cards')
-				.select('id, card_number, name, release, hot_dog_cost, dbs, ability_text')
+				.select('id, card_number, name, release, hot_dog_cost, dbs')
 				.order('card_number') as { data: Array<Record<string, unknown>> | null; error: unknown };
 
 			if (error) {
@@ -87,7 +87,7 @@ async function loadPlayCards(): Promise<Card[]> {
 						release: String(row.release ?? '') || localFallback?.release || '',
 						dbs: (row.dbs as number) ?? localFallback?.dbs ?? 0,
 						hot_dog_cost: (row.hot_dog_cost as number) ?? localFallback?.hot_dog_cost ?? 0,
-						ability: row.ability_text ? String(row.ability_text) : localFallback?.ability,
+						ability: localFallback?.ability,
 						base_play_name: localFallback?.base_play_name,
 					});
 				});
