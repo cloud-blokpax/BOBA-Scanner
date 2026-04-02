@@ -498,55 +498,7 @@
 		</div>
 	{/if}
 
-	<!-- Card detail modal -->
-	{#if selectedItem}
-		{@const card = selectedItem.card}
-		{@const wt = card?.weapon_type ?? 'steel'}
-		{@const color = wColor(wt)}
-		{@const w = getWeapon(wt)}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-backdrop" onclick={() => selectedItem = null}>
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="modal-card" style="border-color: {color}44; box-shadow: 0 0 40px {color}22" onclick={(e) => e.stopPropagation()}>
-				<div class="modal-hero">
-					<div class="modal-icon">{wIcon(wt)}</div>
-					<div class="modal-name">{card?.hero_name ?? card?.name ?? 'Unknown'}</div>
-					<div class="modal-num">{card?.card_number ?? ''}</div>
-				</div>
-				<div class="modal-grid">
-					<div class="modal-field">
-						<div class="field-label">Power</div>
-						<div class="field-value" style="color: {color}">{card?.power ?? '?'}</div>
-					</div>
-					<div class="modal-field">
-						<div class="field-label">Weapon</div>
-						<div class="field-value" style="color: {color}">{w?.name ?? wt}</div>
-					</div>
-					<div class="modal-field">
-						<div class="field-label">Set</div>
-						<div class="field-value" style="color: {SET_META[card?.set_code ?? '']?.color ?? '#64748b'}">
-							{SET_META[card?.set_code ?? '']?.label ?? card?.set_code ?? '?'}
-						</div>
-					</div>
-					<div class="modal-field">
-						<div class="field-label">Value</div>
-						<div class="field-value" style="color: #10b981">${cardValue(selectedItem).toFixed(2)}</div>
-					</div>
-					<div class="modal-field">
-						<div class="field-label">Parallel</div>
-						<div class="field-value" style="color: #fbbf24">{card?.parallel ?? 'Base'}</div>
-					</div>
-					<div class="modal-field">
-						<div class="field-label">Condition</div>
-						<div class="field-value" style="color: #64748b">{selectedItem.condition ?? '?'}</div>
-					</div>
-				</div>
-				<button class="modal-close" onclick={() => selectedItem = null}>Close</button>
-			</div>
-		</div>
-	{/if}
+	<CardDetail item={selectedItem} ebayConnected={false} onClose={() => { selectedItem = null; }} />
 
 	<div class="footer">boba.cards &mdash; Collection Dashboard</div>
 </div>
@@ -719,30 +671,6 @@
 	}
 	.cp-price { margin-left: auto; font-size: 0.6875rem; font-weight: 700; color: #10b981; }
 	.more-cards { text-align: center; padding: 0.75rem; color: #475569; font-size: 0.75rem; }
-
-	/* ── Detail modal ─────────────────────────────── */
-	.modal-backdrop {
-		position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 1000;
-		display: flex; align-items: center; justify-content: center; padding: 1.5rem;
-		animation: countUp 0.2s ease-out;
-	}
-	.modal-card {
-		background: #0f172a; border-radius: 20px; padding: 1.5rem;
-		max-width: 340px; width: 100%; border-width: 1px; border-style: solid;
-	}
-	.modal-hero { text-align: center; margin-bottom: 1rem; }
-	.modal-hero .modal-icon { font-size: 3rem; margin-bottom: 0.5rem; }
-	.modal-hero .modal-name { font-size: 1.25rem; font-weight: 900; }
-	.modal-hero .modal-num { font-size: 0.75rem; color: #64748b; }
-	.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-	.modal-field { background: #1e293b; border-radius: 10px; padding: 0.625rem 0.75rem; }
-	.modal-field .field-label { font-size: 0.625rem; color: #475569; }
-	.modal-field .field-value { font-size: 1rem; font-weight: 800; }
-	.modal-close {
-		width: 100%; margin-top: 1rem; padding: 0.75rem; border-radius: 12px;
-		border: none; background: #1e293b; color: #64748b;
-		font-size: 0.875rem; font-weight: 600; cursor: pointer;
-	}
 
 	/* ── Footer ───────────────────────────────────── */
 	.footer { text-align: center; padding: 0 1rem 1rem; font-size: 0.6875rem; color: #1e293b; }

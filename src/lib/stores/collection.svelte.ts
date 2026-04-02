@@ -141,12 +141,12 @@ export async function addToCollection(
 	}
 }
 
-async function uploadScanImage(collectionItemId: string, cardId: string, blob: Blob): Promise<void> {
+export async function uploadScanImage(collectionItemId: string, cardId: string, blob: Blob): Promise<string | null> {
 	const client = getSupabase();
-	if (!client) return;
+	if (!client) return null;
 
 	const { data: { user } } = await client.auth.getUser();
-	if (!user) return;
+	if (!user) return null;
 
 	const filename = `${user.id}/${cardId}_${Date.now()}.jpg`;
 
@@ -159,11 +159,11 @@ async function uploadScanImage(collectionItemId: string, cardId: string, blob: B
 
 	if (uploadError) {
 		console.error('[collection] Storage upload failed:', uploadError);
-		return;
+		return null;
 	}
 
 	const { data: urlData } = client.storage.from('scan-images').getPublicUrl(filename);
-	if (!urlData?.publicUrl) return;
+	if (!urlData?.publicUrl) return null;
 
 	// scan_image_url is a new column not yet in generated Supabase types
 	const { error: updateError } = await client
@@ -173,13 +173,15 @@ async function uploadScanImage(collectionItemId: string, cardId: string, blob: B
 
 	if (updateError) {
 		console.error('[collection] Failed to save image URL:', updateError);
-		return;
+		return null;
 	}
 
 	// Update local state so the URL is immediately available for listing
 	_items = _items.map(i =>
 		i.id === collectionItemId ? { ...i, scan_image_url: urlData.publicUrl } : i
 	);
+
+	return urlData.publicUrl;
 }
 
 export async function updateQuantity(itemId: string, quantity: number): Promise<void> {
