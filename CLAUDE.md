@@ -347,7 +347,7 @@ The card database has a layered loading strategy (see `card-db.ts`):
 
 ## Testing
 
-The test suite (12 files) uses Vitest with three tiers:
+The test suite uses Vitest with three tiers:
 
 - **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`
 - **Integration tests**: `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
@@ -359,6 +359,22 @@ Testing patterns:
 - External dependencies mocked: sharp, Anthropic SDK, Supabase, Redis, IndexedDB
 - Tests live in `/tests/` directory (excluded from `tsconfig.json`)
 - Run with `npm test` (single run) or `npm run test:watch` (watch mode)
+
+### Coverage Gaps (Priority Order)
+
+Estimated module coverage is ~30%. Key untested areas by priority:
+
+1. **Critical business logic**: `sync.ts` (bidirectional IDB/Supabase sync — race conditions cause data loss), `idb.ts` (IndexedDB offline storage), `collection-service.ts` (collection mutations with Supabase + IDB fallback)
+2. **Security & utilities**: `utils/index.ts` (`escapeHtml` is XSS-critical), `middleware.ts` (bot-blocking regex), `api/upload` (CDR/EXIF stripping)
+3. **Feature quality**: `scan-learning.ts` (OCR corrections), `export-templates.ts` (CSV escaping), `ebay.ts` (URL building, price calc)
+4. **Nice to have**: Store pure logic (collection locking, flag evaluation), `error-tracking.ts`, `version.ts`, `listing-generator.ts`
+
+### What NOT to Test (Low ROI)
+
+- **Svelte components** — UI tests are brittle for a mobile-first PWA; manual QA is more effective
+- **Web Workers** — require Canvas/ImageBitmap browser APIs; tested implicitly via recognition pipeline E2E tests
+- **Static data files** — configuration, not logic
+- **`supabase.ts`** — thin client init; tested implicitly by integration tests
 
 ## BoBA Game Domain Knowledge
 
@@ -429,6 +445,13 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/playbook-archetypes.ts` — Playbook archetype definitions
 
 ## Key Conventions
+
+### Documentation
+
+- **CLAUDE.md is the single source of truth** for all project documentation, architecture, schema, conventions, and reference material
+- **Never create separate documentation files** (e.g., `*.md` analysis docs, `README.md` files in subdirectories, schema/migration docs). All information that would go in a reference document must be added to the relevant section of CLAUDE.md instead
+- **Only exceptions**: root `README.md` (GitHub landing page — keep minimal, point to CLAUDE.md) and `.env.example` (developer onboarding template)
+- When making changes that affect architecture, database schema, conventions, or project structure, update CLAUDE.md as part of the same change
 
 ### Code Style
 
