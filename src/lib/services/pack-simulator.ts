@@ -51,6 +51,44 @@ function buildSetMatchers(code: string): Set<string> {
 }
 
 /**
+ * Collect the set of weapon types that actually exist among hero cards in a pool.
+ */
+function getAvailableWeapons(
+	cards: Array<{ weapon_type?: string | null; card_number?: string | null }>
+): Set<string> {
+	const weapons = new Set<string>();
+	for (const c of cards) {
+		if (
+			c.weapon_type &&
+			c.card_number &&
+			!c.card_number.startsWith('PL-') &&
+			!c.card_number.startsWith('BPL-') &&
+			!c.card_number.startsWith('HTD')
+		) {
+			weapons.add(c.weapon_type.toLowerCase());
+		}
+	}
+	return weapons;
+}
+
+/**
+ * Filter a slot's outcomes to only include weapon types that exist in the set.
+ * Non-weapon outcomes (parallel, card_type) are always kept.
+ * If ALL weapon outcomes would be removed, they are kept as-is (defensive).
+ */
+function filterOutcomesBySet(
+	outcomes: SlotOutcome[],
+	availableWeapons: Set<string>
+): SlotOutcome[] {
+	const filtered = outcomes.filter(
+		(o) => o.type !== 'weapon_rarity' || availableWeapons.has(o.value.toLowerCase())
+	);
+	// If filtering removed ALL outcomes (shouldn't happen), keep originals
+	if (filtered.length === 0) return outcomes;
+	return filtered;
+}
+
+/**
  * Open a simulated pack, filtering cards by set.
  */
 export function openPack(
@@ -68,15 +106,16 @@ export function openPack(
 	);
 	const cards: SimulatedCard[] = [];
 
+	// Determine which weapon types actually exist in this set's card pool
+	const availableWeapons = getAvailableWeapons(setCards);
+
 	for (const slot of slots) {
-		const outcome = rollWeightedOutcome(slot.outcomes, rng);
+		// Filter slot outcomes to exclude weapon types not in this set
+		const validOutcomes = filterOutcomesBySet(slot.outcomes, availableWeapons);
+		const outcome = rollWeightedOutcome(validOutcomes, rng);
 		// Play cards and hot dogs are set-agnostic — search the full card pool
 		const pool = outcome.type === 'card_type' ? allCards : setCards;
-		let candidates = findCandidates(pool, outcome);
-		// Fallback: if a weapon type (e.g. brawl) doesn't exist in this set, use steel
-		if (candidates.length === 0 && outcome.type === 'weapon_rarity') {
-			candidates = findCandidates(pool, { ...outcome, value: 'steel' });
-		}
+		const candidates = findCandidates(pool, outcome);
 		const card =
 			candidates.length > 0
 				? candidates[Math.floor(rng() * candidates.length)]
