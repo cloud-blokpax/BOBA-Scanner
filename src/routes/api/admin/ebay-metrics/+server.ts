@@ -47,7 +47,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			.order('recorded_at', { ascending: false })
 			.limit(1)
 			.maybeSingle(),
-		admin.from('price_cache').select('card_id', { count: 'exact', head: true }),
+		admin.from('price_cache').select('card_id', { count: 'exact', head: true }).eq('source', 'ebay'),
 		admin.from('price_cache').select('card_id', { count: 'exact', head: true })
 			.lt('fetched_at', new Date(Date.now() - 7 * 86400000).toISOString())
 	]);

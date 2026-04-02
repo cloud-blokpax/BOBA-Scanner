@@ -146,12 +146,14 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		try {
 			const adminClient = getAdminClient();
 			if (!adminClient) throw new Error('Admin client unavailable for cache write');
-			await adminClient.from('price_cache').upsert(priceData, {
+			const { error: cacheError } = await adminClient.from('price_cache').upsert(priceData, {
 				onConflict: 'card_id,source'
 			});
+			if (cacheError) {
+				console.error('[api/price] price_cache upsert FAILED:', cacheError.message);
+			}
 		} catch (err) {
-			console.debug('[api/price] Cache write failed:', err);
-			console.warn('[api/price] Cache write failed (possible RLS issue)');
+			console.error('[api/price] Cache write exception:', err);
 		}
 
 		// Log price data point to history — only when price actually changed
@@ -168,7 +170,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 			const priceChanged = !lastEntry || lastEntry.price_mid !== priceData.price_mid;
 			if (priceChanged) {
-				await historyClient.from('price_history').insert({
+				const { error: historyError } = await historyClient.from('price_history').insert({
 					card_id: cardId,
 					source: 'ebay',
 					price_low: priceData.price_low,
@@ -177,9 +179,12 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 					listings_count: priceData.listings_count,
 					recorded_at: new Date().toISOString()
 				});
+				if (historyError) {
+					console.error('[api/price] price_history insert FAILED:', historyError.message);
+				}
 			}
 		} catch (err) {
-			console.debug('[api/price] Price history write failed:', err);
+			console.error('[api/price] Price history exception:', err);
 		}
 
 		return json(priceData, {

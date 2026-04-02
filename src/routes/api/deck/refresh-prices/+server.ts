@@ -159,7 +159,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			};
 
 			const cacheClient = getAdminClient() || supabase;
-			await cacheClient.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			const { error: cacheError } = await cacheClient.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			if (cacheError) {
+				console.error(`[deck/refresh-prices] price_cache upsert FAILED for ${cardId}:`, cacheError.message);
+			}
 
 			return {
 				card_id: cardId,
