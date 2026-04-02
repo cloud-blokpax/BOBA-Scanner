@@ -21,6 +21,7 @@ interface DraftRequest {
 	price: number;
 	quantity: number;
 	notes: string | null;
+	scanImageUrl: string | null;
 }
 
 function buildTitle(req: DraftRequest): string {
@@ -148,6 +149,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		product: {
 			title: buildTitle(body),
 			description: buildDescription(body),
+			...(body.scanImageUrl ? { imageUrls: [body.scanImageUrl] } : {}),
 			aspects: {
 				'Card Name': [heroName || 'Unknown'],
 				'Set': [body.setCode || 'BoBA'],
