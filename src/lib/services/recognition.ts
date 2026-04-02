@@ -58,6 +58,42 @@ function createThumbnailDataUrl(bitmap: ImageBitmap): string | null {
 	}
 }
 
+/**
+ * Create a listing-quality JPEG blob from a camera bitmap.
+ * Produces a ~15-40KB image suitable for eBay listings and collection display.
+ * Returns null if called server-side or if canvas fails.
+ */
+function createListingImageBlob(bitmap: ImageBitmap): Promise<Blob | null> {
+	try {
+		if (typeof document === 'undefined') return Promise.resolve(null);
+
+		const MAX_W = 600;
+		const MAX_H = 840;
+		const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);
+		const w = Math.round(bitmap.width * scale);
+		const h = Math.round(bitmap.height * scale);
+
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return Promise.resolve(null);
+
+		ctx.drawImage(bitmap, 0, 0, w, h);
+
+		return new Promise((resolve) => {
+			canvas.toBlob(
+				(blob) => resolve(blob),
+				'image/jpeg',
+				0.8
+			);
+		});
+	} catch (err) {
+		console.debug('[recognition] Listing image creation failed:', err);
+		return Promise.resolve(null);
+	}
+}
+
 // ── Worker instances ────────────────────────────────────────
 
 let imageWorker: Comlink.Remote<{
@@ -307,10 +343,13 @@ export async function recognizeCard(
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
 		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId };
-		// Create a persistent thumbnail from the scanned bitmap for scan history display.
-		// This replaces the previous getCardImageUrl() call which pointed to non-existent
-		// reference images in Supabase Storage.
 		const thumbnail = bitmap instanceof ImageBitmap ? createThumbnailDataUrl(bitmap) : null;
+
+		// Create a listing-quality image blob for Supabase Storage upload.
+		// This runs async but we attach the promise to the result so callers can await it.
+		if (bitmap instanceof ImageBitmap && final.card_id) {
+			final._listingImagePromise = createListingImageBlob(bitmap);
+		}
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,

@@ -214,7 +214,9 @@
 					{@const ebayQuery = encodeURIComponent(`BoBA ${card?.hero_name || card?.name || ''} ${card?.card_number || ''}`)}
 					<div class="card-row">
 						<div class="card-row-thumb">
-							{#if card?.image_url}
+							{#if item.scan_image_url}
+								<img src={item.scan_image_url} alt={card?.hero_name || card?.name || 'Card'} class="card-row-img" />
+							{:else if card?.image_url}
 								<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
 							{:else}
 								<span class="card-row-placeholder">🎴</span>
@@ -484,7 +486,8 @@
 		overflow: hidden;
 	}
 
-	.card-row-thumb :global(.card-row-img) {
+	.card-row-thumb :global(.card-row-img),
+	.card-row-thumb .card-row-img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

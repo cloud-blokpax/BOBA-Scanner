@@ -101,6 +101,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const description = body.description as string || '';
 	const price = requireNumber(body.price, 'price', 0.01);
 	const condition = (body.condition as string) || 'Near Mint';
+	const scanImageUrl = (body.scanImageUrl as string) || null;
 
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Please reconnect your eBay account.');
@@ -142,6 +143,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				product: {
 					title,
 					description,
+					...(scanImageUrl ? { imageUrls: [scanImageUrl] } : {}),
 					aspects: {
 						'Card Game': ['Bo Jackson Battle Arena'],
 						'Card Condition': [condition]

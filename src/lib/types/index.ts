@@ -47,6 +47,7 @@ export interface CollectionItem {
 	condition: CardCondition;
 	notes: string | null;
 	added_at: string;
+	scan_image_url?: string | null;
 	card?: Card;
 }
 
@@ -72,6 +73,8 @@ export interface ScanResult {
 	validationMethod?: ValidationMethod | null;
 	/** Warnings from cross-validation (e.g., fuzzy match, name mismatch) */
 	validationWarnings?: string[];
+	/** Promise resolving to a listing-quality JPEG blob (only available client-side after scan) */
+	_listingImagePromise?: Promise<Blob | null>;
 }
 
 export interface ScanPipelineState {

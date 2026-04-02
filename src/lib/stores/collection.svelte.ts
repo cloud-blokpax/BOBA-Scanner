@@ -12,6 +12,7 @@ import {
 	deleteCollectionItem,
 	recordDeletion
 } from '$lib/services/collection-service';
+import { getSupabase } from '$lib/services/supabase';
 import type { CollectionItem } from '$lib/types';
 
 // ── Private mutable state ──────────────────────────────────
@@ -77,6 +78,11 @@ export function setCollectionItems(items: CollectionItem[]): void {
 	_items = items;
 }
 
+export function getScanImageUrl(cardId: string): string | null {
+	const item = _items.find(i => i.card_id === cardId);
+	return item?.scan_image_url ?? null;
+}
+
 export async function loadCollection(): Promise<void> {
 	_loading = true;
 	try {
@@ -92,7 +98,8 @@ const _addLocks = new Map<string, Promise<void>>();
 export async function addToCollection(
 	cardId: string,
 	condition = 'near_mint',
-	notes: string | null = null
+	notes: string | null = null,
+	scanImageBlob?: Blob | null
 ): Promise<void> {
 	const lockKey = `${cardId}:${condition}`;
 
@@ -104,6 +111,14 @@ export async function addToCollection(
 	const promise = (async () => {
 		const item = await upsertCollectionItem(cardId, condition, notes);
 		markLocallyModified(cardId);
+
+		// Upload scan image to Supabase Storage if provided (non-blocking)
+		if (scanImageBlob) {
+			uploadScanImage(item.id, cardId, scanImageBlob).catch(err => {
+				console.warn('[collection] Scan image upload failed (non-blocking):', err);
+			});
+		}
+
 		const idx = _items.findIndex(
 			(i) => i.card_id === cardId && i.condition === condition
 		);
@@ -124,6 +139,47 @@ export async function addToCollection(
 			_addLocks.delete(lockKey);
 		}
 	}
+}
+
+async function uploadScanImage(collectionItemId: string, cardId: string, blob: Blob): Promise<void> {
+	const client = getSupabase();
+	if (!client) return;
+
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return;
+
+	const filename = `${user.id}/${cardId}_${Date.now()}.jpg`;
+
+	const { error: uploadError } = await client.storage
+		.from('scan-images')
+		.upload(filename, blob, {
+			contentType: 'image/jpeg',
+			upsert: true
+		});
+
+	if (uploadError) {
+		console.error('[collection] Storage upload failed:', uploadError);
+		return;
+	}
+
+	const { data: urlData } = client.storage.from('scan-images').getPublicUrl(filename);
+	if (!urlData?.publicUrl) return;
+
+	// scan_image_url is a new column not yet in generated Supabase types
+	const { error: updateError } = await client
+		.from('collections')
+		.update({ scan_image_url: urlData.publicUrl } as Record<string, unknown>)
+		.eq('id', collectionItemId);
+
+	if (updateError) {
+		console.error('[collection] Failed to save image URL:', updateError);
+		return;
+	}
+
+	// Update local state so the URL is immediately available for listing
+	_items = _items.map(i =>
+		i.id === collectionItemId ? { ...i, scan_image_url: urlData.publicUrl } : i
+	);
 }
 
 export async function updateQuantity(itemId: string, quantity: number): Promise<void> {
