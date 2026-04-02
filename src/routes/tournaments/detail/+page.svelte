@@ -161,6 +161,34 @@
 		URL.revokeObjectURL(url);
 	}
 
+	function exportCsv() {
+		if (submissions.length === 0) {
+			showToast('No submissions to export', 'x');
+			return;
+		}
+		const headers = ['player_name', 'player_email', 'player_discord', 'is_valid', 'status', 'hero_count', 'dbs_total', 'avg_power', 'submitted_at'];
+		const rows = submissions.map((s) => [
+			`"${s.player_name}"`,
+			`"${s.player_email}"`,
+			`"${s.player_discord || ''}"`,
+			s.is_valid,
+			s.status,
+			s.hero_count,
+			s.dbs_total ?? '',
+			s.avg_power != null ? Math.round(s.avg_power) : '',
+			s.submitted_at
+		].join(','));
+		const csv = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob([csv], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${tournament?.code || 'tournament'}-submissions.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
+		showToast('CSV exported', 'check');
+	}
+
 	async function copyCode(code: string) {
 		try {
 			await navigator.clipboard.writeText(code);
@@ -212,7 +240,12 @@
 			</div>
 		</div>
 
-		<h2 class="section-title">{useLegacyView ? 'Registrations' : 'Submissions'} ({useLegacyView ? legacyRegistrations.length : submissions.length})</h2>
+		<div class="section-header">
+			<h2 class="section-title">{useLegacyView ? 'Registrations' : 'Submissions'} ({useLegacyView ? legacyRegistrations.length : submissions.length})</h2>
+			{#if submissions.length > 0}
+				<button class="export-btn" onclick={exportCsv}>Export CSV</button>
+			{/if}
+		</div>
 
 		{#if submissions.length === 0 && legacyRegistrations.length === 0}
 			<div class="empty">
@@ -379,10 +412,29 @@
 	}
 
 	/* Section */
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
+	}
 	.section-title {
 		font-size: 1rem;
 		font-weight: 600;
-		margin-bottom: 0.75rem;
+		margin-bottom: 0;
+	}
+	.export-btn {
+		padding: 0.375rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--accent-primary);
+		background: transparent;
+		color: var(--accent-primary);
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.export-btn:hover {
+		background: rgba(59, 130, 246, 0.1);
 	}
 	.empty {
 		text-align: center;

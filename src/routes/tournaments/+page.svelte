@@ -64,9 +64,10 @@
 			const pubId = await resolvePublicUserId();
 
 			// creator_id references public.users(id), not auth.users(id)
+			// Include deck_submissions count to show actual entry numbers
 			const query = pubId
-				? sb.from('tournaments').select('*').or(`creator_id.eq.${pubId},is_active.eq.true`)
-				: sb.from('tournaments').select('*').eq('is_active', true);
+				? sb.from('tournaments').select('*, deck_submissions(count)').or(`creator_id.eq.${pubId},is_active.eq.true`)
+				: sb.from('tournaments').select('*, deck_submissions(count)').eq('is_active', true);
 
 			const { data, error } = await query.order('created_at', { ascending: false });
 
@@ -128,6 +129,11 @@
 		} finally {
 			entryLoading = false;
 		}
+	}
+
+	function getEntryCount(t: Tournament): number {
+		const subs = (t as unknown as Record<string, unknown>).deck_submissions as Array<{ count: number }> | undefined;
+		return subs?.[0]?.count ?? 0;
 	}
 
 	const myTournaments = $derived(
@@ -208,7 +214,7 @@
 						</div>
 
 						<div class="tournament-footer">
-							<span class="usage">{t.usage_count} entries · {formatDate(t.created_at)}</span>
+							<span class="usage">{getEntryCount(t)} entries · {formatDate(t.created_at)}</span>
 							<div class="footer-actions">
 								<a href="/tournaments/detail?id={t.id}" class="view-btn">View Entries</a>
 								<button class="toggle-btn" onclick={() => toggleActive(t)}>
@@ -245,7 +251,7 @@
 						</div>
 
 						<div class="tournament-footer">
-							<span class="usage">{t.usage_count} entries · {formatDate(t.created_at)}</span>
+							<span class="usage">{getEntryCount(t)} entries · {formatDate(t.created_at)}</span>
 							<a href="/tournaments/enter?code={t.code}" class="enter-link">Enter</a>
 						</div>
 					</div>
