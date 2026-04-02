@@ -10,6 +10,31 @@ import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
+/** Paginate through all rows of a Supabase query, collecting card_ids into a Set. */
+async function fetchAllCardIds(
+	admin: ReturnType<typeof getAdminClient> & object,
+	table: string
+): Promise<Set<string>> {
+	const ids = new Set<string>();
+	const PAGE = 10000;
+	let offset = 0;
+	let done = false;
+
+	while (!done) {
+		const { data } = await admin.from(table).select('card_id').range(offset, offset + PAGE - 1);
+		if (!data || data.length === 0) {
+			done = true;
+		} else {
+			for (const row of data) {
+				ids.add((row as { card_id: string }).card_id);
+			}
+			offset += PAGE;
+			if (data.length < PAGE) done = true;
+		}
+	}
+	return ids;
+}
+
 export const GET: RequestHandler = async ({ locals }) => {
 	await requireAdmin(locals);
 
@@ -22,8 +47,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 			.order('recorded_at', { ascending: false })
 			.limit(1)
 			.maybeSingle(),
-		admin.from('price_cache').select('id', { count: 'exact', head: true }),
-		admin.from('price_cache').select('id', { count: 'exact', head: true })
+		admin.from('price_cache').select('card_id', { count: 'exact', head: true }),
+		admin.from('price_cache').select('card_id', { count: 'exact', head: true })
 			.lt('fetched_at', new Date(Date.now() - 7 * 86400000).toISOString())
 	]);
 
@@ -44,11 +69,35 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// then cross-reference in JS. Cards searched by the harvester but
 		// rejected by the confidence threshold only appear in price_harvest_log,
 		// not in price_cache, so we need both sources.
-		const [heroTotalRes, playCardsRes, priceCacheRes, harvestLogRes] = await Promise.all([
+		//
+		// We paginate price_cache and price_harvest_log to avoid Supabase's
+		// default 1000-row limit and handle tables with 100K+ rows.
+		const [heroTotalRes, playCardsRes, priceCacheRows, harvestCardIds] = await Promise.all([
 			admin.from('cards').select('id', { count: 'exact', head: true }),
 			admin.from('play_cards').select('id, card_number'),
-			admin.from('price_cache').select('card_id, price_mid').eq('source', 'ebay').limit(50000),
-			admin.from('price_harvest_log').select('card_id').limit(50000)
+			// Paginate price_cache — need card_id + price_mid for classification
+			(async () => {
+				const rows: Array<{ card_id: string; price_mid: number | null }> = [];
+				const PAGE = 10000;
+				let offset = 0;
+				let done = false;
+				while (!done) {
+					const { data } = await admin.from('price_cache')
+						.select('card_id, price_mid')
+						.eq('source', 'ebay')
+						.range(offset, offset + PAGE - 1);
+					if (!data || data.length === 0) {
+						done = true;
+					} else {
+						for (const r of data) rows.push(r as { card_id: string; price_mid: number | null });
+						offset += PAGE;
+						if (data.length < PAGE) done = true;
+					}
+				}
+				return rows;
+			})(),
+			// Paginate harvest log — only need distinct card_ids
+			fetchAllCardIds(admin, 'price_harvest_log')
 		]);
 
 		// Build lookup sets from play_cards
@@ -67,19 +116,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// Track all cards that appear in price_cache, keyed by card_id
 		// Value: true = has price, false = searched but no price
 		const cacheStatus = new Map<string, boolean>();
-		for (const row of priceCacheRes.data ?? []) {
-			const cid = row.card_id as string;
-			cacheStatus.set(cid, row.price_mid != null);
-		}
-
-		// Collect distinct card_ids from harvest log that aren't in price_cache
-		// These are cards that were searched but threshold-rejected
-		const harvestOnly = new Set<string>();
-		for (const row of harvestLogRes.data ?? []) {
-			const cid = row.card_id as string;
-			if (!cacheStatus.has(cid)) {
-				harvestOnly.add(cid);
-			}
+		for (const row of priceCacheRows) {
+			cacheStatus.set(row.card_id, row.price_mid != null);
 		}
 
 		// Tally by card type
@@ -99,7 +137,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		}
 
 		// Count harvest-only cards (searched but threshold-rejected → "searched, no price")
-		for (const cid of harvestOnly) {
+		for (const cid of harvestCardIds) {
+			if (cacheStatus.has(cid)) continue; // Already counted above
 			if (playIds.has(cid)) {
 				playSearched++;
 			} else if (hotdogIds.has(cid)) {
