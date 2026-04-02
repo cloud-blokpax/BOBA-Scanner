@@ -18,14 +18,13 @@ import { calculatePriceStats } from '$lib/utils/pricing';
 import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
-// Vercel Hobby = 10s max
-export const config = { maxDuration: 10 };
+// Vercel Hobby supports up to 60s
+export const config = { maxDuration: 60 };
 
-const BATCH_SIZE = 3;       // Parallel calls per wave
-const MAX_WAVES = 3;        // Sequential waves per invocation (3×3 = 9 cards)
-const WAVE_DELAY_MS = 200;  // Stagger between waves
-const MAX_CHAIN_DEPTH = 600; // Safety cap (~5,400 cards max)
-const RESERVE_CALLS = 0;    // Harvester gets 100% of budget
+const CARDS_PER_RUN = 25;       // Max cards per invocation (time-check is the real limiter)
+const CARD_DELAY_MS = 2000;     // 2s between eBay calls — stays under burst limit
+const MAX_CHAIN_DEPTH = 1500;   // Safety cap (~33K cards max across all chains)
+const RESERVE_CALLS = 0;        // Harvester gets 100% of budget
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Auth ─────────────────────────────────────────────
@@ -77,7 +76,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		});
 	}
 
-	const callBudget = Math.min(remainingCalls, BATCH_SIZE * MAX_WAVES);
+	const callBudget = Math.min(remainingCalls, CARDS_PER_RUN);
 
 	// (offset tracking removed — candidate selection uses price_harvest_log
 	// to skip already-processed cards, so no offset needed)
@@ -94,49 +93,54 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		});
 	}
 
-	// ── Process in waves ────────────────────────────────
+	// ── Process cards sequentially with 2s spacing ──────
 	const startTime = Date.now();
 	let processed = 0;
 	let updated = 0;
 	let errors = 0;
-	let rateLimited = false;
+	let consecutive429s = 0;
 	const harvestLogs: Record<string, unknown>[] = [];
 
-	for (let wave = 0; wave < MAX_WAVES; wave++) {
-		if (Date.now() - startTime > 7500) break;
+	for (let i = 0; i < candidates.length; i++) {
+		// Stop 8s before timeout to leave room for logging + chain fire
+		if (Date.now() - startTime > 52000) break;
 
-		const waveStart = wave * BATCH_SIZE;
-		const waveCards = candidates.slice(waveStart, waveStart + BATCH_SIZE);
-		if (waveCards.length === 0) break;
-
-		const results = await Promise.allSettled(
-			waveCards.map(card => refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold))
-		);
-
-		let wave429s = 0;
-		for (const result of results) {
-			processed++;
-			if (result.status === 'fulfilled') {
-				if (result.value.success) updated++;
-				if (result.value.logEntry) {
-					harvestLogs.push(result.value.logEntry);
-					// Track 429 errors even after ebayFetch retries
-					const msg = result.value.logEntry.error_message;
-					if (typeof msg === 'string' && msg.includes('429')) wave429s++;
-				}
-			} else {
-				errors++;
-			}
-		}
-
-		// If every card in this wave hit 429 (after retries), stop — eBay is rate-limiting us
-		if (wave429s > 0 && wave429s >= waveCards.length) {
-			rateLimited = true;
+		// If eBay is actively throttling us, stop this link.
+		// The chain continues — next link will try fresh after a brief gap.
+		if (consecutive429s >= 3) {
+			console.warn('[harvest] 3 consecutive 429s — stopping this link');
 			break;
 		}
 
-		if (wave < MAX_WAVES - 1 && waveCards.length === BATCH_SIZE) {
-			await new Promise(r => setTimeout(r, WAVE_DELAY_MS));
+		const card = candidates[i];
+
+		try {
+			const result = await refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold);
+			processed++;
+
+			if (result.success) {
+				updated++;
+				consecutive429s = 0;
+			}
+
+			if (result.logEntry) {
+				harvestLogs.push(result.logEntry);
+				// Track 429s from the error message
+				const errMsg = String(result.logEntry.error_message || '');
+				if (errMsg.includes('429')) {
+					consecutive429s++;
+				} else if (result.success) {
+					consecutive429s = 0;
+				}
+			}
+		} catch {
+			processed++;
+			errors++;
+		}
+
+		// 2s delay between cards (skip after last one)
+		if (i < candidates.length - 1) {
+			await new Promise(r => setTimeout(r, CARD_DELAY_MS));
 		}
 	}
 
@@ -151,11 +155,17 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 	// (offset tracking removed — no longer needed)
 
-	// ── Fire next chain link (non-blocking) ─────────────
+	// ── Fire next chain link ─────────────────────────────
 	// Skip self-chaining when triggered manually (browser handles the loop)
-	// or when eBay is actively rate-limiting us (429s will just continue)
 	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
-	if (!noChain && !rateLimited) {
+	if (!noChain) {
+		// If we hit 429s, wait 30s before chaining to let eBay's burst window reset.
+		// Combined with the next link's own processing time, this creates a ~90s gap
+		// between the last failed call and the next attempt.
+		if (consecutive429s > 0) {
+			await new Promise(r => setTimeout(r, 30000));
+		}
+
 		const selfUrl = `${url.origin}/api/cron/price-harvest`;
 		try {
 			fetch(selfUrl, {
@@ -189,7 +199,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			cards_processed: processed,
 			cards_updated: updated,
 			cards_errored: errors,
-			status: rateLimited ? 'rate_limited' : 'running',
+			status: consecutive429s >= 3 ? 'rate_limited' : 'running',
 			recorded_at: new Date().toISOString()
 		});
 	} catch { /* non-critical */ }
@@ -200,7 +210,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		processed,
 		updated,
 		errors,
-		rateLimited,
+		rateLimited: consecutive429s >= 3,
 		remainingBefore: remainingCalls,
 		durationMs: Date.now() - startTime
 	});

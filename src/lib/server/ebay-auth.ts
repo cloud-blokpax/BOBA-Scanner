@@ -53,49 +53,44 @@ export async function getEbayToken(): Promise<string> {
 }
 
 /**
- * Execute a fetch against the eBay API with automatic retry on 401 and 429.
- * - 401: Clears cached token and retries once with a fresh token.
- * - 429: Retries up to 2 times with exponential backoff, respecting Retry-After.
+ * Execute a fetch against the eBay API with:
+ *   - Automatic token retry on 401
+ *   - Exponential backoff retry on 429
  */
 export async function ebayFetch(url: string | URL, init?: RequestInit): Promise<Response> {
 	const MAX_429_RETRIES = 2;
-	const MAX_RETRY_DELAY_MS = 3000; // Cap delay to stay within Vercel's 10s limit
 
-	let response: Response | null = null;
+	const makeHeaders = async () => ({
+		...init?.headers,
+		Authorization: `Bearer ${await getEbayToken()}`,
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+		'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
+	});
 
-	for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
-		const token = await getEbayToken();
-		const headers = {
-			...init?.headers,
-			Authorization: `Bearer ${token}`,
-			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-			'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=5339108029'
-		};
+	let response = await fetch(url.toString(), { ...init, headers: await makeHeaders() });
 
-		response = await fetch(url.toString(), { ...init, headers });
-
-		if (response.status === 401 && attempt === 0) {
-			// Token was revoked or expired prematurely — clear cache and retry once
-			_token = null;
-			_tokenExp = 0;
-			continue;
-		}
-
-		if (response.status === 429 && attempt < MAX_429_RETRIES) {
-			const retryAfter = response.headers.get('Retry-After');
-			let delayMs = Math.min(1000 * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
-			if (retryAfter) {
-				const retrySeconds = parseInt(retryAfter, 10);
-				if (!isNaN(retrySeconds)) {
-					delayMs = Math.min(retrySeconds * 1000, MAX_RETRY_DELAY_MS);
-				}
-			}
-			await new Promise(r => setTimeout(r, delayMs));
-			continue;
-		}
-
-		break;
+	// Handle 401: token expired — clear cache, get new token, retry once
+	if (response.status === 401) {
+		_token = null;
+		_tokenExp = 0;
+		response = await fetch(url.toString(), { ...init, headers: await makeHeaders() });
 	}
 
-	return response!;
+	// Handle 429: rate limited — exponential backoff
+	if (response.status === 429) {
+		for (let attempt = 0; attempt < MAX_429_RETRIES; attempt++) {
+			const retryAfter = response.headers.get('Retry-After');
+			const waitMs = retryAfter
+				? parseInt(retryAfter, 10) * 1000
+				: 3000 * Math.pow(2, attempt); // 3s, 6s
+
+			console.warn(`[ebay] 429 rate limited — waiting ${waitMs}ms (retry ${attempt + 1}/${MAX_429_RETRIES})`);
+			await new Promise(r => setTimeout(r, waitMs));
+
+			response = await fetch(url.toString(), { ...init, headers: await makeHeaders() });
+			if (response.status !== 429) break;
+		}
+	}
+
+	return response;
 }
