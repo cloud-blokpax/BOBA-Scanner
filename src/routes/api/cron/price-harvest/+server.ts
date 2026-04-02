@@ -226,6 +226,7 @@ interface CardCandidate {
 	hero_name: string | null;
 	name: string | null;
 	card_number: string | null;
+	athlete_name: string | null;
 	priority: number;
 }
 

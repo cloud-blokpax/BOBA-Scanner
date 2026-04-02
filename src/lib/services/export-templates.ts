@@ -6,6 +6,7 @@
 
 import { browser } from '$app/environment';
 import { idb } from '$lib/services/idb';
+import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 
 const IDB_KEY = 'exportTemplates';
 
@@ -185,6 +186,7 @@ export function generateCSV(
 export interface ExportCard {
 	heroName?: string;
 	name?: string;
+	athleteName?: string;
 	cardNumber?: string;
 	setCode?: string;
 	weaponType?: string;
@@ -208,27 +210,17 @@ export function getConditionMultiplier(condition: string): number {
 
 /**
  * Generate an optimized eBay title (max 80 chars).
- * Structure: [Card Name] [Finish] [Number] [Rarity] [Set] [Game]
+ * Uses canonical format: Hero Name - Bo Jackson Battle Arena - Athlete - Parallel - Weapon - Card Number
  */
 export function generateEbayTitle(card: ExportCard): string {
-	const parts = [
-		card.heroName || card.name || '',
-		card.parallel || '',
-		card.cardNumber || '',
-		card.weaponType || '',
-		card.setCode || '',
-		'BoBA Battle Arena'
-	].filter(Boolean);
-
-	let title = parts.join(' ');
-	if (title.length > 80) {
-		while (title.length > 80 && parts.length > 2) {
-			parts.pop();
-			title = parts.join(' ');
-		}
-		title = title.substring(0, 80);
-	}
-	return title;
+	return buildEbayListingTitle({
+		hero_name: card.heroName,
+		name: card.name,
+		athlete_name: card.athleteName,
+		parallel: card.parallel,
+		weapon_type: card.weaponType,
+		card_number: card.cardNumber
+	});
 }
 
 function generateDescription(card: ExportCard): string {

@@ -1,44 +1,38 @@
 /**
- * Canonical eBay search query builder for BoBA cards.
+ * Server-side eBay search query builder and result filter for BoBA cards.
  *
  * Every server-side path that searches eBay for card prices MUST use this.
- * "bo jackson battle arena" is the phrase eBay sellers actually use in listings.
  */
 
-export interface EbayQueryCard {
-	hero_name?: string | null;
-	name?: string | null;
-	card_number?: string | null;
-	athlete_name?: string | null;
-}
+import { buildEbayApiQuery } from '$lib/utils/ebay-title';
+import type { EbayCardInfo } from '$lib/utils/ebay-title';
+
+export type { EbayCardInfo as EbayQueryCard };
 
 /**
- * Build the eBay search query for a card.
+ * Build the eBay Browse API search query for a card.
  *
- * Format: "bo jackson battle arena {hero_name|name} {card_number}"
- * - athlete_name intentionally excluded: it over-narrows results and most
- *   eBay listings don't include the real athlete name in the title.
- * - "bo jackson battle arena" is the base phrase all sellers use.
+ * Format: Hero Name - Bo Jackson Battle Arena - Athlete Name - Card Number
+ * (weapon and parallel dropped for broader API search results)
  */
-export function buildEbaySearchQuery(card: EbayQueryCard): string {
-	const heroOrName = card.hero_name || card.name || '';
-	const cardNum = card.card_number || '';
-	return `bo jackson battle arena ${heroOrName} ${cardNum}`.trim();
+export function buildEbaySearchQuery(card: EbayCardInfo): string {
+	return buildEbayApiQuery(card);
 }
 
 /**
  * Filter eBay item summaries to those matching a specific card.
  *
- * Checks card_number (normalized for hyphens/spaces) and hero_name
- * against listing titles. Returns only items where at least one matches.
+ * Checks card_number, hero_name, and athlete_name against listing titles.
+ * Returns only items where at least one identifier matches.
  */
 export function filterRelevantListings<T extends { title?: string }>(
 	items: T[],
-	card: EbayQueryCard
+	card: EbayCardInfo
 ): T[] {
 	const cardNum = (card.card_number || '').toUpperCase();
 	const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 	const heroStr = (card.hero_name || card.name || '').toUpperCase();
+	const athleteStr = (card.athlete_name || '').toUpperCase();
 
 	return items.filter(item => {
 		if (!item.title) return false;
@@ -50,6 +44,8 @@ export function filterRelevantListings<T extends { title?: string }>(
 		}
 
 		if (heroStr && heroStr.length > 2 && t.includes(heroStr)) return true;
+
+		if (athleteStr && athleteStr.length > 2 && t.includes(athleteStr)) return true;
 
 		return false;
 	});

@@ -1,4 +1,5 @@
 import type { Card } from '$lib/types';
+import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 
 export interface ListingTemplate {
 	title: string;
@@ -13,28 +14,26 @@ export function generateListingTemplate(
 	condition = 'Near Mint'
 ): ListingTemplate {
 	const heroName = card.hero_name || card.name || 'Unknown';
-	const cardNum = card.card_number || '';
-	const setCode = card.set_code || '';
-	const rarity = card.rarity ? card.rarity.replace('_', ' ') : '';
-	const parallel = card.parallel || '';
 
-	// Build title: eBay max 80 chars, front-load with searchable terms
-	let title = `Bo Jackson Battle Arena ${heroName}`;
-	if (cardNum) title += ` #${cardNum}`;
-	if (parallel) title += ` ${parallel}`;
-	if (rarity && !title.toLowerCase().includes(rarity.toLowerCase())) title += ` ${rarity}`;
-	if (setCode && title.length + setCode.length + 3 < 80) title += ` - ${setCode}`;
-	title = title.substring(0, 80);
+	const title = buildEbayListingTitle({
+		hero_name: card.hero_name,
+		name: card.name,
+		athlete_name: card.athlete_name,
+		parallel: card.parallel,
+		weapon_type: card.weapon_type,
+		card_number: card.card_number
+	});
 
 	const descLines = [
 		`${heroName} - Bo Jackson Battle Arena Trading Card`,
 		'',
-		`Card Number: ${cardNum || 'N/A'}`,
-		`Set: ${setCode || 'N/A'}`,
-		`Rarity: ${rarity || 'N/A'}`,
-		parallel ? `Parallel: ${parallel}` : '',
+		`Card Number: ${card.card_number || 'N/A'}`,
+		`Set: ${card.set_code || 'N/A'}`,
+		card.athlete_name ? `Athlete: ${card.athlete_name}` : '',
+		card.parallel ? `Parallel: ${card.parallel}` : '',
 		card.weapon_type ? `Weapon Type: ${card.weapon_type}` : '',
 		card.power ? `Power: ${card.power}` : '',
+		card.rarity ? `Rarity: ${card.rarity.replace('_', ' ')}` : '',
 		'',
 		`Condition: ${condition}`,
 		'',

@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Batch fetch all card metadata in a single query instead of one per card
 	const { data: cardsData } = await supabase
 		.from('cards')
-		.select('id, hero_name, card_number, set_code')
+		.select('id, hero_name, athlete_name, card_number, set_code')
 		.in('id', cardIds);
 
 	const cardMap = new Map((cardsData || []).map(c => [c.id, c]));
