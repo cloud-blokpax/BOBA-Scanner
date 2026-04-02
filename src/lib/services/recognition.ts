@@ -231,7 +231,7 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 	if (!client) return;
 
 	try {
-		await client.from('scans').insert({
+		const { error: scanError } = await client.from('scans').insert({
 			user_id: uid,
 			card_id: result.card_id,
 			hero_name: result.card?.hero_name ?? null,
@@ -240,8 +240,11 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 			confidence: result.confidence ?? null,
 			processing_ms: result.processing_ms ?? null
 		});
+		if (scanError) {
+			console.error('[scan] Supabase scan log FAILED:', scanError.message);
+		}
 	} catch (err) {
-		console.debug('[scan] Supabase scan log failed:', err);
+		console.error('[scan] Supabase scan log exception:', err);
 	}
 }
 

@@ -52,13 +52,16 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					}
 				} else if (!existingUser) {
 					// No user record at all — create one
-					await locals.supabase.from('users').upsert({
+					const { error: profileError } = await locals.supabase.from('users').upsert({
 						id: user.id,
 						auth_user_id: user.id,
 						google_id: (user.user_metadata?.provider_id as string) || null,
 						email: user.email,
 						name: user.user_metadata?.full_name || user.email.split('@')[0]
 					}, { onConflict: 'id' });
+					if (profileError) {
+						console.error('[auth/callback] User profile upsert FAILED:', profileError.message);
+					}
 				}
 				// If existingUser has a different auth_user_id, skip — already linked to another auth account
 			}
