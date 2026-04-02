@@ -4,6 +4,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { formatPrice } from '$lib/utils';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import CardDetail from '$lib/components/CardDetail.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import {
 		BUILT_IN_TEMPLATES,
@@ -40,6 +41,8 @@
 
 	const items = $derived(collectionItems());
 	const loading = $derived(collectionLoading());
+
+	let selectedItem = $state<(typeof items)[number] | null>(null);
 
 	function buildExportRows(): Record<string, unknown>[] {
 		return items.map((item) => {
@@ -82,68 +85,6 @@
 		showToast(`Exported ${rows.length} cards`, 'check');
 	}
 
-	// ── eBay Draft Listing ──────────────────────────────────
-	let draftModalItem = $state<(typeof items)[number] | null>(null);
-	let draftPrice = $state('');
-	let draftQuantity = $state(1);
-	let draftLoading = $state(false);
-
-	function openDraftModal(item: (typeof items)[number]) {
-		draftModalItem = item;
-		draftPrice = '';
-		draftQuantity = 1;
-		draftLoading = false;
-	}
-
-	function closeDraftModal() {
-		draftModalItem = null;
-	}
-
-	async function createDraftListing() {
-		if (!draftModalItem?.card) return;
-		const price = parseFloat(draftPrice);
-		if (isNaN(price) || price <= 0) {
-			showToast('Enter a valid price', 'x');
-			return;
-		}
-
-		draftLoading = true;
-		try {
-			const card = draftModalItem.card;
-			const res = await fetch('/api/ebay/create-draft', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					cardId: card.id,
-					heroName: card.hero_name || card.name || '',
-					cardNumber: card.card_number || '',
-					setCode: card.set_code || '',
-					parallel: card.parallel || null,
-					weaponType: card.weapon_type || null,
-					power: card.power ?? null,
-					athleteName: card.athlete_name || null,
-					condition: draftModalItem.condition || 'near_mint',
-					price,
-					quantity: draftQuantity,
-					notes: draftModalItem.notes || null
-				})
-			});
-
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({ message: 'Failed to create listing' }));
-				showToast(err.message || 'Failed to create listing', 'x');
-				return;
-			}
-
-			showToast('Draft listing created in eBay Seller Hub!', 'check');
-			closeDraftModal();
-		} catch (err) {
-			console.error('[sell] Draft listing error:', err);
-			showToast('Failed to create listing', 'x');
-		} finally {
-			draftLoading = false;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -213,30 +154,25 @@
 					{@const card = item.card}
 					{@const ebayQuery = encodeURIComponent(`BoBA ${card?.hero_name || card?.name || ''} ${card?.card_number || ''}`)}
 					<div class="card-row">
-						<div class="card-row-thumb">
-							{#if item.scan_image_url}
-								<img src={item.scan_image_url} alt={card?.hero_name || card?.name || 'Card'} class="card-row-img" />
-							{:else if card?.image_url}
-								<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
-							{:else}
-								<span class="card-row-placeholder">🎴</span>
-							{/if}
-						</div>
-						<div class="card-row-info">
-							<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
-							<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="card-row-tappable" onclick={() => { selectedItem = item; }}>
+							<div class="card-row-thumb">
+								{#if item.scan_image_url}
+									<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="card-row-img" />
+								{:else if card?.image_url}
+									<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
+								{:else}
+									<span class="card-row-placeholder">🎴</span>
+								{/if}
+							</div>
+							<div class="card-row-info">
+								<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
+								<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
+							</div>
 						</div>
 						<div class="card-row-actions">
 							<span class="card-row-condition">{item.condition || 'NM'}</span>
-							{#if ebayConnected}
-								<button
-									class="card-row-list-btn"
-									onclick={() => openDraftModal(item)}
-									title="Create draft listing on eBay"
-								>
-									List
-								</button>
-							{/if}
 							<a
 								href="https://www.ebay.com/sch/i.html?_nkw={ebayQuery}&_sacat=0"
 								target="_blank"
@@ -253,64 +189,7 @@
 		{/if}
 	</div>
 
-	<!-- Draft Listing Modal -->
-	{#if draftModalItem}
-		{@const card = draftModalItem.card}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={closeDraftModal}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
-				<div class="modal-header">
-					<h3>List on eBay</h3>
-					<button class="modal-close" onclick={closeDraftModal}>&#x2715;</button>
-				</div>
-
-				<div class="modal-card-info">
-					<span class="modal-hero">{card?.hero_name || card?.name || 'Unknown'}</span>
-					<span class="modal-meta">
-						{card?.card_number || ''} · {card?.set_code || ''}{card?.parallel ? ` · ${card.parallel}` : ''}
-					</span>
-					{#if card?.athlete_name}
-						<span class="modal-athlete">Inspired by {card.athlete_name}</span>
-					{/if}
-				</div>
-
-				<div class="modal-fields">
-					<label class="modal-field">
-						<span class="modal-label">Price (USD)</span>
-						<input
-							type="number"
-							step="0.01"
-							min="0.01"
-							placeholder="0.00"
-							bind:value={draftPrice}
-							class="modal-input"
-						/>
-					</label>
-					<label class="modal-field">
-						<span class="modal-label">Quantity</span>
-						<input
-							type="number"
-							min="1"
-							max="99"
-							bind:value={draftQuantity}
-							class="modal-input modal-input-small"
-						/>
-					</label>
-				</div>
-
-				<p class="modal-note">Creates a draft in your eBay Seller Hub. Review and publish from there.</p>
-
-				<button
-					class="modal-submit"
-					onclick={createDraftListing}
-					disabled={draftLoading || !draftPrice}
-				>
-					{draftLoading ? 'Creating...' : 'Create Draft Listing'}
-				</button>
-			</div>
-		</div>
-	{/if}
+	<CardDetail item={selectedItem} ebayConnected={ebayConnected} onClose={() => { selectedItem = null; }} />
 </div>
 
 <style>
@@ -542,126 +421,16 @@
 		background: rgba(59, 130, 246, 0.1);
 	}
 
-	/* List button */
-	.card-row-list-btn {
-		padding: 0.25rem 0.5rem;
-		border-radius: 6px;
-		border: 1px solid #22c55e;
-		background: rgba(34, 197, 94, 0.1);
-		color: #22c55e;
-		font-size: 0.75rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.card-row-list-btn:hover {
-		background: rgba(34, 197, 94, 0.2);
-	}
-
-	/* Modal */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
+	/* Tappable card row */
+	.card-row-tappable {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-		padding: 1rem;
-	}
-	.modal-content {
-		background: var(--bg-elevated, #1e293b);
-		border-radius: 16px;
-		padding: 1.5rem;
-		width: 100%;
-		max-width: 380px;
-	}
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-	}
-	.modal-header h3 {
-		font-size: 1.1rem;
-		font-weight: 700;
-	}
-	.modal-close {
-		background: none;
-		border: none;
-		color: var(--text-tertiary);
-		font-size: 1.2rem;
-		cursor: pointer;
-	}
-	.modal-card-info {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		margin-bottom: 1.25rem;
-		padding: 0.75rem;
-		background: var(--bg-base, #0f172a);
-		border-radius: 10px;
-	}
-	.modal-hero {
-		font-weight: 600;
-		font-size: 1rem;
-	}
-	.modal-meta {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-	}
-	.modal-athlete {
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-		font-style: italic;
-	}
-	.modal-fields {
-		display: flex;
 		gap: 0.75rem;
-		margin-bottom: 1rem;
-	}
-	.modal-field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
 		flex: 1;
-	}
-	.modal-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-	}
-	.modal-input {
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color, #334155);
-		background: var(--bg-base, #0f172a);
-		color: var(--text-primary);
-		font-size: 1rem;
-	}
-	.modal-input-small {
-		max-width: 80px;
-	}
-	.modal-note {
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-		margin-bottom: 1rem;
-	}
-	.modal-submit {
-		width: 100%;
-		padding: 0.75rem;
-		border-radius: 10px;
-		border: none;
-		background: #22c55e;
-		color: #fff;
-		font-size: 0.9rem;
-		font-weight: 600;
+		min-width: 0;
 		cursor: pointer;
 	}
-	.modal-submit:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-	.modal-submit:hover:not(:disabled) {
-		background: #16a34a;
+	.card-row-tappable:hover {
+		opacity: 0.85;
 	}
 </style>
