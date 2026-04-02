@@ -149,6 +149,8 @@
 		const currentUser = user();
 		if (currentUser) {
 			loadProfile();
+		} else {
+			loading = false;
 		}
 	});
 
