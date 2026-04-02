@@ -17,10 +17,10 @@
 	const PARALLEL_OPTIONS = [
 		'battlefoil', 'silver', 'blue_battlefoil', 'orange_battlefoil', 'red_battlefoil',
 		'green_battlefoil', 'pink_battlefoil', 'blizzard', '80s_rad', 'grandmas_linoleum',
-		'great_grandmas_linoleum', 'headlines', 'red_headlines', 'orange_headlines',
-		'blue_headlines', 'icon', 'colosseum', 'logo', 'mixtape', 'miami_ice',
+		'great_grandmas_linoleum', 'headliner', 'blue_headliner', 'orange_headliner',
+		'red_headliner', 'icon', 'colosseum', 'logo', 'mixtape', 'miami_ice',
 		'fire_tracks', 'bubblegum', 'grillin', 'chillin', 'slime', 'alpha', 'alt',
-		'power_glove', 'inspired_ink', 'metallic_inspired_ink', 'super_parallel'
+		'power_glove', 'inspired_ink', 'metallic_inspired_ink', 'super_parallel', 'cj_maddox'
 	];
 	const CARD_TYPE_OPTIONS = ['play', 'bonus_play', 'hotdog'];
 

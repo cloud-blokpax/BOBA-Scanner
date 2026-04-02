@@ -24,20 +24,15 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 	// Named Inserts
 	'RAD': '80s_rad',
 	'BL': 'blizzard',
-	'BLBF': 'blizzard',
+	'BLBF': 'blizzard',         // alternate prefix seen in data
 	'GLBF': 'grandmas_linoleum',
 	'GGL': 'great_grandmas_linoleum',
-	'HD': 'headlines',
-	'RHBF': 'red_headlines',
-	'OHBF': 'orange_headlines',
-	'HBF': 'blue_headlines',
 	'MIX': 'mixtape',
 	'MI': 'miami_ice',
 	'FT': 'fire_tracks',
 	'BGBF': 'bubblegum',
 	'SL': 'slime',
 	'CHILL': 'chillin',
-	'CJ': 'grillin',
 	'LOGO': 'logo',
 	'CBF': 'colosseum',
 	'IBF': 'icon',
@@ -45,10 +40,22 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 	'PG': 'power_glove',
 	'ALT': 'alt',
 
+	// Headliners
+	'HBF': 'headliner',
+	'BHBF': 'blue_headliner',
+	'OHBF': 'orange_headliner',
+	'RHBF': 'red_headliner',
+
 	// Autographs / Inspired Ink
 	'BFA': 'inspired_ink',
-	'BBFA': 'inspired_ink',
+	'BBFA': 'inspired_ink',     // Blue BF Autograph variant (same parallel)
 	'MBFA': 'metallic_inspired_ink',
+
+	// Grillin
+	'GRILL': 'grillin',
+
+	// Sidekick
+	'CJ': 'cj_maddox',
 
 	// Superfoil
 	'SF': 'super_parallel',

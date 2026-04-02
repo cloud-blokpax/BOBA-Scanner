@@ -18,13 +18,13 @@
 	const PARALLEL_COLORS: Record<string, string> = {
 		silver: '#c0c0c0', blue_battlefoil: '#60a5fa', orange_battlefoil: '#f97316',
 		green_battlefoil: '#22c55e', pink_battlefoil: '#f472b6', red_battlefoil: '#ef4444',
-		blizzard: '#67e8f9', '80s_rad': '#f472b6', headlines: '#fbbf24',
+		blizzard: '#67e8f9', '80s_rad': '#f472b6', headliner: '#fbbf24',
 		power_glove: '#a855f7', mixtape: '#34d399', slime: '#22c55e',
 		inspired_ink: '#ffd700', super_parallel: '#ffd700', bubblegum: '#ff69b4',
 		miami_ice: '#06b6d4', fire_tracks: '#ef4444', icon: '#c084fc',
 		colosseum: '#d97706', logo: '#60a5fa', grillin: '#f97316', chillin: '#3b82f6',
-		alpha: '#a78bfa', battlefoil: '#60a5fa',
-		red_headlines: '#ef4444', orange_headlines: '#f97316', blue_headlines: '#60a5fa',
+		alpha: '#a78bfa', battlefoil: '#60a5fa', cj_maddox: '#34d399',
+		blue_headliner: '#60a5fa', orange_headliner: '#f97316', red_headliner: '#ef4444',
 		metallic_inspired_ink: '#ffd700', alt: '#a78bfa',
 	};
 

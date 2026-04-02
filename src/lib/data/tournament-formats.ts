@@ -30,7 +30,7 @@ export type CardPool =
 	| 'power_glove_only'          // Power Glove inserts only
 	| 'grannys_gum_only'          // Grandma's/Great Grandma's Linoleum + Bubblegum only
 	| 'blizzard_bowl_inserts'     // Blizzard, Rad, Grandma's Linoleum Battlefoils only
-	| 'silver_headlines_inserts'; // Silver and Headline Battlefoils only
+	| 'silver_headlines_inserts'; // Silver and Headliner Battlefoils only
 
 export interface FormatRules {
 	/** Unique format identifier */
@@ -642,7 +642,7 @@ export const TOURNAMENT_FORMATS: FormatRules[] = [
 		division: 'Themed',
 		cardPool: 'silver_headlines_inserts',
 		gameMode: 'playmaker',
-		allowedParallels: ['silver', 'headline', 'headlines'],
+		allowedParallels: ['silver', 'headliner'],
 		bonusPlaysAllowed: false,
 		maxBonusPlays: 0,
 		htdPlays: false,
