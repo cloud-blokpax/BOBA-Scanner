@@ -23,6 +23,7 @@ function paperHeroSlot(slotNumber: number): SlotConfig {
 	return {
 		slotNumber,
 		label: 'Hero (Paper)',
+		cardFormat: 'paper',
 		outcomes: [
 			{ type: 'weapon_rarity', value: 'steel', label: 'Steel', weight: 40 },
 			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl', weight: 40 },
@@ -37,6 +38,7 @@ function playSlot(slotNumber: number): SlotConfig {
 	return {
 		slotNumber,
 		label: 'Play (Paper)',
+		cardFormat: 'any',
 		outcomes: [
 			{ type: 'card_type', value: 'play', label: 'Standard Play', weight: 85 },
 			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play', weight: 15 }
@@ -49,6 +51,7 @@ function hotDogSlot(slotNumber: number): SlotConfig {
 	return {
 		slotNumber,
 		label: 'Hot Dog (Paper)',
+		cardFormat: 'any',
 		outcomes: [
 			{ type: 'card_type', value: 'hotdog', label: 'Hot Dog', weight: 100 }
 		]
@@ -60,6 +63,7 @@ function battlefoilHeroSlot(slotNumber: number): SlotConfig {
 	return {
 		slotNumber,
 		label: 'Battlefoil Hero',
+		cardFormat: 'battlefoil',
 		outcomes: [
 			{ type: 'weapon_rarity', value: 'steel', label: 'Steel BF', weight: 30 },
 			{ type: 'weapon_rarity', value: 'brawl', label: 'Brawl BF', weight: 30 },
@@ -79,14 +83,16 @@ export const BLASTER_SLOTS: SlotConfig[] = [
 	paperHeroSlot(3),
 	paperHeroSlot(4),
 	paperHeroSlot(5),
-	// Slot 6: Battlefoil or better (any parallel up to Super)
+	// Slot 6: Bonus parallel slot
 	{
 		slotNumber: 6,
-		label: 'Battlefoil+ Hero',
+		label: 'Bonus Parallel',
+		cardFormat: 'bonus',
 		outcomes: [
-			{ type: 'parallel', value: 'foil', label: 'Base Foil', weight: 40 },
-			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 12 },
-			{ type: 'parallel', value: 'headlines', label: 'Headlines', weight: 10 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 15 },
+			{ type: 'parallel', value: 'red_headlines', label: 'Red Headlines', weight: 10 },
+			{ type: 'parallel', value: 'blue_headlines', label: 'Blue Headlines', weight: 10 },
+			{ type: 'parallel', value: 'orange_headlines', label: 'Orange Headlines', weight: 10 },
 			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 10 },
 			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 8 },
 			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 8 },
@@ -116,43 +122,28 @@ export const DOUBLE_MEGA_SLOTS: SlotConfig[] = [
 	paperHeroSlot(3),
 	paperHeroSlot(4),
 	paperHeroSlot(5),
-	// Slot 6: Battlefoil+ hero OR bonus play (unique to Double Mega)
+	// Slot 6: Bonus parallel or bonus play (unique to Double Mega)
 	{
 		slotNumber: 6,
-		label: 'Battlefoil+ Hero / Bonus Play',
+		label: 'Bonus Parallel / Bonus Play',
+		cardFormat: 'bonus',
 		outcomes: [
-			{ type: 'parallel', value: 'foil', label: 'Base Foil Hero', weight: 35 },
-			{
-				type: 'parallel',
-				value: 'orange_battlefoil',
-				label: 'Orange BF Hero',
-				weight: 10
-			},
-			{ type: 'parallel', value: 'headlines', label: 'Headlines Hero', weight: 8 },
-			{
-				type: 'parallel',
-				value: 'power_glove',
-				label: 'Power Glove Hero',
-				weight: 8
-			},
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire Hero', weight: 7 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice Hero', weight: 7 },
-			{ type: 'weapon_rarity', value: 'glow', label: 'Glow Hero', weight: 4 },
-			{ type: 'weapon_rarity', value: 'hex', label: 'Hex Hero', weight: 2.5 },
-			{ type: 'weapon_rarity', value: 'gum', label: 'Gum Hero', weight: 2 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 12 },
+			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 8 },
+			{ type: 'parallel', value: 'grandmas_linoleum', label: "Grandma's Linoleum", weight: 8 },
+			{ type: 'parallel', value: 'great_grandmas_linoleum', label: "Great Grandma's Linoleum", weight: 5 },
+			{ type: 'parallel', value: 'grillin', label: "Grillin'", weight: 5 },
+			{ type: 'parallel', value: 'chillin', label: "Chillin'", weight: 5 },
+			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 5 },
+			{ type: 'parallel', value: 'icon', label: 'Icon', weight: 5 },
+			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 7 },
+			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 7 },
+			{ type: 'weapon_rarity', value: 'glow', label: 'Glow', weight: 4 },
+			{ type: 'weapon_rarity', value: 'hex', label: 'Hex', weight: 2.5 },
+			{ type: 'weapon_rarity', value: 'gum', label: 'Gum', weight: 2 },
 			{ type: 'weapon_rarity', value: 'super', label: 'Super 1/1', weight: 0.5 },
-			{
-				type: 'parallel',
-				value: 'inspired_ink',
-				label: 'Inspired Ink',
-				weight: 1
-			},
-			{
-				type: 'card_type',
-				value: 'bonus_play',
-				label: 'Bonus Play (DM Excl.)',
-				weight: 15
-			}
+			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 1 },
+			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play (DM Excl.)', weight: 15 }
 		]
 	},
 	// Slots 7-9: Play cards (always paper)
@@ -179,6 +170,7 @@ export const HOBBY_SLOTS: SlotConfig[] = [
 	{
 		slotNumber: 6,
 		label: 'Insert / Parallel Hero',
+		cardFormat: 'bonus',
 		outcomes: [
 			{ type: 'parallel', value: 'silver', label: 'Silver BF', weight: 8 },
 			{

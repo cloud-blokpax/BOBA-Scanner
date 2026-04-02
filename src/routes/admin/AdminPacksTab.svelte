@@ -15,10 +15,12 @@
 
 	const WEAPON_OPTIONS = getAllWeaponKeys();
 	const PARALLEL_OPTIONS = [
-		'foil', 'silver', 'blue_battlefoil', 'orange_battlefoil', 'red_battlefoil',
+		'battlefoil', 'silver', 'blue_battlefoil', 'orange_battlefoil', 'red_battlefoil',
 		'green_battlefoil', 'pink_battlefoil', 'blizzard', '80s_rad', 'grandmas_linoleum',
-		'headlines', 'icon', 'logo', 'mixtape', 'fire_tracks', 'bubblegum',
-		'grillin', 'chillin', 'slime', 'power_glove', 'inspired_ink', 'super_parallel'
+		'great_grandmas_linoleum', 'headlines', 'red_headlines', 'orange_headlines',
+		'blue_headlines', 'icon', 'colosseum', 'logo', 'mixtape', 'miami_ice',
+		'fire_tracks', 'bubblegum', 'grillin', 'chillin', 'slime', 'alpha', 'alt',
+		'power_glove', 'inspired_ink', 'metallic_inspired_ink', 'super_parallel'
 	];
 	const CARD_TYPE_OPTIONS = ['play', 'bonus_play', 'hotdog'];
 

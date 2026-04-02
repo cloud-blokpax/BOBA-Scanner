@@ -11,6 +11,7 @@
 
 import { idb } from './idb';
 import { loadParallelConfig, getParallelRarity } from './parallel-config';
+import { invalidateFeaturedCache } from './pack-simulator';
 import type { Card } from '$lib/types';
 import localPlayCards from '$lib/data/play-cards.json';
 
@@ -189,6 +190,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				}
 
 				buildIndexes();
+				invalidateFeaturedCache();
 				isLoaded = true;
 
 				// Background refresh from Supabase (non-blocking)
@@ -241,6 +243,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				cards = allCards;
 
 				buildIndexes();
+				invalidateFeaturedCache();
 				isLoaded = true;
 
 				// Cache in IDB for offline use
@@ -372,6 +375,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		}
 
 		buildIndexes();
+		invalidateFeaturedCache();
 		await applyParallelConfig();
 		try {
 			await idb.setCards(cards);
