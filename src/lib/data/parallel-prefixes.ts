@@ -6,6 +6,11 @@
  *
  * This is the single source of truth for prefix/parallel relationships.
  * Used by the pack simulator to pull only real cards from the database.
+ *
+ * Prefix formats:
+ * - Standard: PREFIX-NUMBER (e.g. BF-123, RAD-45)
+ * - Compound: PREFIX-VARIANT-NUMBER (e.g. BL-B123, BL-BG45) — Alpha Blast colors
+ * - Starter Kit: S-NUMBER/TOTAL (e.g. S-01/100)
  */
 
 /** Map from card_number prefix -> parallel key (matching boba-parallels.ts) */
@@ -23,8 +28,7 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 
 	// Named Inserts
 	'RAD': '80s_rad',
-	'BL': 'blizzard',
-	'BLBF': 'blizzard',         // alternate prefix seen in data
+	'BLBF': 'blizzard',
 	'GLBF': 'grandmas_linoleum',
 	'GGL': 'great_grandmas_linoleum',
 	'MIX': 'mixtape',
@@ -33,6 +37,7 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 	'BGBF': 'bubblegum',
 	'SL': 'slime',
 	'CHILL': 'chillin',
+	'GRILL': 'grillin',
 	'LOGO': 'logo',
 	'CBF': 'colosseum',
 	'IBF': 'icon',
@@ -46,19 +51,67 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 	'OHBF': 'orange_headliner',
 	'RHBF': 'red_headliner',
 
-	// Autographs / Inspired Ink
+	// Standard Autographs (Inspired Ink)
 	'BFA': 'inspired_ink',
-	'BBFA': 'inspired_ink',     // Blue BF Autograph variant (same parallel)
+	'BBFA': 'inspired_ink',       // Blue BF Autograph variant (same parallel)
 	'MBFA': 'metallic_inspired_ink',
 
-	// Grillin
-	'GRILL': 'grillin',
-
-	// Sidekick
-	'CJ': 'cj_maddox',
+	// Athlete-Specific Autograph Prefixes (ALL map to inspired_ink)
+	'AAA': 'inspired_ink', 'ABA': 'inspired_ink', 'ACA': 'inspired_ink',
+	'ADPA': 'inspired_ink', 'ALTA': 'inspired_ink',
+	'BGA': 'inspired_ink', 'BOJA': 'inspired_ink', 'BWA': 'inspired_ink',
+	'CBA': 'inspired_ink', 'CFA': 'inspired_ink', 'CHMA': 'inspired_ink',
+	'CMA': 'inspired_ink', 'CPRA': 'inspired_ink', 'CYBA': 'inspired_ink',
+	'DEA': 'inspired_ink', 'DHA': 'inspired_ink', 'DMWA': 'inspired_ink',
+	'DOA': 'inspired_ink', 'DPA': 'inspired_ink', 'DSA': 'inspired_ink',
+	'EDDA': 'inspired_ink', 'EDLCA': 'inspired_ink',
+	'EGA': 'inspired_ink', 'EMA': 'inspired_ink',
+	'FFA': 'inspired_ink', 'FHA': 'inspired_ink',
+	'GAA': 'inspired_ink', 'GBA': 'inspired_ink',
+	'HLA': 'inspired_ink',
+	'JAA': 'inspired_ink', 'JBA': 'inspired_ink', 'JBNA': 'inspired_ink',
+	'JBOA': 'inspired_ink', 'JEA': 'inspired_ink', 'JHA': 'inspired_ink',
+	'JKMA': 'inspired_ink', 'JLPA': 'inspired_ink', 'JPA': 'inspired_ink',
+	'JRA': 'inspired_ink', 'JSA': 'inspired_ink', 'JSTA': 'inspired_ink',
+	'KAA': 'inspired_ink', 'KGJA': 'inspired_ink', 'KGSA': 'inspired_ink',
+	'KHA': 'inspired_ink',
+	'MCA': 'inspired_ink', 'MRA': 'inspired_ink',
+	'PBA': 'inspired_ink', 'PEA': 'inspired_ink', 'PGA': 'inspired_ink',
+	'PMA': 'inspired_ink',
+	'RCA': 'inspired_ink', 'RFA': 'inspired_ink', 'RJA': 'inspired_ink',
+	'RQA': 'inspired_ink', 'RSA': 'inspired_ink', 'RYA': 'inspired_ink',
+	'SFA': 'inspired_ink', 'SGA': 'inspired_ink', 'SKA': 'inspired_ink',
+	'SMA': 'inspired_ink', 'SPA': 'inspired_ink', 'SRA': 'inspired_ink',
+	'SSA': 'inspired_ink',
+	'TAA': 'inspired_ink', 'TGA': 'inspired_ink', 'THA': 'inspired_ink',
+	'THAA': 'inspired_ink', 'THRA': 'inspired_ink', 'TRA': 'inspired_ink',
+	'VGSA': 'inspired_ink',
 
 	// Superfoil
 	'SF': 'super_parallel',
+
+	// Sidekicks
+	'CJ': 'cj_maddox',
+	'BILLY': 'billy',
+
+	// Other parallels
+	'CYB': 'cyber',
+	'RPU': 'rookie_power_up',
+	'P': 'promo',
+	'PIA': 'alt',                  // PIA-EP = Pet Dog Alt Inspired Ink Battlefoil
+
+	// Alpha Blast Color Parallels (compound prefix with hyphen)
+	'BL-B': 'blue_blast',
+	'BL-BG': 'bubblegum_blast',
+	'BL-G': 'green_blast',
+	'BL-O': 'orange_blast',
+	'BL-P': 'pink_blast',
+	'BL-S': 'super_blast',
+	'BL-SK': 'sidekick_blast',
+
+	// Crossover / Sets (recognized but not pullable in standard pack sim)
+	'BLC': 'blast_crossover',
+	'S': 'starter_kit',
 };
 
 /** Map from parallel key -> list of valid card_number prefixes */
@@ -74,6 +127,14 @@ for (const [prefix, parallel] of Object.entries(PREFIX_TO_PARALLEL)) {
 
 // Add special entries
 PARALLEL_TO_PREFIXES['paper'] = [];  // Paper = no prefix (numeric only)
+
+/**
+ * Compound prefixes sorted by length descending for longest-match-first lookup.
+ * These are prefixes that contain a hyphen (e.g. BL-BG, BL-B).
+ */
+const COMPOUND_PREFIXES = Object.keys(PREFIX_TO_PARALLEL)
+	.filter(k => k.includes('-'))
+	.sort((a, b) => b.length - a.length);
 
 /**
  * Determine if a card_number is "paper" (no letter prefix, numeric only).
@@ -100,7 +161,17 @@ export function cardMatchesParallel(cardNumber: string, parallelKey: string): bo
 	if (!prefixes || prefixes.length === 0) return false;
 
 	const upper = cardNumber.toUpperCase().trim();
-	return prefixes.some(p => upper.startsWith(p + '-'));
+	return prefixes.some(p => {
+		// Compound prefixes (e.g., 'BL-B') already contain the hyphen
+		if (p.includes('-')) {
+			return upper.startsWith(p);
+		}
+		if (p === 'S') {
+			// Starter Kit: S-01/100, S-101A, etc.
+			return /^S-\d/i.test(upper);
+		}
+		return upper.startsWith(p + '-');
+	});
 }
 
 /**
@@ -112,11 +183,24 @@ export function getParallelFromCardNumber(cardNumber: string): string | null {
 	const trimmed = cardNumber.trim();
 	if (isPaperCardNumber(trimmed)) return 'paper';
 
-	const match = trimmed.match(/^([A-Z]+)-/i);
+	const upper = trimmed.toUpperCase();
+
+	// Check compound prefixes first (longest match wins)
+	// e.g. BL-BG must match before BL-B
+	for (const prefix of COMPOUND_PREFIXES) {
+		if (upper.startsWith(prefix)) {
+			return PREFIX_TO_PARALLEL[prefix];
+		}
+	}
+
+	// Starter Kit: S-01/100, S-107/100, etc.
+	if (/^S-\d/.test(upper)) return 'starter_kit';
+
+	// Standard PREFIX-NUMBER format
+	const match = upper.match(/^([A-Z]+)-/);
 	if (!match) return null;
 
-	const prefix = match[1].toUpperCase();
-	return PREFIX_TO_PARALLEL[prefix] || null;
+	return PREFIX_TO_PARALLEL[match[1]] || null;
 }
 
 /**

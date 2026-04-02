@@ -39,7 +39,8 @@ import type {
 /**
  * Derive which hero names are "featured" per set.
  * A hero is featured in a set if any card with the same hero_name
- * and same set_code has a BFA- prefix (Inspired Ink autograph).
+ * and same set_code has an Inspired Ink autograph prefix (BFA-, BBFA-, MBFA-,
+ * or any of the 71 athlete-specific auto prefixes like KGJA-, JBOA-, etc.).
  *
  * Featured heroes are ~5x rarer than non-featured in pack pulls.
  */
@@ -51,9 +52,9 @@ function buildFeaturedHeroSets(
 	for (const card of allCards) {
 		if (!card.card_number || !card.hero_name || !card.set_code) continue;
 
-		const upper = card.card_number.toUpperCase().trim();
-		// BFA-, BBFA-, MBFA- are all Inspired Ink variants
-		if (upper.startsWith('BFA-') || upper.startsWith('BBFA-') || upper.startsWith('MBFA-')) {
+		// Check if this card's prefix maps to inspired_ink or metallic_inspired_ink
+		const parallel = getParallelFromCardNumber(card.card_number);
+		if (parallel === 'inspired_ink' || parallel === 'metallic_inspired_ink') {
 			const setKey = card.set_code.toUpperCase();
 			if (!featured.has(setKey)) featured.set(setKey, new Set());
 			featured.get(setKey)!.add(card.hero_name.toUpperCase().trim());
