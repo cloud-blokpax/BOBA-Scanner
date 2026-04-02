@@ -2,6 +2,8 @@
 	import { browser } from '$app/environment';
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
+	import CardDetail from '$lib/components/CardDetail.svelte';
+	import type { CollectionItem } from '$lib/types';
 	import { onMount } from 'svelte';
 	import { scanHistory, removeFromScanHistory } from '$lib/stores/scan-history.svelte';
 	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
@@ -37,25 +39,27 @@
 	let uploading = $state(false);
 	let tournamentCode = $state('');
 
-	// Recent scan detail state
-	let selectedScanResult = $state<ScanResult | null>(null);
-	let selectedScanImageUrl = $state<string | null>(null);
+	// Recent scan detail state — opens CardDetail sheet
+	let selectedRecentItem = $state<CollectionItem | null>(null);
 
 	function openRecentScan(scan: typeof recentScans[number]) {
-		const card = scan.cardId ? getCardById(scan.cardId) ?? null : null;
-		selectedScanResult = {
-			card_id: scan.cardId ?? null,
-			card,
-			scan_method: (scan.method === 'unknown' ? 'claude' : scan.method) as ScanMethod,
-			confidence: scan.confidence,
-			processing_ms: scan.processingMs
+		const card = scan.cardId ? getCardById(scan.cardId) ?? undefined : undefined;
+		const imageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null);
+		selectedRecentItem = {
+			id: scan.id || `scan-${scan.timestamp}`,
+			user_id: data.user?.id || '',
+			card_id: scan.cardId || '',
+			quantity: 1,
+			condition: 'near_mint',
+			notes: null,
+			added_at: new Date(scan.timestamp).toISOString(),
+			scan_image_url: imageUrl,
+			card
 		};
-		selectedScanImageUrl = scan.imageUrl || (scan.cardId ? getCardImageUrl({ id: scan.cardId }) : null);
 	}
 
 	function dismissSelectedScan() {
-		selectedScanResult = null;
-		selectedScanImageUrl = null;
+		selectedRecentItem = null;
 	}
 
 	let tournamentLoading = $state(false);
@@ -463,15 +467,7 @@
 <div class="dashboard">
 	{#if data.user}
 		<!-- Recent scan detail overlay -->
-		{#if selectedScanResult}
-			<ScanConfirmation
-				result={selectedScanResult}
-				capturedImageUrl={selectedScanImageUrl}
-				isAuthenticated={!!data.user}
-				onScanAnother={dismissSelectedScan}
-				onClose={dismissSelectedScan}
-			/>
-		{/if}
+		<CardDetail item={selectedRecentItem} ebayConnected={false} onClose={dismissSelectedScan} />
 
 		<!-- Upload scan result overlay -->
 		{#if uploadResult}
