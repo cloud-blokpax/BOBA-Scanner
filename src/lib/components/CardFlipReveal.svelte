@@ -83,6 +83,7 @@
 		position: relative;
 		width: 100%;
 		aspect-ratio: 2.5 / 3.5;
+		-webkit-transform-style: preserve-3d;
 		transform-style: preserve-3d;
 		transition: transform 450ms ease-in-out;
 	}
@@ -100,6 +101,7 @@
 	.flip-face {
 		position: absolute;
 		inset: 0;
+		-webkit-backface-visibility: hidden;
 		backface-visibility: hidden;
 		border-radius: 12px;
 		overflow: hidden;
