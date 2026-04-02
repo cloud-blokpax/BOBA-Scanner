@@ -5,8 +5,6 @@
 	import WIcon from '$lib/components/war-room/WIcon.svelte';
 	import AnimatedNum from '$lib/components/war-room/AnimatedNum.svelte';
 	import {
-		HEROES,
-		PLAYS,
 		PAR_ORDER,
 		PARALLEL_COLORS,
 		RARITY_COLORS,
@@ -15,6 +13,8 @@
 	} from '$lib/components/war-room/war-room-data';
 
 	// ── State ────────────────────────────────────────────
+	let heroes = $state<HeroCard[]>([]);
+	let plays = $state<PlayCard[]>([]);
 	let pFilter = $state<string | null>(null);
 	let wFilter = $state<string | null>(null);
 	let sortBy = $state<'ppp' | 'price' | 'power' | 'listings'>('ppp');
@@ -22,9 +22,23 @@
 	let loaded = $state(false);
 	let showPlays = $state(false);
 	let playSort = $state<'dpd' | 'price' | 'dbs'>('dpd');
+	let loadError = $state<string | null>(null);
+	let dataLoading = $state(true);
 
-	onMount(() => {
-		setTimeout(() => (loaded = true), 60);
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/market/war-room');
+			if (!res.ok) throw new Error(`${res.status}`);
+			const data = await res.json();
+			heroes = data.heroes;
+			plays = data.plays;
+		} catch (err) {
+			console.error('[war-room] Failed to load live data:', err);
+			loadError = 'Failed to load market data';
+		} finally {
+			dataLoading = false;
+			setTimeout(() => (loaded = true), 60);
+		}
 	});
 
 	// ── Parallel stats ──────────────────────────────────
@@ -41,7 +55,7 @@
 
 	const parStats: ParStat[] = $derived.by(() => {
 		const g: Record<string, { n: number; ls: number; bn: number; pr: number[]; pw: number[] }> = {};
-		HEROES.forEach((h) => {
+		heroes.forEach((h) => {
 			if (!g[h.p]) g[h.p] = { n: 0, ls: 0, bn: 0, pr: [], pw: [] };
 			const x = g[h.p];
 			x.n++;
@@ -75,7 +89,7 @@
 
 	// ── Filtered heroes ─────────────────────────────────
 	const filtered = $derived.by(() => {
-		let l = [...HEROES];
+		let l = [...heroes];
 		if (pFilter) l = l.filter((h) => h.p === pFilter);
 		if (wFilter) l = l.filter((h) => h.w === wFilter);
 		if (sortBy === 'ppp') l.sort((a, b) => a.ppp - b.ppp);
@@ -87,7 +101,7 @@
 
 	// ── Weapon stats ────────────────────────────────────
 	const weaponStats = $derived.by(() => {
-		const src = pFilter ? HEROES.filter((h) => h.p === pFilter) : HEROES;
+		const src = pFilter ? heroes.filter((h) => h.p === pFilter) : heroes;
 		const g: Record<string, { n: number; pr: number[]; pw: number[] }> = {};
 		src.forEach((h) => {
 			if (!g[h.w]) g[h.w] = { n: 0, pr: [], pw: [] };
@@ -121,7 +135,7 @@
 
 	// ── Sorted plays ────────────────────────────────────
 	const sortedPlays = $derived.by(() => {
-		const l = [...PLAYS];
+		const l = [...plays];
 		if (playSort === 'dpd') l.sort((a, b) => (a.dpd ?? 999) - (b.dpd ?? 999));
 		else if (playSort === 'price') l.sort((a, b) => a.mid - b.mid);
 		else if (playSort === 'dbs') l.sort((a, b) => b.dbs - a.dbs);
@@ -159,6 +173,18 @@
 </svelte:head>
 
 <div class="war-room">
+	{#if dataLoading}
+		<div class="loading-state">
+			<div class="spinner"></div>
+			<p>Loading market data...</p>
+		</div>
+	{:else if loadError}
+		<div class="error-state">
+			<p>{loadError}</p>
+			<button onclick={() => location.reload()}>Retry</button>
+		</div>
+	{/if}
+
 	<!-- HERO SECTION -->
 	<div class="hero-section" class:loaded>
 		<div class="hero-badge">
@@ -297,7 +323,7 @@
 				</div>
 				<div class="plays-toggle-text">
 					<div class="plays-toggle-title">Play card market</div>
-					<div class="plays-toggle-desc">{PLAYS.length} plays · DBS efficiency · rarity pricing</div>
+					<div class="plays-toggle-desc">{plays.length} plays · DBS efficiency · rarity pricing</div>
 				</div>
 			</div>
 			<svg
@@ -775,5 +801,40 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+
+	/* ── Loading / Error states ── */
+	.loading-state,
+	.error-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 48px 20px;
+		gap: 12px;
+		color: #6b7d8e;
+		font-size: 13px;
+	}
+	.spinner {
+		width: 28px;
+		height: 28px;
+		border: 3px solid rgba(245, 158, 11, 0.2);
+		border-top-color: #f59e0b;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+	.error-state button {
+		padding: 6px 16px;
+		border-radius: 8px;
+		background: rgba(245, 158, 11, 0.1);
+		border: 1px solid rgba(245, 158, 11, 0.3);
+		color: #f59e0b;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		font-family: inherit;
 	}
 </style>

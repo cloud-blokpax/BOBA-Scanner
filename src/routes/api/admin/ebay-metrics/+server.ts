@@ -74,7 +74,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// default 1000-row limit and handle tables with 100K+ rows.
 		const [heroTotalRes, playCardsRes, priceCacheRows, harvestCardIds] = await Promise.all([
 			admin.from('cards').select('id', { count: 'exact', head: true }),
-			admin.from('play_cards').select('id, card_number'),
+			admin.from('play_cards').select('id, card_number').limit(20000),
 			// Paginate price_cache — need card_id + price_mid for classification
 			(async () => {
 				const rows: Array<{ card_id: string; price_mid: number | null }> = [];
