@@ -12,10 +12,15 @@
 		status: string;
 		is_valid: boolean;
 		hero_count: number;
+		hero_cards: Array<Record<string, unknown>>;
+		play_entries: Array<Record<string, unknown>>;
+		hot_dog_count: number;
+		foil_hot_dog_count: number;
 		dbs_total: number | null;
 		avg_power: number | null;
 		total_power: number;
 		validation_violations: Array<{ rule: string; message: string }>;
+		validation_warnings: string[];
 		submitted_at: string;
 		verification_code: string | null;
 	}
@@ -51,6 +56,14 @@
 	let useLegacyView = $state(false);
 	let loading = $state(true);
 	let errorMsg = $state<string | null>(null);
+	let expandedSubmission = $state<string | null>(null);
+
+	function getPlayCounts(sub: DeckSubmission) {
+		const plays = (sub.play_entries || []);
+		const standard = plays.filter(p => !String(p.card_number || '').startsWith('BPL-')).length;
+		const bonus = plays.filter(p => String(p.card_number || '').startsWith('BPL-')).length;
+		return { standard, bonus };
+	}
 
 	onMount(async () => {
 		const id = $page.url.searchParams.get('id');
@@ -110,7 +123,7 @@
 			// Load deck submissions (modern flow)
 			const { data: subData, error: subError } = await client
 				.from('deck_submissions')
-				.select('id, player_name, player_email, player_discord, status, is_valid, hero_count, dbs_total, avg_power, total_power, validation_violations, submitted_at, verification_code')
+				.select('id, player_name, player_email, player_discord, status, is_valid, hero_count, hero_cards, play_entries, hot_dog_count, foil_hot_dog_count, dbs_total, avg_power, total_power, validation_violations, validation_warnings, submitted_at, verification_code')
 				.eq('tournament_id', id)
 				.order('submitted_at', { ascending: true });
 
@@ -292,45 +305,113 @@
 		{:else}
 			<div class="registrations-list">
 				{#each submissions as sub, i}
-					<div class="registration-card">
-						<div class="reg-header">
-							<span class="reg-number">#{i + 1}</span>
-							<div class="reg-badges">
-								{#if sub.is_valid}
-									<span class="valid-badge">Valid</span>
-								{:else}
-									<span class="invalid-badge">Invalid</span>
-								{/if}
-								<span class="status-badge {sub.status}">{sub.status}</span>
+					{@const counts = getPlayCounts(sub)}
+					<div class="registration-card" class:expandable={true}>
+						<button class="card-toggle" onclick={() => expandedSubmission = expandedSubmission === sub.id ? null : sub.id}>
+							<div class="reg-header">
+								<span class="reg-number">#{i + 1}</span>
+								<div class="reg-badges">
+									{#if sub.is_valid}
+										<span class="valid-badge">Valid</span>
+									{:else}
+										<span class="invalid-badge">Invalid</span>
+									{/if}
+									<span class="status-badge {sub.status}">{sub.status}</span>
+								</div>
+								<span class="reg-date">{formatDate(sub.submitted_at)}</span>
 							</div>
-							<span class="reg-date">{formatDate(sub.submitted_at)}</span>
-						</div>
-						<div class="reg-details">
-							<div class="reg-field">
-								<span class="reg-label">Name</span>
-								<span class="reg-value">{sub.player_name}</span>
-							</div>
-							<div class="reg-field">
-								<span class="reg-label">Email</span>
-								<span class="reg-value">{sub.player_email}</span>
-							</div>
-							{#if sub.player_discord}
+							<div class="reg-details">
 								<div class="reg-field">
-									<span class="reg-label">Discord</span>
-									<span class="reg-value">{sub.player_discord}</span>
+									<span class="reg-label">Name</span>
+									<span class="reg-value">{sub.player_name}</span>
+								</div>
+								<div class="reg-field">
+									<span class="reg-label">Email</span>
+									<span class="reg-value">{sub.player_email}</span>
+								</div>
+								{#if sub.player_discord}
+									<div class="reg-field">
+										<span class="reg-label">Discord</span>
+										<span class="reg-value">{sub.player_discord}</span>
+									</div>
+								{/if}
+							</div>
+							<div class="reg-stats">
+								<span>Heroes: {sub.hero_count}</span>
+								<span>Plays: {counts.standard}</span>
+								{#if counts.bonus > 0}
+									<span>Bonus: {counts.bonus}</span>
+								{/if}
+								<span>DBS: {sub.dbs_total ?? '—'}</span>
+								<span>Avg PWR: {sub.avg_power != null ? Math.round(sub.avg_power) : '—'}</span>
+							</div>
+							{#if !sub.is_valid && sub.validation_violations.length > 0}
+								<div class="violations">
+									{#each sub.validation_violations as v}
+										<span class="violation">{v.message}</span>
+									{/each}
 								</div>
 							{/if}
-						</div>
-						<div class="reg-stats">
-							<span>Heroes: {sub.hero_count}</span>
-							<span>DBS: {sub.dbs_total ?? '—'}</span>
-							<span>Avg PWR: {sub.avg_power != null ? Math.round(sub.avg_power) : '—'}</span>
-						</div>
-						{#if !sub.is_valid && sub.validation_violations.length > 0}
-							<div class="violations">
-								{#each sub.validation_violations as v}
-									<span class="violation">{v.message}</span>
-								{/each}
+						</button>
+
+						{#if expandedSubmission === sub.id}
+							<div class="expanded-content">
+								<div class="deck-section">
+									<h4>Heroes ({sub.hero_cards?.length || 0})</h4>
+									<div class="card-list">
+										{#each (sub.hero_cards || []) as card}
+											<div class="card-row">
+												<span class="card-num">{card.card_number}</span>
+												<span class="card-name">{card.hero_name}</span>
+												<span class="card-power">PWR {card.power}</span>
+												<span class="card-weapon">{card.weapon_type}</span>
+											</div>
+										{/each}
+									</div>
+								</div>
+
+								{#if sub.play_entries?.length > 0}
+									{@const standardPlays = sub.play_entries.filter(p => !String(p.card_number || '').startsWith('BPL-'))}
+									{@const bonusPlays = sub.play_entries.filter(p => String(p.card_number || '').startsWith('BPL-'))}
+									{#if standardPlays.length > 0}
+										<div class="deck-section">
+											<h4>Plays ({standardPlays.length})</h4>
+											<div class="card-list">
+												{#each standardPlays as play}
+													<div class="card-row">
+														<span class="card-num">{play.card_number}</span>
+														<span class="card-name">{play.name}</span>
+														<span class="card-dbs">DBS {play.dbs_score ?? '—'}</span>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
+									{#if bonusPlays.length > 0}
+										<div class="deck-section">
+											<h4>Bonus Plays ({bonusPlays.length})</h4>
+											<div class="card-list">
+												{#each bonusPlays as play}
+													<div class="card-row">
+														<span class="card-num">{play.card_number}</span>
+														<span class="card-name">{play.name}</span>
+														<span class="card-dbs">DBS {play.dbs_score ?? '—'}</span>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
+								{/if}
+
+								<div class="deck-section">
+									<h4>Hot Dogs: {sub.hot_dog_count ?? 0}{sub.foil_hot_dog_count ? ` (${sub.foil_hot_dog_count} foil)` : ''}</h4>
+								</div>
+
+								{#if sub.verification_code}
+									<div class="sub-meta">
+										<span>Verify: <code>{sub.verification_code}</code></span>
+									</div>
+								{/if}
 							</div>
 						{/if}
 					</div>
@@ -455,6 +536,7 @@
 		background: var(--bg-elevated);
 		border-radius: 12px;
 		padding: 1rem;
+		border: 1px solid transparent;
 	}
 	.reg-header {
 		display: flex;
@@ -549,6 +631,7 @@
 	.reg-stats {
 		display: flex;
 		gap: 1rem;
+		flex-wrap: wrap;
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		padding-top: 0.5rem;
@@ -563,5 +646,84 @@
 	.violation {
 		font-size: 0.75rem;
 		color: #ef4444;
+		text-align: left;
+	}
+
+	/* Expandable card */
+	.card-toggle {
+		display: block;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.expandable {
+		transition: border-color 0.15s;
+	}
+	.expandable:hover {
+		border-color: var(--accent-primary);
+	}
+
+	/* Expanded deck view */
+	.expanded-content {
+		padding-top: 0.75rem;
+		margin-top: 0.75rem;
+		border-top: 1px solid var(--border-color);
+	}
+	.deck-section { margin-bottom: 0.75rem; }
+	.deck-section h4 {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: var(--text-secondary);
+		margin-bottom: 0.375rem;
+	}
+	.card-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		max-height: 300px;
+		overflow-y: auto;
+	}
+	.card-row {
+		display: flex;
+		gap: 0.5rem;
+		font-size: 0.8rem;
+		padding: 2px 0;
+	}
+	.card-num {
+		color: var(--text-tertiary);
+		min-width: 60px;
+		font-family: monospace;
+		font-size: 0.75rem;
+	}
+	.card-name { flex: 1; }
+	.card-power {
+		color: var(--accent-gold, #f59e0b);
+		font-weight: 600;
+		font-size: 0.75rem;
+	}
+	.card-weapon {
+		color: var(--text-tertiary);
+		font-size: 0.75rem;
+		text-transform: capitalize;
+	}
+	.card-dbs {
+		color: var(--accent-primary);
+		font-weight: 600;
+		font-size: 0.75rem;
+	}
+	.sub-meta {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		margin-top: 0.5rem;
+	}
+	.sub-meta code {
+		font-size: 0.7rem;
+		background: var(--bg-base);
+		padding: 1px 4px;
+		border-radius: 3px;
 	}
 </style>

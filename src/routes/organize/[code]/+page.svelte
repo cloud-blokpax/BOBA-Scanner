@@ -93,6 +93,13 @@
 	const validCount = $derived(submissions.filter((s) => s.is_valid).length);
 	const invalidCount = $derived(submissions.filter((s) => !s.is_valid).length);
 
+	function getPlayCounts(sub: DeckSubmission) {
+		const plays = (sub.play_entries || []);
+		const standard = plays.filter(p => !String(p.card_number || '').startsWith('BPL-')).length;
+		const bonus = plays.filter(p => String(p.card_number || '').startsWith('BPL-')).length;
+		return { standard, bonus };
+	}
+
 	const isOpen = $derived.by(() => {
 		if (tournament.registration_closed) return false;
 		if (data.isDeadlinePassed) return false;
@@ -318,6 +325,7 @@
 								<th>Player</th>
 								<th>Valid</th>
 								<th>Heroes</th>
+								<th>Plays</th>
 								<th>DBS</th>
 								<th>Avg PWR</th>
 								<th>Status</th>
@@ -326,6 +334,7 @@
 						</thead>
 						<tbody>
 							{#each submissions as sub}
+								{@const counts = getPlayCounts(sub)}
 								<tr class:expanded={expandedSubmission === sub.id}>
 									<td>
 										<div class="player-cell">
@@ -341,6 +350,7 @@
 										{/if}
 									</td>
 									<td>{sub.hero_count}</td>
+									<td>{counts.standard}{counts.bonus > 0 ? ` + ${counts.bonus}` : ''}</td>
 									<td>{sub.dbs_total ?? '—'}</td>
 									<td>{sub.avg_power ?? '—'}</td>
 									<td><span class="status-badge {sub.status}">{sub.status}</span></td>
@@ -355,7 +365,7 @@
 								</tr>
 								{#if expandedSubmission === sub.id}
 									<tr class="expanded-row">
-										<td colspan="7">
+										<td colspan="8">
 											<div class="expanded-content">
 												<div class="deck-section">
 													<h4>Heroes ({sub.hero_cards?.length || 0})</h4>
@@ -372,18 +382,36 @@
 												</div>
 
 												{#if sub.play_entries?.length > 0}
-													<div class="deck-section">
-														<h4>Plays ({sub.play_entries.length})</h4>
-														<div class="card-list">
-															{#each sub.play_entries as play}
-																<div class="card-row">
-																	<span class="card-num">{play.card_number}</span>
-																	<span class="card-name">{play.name}</span>
-																	<span class="card-dbs">DBS {play.dbs_score ?? '—'}</span>
-																</div>
-															{/each}
+													{@const stdPlays = sub.play_entries.filter(p => !String(p.card_number || '').startsWith('BPL-'))}
+													{@const bnsPlays = sub.play_entries.filter(p => String(p.card_number || '').startsWith('BPL-'))}
+													{#if stdPlays.length > 0}
+														<div class="deck-section">
+															<h4>Plays ({stdPlays.length})</h4>
+															<div class="card-list">
+																{#each stdPlays as play}
+																	<div class="card-row">
+																		<span class="card-num">{play.card_number}</span>
+																		<span class="card-name">{play.name}</span>
+																		<span class="card-dbs">DBS {play.dbs_score ?? '—'}</span>
+																	</div>
+																{/each}
+															</div>
 														</div>
-													</div>
+													{/if}
+													{#if bnsPlays.length > 0}
+														<div class="deck-section">
+															<h4>Bonus Plays ({bnsPlays.length})</h4>
+															<div class="card-list">
+																{#each bnsPlays as play}
+																	<div class="card-row">
+																		<span class="card-num">{play.card_number}</span>
+																		<span class="card-name">{play.name}</span>
+																		<span class="card-dbs">DBS {play.dbs_score ?? '—'}</span>
+																	</div>
+																{/each}
+															</div>
+														</div>
+													{/if}
 												{/if}
 
 												<div class="deck-section">
