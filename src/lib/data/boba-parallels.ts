@@ -68,8 +68,27 @@ export const PARALLEL_TYPES: ParallelType[] = [
 	{ name: 'Alt', key: 'alt', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'Alternate art variant', serialization: null },
 	{ name: 'Power Glove', key: 'power_glove', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['2026_edition'], description: '2026 Edition power glove themed insert', serialization: null },
 
-	// --- Sidekick ---
+	// --- Sidekicks ---
 	{ name: 'CJ Maddox', key: 'cj_maddox', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'CJ Maddox sidekick card (CJ prefix)', serialization: null },
+	{ name: 'Billy', key: 'billy', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'Billy sidekick card (BILLY prefix)', serialization: null },
+
+	// --- New parallels ---
+	{ name: 'Cyber', key: 'cyber', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['hobby', 'collector'], description: 'Cyber parallel (CYB prefix)', serialization: null },
+	{ name: 'Rookie Power Up', key: 'rookie_power_up', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'Rookie Power Up (RPU prefix)', serialization: null },
+	{ name: 'Promo', key: 'promo', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['promo'], description: 'Promotional cards (P prefix)', serialization: null },
+
+	// --- Alpha Blast Color Parallels ---
+	{ name: 'Blue Blast', key: 'blue_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Blue Blast parallel (BL-B prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Bubble Gum Blast', key: 'bubblegum_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Bubble Gum Blast parallel (BL-BG prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Green Blast', key: 'green_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Green Blast parallel (BL-G prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Orange Blast', key: 'orange_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Orange Blast parallel (BL-O prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Pink Blast', key: 'pink_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Pink Blast parallel (BL-P prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Super Blast', key: 'super_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Super Blast parallel (BL-S prefix, Alpha Blast set)', serialization: null },
+	{ name: 'Sidekick Blast', key: 'sidekick_blast', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Sidekick Blast parallel (BL-SK prefix, Alpha Blast set)', serialization: null },
+
+	// --- Sets (recognized for prefix matching, not standard parallels) ---
+	{ name: 'Starter Kit', key: 'starter_kit', isFoilTreatment: false, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['starter_kit'], description: 'Starter Kit cards (S-XX/100 format)', serialization: null },
+	{ name: 'Blast Crossover', key: 'blast_crossover', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Alpha Blast crossover cards (BLC prefix)', serialization: null },
 
 	// --- Special treatments ---
 	{ name: 'Inspired Ink', key: 'inspired_ink', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['collector'], description: 'On-card autograph (not sticker), available across weapon tiers', serialization: '/10' },
