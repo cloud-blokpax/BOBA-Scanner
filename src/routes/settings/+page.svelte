@@ -96,11 +96,12 @@
 		try {
 			const { error } = await client
 				.from('users')
-				.update({
+				.upsert({
+					auth_user_id: currentUser.id,
+					email: currentUser.email || '',
 					name: profileName.trim() || null,
 					discord_id: discordId.trim() || null
-				})
-				.eq('auth_user_id', currentUser.id);
+				}, { onConflict: 'auth_user_id' });
 
 			if (error) throw error;
 			showToast('Profile saved', 'check');
@@ -145,7 +146,10 @@
 	}
 
 	$effect(() => {
-		loadProfile();
+		const currentUser = user();
+		if (currentUser) {
+			loadProfile();
+		}
 	});
 
 	// Check eBay OAuth callback params
@@ -203,7 +207,7 @@
 			</div>
 			<div class="identity-info">
 				<div class="identity-name-row">
-					<span class="identity-name">{profileName || email?.split('@')[0] || 'Coach'}</span>
+					<span class="identity-name">{discordId || profileName || email?.split('@')[0] || 'Coach'}</span>
 					{#if isPro()}
 						<span class="identity-pro-badge">PRO</span>
 					{/if}
