@@ -106,7 +106,8 @@ export const POST: RequestHandler = async ({ locals }) => {
 	const { data: cardData } = await adminClient
 		.from('cards')
 		.select('parallel')
-		.not('parallel', 'is', null);
+		.not('parallel', 'is', null)
+		.limit(20000);
 
 	if (cardData) {
 		for (const row of cardData) {

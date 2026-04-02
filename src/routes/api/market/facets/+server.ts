@@ -23,14 +23,16 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.from('price_cache')
 		.select('card_id')
 		.eq('source', 'ebay')
-		.not('price_mid', 'is', null);
+		.not('price_mid', 'is', null)
+		.limit(20000);
 
 	const pricedSet = new Set((pricedIds || []).map((r: { card_id: string }) => r.card_id));
 
 	// Fetch all cards with filterable attributes (lightweight — no joins)
 	const { data: allCards } = await admin
 		.from('cards')
-		.select('id, parallel, weapon_type, set_code, rarity, hero_name, power');
+		.select('id, parallel, weapon_type, set_code, rarity, hero_name, power')
+		.limit(20000);
 
 	if (!allCards) return json({ facets: {}, totalPriced: 0, totalCards: 0 });
 

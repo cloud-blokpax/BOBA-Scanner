@@ -83,7 +83,7 @@
 	let filterPriceMax = $state($page.url.searchParams.get('price_max') || '');
 	let filterSort = $state($page.url.searchParams.get('sort') || 'price_asc');
 	let filterCardType = $state<'hero' | 'play'>(($page.url.searchParams.get('card_type') as 'hero' | 'play') || 'hero');
-	let filterPricedOnly = $state($page.url.searchParams.get('priced_only') === 'true');
+	let filterPricedOnly = $state($page.url.searchParams.get('priced_only') !== 'false');
 
 	// ── Data state ───────────────────────────────────
 	let facets = $state<Facets | null>(null);
@@ -135,7 +135,7 @@
 		if (filterPriceMax) params.set('price_max', filterPriceMax);
 		if (filterSort !== 'price_asc') params.set('sort', filterSort);
 		if (filterCardType !== 'hero') params.set('card_type', filterCardType);
-		if (filterPricedOnly) params.set('priced_only', 'true');
+		if (!filterPricedOnly) params.set('priced_only', 'false');
 		return params;
 	}
 
