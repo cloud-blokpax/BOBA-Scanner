@@ -121,11 +121,14 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 		console.error('[ebay-seller-auth] Refresh response missing access_token');
 		return null;
 	}
-	await adminClient.from('ebay_seller_tokens').update({
+	const { error: tokenError } = await adminClient.from('ebay_seller_tokens').update({
 		access_token: data.access_token,
 		access_token_expires_at: new Date(Date.now() + Math.max(data.expires_in ?? 7200, 60) * 1000).toISOString(),
 		updated_at: new Date().toISOString()
 	}).eq('user_id', userId);
+	if (tokenError) {
+		console.error('[ebay-seller-auth] Token update FAILED:', tokenError.message);
+	}
 
 	return data.access_token;
 }

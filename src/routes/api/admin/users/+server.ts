@@ -92,13 +92,16 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Log admin action
-	await admin.from('admin_activity_log').insert({
+	const { error: logError } = await admin.from('admin_activity_log').insert({
 		admin_id: user!.id,
 		action: 'update_user',
 		entity_type: 'user',
 		entity_id: user_id,
 		details: safeUpdates
 	});
+	if (logError) {
+		console.error('[admin/users] Activity log insert FAILED:', logError.message);
+	}
 
 	return json({ success: true });
 };
@@ -140,12 +143,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				throw error(500, 'Database operation failed');
 			}
 
-			await admin.from('admin_activity_log').insert({
+			const { error: logError } = await admin.from('admin_activity_log').insert({
 				admin_id: user!.id,
 				action: 'bulk_update_users',
 				entity_type: 'user',
 				details: { user_ids, updates: safeUpdates }
 			});
+			if (logError) {
+				console.error('[admin/users] Bulk activity log insert FAILED:', logError.message);
+			}
 
 			return json({ success: true, affected: user_ids.length });
 		}

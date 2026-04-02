@@ -170,83 +170,103 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	});
 };
 
-/** Handle play card queries (separate table) */
+/** Handle play card queries (separate table, two-query approach) */
 async function handlePlayCards(
 	admin: ReturnType<typeof getAdminClient> & object,
 	opts: { priceMin: number; priceMax: number; sort: string; limit: number; offset: number }
 ) {
-	let query = admin
-		.from('play_cards')
-		.select(`
-			id, name, card_number, release, dbs, hot_dog_cost, ability_text,
-			price_cache!inner (
-				price_low, price_mid, price_high,
-				buy_now_low, buy_now_mid, buy_now_count,
-				listings_count, filtered_count, confidence_score,
-				fetched_at
-			)
-		`)
-		.eq('price_cache.source', 'ebay')
-		.not('price_cache.price_mid', 'is', null);
+	// PostgREST can't join play_cards → price_cache (no FK relationship),
+	// so we use a two-query approach: fetch prices, fetch play card details, merge.
 
-	if (opts.priceMin > 0) query = query.gte('price_cache.price_mid', opts.priceMin);
-	if (opts.priceMax > 0) query = query.lte('price_cache.price_mid', opts.priceMax);
+	// Step 1: Get all play card prices from price_cache
+	let priceQuery = admin
+		.from('price_cache')
+		.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
+		.eq('source', 'ebay')
+		.not('price_mid', 'is', null);
+
+	if (opts.priceMin > 0) priceQuery = priceQuery.gte('price_mid', opts.priceMin);
+	if (opts.priceMax > 0) priceQuery = priceQuery.lte('price_mid', opts.priceMax);
 
 	switch (opts.sort) {
 		case 'price_desc':
-			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: false });
+			priceQuery = priceQuery.order('price_mid', { ascending: false });
 			break;
 		case 'listings':
-			query = query.order('listings_count', { referencedTable: 'price_cache', ascending: false });
+			priceQuery = priceQuery.order('listings_count', { ascending: false });
+			break;
+		case 'confidence':
+			priceQuery = priceQuery.order('confidence_score', { ascending: false });
 			break;
 		default:
-			query = query.order('price_mid', { referencedTable: 'price_cache', ascending: true });
+			priceQuery = priceQuery.order('price_mid', { ascending: true });
 	}
 
-	query = query.range(opts.offset, opts.offset + opts.limit - 1);
-
-	const { data: rows, error: queryErr } = await query;
-
-	if (queryErr) {
-		console.error('[market/explore] Play query failed:', queryErr);
-		throw error(500, 'Failed to query play card data');
+	const { data: priceRows, error: priceErr } = await priceQuery;
+	if (priceErr) {
+		console.error('[market/explore] Play card price query failed:', priceErr);
+		throw error(500, 'Failed to query play card prices');
+	}
+	if (!priceRows || priceRows.length === 0) {
+		return json({
+			cards: [],
+			aggregates: buildAggregates([]),
+			pagination: { offset: opts.offset, limit: opts.limit, hasMore: false }
+		}, { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' } });
 	}
 
-	const cards = (rows || []).map((row: Record<string, unknown>) => {
-		const priceRaw = row.price_cache;
-		const price = (Array.isArray(priceRaw) ? priceRaw[0] : priceRaw) as Record<string, unknown> | undefined;
-		const mid = Number(price?.price_mid ?? 0);
-		const dbs = (row.dbs as number) ?? 0;
-		const listings = (price?.listings_count as number) ?? 0;
+	// Step 2: Get play card details — filter to only the IDs that have prices
+	const pricedIds = priceRows.map(r => String(r.card_id));
+	const { data: playCards, error: playErr } = await admin
+		.from('play_cards')
+		.select('id, name, card_number, release, dbs, hot_dog_cost, ability_text')
+		.in('id', pricedIds);
 
-		return {
-			id: row.id,
-			name: row.name || 'Unknown',
-			num: row.card_number || '',
-			release: row.release || '',
-			dbs,
-			hotDogCost: (row.hot_dog_cost as number) ?? 0,
-			ability: row.ability_text || '',
-			priceMid: mid,
-			priceLow: Number(price?.price_low ?? 0),
-			priceHigh: Number(price?.price_high ?? 0),
-			bnMid: price?.buy_now_mid != null ? Number(price.buy_now_mid) : null,
-			bnLow: price?.buy_now_low != null ? Number(price.buy_now_low) : null,
-			bnCount: (price?.buy_now_count as number) ?? 0,
-			listings,
-			filtered: (price?.filtered_count as number) ?? 0,
-			confidence: Number(price?.confidence_score ?? 0),
-			fetchedAt: price?.fetched_at || null,
-			// Play-specific computed metrics
-			pricePerDbs: dbs > 0 ? Math.round((mid / dbs) * 100) / 100 : null,
-			liquidity: listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none',
-		};
-	});
+	if (playErr) {
+		console.error('[market/explore] Play card details query failed:', playErr);
+		throw error(500, 'Failed to query play card details');
+	}
+
+	// Step 3: Merge prices with play card details
+	const playMap = new Map((playCards || []).map(p => [String(p.id), p]));
+
+	const merged = priceRows
+		.filter(pr => playMap.has(String(pr.card_id)))
+		.map(pr => {
+			const play = playMap.get(String(pr.card_id))!;
+			const mid = Number(pr.price_mid ?? 0);
+			const listings = (pr.listings_count as number) ?? 0;
+			const dbs = ((play as Record<string, unknown>).dbs as number) ?? 0;
+			return {
+				id: play.id,
+				name: (play as Record<string, unknown>).name || 'Unknown',
+				num: (play as Record<string, unknown>).card_number || '',
+				release: (play as Record<string, unknown>).release || '',
+				dbs,
+				hotDogCost: ((play as Record<string, unknown>).hot_dog_cost as number) ?? 0,
+				ability: (play as Record<string, unknown>).ability_text || '',
+				priceMid: mid,
+				priceLow: Number(pr.price_low ?? 0),
+				priceHigh: Number(pr.price_high ?? 0),
+				bnMid: pr.buy_now_mid != null ? Number(pr.buy_now_mid) : null,
+				bnLow: pr.buy_now_low != null ? Number(pr.buy_now_low) : null,
+				bnCount: (pr.buy_now_count as number) ?? 0,
+				listings,
+				filtered: (pr.filtered_count as number) ?? 0,
+				confidence: Number(pr.confidence_score ?? 0),
+				fetchedAt: pr.fetched_at || null,
+				pricePerDbs: dbs > 0 ? Math.round((mid / dbs) * 100) / 100 : null,
+				liquidity: listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none',
+			};
+		});
+
+	// Step 4: Paginate the merged results
+	const paginated = merged.slice(opts.offset, opts.offset + opts.limit);
 
 	return json({
-		cards,
-		aggregates: buildAggregates(cards),
-		pagination: { offset: opts.offset, limit: opts.limit, hasMore: cards.length === opts.limit },
+		cards: paginated,
+		aggregates: buildAggregates(merged.map(c => ({ priceMid: c.priceMid, listings: c.listings, bnCount: c.bnCount, confidence: c.confidence }))),
+		pagination: { offset: opts.offset, limit: opts.limit, hasMore: opts.offset + opts.limit < merged.length }
 	}, {
 		headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' }
 	});
