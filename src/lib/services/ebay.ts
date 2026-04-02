@@ -6,6 +6,7 @@
  */
 
 import { browser } from '$app/environment';
+import { buildEbaySearchQuery as buildCanonicalQuery } from '$lib/utils/ebay-title';
 
 /** EPN affiliate parameters. */
 const EPN_PARAMS: Record<string, string> = {
@@ -38,12 +39,11 @@ function buildEbayQuery(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
 	athlete_name?: string | null;
+	parallel?: string | null;
+	weapon_type?: string | null;
+	name?: string | null;
 }): string {
-	const parts: string[] = ['BOBA'];
-	if (card.card_number) parts.push(card.card_number);
-	if (card.hero_name) parts.push(card.hero_name);
-	if (card.athlete_name) parts.push(card.athlete_name);
-	return parts.join(' ');
+	return buildCanonicalQuery(card);
 }
 
 /**
@@ -53,6 +53,9 @@ export function buildEbaySearchUrl(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
 	athlete_name?: string | null;
+	parallel?: string | null;
+	weapon_type?: string | null;
+	name?: string | null;
 }): string {
 	const query = buildEbayQuery(card);
 	const params = new URLSearchParams({
@@ -69,6 +72,9 @@ export function buildEbaySoldUrl(card: {
 	card_number?: string | null;
 	hero_name?: string | null;
 	athlete_name?: string | null;
+	parallel?: string | null;
+	weapon_type?: string | null;
+	name?: string | null;
 }): string {
 	const query = buildEbayQuery(card);
 	const params = new URLSearchParams({
@@ -102,6 +108,7 @@ export function scoreListingMatch(
 	card: {
 		card_number?: string | null;
 		hero_name?: string | null;
+		athlete_name?: string | null;
 		weapon_type?: string | null;
 	}
 ): number {
@@ -113,6 +120,11 @@ export function scoreListingMatch(
 	if (card.hero_name) {
 		const words = card.hero_name.toUpperCase().split(/\s+/);
 		if (words.every((w) => t.includes(w))) score += 30;
+	}
+
+	if (card.athlete_name) {
+		const words = card.athlete_name.toUpperCase().split(/\s+/);
+		if (words.every((w) => t.includes(w))) score += 20;
 	}
 
 	if (card.weapon_type && t.includes(card.weapon_type.toUpperCase())) score += 10;

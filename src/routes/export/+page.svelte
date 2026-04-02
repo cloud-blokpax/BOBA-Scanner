@@ -41,6 +41,7 @@
 	interface EbayQueueItem {
 		id: string;
 		heroName: string;
+		athleteName: string;
 		cardNumber: string;
 		setCode: string;
 		weaponType: string;
@@ -56,6 +57,7 @@
 		ebayQueue = collectionItems().map(item => ({
 			id: item.id,
 			heroName: item.card?.hero_name || item.card?.name || '',
+			athleteName: item.card?.athlete_name || '',
 			cardNumber: item.card?.card_number || '',
 			setCode: item.card?.set_code || '',
 			weaponType: item.card?.weapon_type || '',
@@ -85,6 +87,7 @@
 		}
 		const cards: ExportCard[] = ebayQueue.map(item => ({
 			heroName: item.heroName,
+			athleteName: item.athleteName,
 			cardNumber: item.cardNumber,
 			setCode: item.setCode,
 			weaponType: item.weaponType,
