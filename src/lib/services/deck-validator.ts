@@ -304,7 +304,7 @@ export function validateDeck(
 			(c.parallel || '').toLowerCase() === 'silver'
 		).length;
 		const headlineCount = heroCards.filter(c =>
-			['headline', 'headlines'].includes((c.parallel || '').toLowerCase())
+			(c.parallel || '').toLowerCase() === 'headliner'
 		).length;
 		if (silverCount < 20) {
 			violations.push({

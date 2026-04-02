@@ -50,10 +50,10 @@ export const PARALLEL_TYPES: ParallelType[] = [
 	{ name: '80s Rad', key: '80s_rad', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['hobby', 'collector'], description: '1980s retro neon themed insert', serialization: null },
 	{ name: "Grandma's Linoleum", key: 'grandmas_linoleum', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['hobby', 'collector'], description: 'Green vintage pattern insert', serialization: null },
 	{ name: "Great Grandma's Linoleum", key: 'great_grandmas_linoleum', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['collector'], description: 'Red vintage pattern insert', serialization: null },
-	{ name: 'Headlines', key: 'headlines', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: ['steel', 'fire', 'ice', 'brawl'], foundIn: ['hobby', 'collector'], description: 'Newspaper headline themed insert', serialization: null },
-	{ name: 'Red Headlines', key: 'red_headlines', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Red variant Headlines insert', serialization: null },
-	{ name: 'Orange Headlines', key: 'orange_headlines', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Orange variant Headlines insert', serialization: null },
-	{ name: 'Blue Headlines', key: 'blue_headlines', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Blue variant Headlines insert', serialization: null },
+	{ name: 'Headliner', key: 'headliner', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster', 'hobby', 'collector'], description: 'Headliner insert (HBF prefix)', serialization: null },
+	{ name: 'Blue Headliner', key: 'blue_headliner', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Blue Headliner insert (BHBF prefix)', serialization: null },
+	{ name: 'Orange Headliner', key: 'orange_headliner', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Orange Headliner insert (OHBF prefix)', serialization: null },
+	{ name: 'Red Headliner', key: 'red_headliner', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blaster'], description: 'Red Headliner insert (RHBF prefix)', serialization: null },
 	{ name: 'Icon', key: 'icon', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['collector'], description: 'Iconic athlete pose insert', serialization: null },
 	{ name: 'Colosseum', key: 'colosseum', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['collector'], description: 'Arena/colosseum themed insert', serialization: null },
 	{ name: 'Logo', key: 'logo', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['hobby'], description: 'BoBA logo themed foil', serialization: null },
@@ -67,6 +67,9 @@ export const PARALLEL_TYPES: ParallelType[] = [
 	{ name: 'Alpha', key: 'alpha', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['alpha_edition'], description: 'Original Alpha Edition battlefoil', serialization: null },
 	{ name: 'Alt', key: 'alt', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'Alternate art variant', serialization: null },
 	{ name: 'Power Glove', key: 'power_glove', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['2026_edition'], description: '2026 Edition power glove themed insert', serialization: null },
+
+	// --- Sidekick ---
+	{ name: 'CJ Maddox', key: 'cj_maddox', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['all'], description: 'CJ Maddox sidekick card (CJ prefix)', serialization: null },
 
 	// --- Special treatments ---
 	{ name: 'Inspired Ink', key: 'inspired_ink', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['collector'], description: 'On-card autograph (not sticker), available across weapon tiers', serialization: '/10' },

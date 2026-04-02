@@ -89,18 +89,22 @@ export const BLASTER_SLOTS: SlotConfig[] = [
 		label: 'Bonus Parallel',
 		cardFormat: 'bonus',
 		outcomes: [
-			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 15 },
-			{ type: 'parallel', value: 'red_headlines', label: 'Red Headlines', weight: 10 },
-			{ type: 'parallel', value: 'blue_headlines', label: 'Blue Headlines', weight: 10 },
-			{ type: 'parallel', value: 'orange_headlines', label: 'Orange Headlines', weight: 10 },
+			{ type: 'parallel', value: 'headliner', label: 'Headliner', weight: 15 },
+			{ type: 'parallel', value: 'blue_headliner', label: 'Blue Headliner', weight: 10 },
+			{ type: 'parallel', value: 'orange_headliner', label: 'Orange Headliner', weight: 10 },
+			{ type: 'parallel', value: 'red_headliner', label: 'Red Headliner', weight: 10 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 10 },
 			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 10 },
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 8 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 8 },
-			{ type: 'weapon_rarity', value: 'glow', label: 'Glow', weight: 5 },
-			{ type: 'weapon_rarity', value: 'hex', label: 'Hex', weight: 3 },
-			{ type: 'weapon_rarity', value: 'gum', label: 'Gum', weight: 2.5 },
-			{ type: 'weapon_rarity', value: 'super', label: 'Super 1/1', weight: 0.5 },
-			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 1 }
+			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 8 },
+			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 5 },
+			{ type: 'parallel', value: 'grandmas_linoleum', label: "Grandma's Linoleum", weight: 5 },
+			{ type: 'parallel', value: 'colosseum', label: 'Colosseum', weight: 4 },
+			{ type: 'parallel', value: 'miami_ice', label: 'Miami Ice', weight: 3 },
+			{ type: 'parallel', value: 'fire_tracks', label: 'Fire Tracks', weight: 3 },
+			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 3 },
+			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 2 },
+			{ type: 'parallel', value: 'super_parallel', label: 'Superfoil 1/1', weight: 0.5 },
+			{ type: 'parallel', value: 'metallic_inspired_ink', label: 'Metallic Inspired Ink', weight: 1.5 }
 		]
 	},
 	// Slots 7-9: Play cards (always paper)
@@ -128,21 +132,23 @@ export const DOUBLE_MEGA_SLOTS: SlotConfig[] = [
 		label: 'Bonus Parallel / Bonus Play',
 		cardFormat: 'bonus',
 		outcomes: [
-			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 12 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 10 },
 			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 8 },
-			{ type: 'parallel', value: 'grandmas_linoleum', label: "Grandma's Linoleum", weight: 8 },
+			{ type: 'parallel', value: 'grandmas_linoleum', label: "Grandma's Linoleum", weight: 7 },
 			{ type: 'parallel', value: 'great_grandmas_linoleum', label: "Great Grandma's Linoleum", weight: 5 },
-			{ type: 'parallel', value: 'grillin', label: "Grillin'", weight: 5 },
 			{ type: 'parallel', value: 'chillin', label: "Chillin'", weight: 5 },
 			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 5 },
 			{ type: 'parallel', value: 'icon', label: 'Icon', weight: 5 },
-			{ type: 'weapon_rarity', value: 'fire', label: 'Fire', weight: 7 },
-			{ type: 'weapon_rarity', value: 'ice', label: 'Ice', weight: 7 },
-			{ type: 'weapon_rarity', value: 'glow', label: 'Glow', weight: 4 },
-			{ type: 'weapon_rarity', value: 'hex', label: 'Hex', weight: 2.5 },
-			{ type: 'weapon_rarity', value: 'gum', label: 'Gum', weight: 2 },
-			{ type: 'weapon_rarity', value: 'super', label: 'Super 1/1', weight: 0.5 },
-			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 1 },
+			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 5 },
+			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 4 },
+			{ type: 'parallel', value: 'colosseum', label: 'Colosseum', weight: 4 },
+			{ type: 'parallel', value: 'miami_ice', label: 'Miami Ice', weight: 3 },
+			{ type: 'parallel', value: 'fire_tracks', label: 'Fire Tracks', weight: 3 },
+			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 3 },
+			{ type: 'parallel', value: 'bubblegum', label: 'Bubblegum', weight: 3 },
+			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink', weight: 2 },
+			{ type: 'parallel', value: 'metallic_inspired_ink', label: 'Metallic Inspired Ink', weight: 1.5 },
+			{ type: 'parallel', value: 'super_parallel', label: 'Superfoil 1/1', weight: 0.5 },
 			{ type: 'card_type', value: 'bonus_play', label: 'Bonus Play (DM Excl.)', weight: 15 }
 		]
 	},
@@ -172,94 +178,31 @@ export const HOBBY_SLOTS: SlotConfig[] = [
 		label: 'Insert / Parallel Hero',
 		cardFormat: 'bonus',
 		outcomes: [
-			{ type: 'parallel', value: 'silver', label: 'Silver BF', weight: 8 },
-			{
-				type: 'parallel',
-				value: 'blue_battlefoil',
-				label: 'Blue BF',
-				weight: 8
-			},
-			{
-				type: 'parallel',
-				value: 'orange_battlefoil',
-				label: 'Orange BF',
-				weight: 8
-			},
-			{
-				type: 'parallel',
-				value: 'red_battlefoil',
-				label: 'Red BF (Hobby Excl.)',
-				weight: 5
-			},
-			{
-				type: 'parallel',
-				value: 'green_battlefoil',
-				label: 'Green BF',
-				weight: 5
-			},
-			{
-				type: 'parallel',
-				value: 'pink_battlefoil',
-				label: 'Pink BF',
-				weight: 5
-			},
-			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 6 },
-			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 6 },
-			{
-				type: 'parallel',
-				value: 'grandmas_linoleum',
-				label: "Grandma's Linoleum",
-				weight: 5
-			},
-			{ type: 'parallel', value: 'headlines', label: 'Headlines', weight: 5 },
-			{ type: 'parallel', value: 'logo', label: 'Logo', weight: 4 },
-			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 5 },
-			{
-				type: 'parallel',
-				value: 'fire_tracks',
-				label: 'Fire Tracks',
-				weight: 5
-			},
-			{ type: 'parallel', value: 'bubblegum', label: 'Bubblegum', weight: 5 },
-			{
-				type: 'parallel',
-				value: 'grillin',
-				label: 'Grillin (Hobby Excl.)',
-				weight: 3
-			},
-			{
-				type: 'parallel',
-				value: 'chillin',
-				label: 'Chillin (Hobby Excl.)',
-				weight: 3
-			},
-			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 4 },
-			{
-				type: 'parallel',
-				value: 'power_glove',
-				label: 'Power Glove',
-				weight: 4
-			},
-			{
-				type: 'parallel',
-				value: 'inspired_ink',
-				label: 'Inspired Ink (Auto)',
-				weight: 3
-			},
-			{ type: 'weapon_rarity', value: 'hex', label: 'Hex Hero', weight: 3 },
-			{ type: 'weapon_rarity', value: 'gum', label: 'Gum Hero', weight: 2 },
-			{
-				type: 'weapon_rarity',
-				value: 'super',
-				label: 'Super 1/1',
-				weight: 0.5
-			},
-			{
-				type: 'parallel',
-				value: 'super_parallel',
-				label: 'Superfoil Parallel',
-				weight: 0.5
-			}
+			{ type: 'parallel', value: 'silver', label: 'Silver BF', weight: 6 },
+			{ type: 'parallel', value: 'blue_battlefoil', label: 'Blue BF', weight: 6 },
+			{ type: 'parallel', value: 'orange_battlefoil', label: 'Orange BF', weight: 6 },
+			{ type: 'parallel', value: 'red_battlefoil', label: 'Red BF (Hobby Excl.)', weight: 4 },
+			{ type: 'parallel', value: 'green_battlefoil', label: 'Green BF', weight: 4 },
+			{ type: 'parallel', value: 'pink_battlefoil', label: 'Pink BF', weight: 4 },
+			{ type: 'parallel', value: 'headliner', label: 'Headliner', weight: 5 },
+			{ type: 'parallel', value: 'blizzard', label: 'Blizzard', weight: 5 },
+			{ type: 'parallel', value: '80s_rad', label: "80's Rad", weight: 5 },
+			{ type: 'parallel', value: 'grandmas_linoleum', label: "Grandma's Linoleum", weight: 4 },
+			{ type: 'parallel', value: 'logo', label: 'Logo', weight: 3 },
+			{ type: 'parallel', value: 'mixtape', label: 'Mixtape', weight: 4 },
+			{ type: 'parallel', value: 'fire_tracks', label: 'Fire Tracks', weight: 4 },
+			{ type: 'parallel', value: 'bubblegum', label: 'Bubblegum', weight: 4 },
+			{ type: 'parallel', value: 'grillin', label: "Grillin' (Hobby Excl.)", weight: 3 },
+			{ type: 'parallel', value: 'chillin', label: "Chillin' (Hobby Excl.)", weight: 3 },
+			{ type: 'parallel', value: 'slime', label: 'Slime', weight: 3 },
+			{ type: 'parallel', value: 'power_glove', label: 'Power Glove', weight: 3 },
+			{ type: 'parallel', value: 'colosseum', label: 'Colosseum', weight: 3 },
+			{ type: 'parallel', value: 'miami_ice', label: 'Miami Ice', weight: 3 },
+			{ type: 'parallel', value: 'icon', label: 'Icon', weight: 3 },
+			{ type: 'parallel', value: 'alt', label: 'Alt', weight: 2 },
+			{ type: 'parallel', value: 'inspired_ink', label: 'Inspired Ink (Auto)', weight: 3 },
+			{ type: 'parallel', value: 'metallic_inspired_ink', label: 'Metallic Inspired Ink', weight: 2 },
+			{ type: 'parallel', value: 'super_parallel', label: 'Superfoil 1/1', weight: 0.5 }
 		]
 	},
 	// Slots 7-9: Play cards (always paper)
