@@ -42,6 +42,7 @@
 	// eBay connection state
 	let ebayConfigured = $state(false);
 	let ebayConnected = $state(false);
+	let ebayConnectedSince = $state<string | null>(null);
 	let ebayLoading = $state(true);
 	let ebayDisconnecting = $state(false);
 
@@ -58,7 +59,9 @@
 			return;
 		}
 
-		email = currentUser.email || '';
+		// Prefer server-provided email (always available for authenticated users),
+		// fall back to client-side auth store
+		email = $page.data.user?.email || currentUser.email || '';
 
 		const { data } = await client
 			.from('users')
@@ -87,11 +90,6 @@
 	}
 
 	async function saveProfile() {
-		if (!user()) {
-			showToast('Please sign in to save', 'x');
-			return;
-		}
-
 		saving = true;
 		try {
 			const res = await fetch('/api/profile', {
@@ -102,6 +100,12 @@
 					discord_id: discordId.trim() || null
 				})
 			});
+
+			if (res.status === 401) {
+				showToast('Please sign in to save', 'x');
+				saving = false;
+				return;
+			}
 
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({ error: 'Save failed' }));
@@ -158,9 +162,12 @@
 		}
 	});
 
-	// Check eBay OAuth callback params
+	// Check eBay OAuth callback params (guard to prevent re-firing)
+	let ebayParamHandled = false;
 	$effect(() => {
 		const ebayParam = $page.url.searchParams.get('ebay');
+		if (ebayParamHandled || !ebayParam) return;
+		ebayParamHandled = true;
 		if (ebayParam === 'connected') {
 			showToast('eBay account connected!', 'check');
 			ebayConnected = true;
@@ -169,13 +176,17 @@
 		}
 	});
 
-	// Load eBay status
+	// Load eBay status (run once on mount)
+	let ebayStatusFetched = false;
 	$effect(() => {
+		if (ebayStatusFetched) return;
+		ebayStatusFetched = true;
 		fetch('/api/ebay/status')
 			.then(res => res.ok ? res.json() : Promise.reject())
 			.then(data => {
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
+				ebayConnectedSince = data.connected_since ?? null;
 			})
 			.catch((err) => console.warn('[settings] eBay status check failed:', err))
 			.finally(() => { ebayLoading = false; });
@@ -187,6 +198,7 @@
 			const res = await fetch('/api/ebay/disconnect', { method: 'POST' });
 			if (!res.ok) throw new Error();
 			ebayConnected = false;
+			ebayConnectedSince = null;
 			showToast('eBay account disconnected', 'check');
 		} catch (err) {
 			console.debug('[settings] eBay disconnect failed:', err);
@@ -299,7 +311,7 @@
 						<span class="row-title">eBay seller</span>
 						<span class="row-sub" class:connected={ebayConnected}>
 							{#if ebayLoading}Checking...
-							{:else if ebayConnected}Connected
+							{:else if ebayConnected}Connected{#if ebayConnectedSince} {new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{/if}
 							{:else if ebayConfigured}Not connected
 							{:else}Coming soon
 							{/if}
