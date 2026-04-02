@@ -4,7 +4,23 @@
 	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
 
-	interface Registration {
+	interface DeckSubmission {
+		id: string;
+		player_name: string;
+		player_email: string;
+		player_discord: string | null;
+		status: string;
+		is_valid: boolean;
+		hero_count: number;
+		dbs_total: number | null;
+		avg_power: number | null;
+		total_power: number;
+		validation_violations: Array<{ rule: string; message: string }>;
+		submitted_at: string;
+		verification_code: string | null;
+	}
+
+	interface LegacyRegistration {
 		id: string;
 		email: string;
 		name: string | null;
@@ -30,7 +46,9 @@
 	}
 
 	let tournament = $state<TournamentDetail | null>(null);
-	let registrations = $state<Registration[]>([]);
+	let submissions = $state<DeckSubmission[]>([]);
+	let legacyRegistrations = $state<LegacyRegistration[]>([]);
+	let useLegacyView = $state(false);
 	let loading = $state(true);
 	let errorMsg = $state<string | null>(null);
 
@@ -89,15 +107,29 @@
 
 			tournament = tData as TournamentDetail;
 
-			// Load registrations
-			const { data: regData, error: regError } = await client
-				.from('tournament_registrations')
-				.select('id, email, name, discord_id, deck_csv, created_at')
+			// Load deck submissions (modern flow)
+			const { data: subData, error: subError } = await client
+				.from('deck_submissions')
+				.select('id, player_name, player_email, player_discord, status, is_valid, hero_count, dbs_total, avg_power, total_power, validation_violations, submitted_at, verification_code')
 				.eq('tournament_id', id)
-				.order('created_at', { ascending: true });
+				.order('submitted_at', { ascending: true });
 
-			if (regError) throw regError;
-			registrations = (regData || []) as Registration[];
+			if (subError) throw subError;
+			submissions = (subData || []) as DeckSubmission[];
+
+			// Fallback: check legacy registrations for old tournaments
+			if (submissions.length === 0) {
+				const { data: regData } = await client
+					.from('tournament_registrations')
+					.select('id, email, name, discord_id, deck_csv, created_at')
+					.eq('tournament_id', id)
+					.order('created_at', { ascending: true });
+
+				if (regData && regData.length > 0) {
+					legacyRegistrations = regData as LegacyRegistration[];
+					useLegacyView = true;
+				}
+			}
 		} catch (err) {
 			console.debug('[tournament-detail] Tournament data load failed:', err);
 			errorMsg = 'Failed to load tournament data';
@@ -115,7 +147,7 @@
 		});
 	}
 
-	function downloadDeckCsv(reg: Registration) {
+	function downloadDeckCsv(reg: LegacyRegistration) {
 		if (!reg.deck_csv) {
 			showToast('No deck data available', 'x');
 			return;
@@ -180,15 +212,15 @@
 			</div>
 		</div>
 
-		<h2 class="section-title">Registrations ({registrations.length})</h2>
+		<h2 class="section-title">{useLegacyView ? 'Registrations' : 'Submissions'} ({useLegacyView ? legacyRegistrations.length : submissions.length})</h2>
 
-		{#if registrations.length === 0}
+		{#if submissions.length === 0 && legacyRegistrations.length === 0}
 			<div class="empty">
 				<p>No one has registered yet. Share the code <strong>{tournament.code}</strong> to get started.</p>
 			</div>
-		{:else}
+		{:else if useLegacyView}
 			<div class="registrations-list">
-				{#each registrations as reg, i}
+				{#each legacyRegistrations as reg, i}
 					<div class="registration-card">
 						<div class="reg-header">
 							<span class="reg-number">#{i + 1}</span>
@@ -221,6 +253,53 @@
 								<span class="no-deck">No deck submitted</span>
 							{/if}
 						</div>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<div class="registrations-list">
+				{#each submissions as sub, i}
+					<div class="registration-card">
+						<div class="reg-header">
+							<span class="reg-number">#{i + 1}</span>
+							<div class="reg-badges">
+								{#if sub.is_valid}
+									<span class="valid-badge">Valid</span>
+								{:else}
+									<span class="invalid-badge">Invalid</span>
+								{/if}
+								<span class="status-badge {sub.status}">{sub.status}</span>
+							</div>
+							<span class="reg-date">{formatDate(sub.submitted_at)}</span>
+						</div>
+						<div class="reg-details">
+							<div class="reg-field">
+								<span class="reg-label">Name</span>
+								<span class="reg-value">{sub.player_name}</span>
+							</div>
+							<div class="reg-field">
+								<span class="reg-label">Email</span>
+								<span class="reg-value">{sub.player_email}</span>
+							</div>
+							{#if sub.player_discord}
+								<div class="reg-field">
+									<span class="reg-label">Discord</span>
+									<span class="reg-value">{sub.player_discord}</span>
+								</div>
+							{/if}
+						</div>
+						<div class="reg-stats">
+							<span>Heroes: {sub.hero_count}</span>
+							<span>DBS: {sub.dbs_total ?? '—'}</span>
+							<span>Avg PWR: {sub.avg_power != null ? Math.round(sub.avg_power) : '—'}</span>
+						</div>
+						{#if !sub.is_valid && sub.validation_violations.length > 0}
+							<div class="violations">
+								{#each sub.validation_violations as v}
+									<span class="violation">{v.message}</span>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -379,5 +458,58 @@
 	.no-deck {
 		font-size: 0.8rem;
 		color: var(--text-tertiary);
+	}
+
+	/* Submission badges */
+	.reg-badges {
+		display: flex;
+		gap: 0.375rem;
+		align-items: center;
+	}
+	.valid-badge {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: rgba(34, 197, 94, 0.15);
+		color: #22c55e;
+		font-weight: 600;
+	}
+	.invalid-badge {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: rgba(239, 68, 68, 0.15);
+		color: #ef4444;
+		font-weight: 600;
+	}
+	.status-badge {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--bg-base);
+		color: var(--text-secondary);
+		text-transform: capitalize;
+	}
+	.status-badge.locked {
+		background: rgba(59, 130, 246, 0.15);
+		color: #3b82f6;
+	}
+	.reg-stats {
+		display: flex;
+		gap: 1rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--border-color);
+	}
+	.violations {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-top: 0.5rem;
+	}
+	.violation {
+		font-size: 0.75rem;
+		color: #ef4444;
 	}
 </style>
