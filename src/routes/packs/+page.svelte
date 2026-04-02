@@ -23,7 +23,9 @@
 		inspired_ink: '#ffd700', super_parallel: '#ffd700', bubblegum: '#ff69b4',
 		miami_ice: '#06b6d4', fire_tracks: '#ef4444', icon: '#c084fc',
 		colosseum: '#d97706', logo: '#60a5fa', grillin: '#f97316', chillin: '#3b82f6',
-		alpha: '#a78bfa', foil: '#60a5fa',
+		alpha: '#a78bfa', battlefoil: '#60a5fa',
+		red_headlines: '#ef4444', orange_headlines: '#f97316', blue_headlines: '#60a5fa',
+		metallic_inspired_ink: '#ffd700', alt: '#a78bfa',
 	};
 
 	let selectedSet = $state('G');
@@ -70,7 +72,7 @@
 	}
 
 	function isSpecialParallel(card: SimulatedCard): boolean {
-		const basic = ['base', 'paper', ''];
+		const basic = ['base', 'paper', 'battlefoil', ''];
 		return !basic.includes(card.parallel.toLowerCase());
 	}
 

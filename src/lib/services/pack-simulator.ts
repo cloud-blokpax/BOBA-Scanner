@@ -8,12 +8,24 @@
  * Cards are filtered by set code so an Alpha box only pulls Alpha cards, etc.
  * Box-level guarantees (e.g., Hobby = 1 Inspired Ink, Jumbo = 3) are enforced
  * after all packs are opened by injecting guaranteed cards into eligible slots.
+ *
+ * Card format filtering ensures:
+ * - Paper slots only pull cards with numeric-only card_number (no prefix)
+ * - Battlefoil slots only pull cards with BF- prefix
+ * - Bonus slots pull cards whose prefix matches the rolled parallel
+ * - Featured heroes (those with Inspired Ink variants) are 5x rarer
  */
 
 import seedrandom from 'seedrandom';
 import { getAllCards } from '$lib/services/card-db';
 import { getWeapon } from '$lib/data/boba-weapons';
 import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
+import {
+	isPaperCardNumber,
+	isBattlefoilCardNumber,
+	cardMatchesParallel,
+	getParallelFromCardNumber
+} from '$lib/data/parallel-prefixes';
 import type {
 	SlotConfig,
 	SlotOutcome,
@@ -21,6 +33,54 @@ import type {
 	PackResult,
 	BoxGuarantee
 } from '$lib/types/pack-simulator';
+
+// ── Featured Hero Rarity ──────────────────────────────────────
+
+/**
+ * Derive which hero names are "featured" per set.
+ * A hero is featured in a set if any card with the same hero_name
+ * and same set_code has a BFA- prefix (Inspired Ink autograph).
+ *
+ * Featured heroes are ~5x rarer than non-featured in pack pulls.
+ */
+function buildFeaturedHeroSets(
+	allCards: Array<{ hero_name?: string | null; card_number?: string | null; set_code?: string | null }>
+): Map<string, Set<string>> {
+	const featured = new Map<string, Set<string>>();
+
+	for (const card of allCards) {
+		if (!card.card_number || !card.hero_name || !card.set_code) continue;
+
+		const upper = card.card_number.toUpperCase().trim();
+		// BFA-, BBFA-, MBFA- are all Inspired Ink variants
+		if (upper.startsWith('BFA-') || upper.startsWith('BBFA-') || upper.startsWith('MBFA-')) {
+			const setKey = card.set_code.toUpperCase();
+			if (!featured.has(setKey)) featured.set(setKey, new Set());
+			featured.get(setKey)!.add(card.hero_name.toUpperCase().trim());
+		}
+	}
+
+	return featured;
+}
+
+/** Cache so we don't rebuild every pack open */
+let _featuredCache: Map<string, Set<string>> | null = null;
+
+function getFeaturedHeroes(
+	allCards: Array<{ hero_name?: string | null; card_number?: string | null; set_code?: string | null }>
+): Map<string, Set<string>> {
+	if (!_featuredCache) {
+		_featuredCache = buildFeaturedHeroSets(allCards);
+	}
+	return _featuredCache;
+}
+
+/** Invalidate cache when card DB reloads */
+export function invalidateFeaturedCache(): void {
+	_featuredCache = null;
+}
+
+// ── Set Code Matching ─────────────────────────────────────────
 
 /**
  * Build a set of uppercase strings that a card's set_code might match.
@@ -49,6 +109,8 @@ function buildSetMatchers(code: string): Set<string> {
 
 	return matchers;
 }
+
+// ── Weapon Availability ───────────────────────────────────────
 
 /**
  * Collect the set of weapon types that actually exist among hero cards in a pool.
@@ -88,6 +150,144 @@ function filterOutcomesBySet(
 	return filtered;
 }
 
+// ── Card Selection ────────────────────────────────────────────
+
+type CardRecord = {
+	id: string;
+	weapon_type?: string | null;
+	rarity?: string | null;
+	parallel?: string | null;
+	card_number?: string | null;
+	hero_name?: string | null;
+	name?: string | null;
+	base_play_name?: string;
+	power?: number | null;
+	set_code?: string | null;
+};
+
+/**
+ * Find cards in the database that match a rolled outcome,
+ * filtered by the slot's cardFormat to ensure only real cards are returned.
+ *
+ * cardFormat filtering:
+ * - 'paper':      hero cards with numeric-only card_number
+ * - 'battlefoil': hero cards with BF- prefix card_number
+ * - 'bonus':      hero cards matching the specific parallel's prefix
+ * - 'any':        no card_number filtering (play cards, hot dogs)
+ */
+function findCandidates(
+	setCards: CardRecord[],
+	outcome: SlotOutcome,
+	cardFormat: 'paper' | 'battlefoil' | 'bonus' | 'any'
+): CardRecord[] {
+	switch (outcome.type) {
+		case 'weapon_rarity': {
+			// Filter by weapon type first
+			let candidates = setCards.filter(
+				(c) =>
+					(c.weapon_type || '').toLowerCase() === outcome.value.toLowerCase() &&
+					c.card_number &&
+					!c.card_number.startsWith('PL-') &&
+					!c.card_number.startsWith('BPL-') &&
+					!c.card_number.startsWith('HTD')
+			);
+
+			// Then filter by card format
+			if (cardFormat === 'paper') {
+				candidates = candidates.filter(c => isPaperCardNumber(c.card_number!));
+			} else if (cardFormat === 'battlefoil') {
+				candidates = candidates.filter(c => isBattlefoilCardNumber(c.card_number!));
+			} else if (cardFormat === 'bonus') {
+				// On a bonus slot, weapon_rarity outcomes match bonus-parallel cards
+				// (any prefix that isn't paper or BF-)
+				candidates = candidates.filter(c =>
+					!isPaperCardNumber(c.card_number!) && !isBattlefoilCardNumber(c.card_number!)
+				);
+			}
+			// 'any' = no additional filtering
+
+			return candidates;
+		}
+
+		case 'parallel': {
+			// Find cards whose card_number prefix matches this specific parallel
+			return setCards.filter(
+				(c) =>
+					c.card_number &&
+					!c.card_number.startsWith('PL-') &&
+					!c.card_number.startsWith('BPL-') &&
+					!c.card_number.startsWith('HTD') &&
+					cardMatchesParallel(c.card_number, outcome.value)
+			);
+		}
+
+		case 'card_type': {
+			if (outcome.value === 'play') {
+				return setCards.filter((c) => c.card_number?.startsWith('PL-'));
+			}
+			if (outcome.value === 'bonus_play') {
+				return setCards.filter((c) => c.card_number?.startsWith('BPL-'));
+			}
+			if (outcome.value === 'hotdog') {
+				return setCards.filter((c) => c.card_number?.startsWith('HTD'));
+			}
+			return [];
+		}
+
+		default:
+			return [];
+	}
+}
+
+/**
+ * Select a random card from candidates, applying featured hero weighting.
+ * Featured heroes (those with Inspired Ink variants in this set) are 5x less
+ * likely to be selected than non-featured heroes.
+ *
+ * For non-hero cards (plays, hot dogs), all candidates are equally weighted.
+ */
+function selectWeightedCard(
+	candidates: CardRecord[],
+	rng: () => number,
+	featuredSets: Map<string, Set<string>>
+): CardRecord {
+	if (candidates.length === 0) throw new Error('No candidates');
+	if (candidates.length === 1) return candidates[0];
+
+	// Check if these are hero cards (have hero_name)
+	const isHeroPool = candidates.some(c => c.hero_name != null);
+	if (!isHeroPool) {
+		// Play cards / hot dogs: uniform random
+		return candidates[Math.floor(rng() * candidates.length)];
+	}
+
+	// Build weighted list: non-featured = 1.0, featured = 0.2 (5x rarer)
+	const weights: number[] = [];
+	let totalWeight = 0;
+
+	for (const card of candidates) {
+		const heroName = (card.hero_name || '').toUpperCase().trim();
+		const setKey = (card.set_code || '').toUpperCase();
+		const setFeatured = featuredSets.get(setKey);
+		const isFeatured = setFeatured?.has(heroName) ?? false;
+
+		const w = isFeatured ? 0.2 : 1.0;
+		weights.push(w);
+		totalWeight += w;
+	}
+
+	// Weighted random selection
+	let roll = rng() * totalWeight;
+	for (let i = 0; i < candidates.length; i++) {
+		roll -= weights[i];
+		if (roll <= 0) return candidates[i];
+	}
+
+	return candidates[candidates.length - 1];
+}
+
+// ── Pack Opening ──────────────────────────────────────────────
+
 /**
  * Open a simulated pack, filtering cards by set.
  */
@@ -109,16 +309,20 @@ export function openPack(
 	// Determine which weapon types actually exist in this set's card pool
 	const availableWeapons = getAvailableWeapons(setCards);
 
+	// Build featured hero sets ONCE per pack, not per slot
+	const featuredSets = getFeaturedHeroes(allCards);
+
 	for (const slot of slots) {
 		// Filter slot outcomes to exclude weapon types not in this set
 		const validOutcomes = filterOutcomesBySet(slot.outcomes, availableWeapons);
 		const outcome = rollWeightedOutcome(validOutcomes, rng);
 		// Play cards and hot dogs are set-agnostic — search the full card pool
 		const pool = outcome.type === 'card_type' ? allCards : setCards;
-		const candidates = findCandidates(pool, outcome);
+		const cardFormat = slot.cardFormat || 'any';
+		const candidates = findCandidates(pool, outcome, cardFormat);
 		const card =
 			candidates.length > 0
-				? candidates[Math.floor(rng() * candidates.length)]
+				? selectWeightedCard(candidates, rng, featuredSets)
 				: null;
 
 		if (card) {
@@ -132,7 +336,11 @@ export function openPack(
 				parallel:
 					outcome.type === 'parallel'
 						? outcome.value
-						: card.parallel || 'base',
+						: cardFormat === 'battlefoil'
+							? 'battlefoil'
+							: cardFormat === 'paper'
+								? 'paper'
+								: getParallelFromCardNumber(card.card_number || '') || 'paper',
 				setCode: card.set_code || '',
 				slotNumber: slot.slotNumber,
 				slotLabel: slot.label,
@@ -142,8 +350,6 @@ export function openPack(
 			});
 		} else {
 			// Defensive fallback: ensure pack always has the correct card count.
-			// This should never trigger after the set code and card_type fixes above,
-			// but prevents silent slot drops if the DB is missing expected cards.
 			console.warn(`[pack-sim] No candidates found for slot ${slot.slotNumber} (${slot.label}), outcome: ${outcome.type}=${outcome.value}, set: ${setCode}`);
 			cards.push({
 				cardId: '',
@@ -170,6 +376,8 @@ export function openPack(
 		seed: packSeed
 	};
 }
+
+// ── Box Opening ───────────────────────────────────────────────
 
 /**
  * Simulate opening an entire box with guarantee enforcement.
@@ -225,16 +433,18 @@ function enforceGuarantee(
 	const allCards = getAllCards().filter(
 		(c) => matchers.has((c.set_code || '').toUpperCase())
 	);
-	// For parallel guarantees, pick any hero card and apply the parallel
+
+	// For parallel guarantees, find cards whose card_number matches the guaranteed parallel
 	const heroCandidates = allCards.filter(
 		(c) =>
 			c.card_number &&
-			!c.card_number.startsWith('PL-') &&
-			!c.card_number.startsWith('BPL-') &&
-			!c.card_number.startsWith('HTD')
+			cardMatchesParallel(c.card_number, guarantee.value)
 	);
 
 	if (heroCandidates.length === 0) return;
+
+	// Build featured sets for weighted selection
+	const featuredSets = getFeaturedHeroes(getAllCards());
 
 	// Find eligible pack slots to replace
 	const eligibleReplacements: Array<{ packIdx: number; cardIdx: number }> = [];
@@ -261,7 +471,7 @@ function enforceGuarantee(
 
 	for (let i = 0; i < Math.min(needed, eligibleReplacements.length); i++) {
 		const { packIdx, cardIdx } = eligibleReplacements[i];
-		const heroCard = heroCandidates[Math.floor(rng() * heroCandidates.length)];
+		const heroCard = selectWeightedCard(heroCandidates, rng, featuredSets);
 
 		packs[packIdx].cards[cardIdx] = {
 			cardId: heroCard.id,
@@ -284,6 +494,8 @@ function enforceGuarantee(
 	}
 }
 
+// ── Utilities ─────────────────────────────────────────────────
+
 /**
  * Roll a weighted random outcome from a slot's outcome list.
  */
@@ -300,62 +512,6 @@ function rollWeightedOutcome(
 	}
 
 	return outcomes[outcomes.length - 1];
-}
-
-/**
- * Find cards in the database that match a rolled outcome.
- * Cards are pre-filtered by set before being passed to this function.
- */
-function findCandidates(
-	setCards: Array<{
-		id: string;
-		weapon_type?: string | null;
-		rarity?: string | null;
-		parallel?: string | null;
-		card_number?: string | null;
-		hero_name?: string | null;
-		name?: string | null;
-		base_play_name?: string;
-		power?: number | null;
-		set_code?: string | null;
-	}>,
-	outcome: SlotOutcome
-): typeof setCards {
-	switch (outcome.type) {
-		case 'weapon_rarity':
-			// Hero cards only (exclude plays and hotdogs)
-			return setCards.filter(
-				(c) =>
-					(c.weapon_type || '').toLowerCase() ===
-						outcome.value.toLowerCase() &&
-					c.card_number &&
-					!c.card_number.startsWith('PL-') &&
-					!c.card_number.startsWith('BPL-') &&
-					!c.card_number.startsWith('HTD')
-			);
-		case 'parallel':
-			// Any hero card — the parallel is applied as the outcome
-			return setCards.filter(
-				(c) =>
-					c.card_number &&
-					!c.card_number.startsWith('PL-') &&
-					!c.card_number.startsWith('BPL-') &&
-					!c.card_number.startsWith('HTD')
-			);
-		case 'card_type':
-			if (outcome.value === 'play') {
-				return setCards.filter((c) => c.card_number?.startsWith('PL-'));
-			}
-			if (outcome.value === 'bonus_play') {
-				return setCards.filter((c) => c.card_number?.startsWith('BPL-'));
-			}
-			if (outcome.value === 'hotdog') {
-				return setCards.filter((c) => c.card_number?.startsWith('HTD'));
-			}
-			return [];
-		default:
-			return [];
-	}
 }
 
 function findBestCard(cards: SimulatedCard[]): SimulatedCard | null {

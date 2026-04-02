@@ -118,7 +118,7 @@ export interface ParallelConfigEntry {
  * Default rarity for a parallel based on boba-parallels metadata.
  */
 function defaultRarityForParallel(key: string, name: string): CardRarity {
-	if (key === 'base' || key === 'foil') return 'common';
+	if (key === 'base' || key === 'battlefoil') return 'common';
 	if (key === 'super_parallel') return 'legendary';
 	if (key === 'inspired_ink') return 'ultra_rare';
 	// Named inserts and color battlefoils

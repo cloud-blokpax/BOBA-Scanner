@@ -22,7 +22,7 @@ import type { RequestHandler } from './$types';
 const VALID_RARITIES: CardRarity[] = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'];
 
 function defaultRarityForParallel(key: string): CardRarity {
-	if (key === 'base' || key === 'foil') return 'common';
+	if (key === 'base' || key === 'battlefoil') return 'common';
 	if (key === 'super_parallel') return 'legendary';
 	if (key === 'inspired_ink') return 'ultra_rare';
 	if (key.includes('battlefoil')) return 'rare';

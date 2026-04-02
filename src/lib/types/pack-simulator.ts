@@ -29,6 +29,15 @@ export interface SlotConfig {
 	/** Display label for this slot (e.g., "Guaranteed Rare+", "Common/Uncommon", "Insert Slot") */
 	label: string;
 
+	/**
+	 * What physical card format this slot produces.
+	 * 'paper'      - only cards with numeric-only card_number (no prefix)
+	 * 'battlefoil' - only cards with BF- prefix card_number
+	 * 'bonus'      - cards with any parallel prefix (determined by rolled outcome)
+	 * 'any'        - no card_number filtering (for play cards, hot dogs)
+	 */
+	cardFormat: 'paper' | 'battlefoil' | 'bonus' | 'any';
+
 	/** The possible outcomes and their weights */
 	outcomes: SlotOutcome[];
 }
