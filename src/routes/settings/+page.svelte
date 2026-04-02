@@ -87,23 +87,27 @@
 	}
 
 	async function saveProfile() {
-		const currentUser = user();
-		if (!currentUser) return;
-		const client = getSupabase();
-		if (!client) return;
+		if (!user()) {
+			showToast('Please sign in to save', 'x');
+			return;
+		}
 
 		saving = true;
 		try {
-			const { error } = await client
-				.from('users')
-				.upsert({
-					auth_user_id: currentUser.id,
-					email: currentUser.email || '',
+			const res = await fetch('/api/profile', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
 					name: profileName.trim() || null,
 					discord_id: discordId.trim() || null
-				}, { onConflict: 'auth_user_id' });
+				})
+			});
 
-			if (error) throw error;
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ error: 'Save failed' }));
+				throw new Error(err.error || 'Save failed');
+			}
+
 			showToast('Profile saved', 'check');
 			showProfile = false;
 		} catch (err) {
