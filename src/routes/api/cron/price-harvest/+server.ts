@@ -334,7 +334,10 @@ async function refreshCardPrice(
 
 		// Upsert price cache ONLY if confidence meets threshold
 		if (meetsThreshold) {
-			await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			const { error: cacheError } = await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			if (cacheError) {
+				console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+			}
 		}
 
 		// Write price history only if price changed AND meets threshold
@@ -342,7 +345,7 @@ async function refreshCardPrice(
 		const priceChanged = previousMid !== newMid;
 
 		if (meetsThreshold && (!previousMid || priceChanged)) {
-			await admin.from('price_history').insert({
+			const { error: historyError } = await admin.from('price_history').insert({
 				card_id: card.id,
 				source: 'ebay',
 				price_low: priceData.price_low,
@@ -351,6 +354,9 @@ async function refreshCardPrice(
 				listings_count: priceData.listings_count,
 				recorded_at: new Date().toISOString()
 			});
+			if (historyError) {
+				console.error(`[harvest] price_history insert FAILED for ${card.id}:`, historyError.message);
+			}
 		}
 
 		// Calculate delta
