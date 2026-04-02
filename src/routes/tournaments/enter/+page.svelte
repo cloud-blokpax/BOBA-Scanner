@@ -6,6 +6,7 @@
 	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
 	import { validateDeck } from '$lib/services/deck-validator';
 	import { fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
+	import { getDbs } from '$lib/data/boba-dbs-scores';
 	import SealedDeckEntry from '$lib/components/tournament/SealedDeckEntry.svelte';
 	import type { Card } from '$lib/types';
 
@@ -88,6 +89,7 @@
 
 	const formatInfo = $derived(tournament?.format_id ? getFormat(tournament.format_id) : null);
 	const isSealed = $derived(tournament?.deck_type === 'sealed');
+	const dbsTotal = $derived(playCards.reduce((sum, p) => sum + (p.dbs_score || 0), 0));
 	const isRegistrationOpen = $derived(() => {
 		if (!tournament) return false;
 		if (tournament.registration_closed) return false;
@@ -294,7 +296,7 @@
 					card_number: card.card_number || '',
 					name: card.hero_name || card.name || '',
 					set_code: card.set_code || '',
-					dbs_score: 0
+					dbs_score: getDbs(card.card_number || '', card.set_code || '') ?? 0
 				});
 			} else {
 				heroes.push({
@@ -621,7 +623,7 @@
 								<span class="val-label">Avg PWR</span>
 							</div>
 							<div class="val-stat">
-								<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
+								<span class="val-num">{validationResult?.stats.dbsTotal ?? dbsTotal}</span>
 								<span class="val-label">DBS</span>
 							</div>
 						</div>
@@ -696,7 +698,7 @@
 						<span class="val-label">Hot Dogs</span>
 					</div>
 					<div class="val-stat">
-						<span class="val-num">{validationResult?.stats.dbsTotal ?? '—'}</span>
+						<span class="val-num">{validationResult?.stats.dbsTotal ?? dbsTotal}</span>
 						<span class="val-label">DBS</span>
 					</div>
 				</div>
