@@ -73,13 +73,16 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Log admin action
-	await admin.from('admin_activity_log').insert({
+	const { error: logError } = await admin.from('admin_activity_log').insert({
 		admin_id: user!.id,
 		action: 'resolve_scan_flag',
 		entity_type: 'scan_flag',
 		entity_id: id,
 		details: { new_status: newStatus, notes }
 	});
+	if (logError) {
+		console.error('[admin/scan-flags] Activity log insert FAILED:', logError.message);
+	}
 
 	return json({ success: true });
 };

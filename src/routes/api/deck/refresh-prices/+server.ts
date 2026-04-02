@@ -181,11 +181,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const results = settled.filter(Boolean);
 
 	// Log this refresh for rate limiting
-	await supabase.from('deck_shop_refresh_log').insert({
+	const { error: refreshLogError } = await supabase.from('deck_shop_refresh_log').insert({
 		user_id: user.id,
 		card_count: cardIds.length,
 		created_at: new Date().toISOString()
 	});
+	if (refreshLogError) {
+		console.error('[deck/refresh-prices] Refresh log insert FAILED:', refreshLogError.message);
+	}
 
 	return json({
 		results,
