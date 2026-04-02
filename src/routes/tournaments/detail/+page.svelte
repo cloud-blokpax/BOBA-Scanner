@@ -57,6 +57,16 @@
 		}
 
 		try {
+			// Resolve public user ID (creator_id references users.id, not auth.users.id)
+			const { data: profile } = await client
+				.from('users')
+				.select('id, is_admin, is_organizer')
+				.eq('auth_user_id', currentUser.id)
+				.maybeSingle();
+
+			const publicUserId = profile?.id;
+			const isAdmin = profile?.is_admin === true || (currentUser as unknown as Record<string, unknown>).is_admin === true;
+
 			// Load tournament
 			const { data: tData, error: tError } = await client
 				.from('tournaments')
@@ -70,8 +80,8 @@
 				return;
 			}
 
-			// Verify ownership
-			if ((tData as TournamentDetail).creator_id !== currentUser.id) {
+			// Verify ownership OR admin access
+			if ((tData as TournamentDetail).creator_id !== publicUserId && !isAdmin) {
 				errorMsg = 'You can only view tournaments you created';
 				loading = false;
 				return;
