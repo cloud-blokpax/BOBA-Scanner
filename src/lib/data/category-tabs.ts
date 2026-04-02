@@ -20,8 +20,8 @@ export const COLLECTION_TABS: CategoryTab[] = [
 ];
 
 export const MARKET_TABS: CategoryTab[] = [
-	{ label: 'Dashboard', path: '/market' },
 	{ label: 'War Room', path: '/war-room' },
+	{ label: 'Market Pulse', path: '/market' },
 	{ label: 'Explorer', path: '/market/explore' },
 	{ label: 'Pack Sim', path: '/packs' },
 ];
@@ -58,9 +58,9 @@ export function getCategoryForPath(pathname: string): {
 		return { category: 'Collection', tabs: COLLECTION_TABS };
 	}
 
-	// Market Pulse
+	// War Room
 	if (['/market', '/war-room', '/packs'].includes(pathname) || pathname.startsWith('/market/')) {
-		return { category: 'Market Pulse', tabs: MARKET_TABS };
+		return { category: 'War Room', tabs: MARKET_TABS };
 	}
 
 	// Playbook — deck routes (except /deck/verify which is tournament-related)

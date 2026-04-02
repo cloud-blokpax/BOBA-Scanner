@@ -758,11 +758,11 @@
 								<span class="action-sub">Set progress · Grading · Export</span>
 							</div>
 						</a>
-						<a href="/market" class="action-tile">
+						<a href="/war-room" class="action-tile">
 							<span class="action-icon">📈</span>
 							<div class="action-text">
-								<span class="action-label">Market Pulse</span>
-								<span class="action-sub">War Room · Explorer · Pack sim</span>
+								<span class="action-label">War Room</span>
+								<span class="action-sub">Market Pulse · Explorer · Pack sim</span>
 							</div>
 						</a>
 						<a href="/deck" class="action-tile">
