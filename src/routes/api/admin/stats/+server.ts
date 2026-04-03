@@ -89,7 +89,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			.order('created_at', { ascending: false })
 			.limit(10),
 		// Feature flags
-		admin.from('feature_flags').select('feature_key, enabled_globally'),
+		admin.from('feature_flags').select('feature_key, enabled_globally').limit(200),
 		// System health checks
 		checkSystemHealth()
 	]);
@@ -100,7 +100,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.select('created_at')
 		.gte('created_at', fourteenDaysAgo)
 		.eq('call_type', 'scan')
-		.order('created_at', { ascending: true });
+		.order('created_at', { ascending: true })
+		.limit(50000);
 
 	const scanTrend = buildDailyTrend(trendData || [], 14);
 
@@ -109,7 +110,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.from('users')
 		.select('created_at')
 		.gte('created_at', fourteenDaysAgo)
-		.order('created_at', { ascending: true });
+		.order('created_at', { ascending: true })
+		.limit(10000);
 
 	const signupTrend = buildDailyTrend(signupTrendData || [], 14);
 
@@ -119,7 +121,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.select('created_at')
 		.gte('created_at', fourteenDaysAgo)
 		.eq('success', false)
-		.order('created_at', { ascending: true });
+		.order('created_at', { ascending: true })
+		.limit(50000);
 
 	const errorTrend = buildDailyTrend(errorTrendData || [], 14);
 

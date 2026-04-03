@@ -179,12 +179,12 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// Step 4: Paginate
 	const cards = allCards.slice(offset, offset + limit);
 
-	// ── Aggregates ───────────────────────────────────
-	const aggregates = buildAggregates(cards);
+	// ── Aggregates (from ALL matching cards, not just current page) ──
+	const aggregates = buildAggregates(allCards);
 
 	return json({
 		cards,
-		aggregates,
+		aggregates: { ...aggregates, totalResults: allCards.length },
 		pagination: { offset, limit, hasMore: offset + limit < allCards.length },
 	}, {
 		headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' }
