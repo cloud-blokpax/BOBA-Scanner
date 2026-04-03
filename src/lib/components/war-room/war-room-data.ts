@@ -26,19 +26,6 @@ export interface PlayCard {
 	dpd: number | null;
 }
 
-export const PAR_ORDER = [
-	'Paper',
-	'Battlefoil',
-	'Blue BF',
-	'Green BF',
-	'Blizzard BF',
-	"80's Rad",
-	'Linoleum BF',
-	'Silver BF',
-	'Bubble Gum',
-	'Superfoil',
-];
-
 export const W_ICONS: Record<string, string> = {
 	Fire: 'M12 2c0 6-4 8-4 14a6 6 0 1 0 8 0c0-6-4-8-4-14z',
 	Ice: 'M12 2v20M4 7l8 5 8-5M4 17l8-5 8 5',
@@ -51,16 +38,57 @@ export const W_ICONS: Record<string, string> = {
 };
 
 export const PARALLEL_COLORS: Record<string, string> = {
+	// Base
 	Paper: '#22c55e',
 	Battlefoil: '#3b82f6',
-	"80's Rad": '#f59e0b',
+
+	// Color Battlefoils
+	'Blue Battlefoil': '#60a5fa',
+	'Green Battlefoil': '#4ade80',
+	'Orange Battlefoil': '#f97316',
+	'Pink Battlefoil': '#f472b6',
+	'Red Battlefoil': '#ef4444',
+	'Silver Battlefoil': '#94a3b8',
+
+	// Named Inserts
+	"80's Rad Battlefoil": '#f59e0b',
+	'Blizzard Battlefoil': '#67e8f9',
+	'Bubble Gum Battlefoil': '#f472b6',
+	'Colosseum Battlefoil': '#d97706',
+	"Grandma's Linoleum Battlefoil": '#a78bfa',
+	"Great Grandma's Linoleum Battlefoil": '#8b5cf6',
+	'Headliner Battlefoil': '#fbbf24',
+	'Blue Headliner Battlefoil': '#60a5fa',
+	'Orange Headliner Battlefoil': '#f97316',
+	'Red Headliner Battlefoil': '#ef4444',
+	'Icon Battlefoil': '#c084fc',
+	'Miami Ice Battlefoil': '#06b6d4',
+	'Fire Tracks Battlefoil': '#ef4444',
+	'Mixtape Battlefoil': '#34d399',
+	'Logo Battlefoil': '#60a5fa',
+	'Slime Battlefoil': '#22c55e',
+	"Chillin' Battlefoil": '#3b82f6',
+	"Grillin' Battlefoil": '#f97316',
+	'Power Glove': '#a855f7',
+	'Alpha Battlefoil': '#a78bfa',
+	Cyber: '#06b6d4',
+	Alt: '#8b5cf6',
+
+	// Autographs
+	'Inspired Ink Battlefoil': '#ffd700',
+	'Inspired Ink Superfoil': '#ffd700',
+	'Metallic Inspired Ink': '#c0c0c0',
+
+	// Super
 	Superfoil: '#ef4444',
-	'Bubble Gum': '#f472b6',
-	'Blue BF': '#60a5fa',
-	'Green BF': '#4ade80',
-	'Silver BF': '#94a3b8',
-	'Blizzard BF': '#67e8f9',
-	'Linoleum BF': '#a78bfa',
+
+	// Alpha Blast
+	'Blue Blast': '#60a5fa',
+	'Bubble Gum Blast': '#f472b6',
+	'Green Blast': '#4ade80',
+	'Orange Blast': '#f97316',
+	'Pink Blast': '#f472b6',
+	'Super Blast': '#ef4444',
 };
 
 export const RARITY_COLORS: Record<string, string> = {

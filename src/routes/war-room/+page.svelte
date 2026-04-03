@@ -1,20 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Ring from '$lib/components/war-room/Ring.svelte';
 	import ScatterPlot from '$lib/components/war-room/ScatterPlot.svelte';
 	import WIcon from '$lib/components/war-room/WIcon.svelte';
 	import AnimatedNum from '$lib/components/war-room/AnimatedNum.svelte';
-	import {
-		PAR_ORDER,
-		PARALLEL_COLORS,
-		RARITY_COLORS,
-		type HeroCard,
-		type PlayCard,
-	} from '$lib/components/war-room/war-room-data';
+	import type { HeroCard, PlayCard } from '$lib/components/war-room/war-room-data';
+	import { PARALLEL_COLORS, RARITY_COLORS } from '$lib/components/war-room/war-room-data';
 
 	// ── State ────────────────────────────────────────────
-	let heroes = $state<HeroCard[]>([]);
-	let plays = $state<PlayCard[]>([]);
 	let pFilter = $state<string | null>(null);
 	let wFilter = $state<string | null>(null);
 	let sortBy = $state<'ppp' | 'price' | 'power' | 'listings'>('ppp');
@@ -22,74 +14,56 @@
 	let loaded = $state(false);
 	let showPlays = $state(false);
 	let playSort = $state<'dpd' | 'price' | 'dbs'>('dpd');
+
+	// Live data from API (replaces hardcoded HEROES/PLAYS)
+	let HEROES = $state<HeroCard[]>([]);
+	let PLAYS = $state<PlayCard[]>([]);
+	let loading = $state(true);
 	let loadError = $state<string | null>(null);
-	let dataLoading = $state(true);
 
 	onMount(async () => {
 		try {
 			const res = await fetch('/api/market/war-room');
 			if (!res.ok) throw new Error(`${res.status}`);
 			const data = await res.json();
-			heroes = data.heroes;
-			plays = data.plays;
+			HEROES = data.heroes;
+			PLAYS = data.plays;
 		} catch (err) {
-			console.error('[war-room] Failed to load live data:', err);
-			loadError = 'Failed to load market data';
+			loadError = err instanceof Error ? err.message : 'Failed to load';
+			console.error('[war-room] Load failed:', err);
 		} finally {
-			dataLoading = false;
+			loading = false;
 			setTimeout(() => (loaded = true), 60);
 		}
 	});
 
-	// ── Parallel stats ──────────────────────────────────
-	interface ParStat {
-		name: string;
-		count: number;
-		listings: number;
-		bnCount: number;
-		avg: number;
-		avgPwr: number;
-		min: number;
-		max: number;
-	}
-
-	const parStats: ParStat[] = $derived.by(() => {
-		const g: Record<string, { n: number; ls: number; bn: number; pr: number[]; pw: number[] }> = {};
-		heroes.forEach((h) => {
-			if (!g[h.p]) g[h.p] = { n: 0, ls: 0, bn: 0, pr: [], pw: [] };
-			const x = g[h.p];
-			x.n++;
-			x.ls += h.ls;
-			x.bn += h.bnC;
-			x.pr.push(h.mid);
-			x.pw.push(h.pwr);
+	// ── Parallel pricing stats (replaces ring chart data) ─────
+	const parallelStats = $derived.by(() => {
+		const src = wFilter ? HEROES.filter(h => h.w === wFilter) : HEROES;
+		const g: Record<string, { n: number; pr: number[]; pw: number[]; ls: number }> = {};
+		src.forEach(h => {
+			if (!g[h.p]) g[h.p] = { n: 0, pr: [], pw: [], ls: 0 };
+			g[h.p].n++;
+			g[h.p].pr.push(h.mid);
+			g[h.p].pw.push(h.pwr);
+			g[h.p].ls += h.ls;
 		});
-		return PAR_ORDER.filter((k) => g[k]).map((k) => {
-			const x = g[k];
-			return {
-				name: k,
+		return Object.entries(g)
+			.map(([p, x]) => ({
+				parallel: p,
 				count: x.n,
-				listings: x.ls,
-				bnCount: x.bn,
 				avg: +(x.pr.reduce((a, b) => a + b, 0) / x.n).toFixed(2),
 				avgPwr: Math.round(x.pw.reduce((a, b) => a + b, 0) / x.n),
+				listings: x.ls,
 				min: Math.min(...x.pr),
 				max: Math.max(...x.pr),
-			};
-		});
+			}))
+			.sort((a, b) => a.avg - b.avg);
 	});
-
-	const ringData = $derived(
-		parStats.map((p) => ({
-			label: p.name,
-			value: p.count,
-			color: PARALLEL_COLORS[p.name] || '#6b7d8e',
-		}))
-	);
 
 	// ── Filtered heroes ─────────────────────────────────
 	const filtered = $derived.by(() => {
-		let l = [...heroes];
+		let l = [...HEROES];
 		if (pFilter) l = l.filter((h) => h.p === pFilter);
 		if (wFilter) l = l.filter((h) => h.w === wFilter);
 		if (sortBy === 'ppp') l.sort((a, b) => a.ppp - b.ppp);
@@ -101,7 +75,7 @@
 
 	// ── Weapon stats ────────────────────────────────────
 	const weaponStats = $derived.by(() => {
-		const src = pFilter ? heroes.filter((h) => h.p === pFilter) : heroes;
+		const src = pFilter ? HEROES.filter((h) => h.p === pFilter) : HEROES;
 		const g: Record<string, { n: number; pr: number[]; pw: number[] }> = {};
 		src.forEach((h) => {
 			if (!g[h.w]) g[h.w] = { n: 0, pr: [], pw: [] };
@@ -126,16 +100,14 @@
 		return {
 			count: t,
 			listings: filtered.reduce((s, h) => s + h.ls, 0),
-			bn: filtered.reduce((s, h) => s + h.bnC, 0),
 			avg: +(filtered.reduce((s, h) => s + h.mid, 0) / t).toFixed(2),
 			avgPwr: Math.round(filtered.reduce((s, h) => s + h.pwr, 0) / t),
-			totalVal: +filtered.reduce((s, h) => s + h.mid, 0).toFixed(2),
 		};
 	});
 
 	// ── Sorted plays ────────────────────────────────────
 	const sortedPlays = $derived.by(() => {
-		const l = [...plays];
+		const l = [...PLAYS];
 		if (playSort === 'dpd') l.sort((a, b) => (a.dpd ?? 999) - (b.dpd ?? 999));
 		else if (playSort === 'price') l.sort((a, b) => a.mid - b.mid);
 		else if (playSort === 'dbs') l.sort((a, b) => b.dbs - a.dbs);
@@ -173,214 +145,213 @@
 </svelte:head>
 
 <div class="war-room">
-	{#if dataLoading}
+	{#if loading}
 		<div class="loading-state">
 			<div class="spinner"></div>
 			<p>Loading market data...</p>
 		</div>
 	{:else if loadError}
-		<div class="error-state">
-			<p>{loadError}</p>
-			<button onclick={() => location.reload()}>Retry</button>
+		<div class="empty-state">
+			<p>Failed to load market data</p>
+			<p class="empty-hint">{loadError}</p>
 		</div>
-	{/if}
-
-	<!-- HERO SECTION -->
-	<div class="hero-section" class:loaded>
-		<div class="hero-badge">
-			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
-				<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-			</svg>
-			<span class="badge-text">War Room</span>
+	{:else if HEROES.length === 0}
+		<div class="empty-state">
+			<p>No pricing data available yet</p>
+			<p class="empty-hint">The eBay harvester needs to run before market data appears here.</p>
 		</div>
-		<h1 class="hero-title">Card economy<br />intelligence</h1>
-		<p class="hero-desc">
-			Every parallel, weapon, power level, and play card — cross-referenced with live eBay pricing. Find the cheapest path to a winning deck.
-		</p>
-	</div>
-
-	<!-- PARALLEL RING + LEGEND -->
-	<section class="section card-panel" class:loaded style="transition-delay: 0.13s">
-		<div class="section-label center">Market by parallel</div>
-		<Ring data={ringData} size={130} thickness={16} />
-		<div class="legend">
-			{#each ringData as d}
-				<button
-					class="legend-btn"
-					class:active={pFilter === d.label}
-					style="--accent: {d.color}"
-					onclick={() => (pFilter = pFilter === d.label ? null : d.label)}
-				>
-					<span class="legend-dot" style="background: {d.color}"></span>
-					{d.label}
-					<span class="legend-count">{d.value}</span>
-				</button>
-			{/each}
+	{:else}
+		<!-- HERO SECTION -->
+		<div class="hero-section" class:loaded>
+			<div class="hero-badge">
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
+					<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+				</svg>
+				<span class="badge-text">War Room</span>
+			</div>
+			<h1 class="hero-title">Card economy<br />intelligence</h1>
+			<p class="hero-desc">
+				Every parallel, weapon, and power level — cross-referenced with live eBay pricing.
+				Find the cheapest path to a winning deck.
+			</p>
 		</div>
-	</section>
 
-	<!-- AGGREGATE STATS -->
-	{#if agg}
-		<section class="section" class:loaded style="transition-delay: 0.21s">
-			<div class="stat-grid">
-				{#each [
-					{ l: 'Cards', v: agg.count, c: '#e2e8f0' },
-					{ l: 'Listed', v: agg.listings, c: '#22c55e' },
-					{ l: 'Avg Price', v: agg.avg, c: '#f59e0b', pre: '$' },
-					{ l: 'Avg Power', v: agg.avgPwr, c: '#3b82f6' },
-				] as s}
-					<div class="stat-cell">
-						<div class="stat-value" style="color: {s.c}">
-							<AnimatedNum value={s.v} pre={s.pre ?? ''} decimals={s.pre ? 2 : 0} />
+		<!-- AGGREGATE STATS -->
+		{#if agg}
+			<section class="section" class:loaded style="transition-delay: 0.13s">
+				<div class="stat-grid">
+					{#each [
+						{ l: 'Cards', v: agg.count, c: '#e2e8f0' },
+						{ l: 'Listed', v: agg.listings, c: '#22c55e' },
+						{ l: 'Avg Price', v: agg.avg, c: '#f59e0b', pre: '$' },
+						{ l: 'Avg Power', v: agg.avgPwr, c: '#3b82f6' },
+					] as s}
+						<div class="stat-cell">
+							<div class="stat-value" style="color: {s.c}">
+								<AnimatedNum value={s.v} pre={s.pre ?? ''} decimals={s.pre ? 2 : 0} />
+							</div>
+							<div class="stat-label">{s.l}</div>
 						</div>
-						<div class="stat-label">{s.l}</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		<!-- PRICE BY PARALLEL (replaces ring chart) -->
+		<section class="section" class:loaded style="transition-delay: 0.21s">
+			<div class="section-label">Price by parallel{wFilter ? ` \u00b7 ${wFilter}` : ''}</div>
+			<div class="parallel-grid">
+				{#each parallelStats as ps}
+					<button
+						class="parallel-card"
+						class:active={pFilter === ps.parallel}
+						onclick={() => (pFilter = pFilter === ps.parallel ? null : ps.parallel)}
+					>
+						<div class="parallel-name">{ps.parallel}</div>
+						<div class="parallel-price">${fmtPrice(ps.avg)}</div>
+						<div class="parallel-meta">{ps.count} cards · {ps.avgPwr}p</div>
+					</button>
+				{/each}
+			</div>
+		</section>
+
+		<!-- PRICE BY WEAPON -->
+		<section class="section" class:loaded style="transition-delay: 0.29s">
+			<div class="section-label">Price by weapon{pFilter ? ` \u00b7 ${pFilter}` : ''}</div>
+			<div class="weapon-grid">
+				{#each weaponStats as ws}
+					<button
+						class="weapon-card"
+						class:active={wFilter === ws.weapon}
+						onclick={() => (wFilter = wFilter === ws.weapon ? null : ws.weapon)}
+					>
+						<WIcon type={ws.weapon} size={18} color={wFilter === ws.weapon ? '#f59e0b' : '#6b7d8e'} />
+						<div class="weapon-name">{ws.weapon}</div>
+						<div class="weapon-price">${fmtPrice(ws.avg)}</div>
+						<div class="weapon-meta">{ws.count} cards · {ws.avgPwr}p</div>
+					</button>
+				{/each}
+			</div>
+		</section>
+
+		<!-- SCATTER: PRICE vs POWER -->
+		<section class="section card-panel" class:loaded style="transition-delay: 0.37s">
+			<div class="scatter-header">
+				<div class="section-label">Price vs power</div>
+				<div class="scatter-hint">Hover for details · {pFilter || 'All parallels'}</div>
+			</div>
+			<ScatterPlot data={filtered} width={340} height={190} onhover={(n) => (hoverDot = n)} hovered={hoverDot} />
+			<div class="scatter-footer">Bottom-left = best value (low price, high power)</div>
+		</section>
+
+		<!-- HERO RESULTS -->
+		<section class="section" class:loaded style="transition-delay: 0.45s">
+			<div class="results-header">
+				<div class="section-label">
+					Heroes{pFilter ? ` \u00b7 ${pFilter}` : ''}{wFilter ? ` \u00b7 ${wFilter}` : ''}
+				</div>
+				{#if pFilter || wFilter}
+					<button class="clear-btn" onclick={() => { pFilter = null; wFilter = null; }}>Clear</button>
+				{/if}
+			</div>
+			<div class="sort-row">
+				{#each SORT_OPTIONS as o}
+					<button class="sort-btn" class:active={sortBy === o.id} onclick={() => (sortBy = o.id)}>
+						{o.l}
+					</button>
+				{/each}
+			</div>
+			<div class="card-list">
+				{#each filtered.slice(0, 20) as h, i}
+					{@const l = liq(h.ls)}
+					<div class="card-row" class:even={i % 2 === 0}>
+						<div class="card-icon-col">
+							<WIcon type={h.w} size={16} color="#6b7d8e" />
+							<span class="card-pwr">{h.pwr}</span>
+						</div>
+						<div class="card-info">
+							<div class="card-hero">{h.hero}</div>
+							<div class="card-meta">
+								<span class="card-parallel">{h.p}</span>
+								<span class="liq-badge" style="color: {l.color}; background: {l.color}12">{l.label}</span>
+								<span>{h.ls} listed</span>
+							</div>
+						</div>
+						<div class="card-price-col">
+							<div class="card-price">${fmtPrice(h.mid)}</div>
+							<div class="card-ppp">${h.ppp}/pwr</div>
+						</div>
 					</div>
 				{/each}
 			</div>
 		</section>
-	{/if}
 
-	<!-- SCATTER: PRICE vs POWER -->
-	<section class="section card-panel" class:loaded style="transition-delay: 0.29s">
-		<div class="scatter-header">
-			<div class="section-label">Price vs power</div>
-			<div class="scatter-hint">Hover for details · {pFilter || 'All parallels'}</div>
-		</div>
-		<ScatterPlot data={filtered} width={340} height={190} onhover={(n) => (hoverDot = n)} hovered={hoverDot} />
-		<div class="scatter-footer">Bottom-left = best value (low price, high power)</div>
-	</section>
-
-	<!-- WEAPON BREAKDOWN -->
-	<section class="section" class:loaded style="transition-delay: 0.37s">
-		<div class="section-label">Price by weapon{pFilter ? ` · ${pFilter}` : ''}</div>
-		<div class="weapon-grid">
-			{#each weaponStats as ws}
-				<button
-					class="weapon-card"
-					class:active={wFilter === ws.weapon}
-					onclick={() => (wFilter = wFilter === ws.weapon ? null : ws.weapon)}
+		<!-- PLAYS -->
+		<section class="section" class:loaded style="transition-delay: 0.53s">
+			<button class="plays-toggle" onclick={() => (showPlays = !showPlays)}>
+				<div class="plays-toggle-left">
+					<div class="plays-icon">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
+							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+							<polyline points="14 2 14 8 20 8" />
+						</svg>
+					</div>
+					<div class="plays-toggle-text">
+						<div class="plays-toggle-title">Play card market</div>
+						<div class="plays-toggle-desc">{PLAYS.length} plays · DBS efficiency · rarity pricing</div>
+					</div>
+				</div>
+				<svg
+					width="16" height="16" viewBox="0 0 24 24"
+					fill="none" stroke="#6b7d8e" stroke-width="2"
+					class="chevron" class:open={showPlays}
 				>
-					<WIcon type={ws.weapon} size={18} color={wFilter === ws.weapon ? '#f59e0b' : '#6b7d8e'} />
-					<div class="weapon-name">{ws.weapon}</div>
-					<div class="weapon-price">${fmtPrice(ws.avg)}</div>
-					<div class="weapon-meta">{ws.count} cards · {ws.avgPwr}p</div>
-				</button>
-			{/each}
-		</div>
-	</section>
+					<polyline points="6 9 12 15 18 9" />
+				</svg>
+			</button>
 
-	<!-- HERO RESULTS -->
-	<section class="section" class:loaded style="transition-delay: 0.45s">
-		<div class="results-header">
-			<div class="section-label">
-				Heroes{pFilter ? ` · ${pFilter}` : ''}{wFilter ? ` · ${wFilter}` : ''}
-			</div>
-			{#if pFilter || wFilter}
-				<button class="clear-btn" onclick={() => { pFilter = null; wFilter = null; }}>Clear</button>
-			{/if}
-		</div>
-		<div class="sort-row">
-			{#each SORT_OPTIONS as o}
-				<button class="sort-btn" class:active={sortBy === o.id} onclick={() => (sortBy = o.id)}>
-					{o.l}
-				</button>
-			{/each}
-		</div>
-		<div class="card-list">
-			{#each filtered.slice(0, 10) as h, i}
-				{@const l = liq(h.ls)}
-				<div class="card-row" class:even={i % 2 === 0}>
-					<div class="card-icon-col">
-						<WIcon type={h.w} size={16} color="#6b7d8e" />
-						<span class="card-pwr">{h.pwr}</span>
+			{#if showPlays}
+				<div class="plays-content">
+					<div class="sort-row">
+						{#each PLAY_SORT_OPTIONS as o}
+							<button
+								class="sort-btn blue"
+								class:active={playSort === o.id}
+								onclick={() => (playSort = o.id)}
+							>
+								{o.l}
+							</button>
+						{/each}
 					</div>
-					<div class="card-info">
-						<div class="card-hero">{h.hero}</div>
-						<div class="card-meta">
-							<span class="card-parallel">{h.p}</span>
-							<span class="liq-badge" style="color: {l.color}; background: {l.color}12">{l.label}</span>
-							<span>{h.ls} listed</span>
-						</div>
-					</div>
-					<div class="card-price-col">
-						<div class="card-price">${fmtPrice(h.mid)}</div>
-						<div class="card-ppp">${h.ppp}/pwr</div>
-					</div>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- PLAYS -->
-	<section class="section" class:loaded style="transition-delay: 0.53s">
-		<button class="plays-toggle" onclick={() => (showPlays = !showPlays)}>
-			<div class="plays-toggle-left">
-				<div class="plays-icon">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-						<polyline points="14 2 14 8 20 8" />
-					</svg>
-				</div>
-				<div class="plays-toggle-text">
-					<div class="plays-toggle-title">Play card market</div>
-					<div class="plays-toggle-desc">{plays.length} plays · DBS efficiency · rarity pricing</div>
-				</div>
-			</div>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="#6b7d8e"
-				stroke-width="2"
-				class="chevron"
-				class:open={showPlays}
-			>
-				<polyline points="6 9 12 15 18 9" />
-			</svg>
-		</button>
-
-		{#if showPlays}
-			<div class="plays-content">
-				<div class="sort-row">
-					{#each PLAY_SORT_OPTIONS as o}
-						<button
-							class="sort-btn blue"
-							class:active={playSort === o.id}
-							onclick={() => (playSort = o.id)}
-						>
-							{o.l}
-						</button>
-					{/each}
-				</div>
-				<div class="card-list">
-					{#each sortedPlays as p, i}
-						<div class="card-row" class:even={i % 2 === 0}>
-							<div class="play-dbs-col">
-								<div class="play-dbs-val">{p.dbs}</div>
-								<div class="play-dbs-label">DBS</div>
-							</div>
-							<div class="card-info">
-								<div class="card-hero">{p.name}</div>
-								<div class="card-meta">
-									<span class="rarity-badge" style="color: {RARITY_COLORS[p.r] || '#6b7d8e'}">{p.r}</span>
-									<span>{p.num}</span>
-									<span>{p.hd > 0 ? `${p.hd} HD` : 'Free'}</span>
-									<span>{p.ls} listed</span>
+					<div class="card-list">
+						{#each sortedPlays as p, i}
+							<div class="card-row" class:even={i % 2 === 0}>
+								<div class="play-dbs-col">
+									<div class="play-dbs-val">{p.dbs}</div>
+									<div class="play-dbs-label">DBS</div>
+								</div>
+								<div class="card-info">
+									<div class="card-hero">{p.name}</div>
+									<div class="card-meta">
+										<span class="rarity-badge" style="color: {RARITY_COLORS[p.r] || '#6b7d8e'}">{p.r}</span>
+										<span>{p.num}</span>
+										<span>{p.hd > 0 ? `${p.hd} HD` : 'Free'}</span>
+										<span>{p.ls} listed</span>
+									</div>
+								</div>
+								<div class="card-price-col">
+									<div class="card-price">${fmtPrice(p.mid)}</div>
+									{#if p.dpd !== null}
+										<div class="card-dpd">${p.dpd}/dbs</div>
+									{/if}
 								</div>
 							</div>
-							<div class="card-price-col">
-								<div class="card-price">${fmtPrice(p.mid)}</div>
-								{#if p.dpd !== null}
-									<div class="card-dpd">${p.dpd}/dbs</div>
-								{/if}
-							</div>
-						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
-			</div>
-		{/if}
-	</section>
+			{/if}
+		</section>
+	{/if}
 </div>
 
 <style>
@@ -459,51 +430,6 @@
 		text-transform: uppercase;
 		margin-bottom: 8px;
 	}
-	.section-label.center {
-		text-align: center;
-		margin-bottom: 14px;
-	}
-
-	/* ── Ring legend ── */
-	.legend {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 6px 12px;
-		margin-top: 14px;
-	}
-	.legend-btn {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 10px;
-		color: #6b7d8e;
-		background: transparent;
-		border: 1px solid transparent;
-		border-radius: 6px;
-		padding: 3px 8px;
-		cursor: pointer;
-		font-family: inherit;
-		font-weight: 500;
-		transition: all 0.2s;
-	}
-	.legend-btn.active {
-		color: #fff;
-		background: color-mix(in srgb, var(--accent) 12%, transparent);
-		border-color: color-mix(in srgb, var(--accent) 25%, transparent);
-		font-weight: 700;
-	}
-	.legend-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 2px;
-		flex-shrink: 0;
-	}
-	.legend-count {
-		font-family: 'JetBrains Mono', monospace;
-		font-size: 9px;
-		opacity: 0.7;
-	}
 
 	/* ── Stats grid ── */
 	.stat-grid {
@@ -530,6 +456,58 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		margin-top: 1px;
+	}
+
+	/* ── Parallel Grid (matches weapon grid) ────────── */
+	.parallel-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 6px;
+		margin-top: 4px;
+	}
+	.parallel-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 10px 6px;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid rgba(255, 255, 255, 0.04);
+		border-radius: 10px;
+		cursor: pointer;
+		transition: all 0.2s;
+		font-family: inherit;
+		color: #e2e8f0;
+	}
+	.parallel-card:hover {
+		border-color: rgba(255, 255, 255, 0.1);
+	}
+	.parallel-card.active {
+		border-color: rgba(245, 158, 11, 0.25);
+		background: rgba(245, 158, 11, 0.06);
+	}
+	.parallel-name {
+		font-size: 10px;
+		font-weight: 600;
+		color: #6b7d8e;
+		text-align: center;
+		line-height: 1.2;
+	}
+	.parallel-price {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 14px;
+		font-weight: 800;
+		color: #f59e0b;
+	}
+	.parallel-meta {
+		font-size: 9px;
+		color: #4a6178;
+	}
+
+	@media (max-width: 380px) {
+		.parallel-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
 	}
 
 	/* ── Scatter ── */
@@ -803,9 +781,9 @@
 		}
 	}
 
-	/* ── Loading / Error states ── */
+	/* ── Loading / Empty states ── */
 	.loading-state,
-	.error-state {
+	.empty-state {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -814,6 +792,12 @@
 		gap: 12px;
 		color: #6b7d8e;
 		font-size: 13px;
+		text-align: center;
+	}
+	.empty-hint {
+		font-size: 11px;
+		color: #4a6178;
+		margin-top: 4px;
 	}
 	.spinner {
 		width: 28px;
@@ -825,16 +809,5 @@
 	}
 	@keyframes spin {
 		to { transform: rotate(360deg); }
-	}
-	.error-state button {
-		padding: 6px 16px;
-		border-radius: 8px;
-		background: rgba(245, 158, 11, 0.1);
-		border: 1px solid rgba(245, 158, 11, 0.3);
-		color: #f59e0b;
-		font-size: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		font-family: inherit;
 	}
 </style>
