@@ -554,29 +554,6 @@
 		return canvas.toDataURL('image/jpeg', 0.85);
 	}
 
-	/**
-	 * Try to crop the captured image to just the card area using
-	 * the scanner guide rect as reference. Falls back to full frame.
-	 */
-	function getCroppedImageUrl(): string | null {
-		if (!videoEl) return null;
-		try {
-			const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
-			if (!guideEl) return null;
-			const guideRect = guideEl.getBoundingClientRect();
-			const videoRect = videoEl.getBoundingClientRect();
-			if (guideRect.width < 10 || guideRect.height < 10) return null;
-			const region = cropToCardRegion(
-				videoEl.videoWidth,
-				videoEl.videoHeight,
-				guideRect,
-				videoRect
-			);
-			return cropFrame(videoEl, region);
-		} catch {
-			return null;
-		}
-	}
 
 	async function handleCapture() {
 		if (!videoEl || scanning || paused) return;
@@ -608,12 +585,30 @@
 			}
 
 			phase = 'processing';
+			// Compute crop region from viewfinder guide for both display and storage
+			let cropRegion: { x: number; y: number; width: number; height: number } | null = null;
+			try {
+				const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
+				if (guideEl) {
+					const guideRect = guideEl.getBoundingClientRect();
+					const videoRect = videoEl.getBoundingClientRect();
+					if (guideRect.width >= 10 && guideRect.height >= 10) {
+						cropRegion = cropToCardRegion(
+							videoEl.videoWidth,
+							videoEl.videoHeight,
+							guideRect,
+							videoRect
+						);
+					}
+				}
+			} catch { /* ignore */ }
+
 			// Use cropped image for display (cleaner), full frame for AI recognition
-			const croppedUrl = getCroppedImageUrl();
+			const croppedUrl = cropRegion ? cropFrame(videoEl, cropRegion) : null;
 			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
 			let scanResult;
 			try {
-				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true });
+				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion });
 			} finally {
 				bitmap.close();
 			}

@@ -60,32 +60,62 @@ function createThumbnailDataUrl(bitmap: ImageBitmap): string | null {
 
 /**
  * Create a listing-quality JPEG blob from a camera bitmap.
- * Produces a ~15-40KB image suitable for eBay listings and collection display.
- * Returns null if called server-side or if canvas fails.
+ * If cropRegion is provided, crops to that region first.
+ * If no cropRegion, attempts a center-crop to card aspect ratio (5:7).
+ * Produces a clean card-focused image for Supabase Storage and eBay.
  */
-function createListingImageBlob(bitmap: ImageBitmap): Promise<Blob | null> {
+function createListingImageBlob(
+	bitmap: ImageBitmap,
+	cropRegion?: { x: number; y: number; width: number; height: number } | null
+): Promise<Blob | null> {
 	try {
 		if (typeof document === 'undefined') return Promise.resolve(null);
 
+		const CARD_ASPECT = 5 / 7;
 		const MAX_W = 600;
 		const MAX_H = 840;
-		const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);
-		const w = Math.round(bitmap.width * scale);
-		const h = Math.round(bitmap.height * scale);
+
+		let srcX = 0;
+		let srcY = 0;
+		let srcW = bitmap.width;
+		let srcH = bitmap.height;
+
+		if (cropRegion) {
+			srcX = Math.max(0, Math.round(cropRegion.x));
+			srcY = Math.max(0, Math.round(cropRegion.y));
+			srcW = Math.min(bitmap.width - srcX, Math.round(cropRegion.width));
+			srcH = Math.min(bitmap.height - srcY, Math.round(cropRegion.height));
+		} else {
+			// No crop region — center-crop to card aspect ratio
+			const imgAspect = bitmap.width / bitmap.height;
+			if (imgAspect > CARD_ASPECT) {
+				const targetW = bitmap.height * CARD_ASPECT;
+				srcX = Math.round((bitmap.width - targetW) / 2);
+				srcW = Math.round(targetW);
+			} else if (imgAspect < CARD_ASPECT * 0.85) {
+				const targetH = bitmap.width / CARD_ASPECT;
+				srcY = Math.round((bitmap.height - targetH) / 2);
+				srcH = Math.round(targetH);
+			}
+		}
+
+		const scale = Math.min(MAX_W / srcW, MAX_H / srcH, 1);
+		const outW = Math.round(srcW * scale);
+		const outH = Math.round(srcH * scale);
 
 		const canvas = document.createElement('canvas');
-		canvas.width = w;
-		canvas.height = h;
+		canvas.width = outW;
+		canvas.height = outH;
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return Promise.resolve(null);
 
-		ctx.drawImage(bitmap, 0, 0, w, h);
+		ctx.drawImage(bitmap, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
 
 		return new Promise((resolve) => {
 			canvas.toBlob(
 				(blob) => resolve(blob),
 				'image/jpeg',
-				0.8
+				0.85
 			);
 		});
 	} catch (err) {
@@ -117,6 +147,7 @@ interface ScanContext {
 	traceId: string;
 	lastOcrReading: string | null;
 	lastTier3FailReason: string | null;
+	cropRegion?: { x: number; y: number; width: number; height: number } | null;
 }
 
 /**
@@ -292,7 +323,7 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
 	onTierChange?: (tier: 1 | 2 | 3) => void,
-	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean }
+	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean; cropRegion?: { x: number; y: number; width: number; height: number } | null }
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
@@ -315,7 +346,7 @@ export async function recognizeCard(
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null };
+	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null };
 
 	// Convert to ImageBitmap for worker transfer
 	const bitmap =
@@ -348,7 +379,7 @@ export async function recognizeCard(
 		// Create a listing-quality image blob for Supabase Storage upload.
 		// This runs async but we attach the promise to the result so callers can await it.
 		if (bitmap instanceof ImageBitmap && final.card_id) {
-			final._listingImagePromise = createListingImageBlob(bitmap);
+			final._listingImagePromise = createListingImageBlob(bitmap, ctx.cropRegion ?? null);
 		}
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
