@@ -22,7 +22,7 @@
 </script>
 
 {#if failed}
-	<div class={className} style="display:flex;align-items:center;justify-content:center;background:var(--bg-elevated,#121d34);border-radius:8px;aspect-ratio:2.5/3.5;font-size:2rem;">🎴</div>
+	<div class="card-img-placeholder {className}">🎴</div>
 {:else if urls.avif || urls.webp}
 	<picture>
 		{#if urls.avif}
@@ -37,7 +37,7 @@
 			{loading}
 			decoding="async"
 			width={urls.width}
-			class={className}
+			class="card-img {className}"
 			onerror={handleError}
 		/>
 	</picture>
@@ -47,7 +47,25 @@
 		{alt}
 		{loading}
 		decoding="async"
-		class={className}
+		class="card-img {className}"
 		onerror={handleError}
 	/>
 {/if}
+
+<style>
+	.card-img {
+		aspect-ratio: 5 / 7;
+		object-fit: cover;
+		border-radius: 8px;
+		width: 100%;
+	}
+	.card-img-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-elevated, #121d34);
+		border-radius: 8px;
+		aspect-ratio: 5 / 7;
+		font-size: 2rem;
+	}
+</style>

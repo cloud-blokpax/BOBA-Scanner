@@ -189,7 +189,7 @@
 				<div class="detail-header">
 					{#if item.scan_image_url}
 						<div class="detail-image-tilt" use:tilt={{ gyro: card?.rarity !== 'common', weaponType: card?.weapon_type ?? null, shimmer: true, specular: card?.rarity !== 'common' }}>
-							<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="detail-image" />
+							<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="detail-image card-cropped" />
 						</div>
 					{:else if detailImgUrl}
 						<div class="detail-image-tilt" use:tilt={{ gyro: card?.rarity !== 'common', weaponType: card?.weapon_type ?? null, shimmer: true, specular: card?.rarity !== 'common' }}>
@@ -442,6 +442,12 @@
 	.detail-image, :global(.detail-image) {
 		max-width: 200px;
 		border-radius: 8px;
+	}
+	.card-cropped {
+		aspect-ratio: 5 / 7;
+		object-fit: cover;
+		border-radius: 12px;
+		max-width: 100%;
 	}
 	.detail-placeholder { font-size: 4rem; }
 	.retake-btn {
