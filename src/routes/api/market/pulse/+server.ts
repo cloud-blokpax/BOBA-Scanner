@@ -27,7 +27,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.eq('source', 'ebay')
 		.not('price_mid', 'is', null)
 		.order('price_mid', { ascending: false })
-		.limit(200);
+		.limit(5000);
 
 	if (priceErr) {
 		console.error('[market/pulse] price_cache query failed:', priceErr);
@@ -43,7 +43,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const { data: cardRows } = await admin
 		.from('cards')
 		.select('id, hero_name, name, card_number, set_code, rarity')
-		.in('id', cardIds);
+		.in('id', cardIds)
+		.limit(5000);
 
 	const cardMap = new Map((cardRows || []).map(c => [c.id, c]));
 
@@ -54,7 +55,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.eq('success', true)
 		.in('card_id', cardIds)
 		.order('processed_at', { ascending: false })
-		.limit(400);
+		.limit(10000);
 
 	// Deduplicate: keep only the most recent harvest entry per card_id
 	const harvestMap = new Map<string, NonNullable<typeof harvestRows>[number]>();
@@ -70,7 +71,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.select('card_id, price_mid, recorded_at')
 		.in('card_id', cardIds)
 		.order('recorded_at', { ascending: true })
-		.limit(3000);
+		.limit(70000);
 
 	const historyMap = new Map<string, number[]>();
 	for (const row of historyRows || []) {
