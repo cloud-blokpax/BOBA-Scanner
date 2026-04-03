@@ -90,6 +90,9 @@ export interface SimulatedCard {
 
 	/** Current Buy Now price (if available from price cache) */
 	price: number | null;
+
+	/** Reference image URL (from community scans, may not exist) */
+	imageUrl: string | null;
 }
 
 /** Result of opening a single pack */

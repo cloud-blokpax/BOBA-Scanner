@@ -19,6 +19,7 @@
 import seedrandom from 'seedrandom';
 import { getAllCards } from '$lib/services/card-db';
 import { getWeapon } from '$lib/data/boba-weapons';
+import { getCardImageUrl } from '$lib/utils/image-url';
 import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
 import {
 	isPaperCardNumber,
@@ -373,7 +374,8 @@ export function openPack(
 				slotLabel: slot.label,
 				outcomeType: outcome.type,
 				outcomeValue: outcome.value,
-				price: null
+				price: null,
+				imageUrl: card.id ? getCardImageUrl({ id: card.id }) : null
 			});
 		} else {
 			// Defensive fallback: ensure pack always has the correct card count.
@@ -391,7 +393,8 @@ export function openPack(
 				slotLabel: slot.label,
 				outcomeType: outcome.type,
 				outcomeValue: outcome.value,
-				price: null
+				price: null,
+				imageUrl: null
 			});
 		}
 	}
@@ -513,7 +516,8 @@ function enforceGuarantee(
 			slotLabel: `${guarantee.value} (Guaranteed)`,
 			outcomeType: 'parallel',
 			outcomeValue: guarantee.value,
-			price: null
+			price: null,
+			imageUrl: heroCard.id ? getCardImageUrl({ id: heroCard.id }) : null
 		};
 
 		// Recalculate best card for this pack
