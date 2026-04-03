@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 
 	// ── Types ────────────────────────────────────────
 	interface FacetValue { value: string; count: number; pricedCount?: number }
@@ -83,7 +85,7 @@
 	let filterPriceMax = $state($page.url.searchParams.get('price_max') || '');
 	let filterSort = $state($page.url.searchParams.get('sort') || 'price_asc');
 	let filterCardType = $state<'hero' | 'play'>(($page.url.searchParams.get('card_type') as 'hero' | 'play') || 'hero');
-	let filterPricedOnly = $state($page.url.searchParams.get('priced_only') !== 'false');
+	let filterPricedOnly = $state($page.url.searchParams.get('priced_only') === 'true');
 
 	// ── Data state ───────────────────────────────────
 	let facets = $state<Facets | null>(null);
@@ -135,7 +137,7 @@
 		if (filterPriceMax) params.set('price_max', filterPriceMax);
 		if (filterSort !== 'price_asc') params.set('sort', filterSort);
 		if (filterCardType !== 'hero') params.set('card_type', filterCardType);
-		if (!filterPricedOnly) params.set('priced_only', 'false');
+		if (filterPricedOnly) params.set('priced_only', 'true');
 		return params;
 	}
 
@@ -252,6 +254,23 @@
 		if (score >= 0.8) return 'var(--success)';
 		if (score >= 0.5) return 'var(--warning)';
 		return 'var(--danger)';
+	}
+
+	function heroEbayUrl(c: ExploreCard): string {
+		return buildEbaySearchUrl({
+			card_number: c.num,
+			hero_name: c.hero,
+			athlete_name: c.athlete,
+			parallel: c.parallel,
+			weapon_type: c.weapon,
+		});
+	}
+
+	function playEbayUrl(c: PlayCard): string {
+		return buildEbaySearchUrl({
+			card_number: c.num,
+			name: c.name,
+		});
 	}
 
 	// ── Lifecycle ────────────────────────────────────
@@ -506,7 +525,7 @@
 		<div class="results-list">
 			{#each cards as card (card.id)}
 				{@const c = card as ExploreCard}
-				<div class="card-row" class:unpriced={!c.hasPriceData}>
+				<a class="card-row" class:unpriced={!c.hasPriceData} href={heroEbayUrl(c)} target="_blank" rel="noopener noreferrer">
 					<div class="card-main">
 						<div class="card-name">{c.hero}</div>
 						<div class="card-meta">
@@ -550,14 +569,15 @@
 							<span class="liquidity-badge" style="color: var(--text-muted)">Not Priced</span>
 						</div>
 					{/if}
-				</div>
+					<div class="ebay-link-indicator">eBay</div>
+				</a>
 			{/each}
 		</div>
 	{:else}
 		<div class="results-list">
 			{#each cards as card (card.id)}
 				{@const c = card as PlayCard}
-				<div class="card-row" class:unpriced={!c.hasPriceData}>
+				<a class="card-row" class:unpriced={!c.hasPriceData} href={playEbayUrl(c)} target="_blank" rel="noopener noreferrer">
 					<div class="card-main">
 						<div class="card-name">{c.name}</div>
 						<div class="card-meta">
@@ -598,7 +618,8 @@
 							<span class="liquidity-badge" style="color: var(--text-muted)">Not Priced</span>
 						</div>
 					{/if}
-				</div>
+					<div class="ebay-link-indicator">eBay</div>
+				</a>
 			{/each}
 		</div>
 	{/if}
@@ -616,6 +637,12 @@
 	{#if totalCards > 0 && !loading}
 		<div class="footer-stats">
 			{totalPriced.toLocaleString()} of {totalCards.toLocaleString()} cards have pricing data
+		</div>
+	{/if}
+
+	{#if cards.length > 0}
+		<div class="affiliate-footer">
+			<AffiliateNotice compact />
 		</div>
 	{/if}
 </div>
@@ -847,9 +874,27 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		transition: border-color var(--transition-fast);
+		text-decoration: none;
+		color: inherit;
+		position: relative;
 	}
 	.card-row:hover {
 		border-color: var(--border-strong);
+	}
+	.ebay-link-indicator {
+		position: absolute;
+		top: var(--space-2);
+		right: var(--space-2);
+		font-size: 10px;
+		font-weight: 700;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		opacity: 0;
+		transition: opacity var(--transition-fast);
+	}
+	.card-row:hover .ebay-link-indicator {
+		opacity: 1;
 	}
 	.card-row.unpriced {
 		opacity: 0.7;
@@ -982,6 +1027,10 @@
 		font-size: var(--text-xs);
 		color: var(--text-muted);
 		padding: var(--space-4) 0;
+	}
+	.affiliate-footer {
+		text-align: center;
+		padding-bottom: var(--space-2);
 	}
 
 	/* ── Responsive ─────────────────────────────────── */
