@@ -4,29 +4,8 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
-	import { personaWeights, togglePersona, personaLoaded, type PersonaId } from '$lib/stores/persona.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-
-	const personaOptions: { id: PersonaId; icon: string; name: string }[] = [
-		{ id: 'collector', icon: '\u{1F4E6}', name: 'Collector' },
-		{ id: 'deck_builder', icon: '\u{1F3D7}', name: 'Deck Builder' },
-		{ id: 'seller', icon: '\u{1F4B0}', name: 'Seller' },
-		{ id: 'tournament', icon: '\u{1F3C6}', name: 'Tournament Player' }
-	];
-
-	let personaSaving = $state(false);
-
-	async function toggleAndSave(id: PersonaId) {
-		personaSaving = true;
-		try {
-			await togglePersona(id);
-		} catch (err) {
-			console.debug('[settings] Persona save failed:', err);
-			showToast('Failed to save persona', 'x');
-		}
-		personaSaving = false;
-	}
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -34,8 +13,6 @@
 	let discordId = $state('');
 	let email = $state('');
 	let showProfile = $state(false);
-	let showPersona = $state(false);
-
 	// Badges state
 	let badges = $state<Array<{ badge_key: string; badge_name: string; badge_description: string; badge_icon: string; earned_at: string }>>([]);
 
@@ -328,44 +305,6 @@
 			</div>
 		</div>
 
-		<!-- Preferences Group -->
-		<div class="settings-group">
-			<div class="group-label">Preferences</div>
-			<div class="group-card">
-				<button class="settings-row" onclick={() => showPersona = !showPersona}>
-					<div class="row-icon" style="background: rgba(168,85,247,0.12);">
-						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #a855f7;">
-							<path d="M3 3h6v6H3V3zm8 0h6v6h-6V3zM3 11h6v6H3v-6zm8 0h6v6h-6v-6z"/>
-						</svg>
-					</div>
-					<div class="row-content">
-						<span class="row-title">Home screen</span>
-						<span class="row-sub">Layout and persona</span>
-					</div>
-					<svg class="chevron" viewBox="0 0 20 20" width="16" height="16">
-						<path d="M7.5 4L13.5 10L7.5 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-					</svg>
-				</button>
-				{#if showPersona && personaLoaded()}
-					<div class="persona-section">
-						<div class="persona-grid">
-							{#each personaOptions as p}
-								<button
-									class="persona-chip"
-									class:selected={personaWeights()[p.id] > 0}
-									onclick={() => toggleAndSave(p.id)}
-									disabled={personaSaving}
-									type="button"
-								>
-									{p.icon} {p.name}
-								</button>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</div>
-		</div>
-
 		<!-- Badges -->
 		{#if badges.length > 0}
 			<div class="settings-group">
@@ -611,33 +550,6 @@
 		cursor: pointer;
 	}
 	.save-btn:disabled { opacity: 0.5; }
-
-	/* Persona */
-	.persona-section {
-		padding: 0 1rem 1rem;
-		border-bottom: 1px solid rgba(148,163,184,0.06);
-	}
-	.persona-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-	.persona-chip {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		padding: 0.5rem 0.75rem;
-		border-radius: 10px;
-		border: 2px solid var(--border);
-		background: var(--bg-base);
-		color: var(--text-primary);
-		font-size: 0.8125rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: border-color var(--transition-fast), background var(--transition-fast);
-	}
-	.persona-chip:hover { border-color: var(--text-secondary); }
-	.persona-chip.selected {
-		border-color: var(--gold);
-		background: var(--gold-light);
-	}
-	.persona-chip:disabled { opacity: 0.5; }
 
 	/* Badges Strip */
 	.badges-strip {
