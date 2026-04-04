@@ -3,8 +3,8 @@
 	import ScatterPlot from '$lib/components/war-room/ScatterPlot.svelte';
 	import WIcon from '$lib/components/war-room/WIcon.svelte';
 	import AnimatedNum from '$lib/components/war-room/AnimatedNum.svelte';
-	import type { HeroCard, PlayCard } from '$lib/components/war-room/war-room-data';
-	import { PARALLEL_COLORS, RARITY_COLORS } from '$lib/components/war-room/war-room-data';
+	import type { HeroCard, PlayCard } from '$lib/components/war-room/war-room-constants';
+	import { PARALLEL_COLORS, RARITY_COLORS } from '$lib/components/war-room/war-room-constants';
 
 	// ── State ────────────────────────────────────────────
 	let pFilter = $state<string | null>(null);

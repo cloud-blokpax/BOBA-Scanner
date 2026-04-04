@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { HeroCard } from './war-room-data';
+	import type { HeroCard } from './war-room-constants';
 
 	const PARALLEL_COLORS: Record<string, string> = {
 		Paper: '#22c55e',

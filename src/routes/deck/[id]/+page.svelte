@@ -277,6 +277,20 @@
 		}
 	}
 
+	async function shareDeckView() {
+		const url = `${window.location.origin}/deck/${data.deck.id}/view`;
+		try {
+			if ('share' in navigator) {
+				await navigator.share({ url, title: deckName });
+			} else {
+				await navigator.clipboard.writeText(url);
+				showToast('Deck link copied', 'check');
+			}
+		} catch {
+			// User cancelled
+		}
+	}
+
 	// ── Settings ──────────────────────────────────────────────
 	async function handleSettingsSave(settings: Parameters<typeof updateDeckSettings>[1] & { name: string; notes: string }) {
 		const { name, notes: newNotes, ...rest } = settings;
@@ -312,6 +326,7 @@
 	>
 		{locking ? 'Locking...' : 'Lock for Tournament'}
 	</button>
+	<button class="btn-show-qr" onclick={shareDeckView}>Share Deck</button>
 	{#if verifyCode}
 		<button class="btn-show-qr" onclick={loadCachedQr}>Show QR Code</button>
 	{/if}
@@ -350,7 +365,7 @@
 		onRemovePlay={removePlay}
 	/>
 {:else if activeTab === 'stats'}
-	<DeckStatsTab {heroCards} {validationResult} {validating} />
+	<DeckStatsTab {heroCards} {validationResult} {validating} {playEntries} />
 {:else if activeTab === 'shop'}
 	<DeckShopTab gapAnalysis={null} refreshing={false} refreshesRemaining={null} refreshLimit={null} onRefreshPrices={() => {}} />
 {/if}
