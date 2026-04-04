@@ -58,7 +58,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	// Default priced_only to true — most users want priced cards, and it avoids
 	// the problematic LEFT JOIN + sort on 17K+ rows that can return 0 results.
-	const pricedOnly = url.searchParams.get('priced_only') === 'true';
+	const pricedOnly = url.searchParams.get('priced_only') !== 'false';
 
 	if (cardType === 'play') {
 		return handlePlayCards(admin, { priceMin, priceMax, sort, limit, offset, pricedOnly: pricedOnly || priceMin > 0 || priceMax > 0 });
@@ -95,21 +95,28 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		}, { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' } });
 	}
 
-	// Step 2: Get pricing data for all matching cards
+	// Step 2: Get pricing data for all matching cards (batched to avoid URL length limits)
 	const cardIds = cardRows.map(c => String(c.id));
-	let priceQuery = admin
-		.from('price_cache')
-		.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
-		.eq('source', 'ebay')
-		.in('card_id', cardIds);
+	const BATCH_SIZE = 200;
+	const priceRows: Array<Record<string, unknown>> = [];
 
-	if (priceMin > 0) priceQuery = priceQuery.gte('price_mid', priceMin);
-	if (priceMax > 0) priceQuery = priceQuery.lte('price_mid', priceMax);
+	for (let i = 0; i < cardIds.length; i += BATCH_SIZE) {
+		const batch = cardIds.slice(i, i + BATCH_SIZE);
+		let priceQuery = admin
+			.from('price_cache')
+			.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
+			.eq('source', 'ebay')
+			.in('card_id', batch);
 
-	const { data: priceRows, error: priceErr } = await priceQuery;
-	if (priceErr) {
-		console.error('[market/explore] Price query failed:', priceErr);
-		throw error(500, 'Failed to query market data');
+		if (priceMin > 0) priceQuery = priceQuery.gte('price_mid', priceMin);
+		if (priceMax > 0) priceQuery = priceQuery.lte('price_mid', priceMax);
+
+		const { data, error: priceErr } = await priceQuery;
+		if (priceErr) {
+			console.error('[market/explore] Price batch query failed:', priceErr);
+			continue;
+		}
+		if (data) priceRows.push(...data);
 	}
 
 	// Step 3: Merge cards with pricing data
