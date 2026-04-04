@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
-	import CardConditionCompare from '$lib/components/CardConditionCompare.svelte';
 	import type { GradeResult } from '$lib/types';
 
 	const hasGrader = featureEnabled('condition_grader');
 
-	let mode = $state<'grade' | 'compare'>('grade');
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
 	let grading = $state(false);
@@ -111,16 +109,6 @@
 		<p class="subtitle">Get a PSA-scale condition grade using AI vision analysis</p>
 	</header>
 
-	<!-- Mode Selector -->
-	<div class="mode-selector">
-		<button class="mode-btn" class:active={mode === 'grade'} onclick={() => { mode = 'grade'; }}>Grade Card</button>
-		<button class="mode-btn" class:active={mode === 'compare'} onclick={() => { mode = 'compare'; }}>Compare Two Cards</button>
-	</div>
-
-	{#if mode === 'compare'}
-		<CardConditionCompare />
-	{:else}
-
 	<div class="upload-section">
 		{#if imagePreview}
 			<div class="preview-container">
@@ -206,7 +194,6 @@
 		</div>
 	{/if}
 
-	{/if}
 </div>
 {:else}
 <div class="pro-gate">
@@ -250,30 +237,6 @@
 		font-weight: 700;
 		cursor: pointer;
 		box-shadow: var(--shadow-gold);
-	}
-	.mode-selector {
-		display: flex;
-		gap: 0.25rem;
-		margin-bottom: 1.5rem;
-		background: var(--bg-elevated);
-		border-radius: 10px;
-		padding: 0.25rem;
-	}
-	.mode-btn {
-		flex: 1;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		border: none;
-		background: transparent;
-		color: var(--text-secondary);
-		font-size: 0.85rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-	.mode-btn.active {
-		background: var(--accent-primary);
-		color: #fff;
 	}
 	.grader-page {
 		max-width: 600px;

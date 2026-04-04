@@ -21,8 +21,8 @@ export interface NavItem {
 /** All available nav items (excluding scan FAB which is always shown) */
 export const ALL_NAV_ITEMS: NavItem[] = [
 	{ id: 'home', path: '/', icon: '\u{1F3E0}', label: 'Home' },
-	{ id: 'collection', path: '/collection', icon: '\u{1F4DA}', label: 'Collection', matchPaths: ['/collection', '/set-completion', '/grader', '/leaderboard', '/export'] },
-	{ id: 'playbook', path: '/deck', icon: '\u{1F9E0}', label: 'Playbook', matchPaths: ['/deck', '/speed'] },
+	{ id: 'collection', path: '/collection', icon: '\u{1F4DA}', label: 'Collection', matchPaths: ['/collection', '/set-completion', '/grader', '/export'] },
+	{ id: 'playbook', path: '/deck', icon: '\u{1F9E0}', label: 'Playbook', matchPaths: ['/deck'] },
 ];
 
 /** Default visible item IDs (matches current hardcoded nav) */

@@ -1,22 +1,15 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import type { CollectionItem } from '$lib/types';
 	import { onMount } from 'svelte';
 	import { scanHistory, removeFromScanHistory } from '$lib/stores/scan-history.svelte';
-	import { personaWeights, personaLoaded, isDefaultPersona, updatePersona, type PersonaId, type PersonaWeights } from '$lib/stores/persona.svelte';
-	import { getSuggestedPersona, pruneBehaviorEvents, trackBehavior } from '$lib/services/behavior-tracker';
 	import type { ScanResult, ScanMethod } from '$lib/types';
 	import { getOptimizedImageUrls, getCardImageUrl } from '$lib/utils/image-url';
 	import { collectionCount as getCollectionCount } from '$lib/stores/collection.svelte';
 	import { getCardById } from '$lib/services/card-db';
 	import { getSupabase } from '$lib/services/supabase';
-	import {
-		visibleNavItems, hiddenNavItems,
-		navConfigLoaded, toggleNavItem, moveNavItem, resetNavConfig, navConfig
-	} from '$lib/stores/nav-config.svelte';
 
 	const RARITY_COLORS: Record<string, string> = {
 		common: '#94a3b8',
@@ -146,56 +139,9 @@
 		removeFromScanHistory(scanId);
 	}
 
-	// Persona suggestion state
-	let suggestedPersona = $state<PersonaWeights | null>(null);
-	let suggestionDismissed = $state(false);
-
-	const PERSONA_LABELS: Record<PersonaId, string> = {
-		collector: 'Collector',
-		deck_builder: 'Deck Builder',
-		seller: 'Seller',
-		tournament: 'Tournament Player'
-	};
-
-	const suggestedPrimary = $derived.by(() => {
-		if (!suggestedPersona) return null;
-		const entries = Object.entries(suggestedPersona) as [PersonaId, number][];
-		const top = entries.filter(([, w]) => w > 0).sort((a, b) => b[1] - a[1]);
-		return top[0]?.[0] || null;
-	});
-
-	const currentPrimary = $derived.by(() => {
-		const w = personaWeights();
-		const entries = Object.entries(w) as [PersonaId, number][];
-		const top = entries.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-		return top[0]?.[0] || 'collector';
-	});
-
-	const showSuggestion = $derived(
-		suggestedPersona !== null &&
-		!suggestionDismissed &&
-		suggestedPrimary !== null &&
-		suggestedPrimary !== currentPrimary &&
-		data.user
-	);
-
-	async function applySuggestedPersona() {
-		if (!suggestedPersona) return;
-		await updatePersona(suggestedPersona);
-		suggestionDismissed = true;
-	}
-
 	onMount(() => {
 		initScanner();
 		loadRecentScans();
-
-		// Prune old behavioral events and check for persona suggestions
-		if (data.user) {
-			pruneBehaviorEvents();
-			getSuggestedPersona().then((suggested) => {
-				if (suggested) suggestedPersona = suggested;
-			});
-		}
 	});
 
 	function handleUploadClick() {
@@ -214,7 +160,6 @@
 		if (uploadImageUrl) URL.revokeObjectURL(uploadImageUrl);
 		uploadImageUrl = URL.createObjectURL(file);
 
-		trackBehavior('scan_card');
 		try {
 			const result = await scanImage(file);
 			if (result) {
@@ -264,7 +209,6 @@
 		tournamentLoading = true;
 		tournamentError = null;
 		tournamentResult = null;
-		trackBehavior('lookup_tournament');
 		try {
 			const res = await fetch(`/api/tournament/${encodeURIComponent(code)}`);
 			if (!res.ok) {
@@ -325,139 +269,7 @@
 		return `${days}d ago`;
 	}
 
-	// ── Content Block Ordering ──────────────────────────────────
-
-	interface HomeBlock {
-		id: string;
-		personaAffinity: Partial<PersonaWeights>;
-		/** Minimum persona weight to show (0 = always) */
-		threshold: number;
-		/** Tiebreak sort order */
-		basePriority: number;
-	}
-
-	const HOME_BLOCKS: HomeBlock[] = [
-		{ id: 'scan_hero', personaAffinity: { collector: 1, deck_builder: 0.5, seller: 0.8, tournament: 0.3 }, threshold: 0, basePriority: 0 },
-		{ id: 'recent_scans', personaAffinity: { collector: 0.8, deck_builder: 0.3, seller: 0.3, tournament: 0.2 }, threshold: 0, basePriority: 10 },
-		{ id: 'tournaments', personaAffinity: { tournament: 1, deck_builder: 0.3, collector: 0.2 }, threshold: 0, basePriority: 15 },
-		{ id: 'quick_actions', personaAffinity: { collector: 0.8, deck_builder: 0.8, seller: 0.5, tournament: 0.3 }, threshold: 0, basePriority: 20 },
-	];
-
-	function sortBlocksForUser(blocks: HomeBlock[], persona: PersonaWeights): string[] {
-		return blocks
-			.filter((block) => {
-				if (block.threshold === 0) return true;
-				for (const [personaId, affinity] of Object.entries(block.personaAffinity)) {
-					const userWeight = persona[personaId as PersonaId] || 0;
-					if (userWeight >= block.threshold && (affinity as number) > 0) return true;
-				}
-				return false;
-			})
-			.sort((a, b) => {
-				const scoreA = Object.entries(a.personaAffinity).reduce(
-					(sum, [pid, aff]) => sum + (persona[pid as PersonaId] || 0) * ((aff as number) || 0), 0
-				);
-				const scoreB = Object.entries(b.personaAffinity).reduce(
-					(sum, [pid, aff]) => sum + (persona[pid as PersonaId] || 0) * ((aff as number) || 0), 0
-				);
-				if (scoreB !== scoreA) return scoreB - scoreA;
-				return a.basePriority - b.basePriority;
-			})
-			.map((b) => b.id);
-	}
-
-	// ── Custom ordering (drag-and-drop) ─────────────────────────
-
-	let showCustomize = $state(false);
-	let customOrder = $state<string[] | null>(null);
-	let hiddenBlocks = $state<string[]>([]);
-	let dragIndex = $state<number | null>(null);
-	let dragOverIndex = $state<number | null>(null);
-
-	const BLOCK_LABELS: Record<string, string> = {
-		scan_hero: 'Scan Card',
-		recent_scans: 'Recent Scans',
-		tournaments: 'Tournaments',
-		quick_actions: 'Quick Actions'
-	};
-
-	const BLOCK_ICONS: Record<string, string> = {
-		scan_hero: '\u{1F4F7}',
-		recent_scans: '\u{1F553}',
-		tournaments: '\u{1F3C6}',
-		quick_actions: '\u{26A1}'
-	};
-
-	// Load custom order + hidden blocks from localStorage on mount
-	$effect(() => {
-		if (data.user && browser) {
-			try {
-				const saved = localStorage.getItem('boba:home_block_order');
-				if (saved) customOrder = JSON.parse(saved);
-			} catch { /* ignore */ }
-			try {
-				const savedHidden = localStorage.getItem('boba:home_hidden_blocks');
-				if (savedHidden) hiddenBlocks = JSON.parse(savedHidden);
-			} catch { /* ignore */ }
-		}
-	});
-
-	const allBlockIds = $derived.by(() => {
-		if (customOrder && data.user) return customOrder;
-		if (data.user && personaLoaded()) return sortBlocksForUser(HOME_BLOCKS, personaWeights());
-		return HOME_BLOCKS.map((b) => b.id);
-	});
-
-	const orderedBlocks = $derived(allBlockIds.filter(id => !hiddenBlocks.includes(id)));
-
-	const hiddenBlocksList = $derived(allBlockIds.filter(id => hiddenBlocks.includes(id) && id !== 'scan_hero'));
-
-	function handleDragStart(index: number) {
-		dragIndex = index;
-	}
-
-	function handleDragOver(index: number) {
-		dragOverIndex = index;
-	}
-
-	function handleDrop(index: number) {
-		if (dragIndex === null || dragIndex === index) {
-			dragIndex = null;
-			dragOverIndex = null;
-			return;
-		}
-		const items = [...(customOrder || allBlockIds)];
-		const [moved] = items.splice(dragIndex, 1);
-		items.splice(index, 0, moved);
-		customOrder = items;
-		localStorage.setItem('boba:home_block_order', JSON.stringify(items));
-		dragIndex = null;
-		dragOverIndex = null;
-	}
-
-	function toggleBlock(blockId: string) {
-		if (blockId === 'scan_hero') return; // Can't hide scan
-		if (hiddenBlocks.includes(blockId)) {
-			hiddenBlocks = hiddenBlocks.filter(id => id !== blockId);
-			// Ensure it's in the order list
-			if (customOrder && !customOrder.includes(blockId)) {
-				customOrder = [...customOrder, blockId];
-				localStorage.setItem('boba:home_block_order', JSON.stringify(customOrder));
-			}
-		} else {
-			hiddenBlocks = [...hiddenBlocks, blockId];
-		}
-		localStorage.setItem('boba:home_hidden_blocks', JSON.stringify(hiddenBlocks));
-	}
-
-	function resetCustomOrder() {
-		customOrder = null;
-		hiddenBlocks = [];
-		localStorage.removeItem('boba:home_block_order');
-		localStorage.removeItem('boba:home_hidden_blocks');
-		resetNavConfig();
-		showCustomize = false;
-	}
+	const orderedBlocks = ['scan_hero', 'recent_scans', 'tournaments', 'quick_actions'];
 </script>
 
 <svelte:head>
@@ -482,138 +294,6 @@
 			<div class="upload-status">
 				<div class="upload-spinner"></div>
 				<span>{statusText || 'Processing...'}</span>
-			</div>
-		{/if}
-
-		<!-- Persona suggestion banner -->
-		{#if showSuggestion && suggestedPrimary}
-			<div class="persona-suggestion">
-				<p class="persona-suggestion-text">
-					Based on your activity, you might prefer a <strong>{PERSONA_LABELS[suggestedPrimary]}</strong> layout.
-				</p>
-				<div class="persona-suggestion-actions">
-					<button class="btn-suggestion-apply" onclick={applySuggestedPersona}>Switch</button>
-					<button class="btn-suggestion-dismiss" onclick={() => suggestionDismissed = true}>Dismiss</button>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Customize button -->
-		<div class="customize-strip">
-			<button class="btn-customize" onclick={() => showCustomize = true}>
-				<span class="drag-handle">{'\u2630'}</span> Customize
-			</button>
-		</div>
-
-		<!-- Customize modal -->
-		{#if showCustomize}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div class="customize-overlay" role="button" tabindex="-1" onclick={() => showCustomize = false}>
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div class="customize-sheet" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-					<div class="customize-header">
-						<h3>Customize</h3>
-						<button class="btn-customize-close" onclick={() => showCustomize = false}>{'\u2715'}</button>
-					</div>
-
-					<div class="customize-scroll">
-						<!-- HOME SECTIONS -->
-						<h4 class="customize-section-title">Home Sections</h4>
-						<ul class="customize-list">
-							{#each (customOrder || allBlockIds).filter(id => !hiddenBlocks.includes(id)) as blockId, i (blockId)}
-								<li
-									class="customize-item"
-									class:dragging={dragIndex === i}
-									class:drag-over={dragOverIndex === i}
-									draggable="true"
-									ondragstart={() => handleDragStart(i)}
-									ondragover={(e) => { e.preventDefault(); handleDragOver(i); }}
-									ondrop={() => handleDrop(i)}
-									ondragend={() => { dragIndex = null; dragOverIndex = null; }}
-								>
-									<span class="drag-handle">{'\u2630'}</span>
-									<span class="customize-item-icon">{BLOCK_ICONS[blockId] || '\u{2699}'}</span>
-									<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
-									{#if blockId === 'scan_hero'}
-										<span class="customize-always">Always</span>
-									{:else}
-										<button class="customize-toggle-btn customize-toggle-hide" onclick={() => toggleBlock(blockId)} type="button">Hide</button>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-
-						{#if hiddenBlocksList.length > 0}
-							<p class="customize-hidden-label">Hidden</p>
-							<ul class="customize-list">
-								{#each hiddenBlocksList as blockId (blockId)}
-									<li class="customize-item customize-item-hidden">
-										<span class="customize-item-icon">{BLOCK_ICONS[blockId] || '\u{2699}'}</span>
-										<span class="customize-item-label">{BLOCK_LABELS[blockId] || blockId}</span>
-										<button class="customize-toggle-btn customize-toggle-show" onclick={() => toggleBlock(blockId)} type="button">Show</button>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-
-						<!-- BOTTOM NAV -->
-						{#if navConfigLoaded()}
-							<h4 class="customize-section-title" style="margin-top: 1.25rem;">Bottom Navigation</h4>
-							<ul class="customize-list">
-								{#each visibleNavItems() as item, i (item.id)}
-									<li class="customize-item">
-										<div class="nav-reorder-arrows">
-											<button
-												class="nav-arrow-btn"
-												onclick={() => moveNavItem(i, Math.max(0, i - 1))}
-												disabled={i === 0}
-												aria-label="Move left"
-												type="button"
-											>&larr;</button>
-											<button
-												class="nav-arrow-btn"
-												onclick={() => moveNavItem(i, Math.min(visibleNavItems().length - 1, i + 1))}
-												disabled={i === visibleNavItems().length - 1}
-												aria-label="Move right"
-												type="button"
-											>&rarr;</button>
-										</div>
-										<span class="customize-item-icon">{item.icon}</span>
-										<span class="customize-item-label">{item.label}</span>
-										<button class="customize-toggle-btn customize-toggle-hide" onclick={() => toggleNavItem(item.id)} type="button">Hide</button>
-									</li>
-								{/each}
-							</ul>
-
-							<!-- Scan FAB (always visible) -->
-							<div class="customize-item customize-item-locked">
-								<span class="customize-item-icon">{'\u{1F4F7}'}</span>
-								<span class="customize-item-label">Scan Card</span>
-								<span class="customize-always">Always</span>
-							</div>
-
-							{#if hiddenNavItems().length > 0}
-								<p class="customize-hidden-label">Hidden</p>
-								<ul class="customize-list">
-									{#each hiddenNavItems() as item (item.id)}
-										<li class="customize-item customize-item-hidden">
-											<span class="customize-item-icon">{item.icon}</span>
-											<span class="customize-item-label">{item.label}</span>
-											<button class="customize-toggle-btn customize-toggle-show" onclick={() => toggleNavItem(item.id)} type="button">Show</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						{/if}
-
-						<!-- Reset -->
-						{#if customOrder || hiddenBlocks.length > 0 || navConfig().visible.join(',') !== 'home,collection,decks'}
-							<button class="customize-reset-btn" onclick={resetCustomOrder} type="button">
-								Reset All to Default
-							</button>
-						{/if}
-					</div>
-				</div>
 			</div>
 		{/if}
 
@@ -765,14 +445,14 @@
 							<span class="action-icon">🧠</span>
 							<div class="action-text">
 								<span class="action-label">Playbook</span>
-								<span class="action-sub">Decks · Architect · Meta · Speed</span>
+								<span class="action-sub">Decks · Architect · Splitter · Shop</span>
 							</div>
 						</a>
 						<a href="/sell" class="action-tile">
 							<span class="action-icon">🏷️</span>
 							<div class="action-text">
 								<span class="action-label">Sell</span>
-								<span class="action-sub">eBay listings · Export · Monitor</span>
+								<span class="action-sub">eBay listings · Export</span>
 							</div>
 						</a>
 					</div>
@@ -1297,258 +977,6 @@
 		text-align: center;
 	}
 
-	/* PERSONA SUGGESTION */
-	.persona-suggestion {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		padding: 0.5rem 0.875rem;
-		margin-bottom: 0.5rem;
-		border-radius: var(--radius-md, 10px);
-		background: rgba(59, 130, 246, 0.06);
-		border: 1px solid rgba(59, 130, 246, 0.12);
-		font-size: 0.8rem;
-	}
-
-	.persona-suggestion-text {
-		margin: 0;
-		color: var(--text-secondary, #94a3b8);
-		text-align: left;
-	}
-
-	.persona-suggestion-actions {
-		display: flex;
-		gap: 0.375rem;
-		flex-shrink: 0;
-	}
-
-	.btn-suggestion-apply {
-		padding: 0.25rem 0.625rem;
-		border-radius: 6px;
-		background: var(--primary, #3b82f6);
-		color: white;
-		border: none;
-		font-size: 0.75rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.btn-suggestion-dismiss {
-		padding: 0.25rem 0.5rem;
-		border-radius: 6px;
-		background: transparent;
-		color: var(--text-muted, #475569);
-		border: none;
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	/* CUSTOMIZE */
-	.customize-strip {
-		display: flex;
-		justify-content: flex-end;
-		margin-bottom: 0.5rem;
-	}
-
-	.btn-customize {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.3rem 0.625rem;
-		border-radius: 6px;
-		background: transparent;
-		border: 1px solid var(--border, rgba(148,163,184,0.08));
-		color: var(--text-muted, #475569);
-		font-size: 0.7rem;
-		cursor: pointer;
-		transition: color var(--transition-fast, 150ms), border-color var(--transition-fast, 150ms);
-	}
-
-	.btn-customize:hover {
-		color: var(--text-primary, #e2e8f0);
-		border-color: var(--text-muted, #475569);
-	}
-
-	.customize-overlay {
-		position: fixed;
-		inset: 0;
-		bottom: calc(var(--bottom-nav-height, 60px) + var(--safe-bottom, 0px));
-		background: rgba(0, 0, 0, 0.6);
-		z-index: calc(var(--z-sticky, 100) + 20);
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-	}
-
-	.customize-sheet {
-		width: 100%;
-		max-width: 500px;
-		max-height: 70vh;
-		background: var(--bg-elevated, #121d34);
-		border-radius: 16px 16px 0 0;
-		padding: 1rem 1rem 0;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.customize-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.75rem;
-		flex-shrink: 0;
-	}
-
-	.customize-header h3 {
-		margin: 0;
-		font-size: 0.95rem;
-	}
-
-	.btn-customize-close {
-		background: none;
-		border: none;
-		color: var(--text-muted, #475569);
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 0.25rem;
-	}
-
-	.customize-scroll {
-		overflow-y: auto;
-		-webkit-overflow-scrolling: touch;
-		padding-bottom: 1.5rem;
-		flex: 1;
-		min-height: 0;
-	}
-
-	.customize-section-title {
-		font-size: 0.7rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-muted, #475569);
-		margin: 0 0 0.5rem;
-	}
-
-	.customize-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.customize-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.625rem;
-		border-radius: 8px;
-		background: var(--bg-surface, #0d1524);
-		border: 1px solid var(--border, rgba(148,163,184,0.08));
-		cursor: grab;
-		touch-action: none;
-		user-select: none;
-		font-size: 0.85rem;
-	}
-
-	.customize-item.dragging { opacity: 0.5; border-color: var(--primary, #3b82f6); }
-	.customize-item.drag-over { border-color: var(--gold, #f59e0b); }
-	.customize-item-hidden { opacity: 0.55; cursor: default; }
-	.customize-item-locked {
-		border-color: var(--gold, #f59e0b);
-		background: rgba(245, 158, 11, 0.06);
-		margin-top: 4px;
-		cursor: default;
-	}
-
-	.customize-item-icon {
-		font-size: 1.1rem;
-		flex-shrink: 0;
-	}
-
-	.customize-item-label {
-		flex: 1;
-		font-weight: 600;
-	}
-
-	.customize-always {
-		font-size: 0.65rem;
-		color: var(--gold, #f59e0b);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
-	.customize-toggle-btn {
-		padding: 0.2rem 0.45rem;
-		border-radius: 5px;
-		border: none;
-		font-size: 0.65rem;
-		font-weight: 700;
-		cursor: pointer;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	.customize-toggle-hide {
-		background: rgba(239, 68, 68, 0.12);
-		color: #ef4444;
-	}
-	.customize-toggle-hide:hover { background: rgba(239, 68, 68, 0.22); }
-	.customize-toggle-show {
-		background: rgba(59, 130, 246, 0.12);
-		color: #3b82f6;
-	}
-	.customize-toggle-show:hover { background: rgba(59, 130, 246, 0.22); }
-
-	.customize-hidden-label {
-		font-size: 0.7rem;
-		color: var(--text-muted, #475569);
-		margin: 0.5rem 0 0.35rem;
-	}
-
-	.nav-reorder-arrows {
-		display: flex;
-		gap: 2px;
-		flex-shrink: 0;
-	}
-	.nav-arrow-btn {
-		background: none;
-		border: none;
-		color: var(--text-tertiary);
-		font-size: 0.8rem;
-		padding: 2px 4px;
-		cursor: pointer;
-		border-radius: 4px;
-		line-height: 1;
-	}
-	.nav-arrow-btn:hover:not(:disabled) {
-		color: var(--text-primary);
-		background: var(--bg-hover, rgba(148,163,184,0.08));
-	}
-	.nav-arrow-btn:disabled { opacity: 0.3; cursor: default; }
-
-	.customize-reset-btn {
-		width: 100%;
-		margin-top: 1rem;
-		padding: 0.5rem;
-		border-radius: 8px;
-		border: 1px solid var(--border, rgba(148,163,184,0.12));
-		background: transparent;
-		color: var(--text-secondary);
-		font-size: 0.8rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.customize-reset-btn:hover { background: var(--bg-hover); }
-
-	.drag-handle {
-		color: var(--text-muted, #475569);
-		font-size: 0.9rem;
-		flex-shrink: 0;
-	}
 
 	/* RESPONSIVE */
 	@media (max-width: 360px) {
@@ -1566,10 +994,4 @@
 		}
 	}
 
-	@media (max-width: 600px) {
-		.persona-suggestion {
-			flex-direction: column;
-			text-align: center;
-		}
-	}
 </style>

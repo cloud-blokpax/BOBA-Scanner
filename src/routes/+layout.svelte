@@ -13,10 +13,8 @@
 		showGoProModal, setShowGoProModal
 	} from '$lib/stores/pro.svelte';
 	import { scannerActive } from '$lib/stores/scanner.svelte';
-	import { loadPersona, resetPersona } from '$lib/stores/persona.svelte';
 	import { loadNavConfig, clearNavConfig, visibleNavItems } from '$lib/stores/nav-config.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
-	import ProfilePrompt from '$lib/components/ProfilePrompt.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 	import CategoryTabs from '$lib/components/CategoryTabs.svelte';
@@ -97,7 +95,6 @@
 		let cleanupSync = () => {};
 		if (data.user) {
 			cleanupSync = setupAutoSync();
-			loadPersona();
 			loadNavConfig();
 		} else {
 			// Load from localStorage even when not logged in
@@ -113,10 +110,8 @@
 			cleanupSync();
 			if (newSession?.user) {
 				cleanupSync = setupAutoSync();
-				loadPersona();
 				loadNavConfig();
 			} else {
-				resetPersona();
 				clearNavConfig();
 			}
 
@@ -311,7 +306,6 @@
 <Toast />
 
 {#if data.user}
-	<ProfilePrompt />
 	<GoProModal open={showGoProModal()} onclose={() => setShowGoProModal(false)} />
 {/if}
 

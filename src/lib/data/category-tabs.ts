@@ -16,7 +16,6 @@ export const COLLECTION_TABS: CategoryTab[] = [
 	{ label: 'Set Progress', path: '/set-completion' },
 	{ label: 'Grader', path: '/grader', badge: 'Pro' },
 	{ label: 'Export', path: '/export' },
-	{ label: 'Leaderboard', path: '/leaderboard' },
 ];
 
 export const MARKET_TABS: CategoryTab[] = [
@@ -29,16 +28,13 @@ export const MARKET_TABS: CategoryTab[] = [
 export const PLAYBOOK_TABS: CategoryTab[] = [
 	{ label: 'My Decks', path: '/deck' },
 	{ label: 'Architect', path: '/deck/architect' },
-	{ label: 'Meta', path: '/deck/meta' },
 	{ label: 'Splitter', path: '/deck/splitter' },
 	{ label: 'Deck Shop', path: '/deck/shop' },
-	{ label: 'Speed', path: '/speed' },
 ];
 
 export const SELL_TABS: CategoryTab[] = [
 	{ label: 'Listings', path: '/sell' },
 	{ label: 'eBay Export', path: '/export?mode=ebay' },
-	{ label: 'Monitor', path: '/marketplace/monitor' },
 ];
 
 /**
@@ -58,7 +54,7 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	}
 
 	// Collection
-	if (['/collection', '/set-completion', '/grader', '/leaderboard'].includes(pathname)) {
+	if (['/collection', '/set-completion', '/grader'].includes(pathname)) {
 		return { category: 'Collection', tabs: COLLECTION_TABS };
 	}
 
@@ -71,12 +67,8 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	if (pathname.startsWith('/deck') && !pathname.startsWith('/deck/verify')) {
 		return { category: 'Playbook', tabs: PLAYBOOK_TABS };
 	}
-	if (pathname === '/speed') {
-		return { category: 'Playbook', tabs: PLAYBOOK_TABS };
-	}
-
 	// Sell
-	if (pathname === '/sell' || pathname.startsWith('/marketplace')) {
+	if (pathname === '/sell') {
 		return { category: 'Sell', tabs: SELL_TABS };
 	}
 
