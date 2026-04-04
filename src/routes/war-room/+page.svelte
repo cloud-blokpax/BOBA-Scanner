@@ -5,6 +5,7 @@
 	import AnimatedNum from '$lib/components/war-room/AnimatedNum.svelte';
 	import type { HeroCard, PlayCard } from '$lib/components/war-room/war-room-constants';
 	import { PARALLEL_COLORS, RARITY_COLORS } from '$lib/components/war-room/war-room-constants';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
 
 	// ── State ────────────────────────────────────────────
 	let pFilter = $state<string | null>(null);
@@ -181,8 +182,8 @@
 			<section class="section" class:loaded style="transition-delay: 0.13s">
 				<div class="stat-grid">
 					{#each [
-						{ l: 'Cards', v: agg.count, c: '#e2e8f0' },
-						{ l: 'Listed', v: agg.listings, c: '#22c55e' },
+						{ l: 'Heroes Priced', v: agg.count, c: '#e2e8f0' },
+						{ l: 'eBay Listings', v: agg.listings, c: '#22c55e' },
 						{ l: 'Avg Price', v: agg.avg, c: '#f59e0b', pre: '$' },
 						{ l: 'Avg Power', v: agg.avgPwr, c: '#3b82f6' },
 					] as s}
@@ -210,6 +211,15 @@
 						<div class="parallel-name">{ps.parallel}</div>
 						<div class="parallel-price">${fmtPrice(ps.avg)}</div>
 						<div class="parallel-meta">{ps.count} cards · {ps.avgPwr}p</div>
+						<a
+							class="parallel-ebay-link"
+							href={buildEbaySearchUrl({ name: 'Bo Jackson Battle Arena', parallel: ps.parallel })}
+							target="_blank"
+							rel="noopener noreferrer"
+							onclick={(e: MouseEvent) => e.stopPropagation()}
+						>
+							eBay ↗
+						</a>
 					</button>
 				{/each}
 			</div>
@@ -264,7 +274,13 @@
 			<div class="card-list">
 				{#each filtered.slice(0, 20) as h, i}
 					{@const l = liq(h.ls)}
-					<div class="card-row" class:even={i % 2 === 0}>
+					<a
+						class="card-row"
+						class:even={i % 2 === 0}
+						href={buildEbaySearchUrl({ hero_name: h.hero, card_number: h.num, parallel: h.p, weapon_type: h.w })}
+						target="_blank"
+						rel="noopener noreferrer"
+					>
 						<div class="card-icon-col">
 							<WIcon type={h.w} size={16} color="#6b7d8e" />
 							<span class="card-pwr">{h.pwr}</span>
@@ -281,7 +297,8 @@
 							<div class="card-price">${fmtPrice(h.mid)}</div>
 							<div class="card-ppp">${h.ppp}/pwr</div>
 						</div>
-					</div>
+						<span class="card-ebay-arrow">↗</span>
+					</a>
 				{/each}
 			</div>
 		</section>
@@ -325,7 +342,13 @@
 					</div>
 					<div class="card-list">
 						{#each sortedPlays as p, i}
-							<div class="card-row" class:even={i % 2 === 0}>
+							<a
+								class="card-row"
+								class:even={i % 2 === 0}
+								href={buildEbaySearchUrl({ name: p.name, card_number: p.num })}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
 								<div class="play-dbs-col">
 									<div class="play-dbs-val">{p.dbs}</div>
 									<div class="play-dbs-label">DBS</div>
@@ -345,7 +368,8 @@
 										<div class="card-dpd">${p.dpd}/dbs</div>
 									{/if}
 								</div>
-							</div>
+								<span class="card-ebay-arrow">↗</span>
+							</a>
 						{/each}
 					</div>
 				</div>
@@ -503,6 +527,17 @@
 		font-size: 9px;
 		color: #4a6178;
 	}
+	.parallel-ebay-link {
+		display: block;
+		margin-top: 0.375rem;
+		font-size: 0.65rem;
+		color: var(--accent-primary, #3b82f6);
+		text-decoration: none;
+		opacity: 0.6;
+	}
+	.parallel-ebay-link:hover {
+		opacity: 1;
+	}
 
 	@media (max-width: 380px) {
 		.parallel-grid {
@@ -632,6 +667,22 @@
 	}
 	.card-row.even {
 		background: rgba(255, 255, 255, 0.015);
+	}
+	a.card-row {
+		text-decoration: none;
+		color: inherit;
+	}
+	a.card-row:hover {
+		background: rgba(255, 255, 255, 0.03);
+	}
+	.card-ebay-arrow {
+		color: var(--accent-primary, #3b82f6);
+		font-size: 0.8rem;
+		flex-shrink: 0;
+		opacity: 0.5;
+	}
+	a.card-row:hover .card-ebay-arrow {
+		opacity: 1;
 	}
 	.card-icon-col {
 		width: 28px;
