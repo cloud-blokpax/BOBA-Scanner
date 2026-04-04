@@ -58,7 +58,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	// Default priced_only to true — most users want priced cards, and it avoids
 	// the problematic LEFT JOIN + sort on 17K+ rows that can return 0 results.
-	const pricedOnly = url.searchParams.get('priced_only') !== 'false';
+	const pricedOnly = url.searchParams.get('priced_only') === 'true';
 
 	if (cardType === 'play') {
 		return handlePlayCards(admin, { priceMin, priceMax, sort, limit, offset, pricedOnly: pricedOnly || priceMin > 0 || priceMax > 0 });
@@ -68,52 +68,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// Avoids PostgREST LEFT JOIN quirks that cause 0 results when sorting
 	// on a referenced table column across 17K+ rows.
 
-	// Step 1: Get priced card IDs with their prices, sorted and filtered
-	let priceQuery = admin
-		.from('price_cache')
-		.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
-		.eq('source', 'ebay')
-		.not('price_mid', 'is', null);
-
-	if (priceMin > 0) priceQuery = priceQuery.gte('price_mid', priceMin);
-	if (priceMax > 0) priceQuery = priceQuery.lte('price_mid', priceMax);
-
-	switch (sort) {
-		case 'price_desc':
-			priceQuery = priceQuery.order('price_mid', { ascending: false });
-			break;
-		case 'listings':
-			priceQuery = priceQuery.order('listings_count', { ascending: false });
-			break;
-		case 'confidence':
-			priceQuery = priceQuery.order('confidence_score', { ascending: false });
-			break;
-		default:
-			priceQuery = priceQuery.order('price_mid', { ascending: true });
-	}
-
-	priceQuery = priceQuery.limit(5000);
-
-	const { data: priceRows, error: priceErr } = await priceQuery;
-	if (priceErr) {
-		console.error('[market/explore] Price query failed:', priceErr);
-		throw error(500, 'Failed to query market data');
-	}
-
-	if (!priceRows || priceRows.length === 0) {
-		return json({
-			cards: [],
-			aggregates: buildAggregates([]),
-			pagination: { offset, limit, hasMore: false },
-		}, { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' } });
-	}
-
-	// Step 2: Get card metadata for priced cards, applying card-level filters
-	const pricedCardIds = priceRows.map(r => String(r.card_id));
+	// Step 1: Get card metadata, applying card-level filters
 	let cardQuery = admin
 		.from('cards')
-		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
-		.in('id', pricedCardIds);
+		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name');
 
 	if (parallel) cardQuery = cardQuery.eq('parallel', parallel);
 	if (weapon) cardQuery = cardQuery.eq('weapon_type', weapon);
@@ -129,63 +87,122 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		throw error(500, 'Failed to query card data');
 	}
 
-	// Step 3: Merge prices with card data, preserving price sort order
-	const cardMap = new Map((cardRows || []).map(c => [String(c.id), c]));
+	if (!cardRows || cardRows.length === 0) {
+		return json({
+			cards: [],
+			aggregates: buildAggregates([]),
+			pagination: { offset, limit, hasMore: false },
+		}, { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' } });
+	}
 
-	const allCards = priceRows
-		.filter(pr => cardMap.has(String(pr.card_id)))
-		.map(pr => {
-			const card = cardMap.get(String(pr.card_id))! as Record<string, unknown>;
-			const mid = Number(pr.price_mid ?? 0);
-			const power = (card.power as number) ?? 0;
-			const bnMid = pr.buy_now_mid != null ? Number(pr.buy_now_mid) : null;
-			const bnCount = (pr.buy_now_count as number) ?? 0;
-			const listings = (pr.listings_count as number) ?? 0;
+	// Step 2: Get pricing data for all matching cards
+	const cardIds = cardRows.map(c => String(c.id));
+	let priceQuery = admin
+		.from('price_cache')
+		.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
+		.eq('source', 'ebay')
+		.in('card_id', cardIds);
 
-			return {
-				id: card.id,
-				hero: card.hero_name || card.name || 'Unknown',
-				num: card.card_number || '',
-				set: card.set_code || '',
-				power,
-				rarity: card.rarity || '',
-				weapon: card.weapon_type || '',
-				parallel: card.parallel || '',
-				athlete: card.athlete_name || '',
-				priceMid: mid,
-				priceLow: Number(pr.price_low ?? 0),
-				priceHigh: Number(pr.price_high ?? 0),
-				bnMid,
-				bnLow: pr.buy_now_low != null ? Number(pr.buy_now_low) : null,
-				bnCount,
-				listings,
-				filtered: (pr.filtered_count as number) ?? 0,
-				confidence: Number(pr.confidence_score ?? 0),
-				fetchedAt: pr.fetched_at || null,
-				hasPriceData: true,
-				pricePerPower: power > 0 ? Math.round((mid / power) * 100) / 100 : null,
-				bnPremium: bnMid && mid > 0 ? Math.round(((bnMid - mid) / mid) * 10000) / 100 : null,
-				liquidity: listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none' as string,
-			};
-		});
+	if (priceMin > 0) priceQuery = priceQuery.gte('price_mid', priceMin);
+	if (priceMax > 0) priceQuery = priceQuery.lte('price_mid', priceMax);
 
-	// Re-sort for computed metrics or power sort (not handled by DB query)
-	if (sort === 'power_per_dollar') {
-		allCards.sort((a, b) => (a.pricePerPower ?? 999) - (b.pricePerPower ?? 999));
-	} else if (sort === 'power_desc') {
-		allCards.sort((a, b) => b.power - a.power);
+	const { data: priceRows, error: priceErr } = await priceQuery;
+	if (priceErr) {
+		console.error('[market/explore] Price query failed:', priceErr);
+		throw error(500, 'Failed to query market data');
+	}
+
+	// Step 3: Merge cards with pricing data
+	const priceMap = new Map((priceRows || []).map(p => [String(p.card_id), p]));
+
+	type MergedCard = {
+		id: unknown; hero: unknown; num: unknown; set: unknown; power: number;
+		rarity: unknown; weapon: unknown; parallel: unknown; athlete: unknown;
+		priceMid: number; priceLow: number; priceHigh: number;
+		bnMid: number | null; bnLow: number | null; bnCount: number;
+		listings: number; filtered: number; confidence: number;
+		fetchedAt: unknown; hasPriceData: boolean;
+		pricePerPower: number | null; bnPremium: number | null; liquidity: string;
+	};
+
+	const allCards: MergedCard[] = cardRows.map(card => {
+		const c = card as Record<string, unknown>;
+		const pr = priceMap.get(String(c.id));
+		const hasPriceData = pr != null && pr.price_mid != null;
+		const mid = hasPriceData ? Number(pr.price_mid) : 0;
+		const power = (c.power as number) ?? 0;
+		const bnMid = pr?.buy_now_mid != null ? Number(pr.buy_now_mid) : null;
+		const bnCount = (pr?.buy_now_count as number) ?? 0;
+		const listings = (pr?.listings_count as number) ?? 0;
+
+		return {
+			id: c.id,
+			hero: c.hero_name || c.name || 'Unknown',
+			num: c.card_number || '',
+			set: c.set_code || '',
+			power,
+			rarity: c.rarity || '',
+			weapon: c.weapon_type || '',
+			parallel: c.parallel || '',
+			athlete: c.athlete_name || '',
+			priceMid: mid,
+			priceLow: hasPriceData ? Number(pr.price_low ?? 0) : 0,
+			priceHigh: hasPriceData ? Number(pr.price_high ?? 0) : 0,
+			bnMid,
+			bnLow: pr?.buy_now_low != null ? Number(pr.buy_now_low) : null,
+			bnCount,
+			listings,
+			filtered: (pr?.filtered_count as number) ?? 0,
+			confidence: hasPriceData ? Number(pr.confidence_score ?? 0) : 0,
+			fetchedAt: pr?.fetched_at || null,
+			hasPriceData,
+			pricePerPower: hasPriceData && power > 0 ? Math.round((mid / power) * 100) / 100 : null,
+			bnPremium: bnMid && mid > 0 ? Math.round(((bnMid - mid) / mid) * 10000) / 100 : null,
+			liquidity: !hasPriceData ? 'unknown' : listings >= 10 ? 'available' : listings >= 3 ? 'limited' : listings >= 1 ? 'scarce' : 'none',
+		};
+	});
+
+	// Filter to priced-only if requested (or if price range filters are active)
+	const effectivePricedOnly = pricedOnly || priceMin > 0 || priceMax > 0;
+	const filteredCards = effectivePricedOnly ? allCards.filter(c => c.hasPriceData) : allCards;
+
+	// Sort
+	switch (sort) {
+		case 'price_desc':
+			filteredCards.sort((a, b) => b.priceMid - a.priceMid);
+			break;
+		case 'power_per_dollar':
+			filteredCards.sort((a, b) => (a.pricePerPower ?? 999) - (b.pricePerPower ?? 999));
+			break;
+		case 'power_desc':
+			filteredCards.sort((a, b) => b.power - a.power);
+			break;
+		case 'listings':
+			filteredCards.sort((a, b) => b.listings - a.listings);
+			break;
+		case 'confidence':
+			filteredCards.sort((a, b) => b.confidence - a.confidence);
+			break;
+		default: // price_asc
+			filteredCards.sort((a, b) => {
+				// Unpriced cards go to end when sorting by price
+				if (!a.hasPriceData && !b.hasPriceData) return 0;
+				if (!a.hasPriceData) return 1;
+				if (!b.hasPriceData) return -1;
+				return a.priceMid - b.priceMid;
+			});
 	}
 
 	// Step 4: Paginate
-	const cards = allCards.slice(offset, offset + limit);
+	const cards = filteredCards.slice(offset, offset + limit);
 
 	// ── Aggregates (from ALL matching cards, not just current page) ──
-	const aggregates = buildAggregates(allCards);
+	const aggregates = buildAggregates(filteredCards);
 
 	return json({
 		cards,
-		aggregates: { ...aggregates, totalResults: allCards.length },
-		pagination: { offset, limit, hasMore: offset + limit < allCards.length },
+		aggregates: { ...aggregates, totalResults: filteredCards.length },
+		pagination: { offset, limit, hasMore: offset + limit < filteredCards.length },
 	}, {
 		headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' }
 	});
