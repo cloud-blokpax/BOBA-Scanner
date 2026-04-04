@@ -48,6 +48,13 @@
 	// Card detail modal
 	let selectedCard = $state<SimulatedCard | null>(null);
 
+	// Track cards whose reference images failed to load
+	let failedImages = $state<Set<string>>(new Set());
+
+	function onImageError(cardId: string) {
+		failedImages = new Set([...failedImages, cardId]);
+	}
+
 	// Derived state
 	const availableBoxTypes = $derived(
 		Object.entries(DEFAULT_CONFIGS)
@@ -378,6 +385,7 @@
 								<div
 									class="card-front"
 									class:is-legendary={revealed && rarity === 'legendary'}
+									class:has-image={card.imageUrl && !failedImages.has(card.cardId) && !isHotDog(card) && !isPlay(card) && !isBonusPlay(card)}
 									style="
 										border-color: {borderColor};
 										background: {isHotDog(card)
@@ -403,6 +411,14 @@
 										{:else if isPlay(card)}
 											<span class="play-emoji">📜</span>
 											<span class="card-name" style="color: #93c5fd">{card.heroName}</span>
+										{:else if card.imageUrl && !failedImages.has(card.cardId)}
+											<img
+												src={card.imageUrl}
+												alt={card.heroName}
+												class="card-face-image"
+												loading="lazy"
+												onerror={() => onImageError(card.cardId)}
+											/>
 										{:else}
 											<span
 												class="hero-name"
@@ -562,12 +578,19 @@
 					{/if}
 				</div>
 
-				<!-- Card icon / emoji -->
+				<!-- Card icon / image -->
 				<div class="modal-icon">
 					{#if isHotDog(card)}
 						<span style="font-size: 3rem">🌭</span>
 					{:else if isPlay(card) || isBonusPlay(card)}
 						<span style="font-size: 3rem">{isBonusPlay(card) ? '⚡' : '📜'}</span>
+					{:else if card.imageUrl && !failedImages.has(card.cardId)}
+						<img
+							src={card.imageUrl}
+							alt={card.heroName}
+							class="modal-card-image"
+							onerror={() => onImageError(card.cardId)}
+						/>
 					{:else}
 						<div class="modal-power-circle" style="border-color: {wColor}; box-shadow: 0 0 20px {wColor}44">
 							{#if card.power}
@@ -916,6 +939,48 @@
 	.modal-detail-value { font-weight: 600; color: #e2e8f0; }
 	.modal-glow {
 		position: absolute; inset: 0; pointer-events: none; z-index: 0;
+	}
+
+	/* ── Card Face Image ─────────────────────────── */
+	.card-face-image {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: 6px;
+		position: absolute;
+		top: 0;
+		left: 0;
+	}
+	.card-front.has-image .card-center {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		padding: 0;
+		display: flex;
+	}
+	.card-front.has-image .slot-label,
+	.card-front.has-image .card-number {
+		position: relative;
+		z-index: 2;
+	}
+	.card-front.has-image .card-bottom {
+		position: relative;
+		z-index: 2;
+		background: linear-gradient(transparent, rgba(0,0,0,0.7));
+		padding: 4px 8px;
+		border-radius: 0 0 6px 6px;
+	}
+
+	/* ── Modal Card Image ────────────────────────── */
+	.modal-card-image {
+		width: 160px;
+		max-height: 224px;
+		object-fit: cover;
+		border-radius: 12px;
+		aspect-ratio: 5 / 7;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 	}
 
 	/* ── Keyframes ────────────────────────────────── */
