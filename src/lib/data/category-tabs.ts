@@ -45,16 +45,20 @@ export const SELL_TABS: CategoryTab[] = [
  * Map a pathname to its category and tab config.
  * Returns null for uncategorized pages (home, scan, tournaments, settings, admin).
  */
-export function getCategoryForPath(pathname: string): {
+export function getCategoryForPath(pathname: string, search: string = ''): {
 	category: string;
 	tabs: CategoryTab[];
 } | null {
-	// Collection
-	if (['/collection', '/set-completion', '/grader', '/leaderboard'].includes(pathname)) {
+	// /export routes to Sell when mode=ebay, Collection otherwise
+	if (pathname === '/export') {
+		if (search.includes('mode=ebay')) {
+			return { category: 'Sell', tabs: SELL_TABS };
+		}
 		return { category: 'Collection', tabs: COLLECTION_TABS };
 	}
-	// /export without ?mode=ebay → Collection
-	if (pathname === '/export') {
+
+	// Collection
+	if (['/collection', '/set-completion', '/grader', '/leaderboard'].includes(pathname)) {
 		return { category: 'Collection', tabs: COLLECTION_TABS };
 	}
 

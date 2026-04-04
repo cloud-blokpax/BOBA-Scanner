@@ -30,32 +30,10 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_admin: true
 	},
 	{
-		feature_key: 'set_completion',
-		display_name: 'Set Completion Engine',
-		description: 'Analyzes your collection and shows which sets you are close to completing',
-		icon: '🎯',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: true,
-		enabled_for_pro: true,
-		enabled_for_admin: true
-	},
-	{
 		feature_key: 'price_history',
 		display_name: 'Price History & Alerts',
 		description: '30-day price sparklines, trend badges, and price drop/spike alerts on every card',
 		icon: '📈',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: false,
-		enabled_for_pro: true,
-		enabled_for_admin: true
-	},
-	{
-		feature_key: 'tournament_companion',
-		display_name: 'Tournament Companion',
-		description: 'Live bracket view, deck validation scanner, and tournament management tools',
-		icon: '🏆',
 		enabled_globally: false,
 		enabled_for_guest: false,
 		enabled_for_authenticated: false,

@@ -4,9 +4,6 @@
 	import { page } from '$app/stores';
 	import { getSupabase } from '$lib/services/supabase';
 	import { setupAutoSync } from '$lib/services/sync';
-	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
-
-	const hasScanToList = featureEnabled('scan_to_list');
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { initVersionChecking } from '$lib/services/version';
@@ -223,7 +220,7 @@
 	});
 
 	const currentPath = $derived($page.url.pathname);
-	const categoryInfo = $derived(getCategoryForPath(currentPath));
+	const categoryInfo = $derived(getCategoryForPath(currentPath, $page.url.search));
 </script>
 
 <div class="app-container" class:scanner-fullscreen={scannerActive()}>

@@ -1,15 +1,21 @@
 <script lang="ts">
 	import type { Card } from '$lib/types';
 	import type { DeckValidationResult } from '$lib/services/deck-validator';
+	import playCardsData from '$lib/data/play-cards.json';
+	import { analyzeDeadCards, type DeadCardReport } from '$lib/services/dead-card-detector';
+	import type { PlayCard } from '$lib/services/playbook-engine';
+	import DeadCardAlert from '$lib/components/architect/DeadCardAlert.svelte';
 
 	let {
 		heroCards,
 		validationResult,
-		validating
+		validating,
+		playEntries = []
 	}: {
 		heroCards: Card[];
 		validationResult: DeckValidationResult | null;
 		validating: boolean;
+		playEntries?: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
 	} = $props();
 
 	const totalPower = $derived(heroCards.reduce((sum, c) => sum + (c.power || 0), 0));
@@ -39,6 +45,20 @@
 	});
 
 	const uniqueWeapons = $derived(weaponCounts.length);
+
+	// Build name→PlayCard lookup from JSON seed for dead card analysis
+	const playLookup = new Map(
+		(playCardsData as PlayCard[]).map(p => [p.name, p])
+	);
+
+	const deadCardReport = $derived.by((): DeadCardReport | null => {
+		if (playEntries.length === 0 || heroCards.length === 0) return null;
+		const resolvedPlays = playEntries
+			.map(e => playLookup.get(e.name))
+			.filter((p): p is PlayCard => !!p);
+		if (resolvedPlays.length === 0) return null;
+		return analyzeDeadCards(resolvedPlays, heroCards);
+	});
 </script>
 
 <div class="stats-tab">
@@ -116,6 +136,12 @@
 					</div>
 				{/each}
 			</div>
+		</section>
+	{/if}
+
+	{#if deadCardReport}
+		<section class="dead-cards">
+			<DeadCardAlert report={deadCardReport} totalHeroes={heroCards.length} />
 		</section>
 	{/if}
 </div>

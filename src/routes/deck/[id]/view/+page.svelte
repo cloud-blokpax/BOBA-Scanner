@@ -21,7 +21,7 @@
 	<title>{data.deck.name} | BOBA Scanner</title>
 	<meta property="og:title" content="{data.deck.name} — {data.deck.format_id} Deck" />
 	<meta property="og:description" content="{heroCount} Heroes • DBS {totalDbs}/1000 • {playCount} Plays" />
-	<meta property="og:url" content="https://boba-scanner.vercel.app/deck/{data.deck.id}/view" />
+	<meta property="og:url" content="https://boba.cards/deck/{data.deck.id}/view" />
 </svelte:head>
 
 <div class="deck-view">
