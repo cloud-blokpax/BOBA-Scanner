@@ -147,8 +147,17 @@ function filterOutcomesBySet(
 	const filtered = outcomes.filter(
 		(o) => o.type !== 'weapon_rarity' || availableWeapons.has(o.value.toLowerCase())
 	);
-	// If filtering removed ALL outcomes (shouldn't happen), keep originals
-	if (filtered.length === 0) return outcomes;
+	// If filtering removed ALL weapon outcomes, return only weapon outcomes
+	// that DO exist rather than falling back to the originals (which would
+	// roll unavailable weapons and produce "Unknown Hero" placeholders).
+	if (filtered.length === 0) {
+		// Build fallback from available weapons with equal weight
+		const weaponFallback: SlotOutcome[] = [];
+		for (const w of availableWeapons) {
+			weaponFallback.push({ type: 'weapon_rarity', value: w, label: w, weight: 1 });
+		}
+		return weaponFallback.length > 0 ? weaponFallback : outcomes;
+	}
 	return filtered;
 }
 
@@ -347,7 +356,41 @@ export function openPack(
 		// Play cards and hot dogs are set-agnostic — search the full card pool
 		const pool = outcome.type === 'card_type' ? allCards : setCards;
 		const cardFormat = inferCardFormat(slot);
-		const candidates = findCandidates(pool, outcome, cardFormat);
+		let candidates = findCandidates(pool, outcome, cardFormat);
+
+		// Fallback cascade: relax constraints until we find a real card.
+		// We know every card in the DB, so "Unknown Hero" should never happen.
+		if (candidates.length === 0 && cardFormat !== 'any') {
+			// Try relaxing card format (paper/battlefoil) — accept any hero format
+			candidates = findCandidates(pool, outcome, 'any');
+		}
+		if (candidates.length === 0 && outcome.type === 'weapon_rarity') {
+			// Weapon type doesn't exist in this set — fall back to any hero in the set
+			const heroPool = pool.filter(
+				(c) =>
+					c.card_number &&
+					!c.card_number.startsWith('PL-') &&
+					!c.card_number.startsWith('BPL-') &&
+					!c.card_number.startsWith('HTD')
+			);
+			if (cardFormat === 'paper') {
+				candidates = heroPool.filter((c) => isPaperCardNumber(c.card_number!));
+			} else if (cardFormat === 'battlefoil') {
+				candidates = heroPool.filter((c) => isBattlefoilCardNumber(c.card_number!));
+			}
+			if (candidates.length === 0) candidates = heroPool;
+		}
+		if (candidates.length === 0 && outcome.type === 'parallel') {
+			// Parallel prefix not found — fall back to any non-play hero in the set
+			candidates = pool.filter(
+				(c) =>
+					c.card_number &&
+					!c.card_number.startsWith('PL-') &&
+					!c.card_number.startsWith('BPL-') &&
+					!c.card_number.startsWith('HTD')
+			);
+		}
+
 		const card =
 			candidates.length > 0
 				? selectWeightedCard(candidates, rng, featuredSets)
@@ -378,7 +421,8 @@ export function openPack(
 				imageUrl: card.id ? getCardImageUrl({ id: card.id }) : null
 			});
 		} else {
-			// Defensive fallback: ensure pack always has the correct card count.
+			// This should only happen if the card database is completely empty for this set.
+			// Log a warning but still produce a placeholder to avoid crashing.
 			console.warn(`[pack-sim] No candidates found for slot ${slot.slotNumber} (${slot.label}), outcome: ${outcome.type}=${outcome.value}, set: ${setCode}`);
 			cards.push({
 				cardId: '',
