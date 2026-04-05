@@ -269,7 +269,7 @@
 	async function shareVerifyUrl() {
 		if (!verifyUrl) return;
 		try {
-			if ('share' in navigator) {
+			if (navigator.share) {
 				await navigator.share({ text: verifyUrl });
 			}
 		} catch {
@@ -280,9 +280,9 @@
 	async function shareDeckView() {
 		const url = `${window.location.origin}/deck/${data.deck.id}/view`;
 		try {
-			if ('share' in navigator) {
+			if (navigator.share) {
 				await navigator.share({ url, title: deckName });
-			} else {
+			} else if (navigator.clipboard) {
 				await navigator.clipboard.writeText(url);
 				showToast('Deck link copied', 'check');
 			}

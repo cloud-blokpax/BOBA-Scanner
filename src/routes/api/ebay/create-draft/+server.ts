@@ -250,6 +250,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const offerData = await offerRes.json();
+	if (!offerData.offerId) {
+		throw error(500, 'eBay API did not return an offer ID');
+	}
 
 	return json({
 		success: true,
