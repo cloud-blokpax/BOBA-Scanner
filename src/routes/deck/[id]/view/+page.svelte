@@ -10,10 +10,13 @@
 	let copied = $state(false);
 
 	function copyShareUrl() {
-		navigator.clipboard.writeText(window.location.href).then(() => {
-			copied = true;
-			setTimeout(() => { copied = false; }, 2000);
-		});
+		navigator.clipboard.writeText(window.location.href).then(
+			() => {
+				copied = true;
+				setTimeout(() => { copied = false; }, 2000);
+			},
+			() => { /* clipboard unavailable */ }
+		);
 	}
 </script>
 

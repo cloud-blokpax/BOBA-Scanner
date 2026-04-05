@@ -207,8 +207,10 @@
 	}
 
 	function copyToClipboard(text: string) {
-		navigator.clipboard.writeText(text);
-		showToast('Copied to clipboard', 'check');
+		navigator.clipboard.writeText(text).then(
+			() => showToast('Copied to clipboard', 'check'),
+			() => showToast('Copy failed', 'x')
+		);
 	}
 </script>
 

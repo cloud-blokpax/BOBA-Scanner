@@ -821,6 +821,7 @@
 		font-size: 1.1rem;
 		font-weight: 700;
 		-moz-appearance: textfield;
+		appearance: textfield;
 	}
 
 	.stl-price-input::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; }
