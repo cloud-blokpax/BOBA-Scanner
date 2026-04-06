@@ -1,33 +1,26 @@
 /**
- * Three-Tier Recognition Pipeline
+ * Three-Tier Recognition Pipeline — Orchestrator
  *
- * Tier 1: Perceptual Hash (dHash) → IndexedDB → Supabase hash_cache
- * Tier 2: Tesseract.js OCR → Fuzzy match against local card DB
- * Tier 3: Claude API → Server-side identification
+ * Coordinates the three recognition tiers (hash, OCR, Claude AI),
+ * manages the scan lifecycle, and handles cache writeback.
  *
- * Expected: 85-95% of scans resolved without Claude API calls.
+ * Tier functions live in recognition-tiers.ts.
+ * Cross-validation logic lives in recognition-validation.ts.
+ * Worker management lives in recognition-workers.ts.
  */
 
 import { idb } from './idb';
-import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards, searchCards, findSimilarCardNumbers } from './card-db';
+import { loadCardDatabase } from './card-db';
 import { getSupabase } from './supabase';
-
-/** Circuit breaker: disable fuzzy hash RPC for the session if it fails once (bad DB function) */
-export let _fuzzyHashRpcDisabled = false;
-export function disableFuzzyHashRpc(): void { _fuzzyHashRpcDisabled = true; }
-/** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
-let _upsertHashRpcDisabled = false;
-import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
-import { initOcr, recognizeText } from '$lib/services/ocr';
-import { extractCardNumber } from '$lib/utils/extract-card-number';
-import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
+import { recordCorrection } from '$lib/services/scan-learning';
+import { initOcr } from '$lib/services/ocr';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
 import { userId } from '$lib/stores/auth.svelte';
 import { submitReferenceImage } from '$lib/services/reference-images';
-import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
-import type { Card, ScanResult, ScanMethod, HashCacheEntry, ValidationMethod } from '$lib/types';
+import { BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
+import type { ScanResult, ScanMethod } from '$lib/types';
 import { createThumbnailDataUrl, createListingImageBlob } from './scan-image-utils';
 import {
 	getImageWorker,
@@ -37,25 +30,15 @@ import {
 	markOcrRetryAttempted,
 	markOcrAvailable
 } from './recognition-workers';
+import { runTier1, runTier2, runTier3, type ScanContext } from './recognition-tiers';
 
-// Re-export worker functions for backward compatibility
+// Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
+export { disableFuzzyHashRpc, isFuzzyHashRpcDisabled } from './recognition-tiers';
 
-/**
- * Per-scan context to avoid global state pollution when concurrent scans run.
- * Previously these were module-level variables that would be overwritten
- * by a second scan starting before the first one finishes.
- */
-interface ScanContext {
-	traceId: string;
-	lastOcrReading: string | null;
-	lastTier3FailReason: string | null;
-	cropRegion?: { x: number; y: number; width: number; height: number } | null;
-}
+/** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
+let _upsertHashRpcDisabled = false;
 
-/**
- * Run the full 3-tier recognition pipeline.
- *
 /**
  * Persist a successful scan to Supabase for cross-device recent scans.
  * Non-blocking, best-effort — does not affect scan flow.
@@ -193,7 +176,7 @@ export async function recognizeCard(
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
 	try {
-		const tier1Result = await runTier1(bitmap, ctx);
+		const tier1Result = await runTier1(bitmap, ctx, writeHashToAllLayers);
 		if (tier1Result) {
 			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
 			return finalize(tier1Result);
@@ -285,508 +268,7 @@ export async function recognizeCard(
 	);
 }
 
-// ── Tier 1: Hash Cache Lookup ───────────────────────────────
 
-async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
-	const hash = await getImageWorker().computeDHash(bitmap);
-
-	// Layer 1: IndexedDB exact match (instant, free)
-	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
-	if (idbEntry) {
-		// Detect negative cache entries (card recognized but not in database)
-		if (idbEntry.card_id.startsWith('__unrecognized:')) {
-			const cardNum = idbEntry.card_id.replace('__unrecognized:', '');
-			return {
-				card_id: null,
-				card: null,
-				scan_method: 'hash_cache' as ScanMethod,
-				confidence: 0,
-				processing_ms: 0,
-				failReason: `Card "${cardNum}" recognized but not yet in database`
-			};
-		}
-		const card = getCardById(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
-		if (card) {
-			return {
-				card_id: card.id,
-				card,
-				scan_method: 'hash_cache',
-				confidence: idbEntry.confidence,
-				processing_ms: 0
-			};
-		}
-	}
-
-	// Layer 2: Supabase exact match (origin, <100ms)
-	const client = getSupabase();
-	let supaEntry: Pick<HashCacheEntry, 'card_id' | 'confidence'> | null = null;
-	if (client) {
-		const { data } = await client
-			.from('hash_cache')
-			.select('card_id, confidence')
-			.eq('phash', hash)
-			.maybeSingle();
-		supaEntry = data as Pick<HashCacheEntry, 'card_id' | 'confidence'> | null;
-	}
-
-	if (supaEntry) {
-		const card = getCardById(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
-		if (card) {
-			await idb.setHash({ phash: hash, card_id: supaEntry.card_id, confidence: supaEntry.confidence });
-			return {
-				card_id: card.id,
-				card,
-				scan_method: 'hash_cache' as const,
-				confidence: supaEntry.confidence,
-				processing_ms: 0
-			};
-		}
-	}
-
-	// Layer 3: Supabase fuzzy match via Hamming distance (≤5 bits different)
-	// This catches the same card under different lighting conditions.
-	if (client && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
-		try {
-			const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
-				query_hash: hash,
-				max_distance: 5
-			});
-			if (fuzzyErr) {
-				console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup RPC error:`, fuzzyErr.message);
-				// Disable for rest of session to avoid repeated 400 errors
-				_fuzzyHashRpcDisabled = true;
-			} else if (fuzzyMatch && fuzzyMatch.length > 0) {
-				const match = fuzzyMatch[0];
-
-				// pHash verification: if the fuzzy match has a pHash stored,
-				// compute our pHash and compare to reduce false positives
-				let pHashVerified = true;
-				if (match.phash_256) {
-					try {
-						const queryPHash = await getImageWorker().computePHash(bitmap, 16);
-						const pHashDist = await getImageWorker().hammingDistance(queryPHash, match.phash_256);
-						// pHash threshold: 256-bit hash, allow up to 20 bits different
-						pHashVerified = pHashDist <= 20;
-						if (!pHashVerified) {
-							console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy dHash match rejected by pHash verification (pHash distance=${pHashDist})`);
-						}
-					} catch (err) {
-						console.debug(`[scan:${ctx.traceId}:tier1] pHash computation failed, trusting dHash:`, err);
-						pHashVerified = true;
-					}
-				}
-
-				if (pHashVerified) {
-					const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
-					if (card) {
-						// Reduce confidence slightly based on distance (5 bits = ~8% penalty)
-						const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
-						// Cache the new hash → same card for future exact matches
-						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap);
-						console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
-						return {
-							card_id: card.id,
-							card,
-							scan_method: 'hash_cache' as const,
-							confidence: adjustedConfidence,
-							processing_ms: 0
-						};
-					}
-				}
-			}
-		} catch (err) {
-			// Fuzzy match is non-critical — if the RPC doesn't exist yet, skip
-			console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup unavailable:`, err);
-		}
-	}
-
-	return null;
-}
-
-// ── Tier 2: OCR + Fuzzy Match ───────────────────────────────
-
-/** Race a promise against a timeout. */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-	return Promise.race([
-		promise,
-		new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-		)
-	]);
-}
-
-async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
-	const TIER2_BUDGET_MS = 12000; // 12 seconds total for all OCR attempts
-	const tier2Start = performance.now();
-
-	for (const region of BOBA_OCR_REGIONS) {
-		const elapsed = performance.now() - tier2Start;
-		const remaining = TIER2_BUDGET_MS - elapsed;
-		if (remaining <= 1000) {
-			console.debug(`[scan:${ctx.traceId}:tier2] Budget exhausted after ${elapsed.toFixed(0)}ms, skipping remaining regions`);
-			break;
-		}
-
-		try {
-			// Preprocess region in image worker
-			const processedBlob = await withTimeout(
-				getImageWorker().preprocessForOCR(bitmap, region),
-				Math.min(3000, remaining), 'OCR preprocess'
-			);
-
-			// Run OCR (Tesseract manages its own worker internally)
-			const ocrResult = await withTimeout(
-				recognizeText(processedBlob),
-				Math.min(8000, remaining - 3000), 'OCR recognition'
-			);
-			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
-
-			// Extract card number
-			const resolvedNumber = extractCardNumber(ocrResult.text);
-			if (!resolvedNumber) continue;
-
-			// Track the raw OCR reading for potential correction recording
-			ctx.lastOcrReading = resolvedNumber;
-
-			// Check local learned correction first (instant, offline-capable)
-			let correctedNumber = checkCorrection(resolvedNumber);
-
-			// If no local correction, check community corrections (requires network)
-			if (!correctedNumber) {
-				try {
-					const { lookupCommunityCorrection } = await import('$lib/services/community-corrections');
-					correctedNumber = await lookupCommunityCorrection(resolvedNumber);
-				} catch (err) {
-					console.debug(`[scan:${ctx.traceId}:tier2] Community correction lookup failed:`, err);
-				}
-			}
-
-			const lookupNumber = correctedNumber || resolvedNumber;
-
-			const card = findCard(lookupNumber);
-			if (card) {
-				return {
-					card_id: card.id,
-					card,
-					scan_method: 'tesseract' as ScanMethod,
-					confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100,
-					processing_ms: 0
-				};
-			}
-		} catch (err) {
-			console.warn('OCR region failed:', err);
-		}
-	}
-
-	return null;
-}
-
-// ── Tier 3: Claude API ──────────────────────────────────────
-
-async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
-	ctx.lastTier3FailReason = null;
-	let response: Response;
-	try {
-		// Resize for upload
-		const imageBlob = await getImageWorker().resizeForUpload(bitmap, 1024);
-		console.debug(`[scan:${ctx.traceId}:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
-
-		const formData = new FormData();
-		formData.append('image', imageBlob, 'scan.jpg');
-
-		response = await fetch('/api/scan', {
-			method: 'POST',
-			body: formData
-		});
-	} catch (err) {
-		console.error(`[scan:${ctx.traceId}:tier3] Network error calling /api/scan:`, err);
-		ctx.lastTier3FailReason = 'Network error reaching scan API';
-		return null;
-	}
-
-	if (!response.ok) {
-		let errorBody = '';
-		try { errorBody = await response.text(); } catch { /* ignore */ }
-		console.error(`[scan:${ctx.traceId}:tier3] API returned ${response.status}: ${errorBody}`);
-		if (response.status === 401) ctx.lastTier3FailReason = 'Not authenticated — please sign in';
-		else if (response.status === 429) ctx.lastTier3FailReason = 'Rate limited — please wait before scanning again';
-		else if (response.status === 503) ctx.lastTier3FailReason = 'AI service overloaded — try again in a moment';
-		else ctx.lastTier3FailReason = `Scan API error (${response.status})`;
-		return null;
-	}
-
-	let result;
-	try {
-		result = await response.json();
-	} catch (err) {
-		console.debug(`[scan:${ctx.traceId}:tier3] API response JSON parse failed:`, err);
-		console.error(`[scan:${ctx.traceId}:tier3] Invalid JSON in API response`);
-		ctx.lastTier3FailReason = 'Invalid response from scan API';
-		return null;
-	}
-
-	console.debug(`[scan:${ctx.traceId}:tier3] API response:`, JSON.stringify(result, null, 2));
-
-	if (!result.success || !result.card) {
-		console.warn(`[scan:${ctx.traceId}:tier3] API returned success=false or no card data. Raw:`, result.raw || '(none)');
-		ctx.lastTier3FailReason = 'AI could not parse card details from image';
-		return null;
-	}
-
-	// For play cards, hero_name will be empty/""/null — use card_name as the identifier.
-	// Filter out garbage values like "N/A", "null", "Play Card" that Claude might return.
-	const rawHero = result.card.hero_name;
-	const isGarbageHero = !rawHero || rawHero.length < 2 || /^(n\/?a|null|none|play|bonus|hot\s*dog)/i.test(rawHero);
-	const claudeHero = isGarbageHero ? (result.card.card_name || null) : rawHero;
-	const claudeNumber = result.card.card_number;
-	const claudePower = result.card.power ? Number(result.card.power) : null;
-	const claudeAthlete: string | null = result.card.athlete_name || null;
-	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: card_number="${claudeNumber}", hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}`);
-
-	// ── Cross-validation: card_number is primary key, hero_name is verification ──
-	const validated = crossValidateCardResult(
-		{ cardNumber: claudeNumber, heroName: claudeHero, power: claudePower, confidence: result.card.confidence || 0.9 },
-		ctx.traceId
-	);
-
-	if (validated.card) {
-		// Merge AI-provided athlete_name if the DB card doesn't have one (avoid mutating cached card)
-		const card = claudeAthlete && !validated.card.athlete_name
-			? { ...validated.card, athlete_name: claudeAthlete }
-			: validated.card;
-		console.debug(
-			`[scan:${ctx.traceId}:tier3] Validated: id=${card.id}, number=${card.card_number}, ` +
-			`method=${validated.validationMethod}, confidence=${validated.confidence}`
-		);
-		if (validated.warnings.length > 0) {
-			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
-		}
-		return {
-			card_id: card.id,
-			card,
-			scan_method: 'claude',
-			confidence: validated.confidence,
-			processing_ms: 0,
-			variant: result.card.variant || result.card.parallel || null,
-			validationMethod: validated.validationMethod,
-			validationWarnings: validated.warnings
-		};
-	}
-
-	const totalCards = getAllCards().length;
-	const playCardCount = getAllCards().filter(c => c.hero_name === null && c.power === null).length;
-	console.warn(`[scan:${ctx.traceId}:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${totalCards} total, ${playCardCount} play cards)`);
-	ctx.lastTier3FailReason = playCardCount === 0
-		? `AI identified "${claudeNumber}" (${claudeHero}) — play cards not loaded, please reload the app`
-		: `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
-
-	// Negative cache: prevent repeated Tier 3 calls for unrecognized cards
-	if (claudeNumber) {
-		try {
-			const hash = await getImageWorker().computeDHash(bitmap);
-			await idb.setHash({
-				phash: hash,
-				card_id: `__unrecognized:${claudeNumber}`,
-				confidence: 0
-			});
-		} catch (err) {
-			console.debug(`[scan:${ctx.traceId}:tier3] Failed to write negative cache entry:`, err);
-		}
-	}
-
-	return null;
-}
-
-/**
- * Cross-validate AI-returned card data against the local card database.
- *
- * Flow:
- *   1. Exact match card_number → verify hero name matches
- *   2. Fuzzy match card_number → verify hero name matches
- *   3. Fallback: search by hero name + power
- *   4. No match
- *
- * The card number is the primary key; the hero name is the validation check.
- */
-interface CrossValidationInput {
-	cardNumber: string | null;
-	heroName: string | null;
-	power: number | null;
-	confidence: number;
-}
-
-interface CrossValidationResult {
-	card: Card | null;
-	confidence: number;
-	validationMethod: ValidationMethod;
-	warnings: string[];
-}
-
-function crossValidateCardResult(
-	ai: CrossValidationInput,
-	traceId: string
-): CrossValidationResult {
-	const warnings: string[] = [];
-	const allCards = getAllCards();
-
-	// ── Step 1: Exact match on card_number ──
-	if (ai.cardNumber) {
-		const exactMatch = findCard(ai.cardNumber);
-		if (exactMatch) {
-			// Verify hero name matches
-			const nameScore = ai.heroName
-				? fuzzyNameMatch(exactMatch.hero_name || exactMatch.name || '', ai.heroName)
-				: 1; // No hero name from AI → skip verification
-
-			if (nameScore > 0.7) {
-				// Card number found and hero name agrees → HIGH CONFIDENCE
-				return {
-					card: exactMatch,
-					confidence: ai.confidence,
-					validationMethod: 'exact_match',
-					warnings: []
-				};
-			}
-
-			// Card number exists but hero name doesn't match → AI may have misread the number
-			warnings.push(
-				`Card number "${ai.cardNumber}" exists as "${exactMatch.hero_name || exactMatch.name}" ` +
-				`but AI read hero as "${ai.heroName}". Possible card number misread.`
-			);
-			console.debug(
-				`[scan:${traceId}:validate] Exact number match rejected: ` +
-				`DB hero="${exactMatch.hero_name}" vs AI hero="${ai.heroName}" (score=${nameScore.toFixed(2)})`
-			);
-			// Fall through to fuzzy match — don't trust this card number
-		}
-
-		// ── Step 2: Fuzzy match on card_number ──
-		const fuzzyResults = findSimilarCardNumbers(ai.cardNumber, 2);
-		for (const match of fuzzyResults) {
-			if (!ai.heroName) {
-				// No hero name to verify — accept best fuzzy match with reduced confidence
-				return {
-					card: match.card,
-					confidence: Math.min(ai.confidence, 0.65),
-					validationMethod: 'fuzzy_match',
-					warnings: [
-						`Fuzzy matched card number: AI read "${ai.cardNumber}", ` +
-						`matched to "${match.card.card_number}" (distance: ${match.distance})`
-					]
-				};
-			}
-
-			const nameScore = fuzzyNameMatch(
-				match.card.hero_name || match.card.name || '',
-				ai.heroName
-			);
-
-			if (nameScore > 0.7) {
-				// Fuzzy number match + hero name agrees → MEDIUM CONFIDENCE
-				return {
-					card: match.card,
-					confidence: Math.min(ai.confidence, 0.75),
-					validationMethod: 'fuzzy_match',
-					warnings: [
-						`Fuzzy matched card number: AI read "${ai.cardNumber}", ` +
-						`matched to "${match.card.card_number}" (distance: ${match.distance})`
-					]
-				};
-			}
-		}
-
-		// Also try trigram similarity for card numbers that differ more from known prefixes
-		if (fuzzyResults.length === 0) {
-			let bestTrigram: { card: Card; similarity: number } | null = null;
-			for (const card of allCards) {
-				if (!card.card_number) continue;
-				const sim = trigramSimilarity(card.card_number, ai.cardNumber);
-				if (sim > 0.6 && (!bestTrigram || sim > bestTrigram.similarity)) {
-					// Verify hero name before accepting
-					if (ai.heroName) {
-						const nameScore = fuzzyNameMatch(
-							card.hero_name || card.name || '',
-							ai.heroName
-						);
-						if (nameScore > 0.7) {
-							bestTrigram = { card, similarity: sim };
-						}
-					} else {
-						bestTrigram = { card, similarity: sim };
-					}
-				}
-			}
-
-			if (bestTrigram) {
-				return {
-					card: bestTrigram.card,
-					confidence: Math.min(ai.confidence, 0.7),
-					validationMethod: 'fuzzy_match',
-					warnings: [
-						`Trigram matched card number: AI read "${ai.cardNumber}", ` +
-						`matched to "${bestTrigram.card.card_number}" (similarity: ${bestTrigram.similarity.toFixed(2)})`
-					]
-				};
-			}
-		}
-	}
-
-	// ── Step 3: Fallback — search by hero name (+ power to disambiguate) ──
-	if (ai.heroName) {
-		const heroSearchResults = searchCards(ai.heroName, 10);
-
-		if (heroSearchResults.length > 0) {
-			// If we have power info, use it to disambiguate among hero matches
-			if (ai.power && heroSearchResults.length > 1) {
-				const powerMatch = heroSearchResults.find(c => c.power === ai.power);
-				if (powerMatch) {
-					warnings.push(
-						`Could not validate card number "${ai.cardNumber ?? '(null)'}". ` +
-						`Matched by hero name "${ai.heroName}" + power=${ai.power} → "${powerMatch.card_number}".`
-					);
-					return {
-						card: powerMatch,
-						confidence: Math.min(ai.confidence, 0.6),
-						validationMethod: 'name_only_fallback',
-						warnings
-					};
-				}
-			}
-
-			// Take the first hero match (lowest confidence)
-			const bestMatch = heroSearchResults[0];
-			warnings.push(
-				`Could not validate card number "${ai.cardNumber ?? '(null)'}". ` +
-				`Matched by hero name "${ai.heroName}" → "${bestMatch.card_number}". ` +
-				`Card number may be incorrect — please verify.`
-			);
-
-			if (heroSearchResults.length > 1) {
-				warnings.push(
-					`Multiple variants found for "${ai.heroName}". User should verify card number.`
-				);
-			}
-
-			return {
-				card: bestMatch,
-				confidence: Math.min(ai.confidence, 0.5),
-				validationMethod: 'name_only_fallback',
-				warnings
-			};
-		}
-	}
-
-	// ── Step 4: No match at all ──
-	return {
-		card: null,
-		confidence: 0,
-		validationMethod: 'unvalidated',
-		warnings: [
-			`Card not found in database. Number: "${ai.cardNumber ?? '(null)'}", ` +
-			`Name: "${ai.heroName ?? '(null)'}". May be a new/unreleased card or misread.`
-		]
-	};
-}
 
 // ── Cache Writeback ─────────────────────────────────────────
 
@@ -861,13 +343,3 @@ async function writeHashToAllLayers(
 	}
 }
 
-// ── Helpers ─────────────────────────────────────────────────
-
-async function fetchCardById(cardId: string): Promise<Card | null> {
-	const client = getSupabase();
-	if (!client) return null;
-	const { data } = await client.from('cards').select('*').eq('id', cardId).maybeSingle();
-	// Runtime guard: ensure the critical fields exist before trusting the cast
-	if (!data || typeof (data as Record<string, unknown>).id !== 'string') return null;
-	return data as Card;
-}

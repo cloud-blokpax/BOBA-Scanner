@@ -3,7 +3,7 @@
 	import { startCamera, stopCamera, toggleTorch, captureFrame, checkCameraPermission, getActiveStream } from '$lib/services/camera';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
-	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance, _fuzzyHashRpcDisabled as fuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
+	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance, isFuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
@@ -329,7 +329,7 @@
 						}
 
 						// Fuzzy match if exact missed
-						if (!cardId && !fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
+						if (!cardId && !isFuzzyHashRpcDisabled() && /^[0-9a-f]{16}$/.test(hash)) {
 							const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
 								query_hash: hash,
 								max_distance: 5
