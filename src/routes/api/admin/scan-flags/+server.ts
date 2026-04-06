@@ -36,12 +36,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 };
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
@@ -56,7 +55,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 
 	const updates: Record<string, unknown> = {
 		status: newStatus,
-		resolved_by: user!.id,
+		resolved_by: user.id,
 		resolved_at: new Date().toISOString()
 	};
 	if (notes) updates.notes = notes;
@@ -74,7 +73,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 
 	// Log admin action
 	const { error: logError } = await admin.from('admin_activity_log').insert({
-		admin_id: user!.id,
+		admin_id: user.id,
 		action: 'resolve_scan_flag',
 		entity_type: 'scan_flag',
 		entity_id: id,

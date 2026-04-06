@@ -7,8 +7,13 @@
  */
 
 import { error } from '@sveltejs/kit';
+import type { User } from '@supabase/supabase-js';
 
-export async function requireAdmin(locals: App.Locals): Promise<void> {
+/**
+ * Verify admin access and return the authenticated user.
+ * Callers should use the returned user instead of calling safeGetSession() again.
+ */
+export async function requireAdmin(locals: App.Locals): Promise<User> {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Not authenticated');
 	if (!locals.supabase) throw error(503, 'Database not available');
@@ -25,4 +30,6 @@ export async function requireAdmin(locals: App.Locals): Promise<void> {
 		|| user.app_metadata?.is_admin === true;
 
 	if (!isAdmin) throw error(403, 'Admin access required');
+
+	return user;
 }

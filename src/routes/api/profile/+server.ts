@@ -1,12 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getAdminClient } from '$lib/server/supabase-admin';
-import { apiError, serviceUnavailable } from '$lib/server/api-response';
+import { apiError, rateLimited, serviceUnavailable } from '$lib/server/api-response';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 
 export const PATCH: RequestHandler = async ({ request, locals }) => {
 	const { session, user } = await locals.safeGetSession();
 	if (!session || !user) {
 		return apiError('Authentication required', 401, { code: 'UNAUTHORIZED' });
+	}
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return rateLimited(rateLimit);
 	}
 
 	const admin = getAdminClient();

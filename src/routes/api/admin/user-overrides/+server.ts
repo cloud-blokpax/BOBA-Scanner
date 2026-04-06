@@ -52,10 +52,9 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}
@@ -95,10 +94,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 };
 
 export const DELETE: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429 });
 	}

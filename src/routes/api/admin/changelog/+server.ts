@@ -42,12 +42,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
@@ -63,7 +62,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			title: title.trim(),
 			body: content || '',
 			is_notification: is_notification === true,
-			created_by: user!.id,
+			created_by: user.id,
 			created_at: new Date().toISOString(),
 			updated_at: new Date().toISOString()
 		})
@@ -79,12 +78,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 };
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
@@ -117,12 +115,11 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 };
 
 export const DELETE: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}

@@ -12,10 +12,9 @@ import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	await requireAdmin(locals);
+	const user = await requireAdmin(locals);
 
-	const { user } = await locals.safeGetSession();
-	const rateLimit = await checkMutationRateLimit(user!.id);
+	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
