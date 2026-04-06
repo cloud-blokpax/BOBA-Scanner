@@ -9,6 +9,7 @@ import { env } from '$env/dynamic/private';
 
 let _token: string | null = null;
 let _tokenExp = 0;
+let _tokenPromise: Promise<string> | null = null;
 
 /**
  * Check if eBay API is configured.
@@ -19,11 +20,24 @@ export function isEbayConfigured(): boolean {
 
 /**
  * Get a valid eBay OAuth token. Caches and auto-refreshes.
+ * Uses a shared promise to prevent concurrent token requests.
  * Throws if eBay is not configured.
  */
 export async function getEbayToken(): Promise<string> {
 	if (_token && Date.now() < _tokenExp) return _token;
 
+	// Prevent concurrent token refreshes — share a single in-flight request
+	if (_tokenPromise) return _tokenPromise;
+
+	_tokenPromise = _fetchToken();
+	try {
+		return await _tokenPromise;
+	} finally {
+		_tokenPromise = null;
+	}
+}
+
+async function _fetchToken(): Promise<string> {
 	const clientId = env.EBAY_CLIENT_ID;
 	const clientSecret = env.EBAY_CLIENT_SECRET;
 	if (!clientId || !clientSecret) {

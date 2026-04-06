@@ -81,10 +81,14 @@ async function getSellerPolicies(token: string): Promise<{
 	};
 
 	try {
+		const safeJson = async (r: Response, label: string) => {
+			if (!r.ok) throw new Error(`eBay ${label} API returned ${r.status}`);
+			return r.json();
+		};
 		const [fulfillment, payment, returns] = await Promise.all([
-			fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
-			fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
-			fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json())
+			fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'fulfillment_policy')),
+			fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'payment_policy')),
+			fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'return_policy'))
 		]);
 
 		const findPolicy = (policies: Array<Record<string, string>>, idField: string) => {
