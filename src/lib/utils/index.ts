@@ -13,6 +13,25 @@ export function formatPrice(price: number | null | undefined): string {
 }
 
 /**
+ * Escape HTML special characters to prevent XSS.
+ * Covers the OWASP-recommended set: & < > " ' ` / =
+ */
+const HTML_ESCAPE_MAP: Record<string, string> = {
+	'&': '&amp;',
+	'<': '&lt;',
+	'>': '&gt;',
+	'"': '&quot;',
+	"'": '&#x27;',
+	'`': '&#x60;',
+};
+
+const HTML_ESCAPE_RE = /[&<>"'`]/g;
+
+export function escapeHtml(str: string): string {
+	return str.replace(HTML_ESCAPE_RE, (ch) => HTML_ESCAPE_MAP[ch]);
+}
+
+/**
  * Debounce a function call.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

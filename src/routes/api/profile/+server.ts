@@ -27,12 +27,18 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		return apiError('Invalid request body', 400, { code: 'INVALID_BODY' });
 	}
 
+	// Strip control characters (except common whitespace) to prevent stored injection
+	const sanitize = (s: string, maxLen: number): string | null => {
+		const trimmed = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+		return trimmed ? trimmed.slice(0, maxLen) : null;
+	};
+
 	const updates: Record<string, string | null> = {};
 	if ('name' in body) {
-		updates.name = typeof body.name === 'string' ? body.name.trim() || null : null;
+		updates.name = typeof body.name === 'string' ? sanitize(body.name, 100) : null;
 	}
 	if ('discord_id' in body) {
-		updates.discord_id = typeof body.discord_id === 'string' ? body.discord_id.trim() || null : null;
+		updates.discord_id = typeof body.discord_id === 'string' ? sanitize(body.discord_id, 50) : null;
 	}
 
 	if (Object.keys(updates).length === 0) {
