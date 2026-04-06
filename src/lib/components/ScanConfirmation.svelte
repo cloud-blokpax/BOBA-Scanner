@@ -397,13 +397,14 @@
 	.confirmation-backdrop {
 		position: absolute;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
+		background: rgba(0, 0, 0, 0.7);
 		animation: fade-in 0.2s ease-out;
 	}
 
 	.confirmation-container {
 		position: relative;
-		max-height: 70vh;
+		max-height: calc(100vh - env(safe-area-inset-top, 0px) - 1rem);
+		max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1rem);
 		display: flex;
 		flex-direction: column;
 		background: var(--bg-base, #070b14);
@@ -415,7 +416,7 @@
 		overflow-y: auto;
 		flex: 1;
 		min-height: 0;
-		padding-bottom: calc(var(--bottom-nav-height, 68px) + var(--safe-bottom, env(safe-area-inset-bottom, 20px)));
+		padding-bottom: env(safe-area-inset-bottom, 20px);
 	}
 
 	.card-details {
