@@ -12,9 +12,10 @@
 		ebayConnected: boolean;
 		ebayChecked: boolean;
 		onStartScan: () => void;
+		onStartUpload: () => void;
 	}
 
-	let { ebayConfigured, ebayConnected, ebayChecked, onStartScan }: Props = $props();
+	let { ebayConfigured, ebayConnected, ebayChecked, onStartScan, onStartUpload }: Props = $props();
 
 	const items = $derived(collectionItems());
 	const loading = $derived(collectionLoading());
@@ -77,6 +78,10 @@
 			<button class="export-card scan-list-card" onclick={onStartScan} disabled={!ebayConnected && ebayChecked}>
 				<span class="export-card-icon">📷</span>
 				<span class="export-card-name">Scan & List</span>
+			</button>
+			<button class="export-card scan-list-card" onclick={onStartUpload} disabled={!ebayConnected && ebayChecked}>
+				<span class="export-card-icon">📤</span>
+				<span class="export-card-name">Upload & List</span>
 			</button>
 			<button class="export-card" onclick={() => quickExport('__builtin_general')}>
 				<span class="export-card-icon">📄</span>
