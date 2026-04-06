@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { initScanner } from '$lib/stores/scanner.svelte';
+	import { recognizeCard, initWorkers } from '$lib/services/recognition';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import BrowseView from '$lib/components/sell/BrowseView.svelte';
 	import ListingView from '$lib/components/sell/ListingView.svelte';
@@ -26,17 +27,74 @@
 			.finally(() => { ebayChecked = true; });
 	});
 
-	// ── Three-view state machine ────────────────────────────
-	type SellView = 'browse' | 'scanning' | 'listing';
+	// ── State machine ───────────────────────────────────────
+	type SellView = 'browse' | 'scanning' | 'uploading' | 'listing';
 	let view = $state<SellView>('browse');
 	let listingCard = $state<Card | null>(null);
 	let listingImageUrl = $state<string | null>(null);
+
+	// ── Upload state ────────────────────────────────────────
+	let uploadProcessing = $state(false);
+	let uploadError = $state<string | null>(null);
+	let uploadThumbnailUrl = $state<string | null>(null);
+	let uploadFileInput = $state<HTMLInputElement | null>(null);
+	let listingSource = $state<'scan' | 'upload'>('scan');
 
 	function startScanToList() {
 		initScanner();
 		listingCard = null;
 		listingImageUrl = null;
+		listingSource = 'scan';
 		view = 'scanning';
+	}
+
+	function startUploadToList() {
+		listingCard = null;
+		listingImageUrl = null;
+		listingSource = 'upload';
+		uploadError = null;
+		uploadProcessing = false;
+		if (uploadThumbnailUrl) { URL.revokeObjectURL(uploadThumbnailUrl); uploadThumbnailUrl = null; }
+		view = 'uploading';
+	}
+
+	async function handleUploadFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		input.value = '';
+
+		uploadError = null;
+		uploadProcessing = true;
+		if (uploadThumbnailUrl) URL.revokeObjectURL(uploadThumbnailUrl);
+		uploadThumbnailUrl = URL.createObjectURL(file);
+
+		let bitmap: ImageBitmap | null = null;
+		try {
+			await initWorkers();
+			bitmap = await createImageBitmap(file, {
+				resizeWidth: 2048,
+				resizeHeight: 2048,
+				resizeQuality: 'high'
+			});
+			const result = await recognizeCard(bitmap, undefined, {
+				isAuthenticated: !!ebayConnected,
+				skipBlurCheck: true
+			});
+			if (result.card_id && result.card) {
+				listingCard = result.card;
+				listingImageUrl = uploadThumbnailUrl;
+				uploadThumbnailUrl = null; // Transfer ownership to listing view
+				view = 'listing';
+			} else {
+				uploadError = result.failReason || 'Could not identify card. Try a clearer photo.';
+			}
+		} catch (err) {
+			uploadError = err instanceof Error ? err.message : 'Processing failed';
+		} finally {
+			bitmap?.close();
+			uploadProcessing = false;
+		}
 	}
 
 	function handleScanResult(result: ScanResult, capturedImageUrl?: string) {
@@ -66,18 +124,56 @@
 			/>
 		</div>
 	</div>
+{:else if view === 'uploading'}
+	<div class="stl-scanner-view">
+		<div class="stl-header">
+			<button class="stl-back" onclick={() => { if (uploadThumbnailUrl) { URL.revokeObjectURL(uploadThumbnailUrl); uploadThumbnailUrl = null; } view = 'browse'; }}>← Back</button>
+			<h1 class="stl-title">Upload to List</h1>
+		</div>
+		<div class="upload-container">
+			{#if uploadProcessing}
+				<div class="upload-processing">
+					{#if uploadThumbnailUrl}
+						<img src={uploadThumbnailUrl} alt="Processing" class="upload-preview" />
+					{/if}
+					<div class="upload-spinner"></div>
+					<p class="upload-status-text">Identifying card...</p>
+				</div>
+			{:else}
+				<label class="upload-drop-zone">
+					<span class="upload-icon">📤</span>
+					<span class="upload-text">Select a card photo</span>
+					<span class="upload-hint">JPEG, PNG, or WebP</span>
+					<input
+						bind:this={uploadFileInput}
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						onchange={handleUploadFile}
+						class="upload-file-input"
+					/>
+				</label>
+				{#if uploadError}
+					<div class="upload-error">
+						<p>{uploadError}</p>
+						<button class="upload-retry-btn" onclick={() => { uploadError = null; uploadFileInput?.click(); }}>Try Another Photo</button>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</div>
 {:else if view === 'listing' && listingCard}
 	<ListingView
 		card={listingCard}
 		imageUrl={listingImageUrl}
 		{ebayConnected}
-		onScanNext={() => { listingCard = null; view = 'scanning'; }}
-		onDone={() => { listingCard = null; view = 'browse'; }}
+		onScanNext={() => { listingCard = null; listingImageUrl = null; if (listingSource === 'upload') { startUploadToList(); } else { startScanToList(); } }}
+		onDone={() => { listingCard = null; listingImageUrl = null; view = 'browse'; }}
 	/>
 {:else}
 	<BrowseView
 		{ebayConfigured} {ebayConnected} {ebayChecked}
 		onStartScan={startScanToList}
+		onStartUpload={startUploadToList}
 	/>
 {/if}
 
@@ -87,4 +183,107 @@
 	.stl-back { background: none; border: none; color: var(--text-secondary, #94a3b8); font-size: 0.9rem; cursor: pointer; padding: 0.25rem; }
 	.stl-title { font-size: 1.1rem; font-weight: 700; }
 	.stl-scanner-container { height: calc(100dvh - 56px - 68px - 52px); position: relative; }
+
+	/* Upload to List */
+	.upload-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem 1rem;
+		min-height: calc(100dvh - 56px - 68px - 52px);
+		gap: 1.5rem;
+	}
+
+	.upload-drop-zone {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		width: 100%;
+		max-width: 320px;
+		padding: 3rem 1.5rem;
+		border: 2px dashed var(--border-strong, rgba(148,163,184,0.3));
+		border-radius: 16px;
+		cursor: pointer;
+		transition: border-color 0.2s;
+	}
+
+	.upload-drop-zone:hover, .upload-drop-zone:focus-within {
+		border-color: var(--accent-primary, #3b82f6);
+	}
+
+	.upload-icon { font-size: 2.5rem; }
+	.upload-text { font-size: 1rem; font-weight: 600; text-align: center; }
+	.upload-hint { font-size: 0.8rem; color: var(--text-muted, #475569); }
+
+	.upload-file-input {
+		position: absolute;
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.upload-processing {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.25rem;
+	}
+
+	.upload-preview {
+		width: 200px;
+		height: 280px;
+		object-fit: cover;
+		border-radius: 12px;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+
+	.upload-spinner {
+		width: 32px;
+		height: 32px;
+		border: 3px solid var(--border-strong, rgba(148,163,184,0.2));
+		border-top-color: var(--accent-primary, #3b82f6);
+		border-radius: 50%;
+		animation: upload-spin 0.8s linear infinite;
+	}
+
+	@keyframes upload-spin {
+		to { transform: rotate(360deg); }
+	}
+
+	.upload-status-text {
+		font-size: 0.9rem;
+		color: var(--text-secondary, #94a3b8);
+		font-weight: 600;
+	}
+
+	.upload-error {
+		text-align: center;
+		padding: 1rem;
+		border-radius: 10px;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.2);
+		max-width: 320px;
+		width: 100%;
+	}
+
+	.upload-error p {
+		font-size: 0.85rem;
+		color: var(--danger, #ef4444);
+		margin: 0 0 0.75rem;
+	}
+
+	.upload-retry-btn {
+		padding: 0.5rem 1.25rem;
+		border-radius: 8px;
+		background: var(--accent-primary, #3b82f6);
+		color: white;
+		border: none;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.upload-retry-btn:hover { opacity: 0.9; }
 </style>
