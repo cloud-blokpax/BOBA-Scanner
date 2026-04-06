@@ -8,8 +8,8 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
 import { isEbayConfigured } from '$lib/server/ebay-auth';
 import type { RequestHandler } from './$types';
 
@@ -91,7 +91,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// Feature flags
 		admin.from('feature_flags').select('feature_key, enabled_globally').limit(200),
 		// System health checks
-		checkSystemHealth()
+		checkSystemHealth(admin)
 	]);
 
 	// Helper to paginate timestamp queries in 1k chunks (Supabase row limit)
@@ -276,24 +276,24 @@ function buildAlerts(input: AlertInput): Alert[] {
 	return alerts;
 }
 
-async function checkSystemHealth(): Promise<Record<string, { status: string; message?: string }>> {
+async function checkSystemHealth(
+	admin: SupabaseClient
+): Promise<Record<string, { status: string; message?: string }>> {
 	const checks: Record<string, { status: string; message?: string }> = {};
 
-	// Supabase
-	const supabaseUrl = publicEnv.PUBLIC_SUPABASE_URL ?? '';
-	const supabaseKey = publicEnv.PUBLIC_SUPABASE_ANON_KEY ?? '';
-	if (supabaseUrl && supabaseKey) {
-		try {
-			const res = await fetch(`${supabaseUrl}/rest/v1/`, {
-				headers: { apikey: supabaseKey },
-				signal: AbortSignal.timeout(3000)
-			});
-			checks.supabase = res.ok ? { status: 'ok' } : { status: 'degraded' };
-		} catch {
-			checks.supabase = { status: 'down' };
-		}
-	} else {
-		checks.supabase = { status: 'down', message: 'Not configured' };
+	// Supabase — run an actual lightweight query through the client library
+	// This validates the full path: credentials, network, and database availability
+	try {
+		const { error: dbError } = await admin
+			.from('system_settings')
+			.select('key')
+			.limit(1)
+			.maybeSingle();
+		checks.supabase = dbError
+			? { status: 'degraded', message: dbError.message }
+			: { status: 'ok' };
+	} catch {
+		checks.supabase = { status: 'down', message: 'Connection failed' };
 	}
 
 	// Redis
