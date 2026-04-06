@@ -71,9 +71,11 @@ function plainTextToHtml(text: string): string {
 		.join('\n');
 }
 
+// eBay Inventory API uses enum strings, NOT numeric condition IDs
 const CONDITION_MAP: Record<string, string> = {
 	'mint': 'LIKE_NEW',
 	'nearmint': 'LIKE_NEW',
+	'near_mint': 'LIKE_NEW',
 	'excellent': 'LIKE_NEW',
 	'good': 'USED_VERY_GOOD',
 	'fair': 'USED_GOOD',
