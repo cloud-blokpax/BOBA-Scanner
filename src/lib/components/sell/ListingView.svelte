@@ -2,7 +2,8 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { buildEbayListingTitle } from '$lib/utils/ebay-title';
-	import type { Card } from '$lib/types';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import type { Card, PriceData } from '$lib/types';
 
 	interface Props {
 		card: Card;
@@ -15,7 +16,7 @@
 	let { card, imageUrl, ebayConnected, onScanNext, onDone }: Props = $props();
 
 	// ── Listing state ───────────────────────────────────────
-	let priceData = $state<{ price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null>(null);
+	let priceData = $state<PriceData | null>(null);
 	let priceLoading = $state(true);
 	let condition = $state('Near Mint');
 	let price = $state('');
@@ -114,8 +115,10 @@
 		try {
 			const result = await getPriceWithReason(card.id);
 			priceData = result.data;
-			const suggested = result.data?.price_mid
-				? Math.round(result.data.price_mid * 1.1 * 100) / 100
+			// Prefer BIN median for suggested price, fall back to overall median
+			const median = result.data?.buy_now_mid ?? result.data?.price_mid;
+			const suggested = median
+				? Math.round(median * 1.1 * 100) / 100
 				: 1.99;
 			price = suggested.toFixed(2);
 		} catch {
@@ -123,6 +126,15 @@
 		}
 		priceLoading = false;
 	}
+
+	let ebayUrl = $derived(buildEbaySearchUrl({
+		card_number: cardNumber || null,
+		hero_name: heroName || null,
+		athlete_name: athleteName || null,
+		parallel: parallel || null,
+		weapon_type: weaponType || null,
+		name: heroName || null
+	}));
 
 	async function createEbayDraft() {
 		const numPrice = parseFloat(price);
@@ -294,12 +306,24 @@
 		</div>
 		{#if priceLoading}
 			<span class="stl-field-hint">Loading market data...</span>
-		{:else if priceData?.price_mid}
-			<span class="stl-field-hint">
-				Market: ${priceData.price_mid.toFixed(2)} median
-				{#if priceData.price_low}· ${priceData.price_low.toFixed(2)} low{/if}
-				{#if priceData.listings_count}· {priceData.listings_count} listings{/if}
-			</span>
+		{:else if priceData && (priceData.buy_now_mid || priceData.price_mid)}
+			<div class="stl-ebay-details">
+				<div class="stl-ebay-detail-row">
+					<span class="stl-ebay-detail-label">BIN Median</span>
+					<span class="stl-ebay-detail-value">{priceData.buy_now_mid != null ? `$${priceData.buy_now_mid.toFixed(2)}` : '—'}</span>
+				</div>
+				<div class="stl-ebay-detail-row">
+					<span class="stl-ebay-detail-label">BIN Low</span>
+					<span class="stl-ebay-detail-value">{priceData.buy_now_low != null ? `$${priceData.buy_now_low.toFixed(2)}` : '—'}</span>
+				</div>
+				<div class="stl-ebay-detail-row">
+					<span class="stl-ebay-detail-label">BIN Listings</span>
+					<span class="stl-ebay-detail-value">{priceData.buy_now_count ?? 0}</span>
+				</div>
+				<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="stl-ebay-link">
+					View on eBay →
+				</a>
+			</div>
 		{:else}
 			<span class="stl-field-hint">No market data available</span>
 		{/if}
@@ -602,6 +626,48 @@
 	}
 
 	.stl-price-input::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; }
+
+	.stl-ebay-details {
+		margin-top: 0.5rem;
+		padding: 0.625rem 0.75rem;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+
+	.stl-ebay-detail-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.2rem 0;
+	}
+
+	.stl-ebay-detail-label {
+		font-size: 0.75rem;
+		color: var(--text-muted, #475569);
+	}
+
+	.stl-ebay-detail-value {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.stl-ebay-link {
+		display: block;
+		margin-top: 0.375rem;
+		padding-top: 0.375rem;
+		border-top: 1px solid var(--border, rgba(148,163,184,0.08));
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--accent-primary, #3b82f6);
+		text-decoration: none;
+		text-align: right;
+	}
+
+	.stl-ebay-link:hover {
+		text-decoration: underline;
+	}
 
 	/* Aspects collapsible */
 	.stl-aspects-details {
