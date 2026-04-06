@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { updateAvailable } from '$lib/services/version';
+	import { updateAvailable, setUpdateAvailable } from '$lib/services/version.svelte';
 
 	let updating = $state(false);
+	let info = $derived(updateAvailable());
 
 	function handleUpdate() {
 		if (updating) return;
@@ -26,17 +27,17 @@
 	}
 
 	function dismiss() {
-		updateAvailable.set(null);
+		setUpdateAvailable(null);
 	}
 </script>
 
-{#if $updateAvailable?.available}
+{#if info?.available}
 	<div class="update-banner">
 		<div class="update-content">
 			<span class="update-text">
-				Version {$updateAvailable.version} available
-				{#if $updateAvailable.notes}
-					— {$updateAvailable.notes}
+				Version {info.version} available
+				{#if info.notes}
+					— {info.notes}
 				{/if}
 			</span>
 			<button class="update-btn" onclick={handleUpdate} disabled={updating}>

@@ -6,7 +6,6 @@
  */
 
 import { browser } from '$app/environment';
-import { writable } from 'svelte/store';
 
 export const APP_VERSION = '1.1.0';
 
@@ -16,7 +15,15 @@ export interface UpdateInfo {
 	notes: string;
 }
 
-export const updateAvailable = writable<UpdateInfo | null>(null);
+let _updateAvailable = $state<UpdateInfo | null>(null);
+
+export function updateAvailable(): UpdateInfo | null {
+	return _updateAvailable;
+}
+
+export function setUpdateAvailable(info: UpdateInfo | null): void {
+	_updateAvailable = info;
+}
 
 /**
  * Check for app updates by fetching /version.json.
@@ -30,7 +37,7 @@ export async function checkForUpdates(): Promise<void> {
 		const remote = await res.json();
 
 		if (remote.version && remote.version !== APP_VERSION) {
-			updateAvailable.set({
+			setUpdateAvailable({
 				available: true,
 				version: remote.version,
 				notes: remote.notes || ''

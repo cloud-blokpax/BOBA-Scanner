@@ -6,7 +6,7 @@
 	import { setupAutoSync } from '$lib/services/sync';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
-	import { initVersionChecking } from '$lib/services/version';
+	import { initVersionChecking } from '$lib/services/version.svelte';
 	import {
 		isPro, daysRemaining, proExpired,
 		showExpiryWarning, showFinalWarning,

@@ -2482,3 +2482,115 @@ a.btn-primary:active,
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   SHARED COMPONENT PATTERNS
+   Extracted from page-level <style> blocks to eliminate duplication.
+   ============================================================ */
+
+/* ── Section blocks (used on home, sell, market, war-room) ── */
+.section-block {
+  margin-bottom: 1.5rem;
+}
+
+.section-heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #64748b);
+  margin: 0 0 0.625rem;
+}
+
+/* ── Button variants ─────────────────────────────────────── */
+.btn-primary {
+  padding: 0.625rem 1.25rem;
+  background: var(--primary, #3b82f6);
+  border: none;
+  border-radius: var(--radius-md, 10px);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity var(--transition-fast, 150ms);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover, #2563eb);
+}
+
+.btn-secondary {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, #121d34);
+  border: 1px solid var(--border, rgba(148,163,184,0.10));
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast, 150ms), color var(--transition-fast, 150ms);
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-strong, rgba(148,163,184,0.20));
+  color: var(--text-primary, #e2e8f0);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: none;
+  border: none;
+  color: var(--text-muted, #475569);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  transition: color var(--transition-fast, 150ms);
+}
+
+.btn-ghost:hover {
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* ── Subtle link ─────────────────────────────────────────── */
+.link-subtle {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted, #475569);
+  text-decoration: none;
+  transition: color var(--transition-fast, 150ms);
+}
+
+.link-subtle:hover {
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* ── Error text ──────────────────────────────────────────── */
+.text-error {
+  color: #ef4444;
+  font-size: 0.8rem;
+}
+
+/* ── Loading spinner ─────────────────────────────────────── */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--primary, #3b82f6);
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
