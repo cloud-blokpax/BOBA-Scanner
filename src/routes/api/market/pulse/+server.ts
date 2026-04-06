@@ -40,22 +40,31 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Fetch card metadata for all priced cards
 	const cardIds = priceRows.map(r => r.card_id);
-	const { data: cardRows } = await admin
+	const { data: cardRows, error: cardErr } = await admin
 		.from('cards')
 		.select('id, hero_name, name, card_number, set_code, rarity')
 		.in('id', cardIds)
 		.limit(5000);
 
+	if (cardErr) {
+		console.error('[market/pulse] cards query failed:', cardErr.message);
+		throw error(500, 'Failed to load card metadata');
+	}
+
 	const cardMap = new Map((cardRows || []).map(c => [c.id, c]));
 
 	// Fetch most recent harvest log entry per card for delta tracking.
-	const { data: harvestRows } = await admin
+	const { data: harvestRows, error: harvestErr } = await admin
 		.from('price_harvest_log')
 		.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
 		.eq('success', true)
 		.in('card_id', cardIds)
 		.order('processed_at', { ascending: false })
 		.limit(10000);
+
+	if (harvestErr) {
+		console.error('[market/pulse] harvest_log query failed:', harvestErr.message);
+	}
 
 	// Deduplicate: keep only the most recent harvest entry per card_id
 	const harvestMap = new Map<string, NonNullable<typeof harvestRows>[number]>();
@@ -66,12 +75,16 @@ export const GET: RequestHandler = async ({ locals }) => {
 	}
 
 	// Fetch last 14 price_history data points per card for sparklines.
-	const { data: historyRows } = await admin
+	const { data: historyRows, error: historyErr } = await admin
 		.from('price_history')
 		.select('card_id, price_mid, recorded_at')
 		.in('card_id', cardIds)
 		.order('recorded_at', { ascending: true })
 		.limit(70000);
+
+	if (historyErr) {
+		console.error('[market/pulse] price_history query failed:', historyErr.message);
+	}
 
 	const historyMap = new Map<string, number[]>();
 	for (const row of historyRows || []) {
