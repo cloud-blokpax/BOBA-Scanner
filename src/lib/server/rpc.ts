@@ -18,7 +18,7 @@ export async function submitReferenceImageRpc(
 		p_confidence: number;
 		p_user_id: string;
 		p_user_name: string;
-		p_blur_variance: number | null;
+		p_blur_variance: number;
 	}
 ): Promise<{ accepted: boolean; is_new_card: boolean; previous_holder?: string; old_confidence?: number }> {
 	const { data, error } = await client.rpc('submit_reference_image', params);

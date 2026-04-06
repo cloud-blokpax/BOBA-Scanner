@@ -24,6 +24,7 @@
 	let ebayDisconnecting = $state(false);
 	let ebayValidating = $state(false);
 	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
+	let ebayTokenHealth = $state<{ access_token_valid: boolean; access_token_expires_at: string; refresh_token_expires_at: string; refresh_days_remaining: number; scopes: string | null } | null>(null);
 
 	async function loadProfile() {
 		loading = true;
@@ -165,6 +166,7 @@
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
 				ebayConnectedSince = data.connected_since ?? null;
+				ebayTokenHealth = data.token_health ?? null;
 			})
 			.catch((err) => console.warn('[settings] eBay status check failed:', err))
 			.finally(() => { ebayLoading = false; });
@@ -327,6 +329,21 @@
 									{ebayValidation.error || 'Connection invalid'}
 								{/if}
 							</span>
+						{/if}
+						{#if ebayTokenHealth && ebayConnected}
+							<div class="ebay-token-health">
+								<span class="token-detail">
+									<span class="token-dot" class:healthy={ebayTokenHealth.access_token_valid} class:expired={!ebayTokenHealth.access_token_valid}></span>
+									Access token {ebayTokenHealth.access_token_valid ? 'active' : 'expired (will auto-refresh)'}
+								</span>
+								<span class="token-detail">
+									<span class="token-dot healthy"></span>
+									Refresh token &middot; {ebayTokenHealth.refresh_days_remaining}d remaining
+									{#if ebayTokenHealth.refresh_days_remaining <= 30}
+										<span class="token-warning">&#9888;</span>
+									{/if}
+								</span>
+							</div>
 						{/if}
 					</div>
 					<div class="ebay-actions">
@@ -564,6 +581,28 @@
 	}
 	.ebay-validation-result.valid { color: var(--success); }
 	.ebay-validation-result.invalid { color: var(--danger); }
+	.ebay-token-health {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin-top: 4px;
+	}
+	.token-detail {
+		font-size: 0.625rem;
+		color: var(--text-muted);
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.token-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+	.token-dot.healthy { background: var(--success); }
+	.token-dot.expired { background: var(--warning, #f59e0b); }
+	.token-warning { color: var(--warning, #f59e0b); font-size: 0.6875rem; }
 
 	.chevron { color: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
 

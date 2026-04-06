@@ -21,15 +21,25 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const { data } = await admin
 		.from('ebay_seller_tokens')
-		.select('refresh_token_expires_at, updated_at')
+		.select('access_token_expires_at, refresh_token_expires_at, scopes, updated_at')
 		.eq('user_id', user.id)
 		.maybeSingle();
 
-	const connected = !!data && new Date(data.refresh_token_expires_at).getTime() > Date.now();
+	const now = Date.now();
+	const refreshExpiresAt = data ? new Date(data.refresh_token_expires_at).getTime() : 0;
+	const accessExpiresAt = data ? new Date(data.access_token_expires_at).getTime() : 0;
+	const connected = !!data && refreshExpiresAt > now;
 
 	return json({
 		configured,
 		connected,
-		connected_since: connected && data?.updated_at ? data.updated_at : null
+		connected_since: connected && data?.updated_at ? data.updated_at : null,
+		token_health: connected ? {
+			access_token_valid: accessExpiresAt > now,
+			access_token_expires_at: data!.access_token_expires_at,
+			refresh_token_expires_at: data!.refresh_token_expires_at,
+			refresh_days_remaining: Math.max(0, Math.ceil((refreshExpiresAt - now) / 86_400_000)),
+			scopes: data!.scopes ?? null
+		} : null
 	});
 };
