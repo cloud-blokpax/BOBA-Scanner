@@ -149,7 +149,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Batch insert harvest logs ────────────────────────
 	if (harvestLogs.length > 0) {
 		try {
-			await admin.from('price_harvest_log').insert(harvestLogs as Database['public']['Tables']['price_harvest_log']['Insert'][]);
+			await admin.from('price_harvest_log').insert(harvestLogs as unknown as Database['public']['Tables']['price_harvest_log']['Insert'][]);
 		} catch (err) {
 			console.error('[harvest] Log batch insert failed:', err instanceof Error ? err.message : err);
 		}
