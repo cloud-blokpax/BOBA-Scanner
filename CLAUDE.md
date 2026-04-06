@@ -50,10 +50,10 @@ BOBA-Scanner/
 │   ├── routes/
 │   │   ├── +layout.svelte          # Root layout: header, bottom nav, auth state
 │   │   ├── +layout.server.ts       # Root server load: session/user from Supabase
+│   │   ├── +layout.ts              # Client layout load
+│   │   ├── +error.svelte           # Error page
 │   │   ├── +page.svelte            # Homepage / dashboard
 │   │   ├── scan/+page.svelte       # Card scanning interface
-│   │   ├── batch/+page.svelte      # Batch scanning interface
-│   │   ├── binder/+page.svelte     # Binder page scanning
 │   │   ├── collection/+page.svelte # Card collection management
 │   │   ├── deck/                   # Deck builder
 │   │   │   ├── +page.svelte        # Deck list / management
@@ -62,8 +62,6 @@ BOBA-Scanner/
 │   │   │   ├── [id]/+page.svelte   # Edit deck by ID
 │   │   │   ├── [id]/view/+page.svelte # View deck (read-only)
 │   │   │   ├── architect/+page.svelte # Playbook architect (AI-assisted deck building)
-│   │   │   ├── builder/+page.svelte # Interactive deck builder
-│   │   │   ├── meta/+page.svelte   # Meta analysis view (format metagame insights)
 │   │   │   ├── shop/+page.svelte   # Deck shop (find missing cards)
 │   │   │   ├── splitter/+page.svelte # Deck splitter utility
 │   │   │   └── verify/[code]/+page.svelte # Deck verification by share code
@@ -72,9 +70,11 @@ BOBA-Scanner/
 │   │   ├── sell/+page.svelte       # Sell cards (eBay listing generation)
 │   │   ├── settings/+page.svelte   # User settings page
 │   │   ├── set-completion/+page.svelte # Set completion tracker
-│   │   ├── speed/+page.svelte      # Speed game challenge
 │   │   ├── packs/+page.svelte      # Pack simulator
-│   │   ├── leaderboard/+page.svelte # Reference image leaderboard
+│   │   ├── market/                  # Market & pricing
+│   │   │   ├── +page.svelte        # Market overview
+│   │   │   └── explore/+page.svelte # Market explorer
+│   │   ├── war-room/+page.svelte   # War room analytics dashboard
 │   │   ├── organize/               # Tournament organizer
 │   │   │   ├── +page.svelte        # Organizer dashboard
 │   │   │   └── [code]/+page.svelte # Manage specific tournament
@@ -82,11 +82,9 @@ BOBA-Scanner/
 │   │   │   ├── +page.svelte        # Tournament list
 │   │   │   ├── detail/+page.svelte # Tournament detail view
 │   │   │   └── enter/+page.svelte  # Tournament entry form
-│   │   ├── marketplace/monitor/+page.svelte # eBay seller monitoring
 │   │   ├── admin/                  # Admin dashboard
 │   │   │   ├── +page.svelte        # Admin page: responsive mobile/desktop layout, tab routing
 │   │   │   ├── +page.server.ts     # Admin server load
-│   │   │   ├── Sparkline.svelte    # Reusable SVG sparkline with area fill
 │   │   │   ├── AdminSidebar.svelte # Desktop persistent sidebar (metrics, health, eBay quota)
 │   │   │   ├── AdminPulseTab.svelte # Overview: metric cards, alerts, trends, quick actions
 │   │   │   ├── AdminUsersTab.svelte # User management: search, filters, bulk actions
@@ -111,17 +109,14 @@ BOBA-Scanner/
 │   │   └── api/
 │   │       ├── scan/+server.ts     # POST: Claude AI card identification (Tier 3)
 │   │       ├── grade/+server.ts    # POST: AI condition grading (Claude Sonnet)
-│   │       ├── health/+server.ts   # GET: Health check endpoint
 │   │       ├── badges/+server.ts   # POST: Badge award endpoint
 │   │       ├── go-pro/+server.ts   # POST: Pro subscription upgrade
 │   │       ├── log/+server.ts      # POST: Client-side error logging
-│   │       ├── upload/+server.ts   # POST: Image upload
-│   │       ├── meta/[formatId]/+server.ts # GET: Format meta analysis
+│   │       ├── profile/+server.ts  # GET/PUT: User profile management
 │   │       ├── price/[cardId]/
 │   │       │   ├── +server.ts      # GET: eBay price lookup with caching
 │   │       │   └── history/+server.ts # GET: Price history
 │   │       ├── deck/
-│   │       │   ├── validate/+server.ts    # POST: Deck validation
 │   │       │   ├── refresh-prices/+server.ts # POST: Deck price refresh
 │   │       │   └── lock/+server.ts        # POST: Lock deck for tournament
 │   │       ├── reference-image/
@@ -129,25 +124,38 @@ BOBA-Scanner/
 │   │       │   └── leaderboard/+server.ts # GET: Reference image leaderboard
 │   │       ├── tournament/
 │   │       │   ├── [code]/+server.ts    # GET: Tournament info by code
-│   │       │   ├── register/+server.ts  # POST: Register for tournament
 │   │       │   ├── results/+server.ts   # POST: Submit tournament results
 │   │       │   └── submit-deck/+server.ts # POST: Submit deck for tournament
-│   │       ├── organize/
-│   │       │   ├── create/+server.ts          # POST: Create new tournament
-│   │       │   └── close-registration/+server.ts # POST: Close tournament registration
+│   │       ├── market/
+│   │       │   ├── explore/+server.ts   # GET: Market explorer data
+│   │       │   ├── facets/+server.ts    # GET: Market filter facets
+│   │       │   ├── pulse/+server.ts     # GET: Market pulse/trends
+│   │       │   └── war-room/+server.ts  # GET: War room analytics data
+│   │       ├── cron/
+│   │       │   └── price-harvest/+server.ts # Cron: Automated eBay price harvesting
 │   │       ├── admin/
 │   │       │   ├── stats/+server.ts          # GET: Aggregated dashboard metrics, trends, alerts
 │   │       │   ├── changelog/+server.ts      # CRUD: Changelog entry management
 │   │       │   ├── scan-flags/+server.ts     # GET/PUT: Misidentification flag review
+│   │       │   ├── scan-analytics/+server.ts # GET: Scan analytics data
 │   │       │   ├── export/+server.ts         # POST: CSV/JSON data export
 │   │       │   ├── users/+server.ts          # PUT/POST: User management and bulk operations
+│   │       │   ├── user-overrides/+server.ts # GET/PUT: Per-user feature overrides
 │   │       │   ├── feature-flags/+server.ts  # Admin: manage feature flags
 │   │       │   ├── pack-config/+server.ts    # Admin: manage pack configurations
 │   │       │   ├── parallels/+server.ts      # Admin: manage parallel types
-│   │       │   └── set-organizer/+server.ts  # Admin: set tournament organizer role
+│   │       │   ├── app-config/+server.ts     # Admin: application configuration
+│   │       │   ├── card-health/+server.ts    # Admin: card health metrics
+│   │       │   ├── card-prices/+server.ts    # Admin: card price management
+│   │       │   ├── ebay-metrics/+server.ts   # Admin: eBay API metrics
+│   │       │   ├── harvest-config/+server.ts # Admin: harvest configuration
+│   │       │   ├── harvest-log/+server.ts    # Admin: harvest log viewer
+│   │       │   ├── logs/+server.ts           # Admin: system log viewer
+│   │       │   └── trigger-harvest/+server.ts # Admin: manual harvest trigger
 │   │       └── ebay/
 │   │           ├── browse/+server.ts    # eBay Browse API proxy
 │   │           ├── listing/+server.ts   # POST: Generate/post eBay listings
+│   │           ├── create-draft/+server.ts # POST: Create eBay draft listing
 │   │           ├── status/+server.ts    # GET: eBay seller auth status
 │   │           └── disconnect/+server.ts # POST: Disconnect eBay seller auth
 │   ├── lib/
@@ -164,12 +172,11 @@ BOBA-Scanner/
 │   │   │   ├── CardGrid.svelte     # Grid display for card collections
 │   │   │   ├── CardCorrection.svelte # Manual correction UI
 │   │   │   ├── CardFlipReveal.svelte # Card flip/reveal animation
-│   │   │   ├── CardConditionCompare.svelte # Side-by-side condition comparison
-│   │   │   ├── AuthenticityCheck.svelte # Card authenticity verification UI
+│   │   │   ├── CategoryTabs.svelte  # Reusable category tab navigation
 │   │   │   ├── OptimizedCardImage.svelte # Optimized image display with lazy loading
 │   │   │   ├── PriceDisplay.svelte # Price information display
 │   │   │   ├── PriceTrends.svelte  # Price trend charts (premium)
-│   │   │   ├── ProfilePrompt.svelte# User profile setup prompt
+│   │   │   ├── SkeletonCardGrid.svelte # Loading skeleton for card grids
 │   │   │   ├── GoProModal.svelte   # Pro subscription upgrade modal
 │   │   │   ├── AffiliateNotice.svelte # Affiliate disclosure notice
 │   │   │   ├── CloseButton.svelte  # Reusable close/dismiss button
@@ -194,14 +201,22 @@ BOBA-Scanner/
 │   │   │   │   ├── DeckSettingsModal.svelte
 │   │   │   │   ├── DeckShopTab.svelte
 │   │   │   │   └── DeckStatsTab.svelte
-│   │   │   └── architect/          # Playbook architect sub-components
-│   │   │       ├── ArchetypeSelector.svelte
-│   │   │       ├── ComboStatusCard.svelte
-│   │   │       ├── DBSBudgetCard.svelte
-│   │   │       ├── DeadCardAlert.svelte
-│   │   │       ├── DrawConsistencyCard.svelte
-│   │   │       ├── HDFlowCard.svelte
-│   │   │       └── PlayBrowser.svelte
+│   │   │   ├── architect/          # Playbook architect sub-components
+│   │   │   │   ├── ArchetypeSelector.svelte
+│   │   │   │   ├── ComboStatusCard.svelte
+│   │   │   │   ├── DBSBudgetCard.svelte
+│   │   │   │   ├── DeadCardAlert.svelte
+│   │   │   │   ├── DrawConsistencyCard.svelte
+│   │   │   │   ├── HDFlowCard.svelte
+│   │   │   │   └── PlayBrowser.svelte
+│   │   │   ├── market/             # Market sub-components
+│   │   │   │   └── Sparkline.svelte # Reusable SVG sparkline with area fill
+│   │   │   ├── tournament/         # Tournament sub-components
+│   │   │   │   └── SealedDeckEntry.svelte # Sealed deck entry form
+│   │   │   └── war-room/           # War room sub-components
+│   │   │       ├── AnimatedNum.svelte # Animated number transitions
+│   │   │       ├── ScatterPlot.svelte # Scatter plot visualization
+│   │   │       └── WIcon.svelte    # War room icon component
 │   │   ├── data/
 │   │   │   ├── play-cards.json     # Play card database (409 cards across 4 releases: Alpha, Griffey, Alpha Update, Alpha Blast — with DBS values and hot dog costs)
 │   │   │   ├── boba-config.ts      # OCR regions, scan config
@@ -212,7 +227,9 @@ BOBA-Scanner/
 │   │   │   ├── combo-engines.ts    # Combo detection engines for playbook analysis
 │   │   │   ├── pack-defaults.ts    # Default pack configurations for pack simulator
 │   │   │   ├── play-categories.ts  # Play card category/tag taxonomy
-│   │   │   └── playbook-archetypes.ts # Playbook archetype definitions for AI-assisted deck building
+│   │   │   ├── playbook-archetypes.ts # Playbook archetype definitions for AI-assisted deck building
+│   │   │   ├── category-tabs.ts    # Category tab configuration
+│   │   │   └── parallel-prefixes.ts # Parallel name prefix mappings
 │   │   ├── server/
 │   │   │   ├── admin-guard.ts      # Admin authorization guard for API endpoints
 │   │   │   ├── anthropic.ts        # Anthropic Claude client singleton
@@ -223,6 +240,7 @@ BOBA-Scanner/
 │   │   │   ├── ebay-auth.ts        # eBay OAuth token management (Browse API)
 │   │   │   ├── ebay-seller-auth.ts # eBay Seller OAuth Authorization Code Grant (per-user)
 │   │   │   ├── grading-prompts.ts  # Card grading prompt construction for Claude Vision
+│   │   │   ├── ebay-query.ts        # eBay search query construction
 │   │   │   ├── supabase-admin.ts   # Supabase admin/service-role client
 │   │   │   └── validate.ts         # Request validation helpers
 │   │   ├── services/
@@ -238,10 +256,7 @@ BOBA-Scanner/
 │   │   │   ├── deck-service.ts     # Deck business logic (format defaults, deck stats)
 │   │   │   ├── deck-gap-finder.ts  # Analyzes deck gaps and selects cards for price refresh
 │   │   │   ├── playbook-engine.ts  # Playbook analysis engine (combos, draw consistency, HD flow)
-│   │   │   ├── authenticity-check.ts # Card authenticity verification via OpenCV + SSIM
-│   │   │   ├── card-condition-compare.ts # Side-by-side card condition comparison
 │   │   │   ├── card-cropper.ts     # Card region cropping for analysis
-│   │   │   ├── opencv-loader.ts    # OpenCV.js lazy loader
 │   │   │   ├── pack-simulator.ts   # Deterministic pack opening simulation
 │   │   │   ├── badges.ts           # Client-side badge award helper with toast notifications
 │   │   │   ├── community-corrections.ts # Community-verified OCR correction mappings
@@ -250,11 +265,8 @@ BOBA-Scanner/
 │   │   │   ├── listing-generator.ts# eBay listing template generation (titles, descriptions)
 │   │   │   ├── parallel-config.ts  # Parallel/treatment configuration
 │   │   │   ├── scan-learning.ts    # Correction tracking for scan improvement
-│   │   │   ├── share-card.ts       # Card sharing (social, QR codes)
 │   │   │   ├── export-templates.ts # Export format definitions
-│   │   │   ├── behavior-tracker.ts  # User behavior tracking for adaptive persona
 │   │   │   ├── dead-card-detector.ts # Dead card detection in playbooks
-│   │   │   ├── meta-analyzer.ts    # Format metagame analysis engine
 │   │   │   ├── error-tracking.ts   # Client error reporting
 │   │   │   └── version.ts          # Version checking
 │   │   ├── stores/                 # All stores use .svelte.ts extension (Svelte 5 runes)
@@ -265,9 +277,8 @@ BOBA-Scanner/
 │   │   │   ├── auth.svelte.ts          # Auth state store
 │   │   │   ├── tags.svelte.ts          # User tags store
 │   │   │   ├── toast.svelte.ts         # Toast notification store
-│   │   │   ├── speed-game.svelte.ts    # Speed game challenge state
 │   │   │   ├── feature-flags.svelte.ts # Feature flag store
-│   │   │   ├── persona.svelte.ts        # User persona weights (adaptive UI)
+│   │   │   ├── nav-config.svelte.ts    # Navigation configuration store
 │   │   │   ├── pro.svelte.ts           # Pro subscription state store
 │   │   │   └── playbook-architect.svelte.ts # Playbook architect state store
 │   │   ├── types/
@@ -279,6 +290,7 @@ BOBA-Scanner/
 │   │   │   ├── extract-card-number.ts # OCR card number extraction logic
 │   │   │   ├── fuzzy-match.ts      # Fuzzy string matching (Levenshtein distance)
 │   │   │   ├── haptics.ts          # Vibration/haptics patterns for mobile
+│   │   │   ├── ebay-title.ts        # eBay listing title generation
 │   │   │   ├── image-url.ts        # Image URL generation and caching
 │   │   │   ├── payment-links.ts    # Payment/upgrade link generation
 │   │   │   └── pricing.ts          # Price calculation and formatting
@@ -295,6 +307,7 @@ BOBA-Scanner/
 │   ├── api-price.integration.test.ts   # Integration: price API
 │   ├── api-scan.integration.test.ts    # Integration: scan API
 │   ├── api-grade.integration.test.ts   # Integration: grade API
+│   ├── sync.test.ts                    # Unit: collection sync (IDB ↔ Supabase)
 │   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes
 │   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline
 ├── src/service-worker.ts            # SvelteKit service worker (differentiated caching)
@@ -335,8 +348,8 @@ The card database has a layered loading strategy (see `card-db.ts`):
 - Google OAuth via Supabase Auth
 - eBay Seller OAuth via Authorization Code Grant (per-user, managed by `ebay-seller-auth.ts`)
 - Server-side auth via `hooks.server.ts` using `getUser()` (JWT validation, not just session cookies)
-- Protected routes (via `authGuard` in `hooks.server.ts`): `/collection`, `/sell`, `/admin`, `/grader`, `/export`, `/marketplace`, `/set-completion`, `/tournaments`, `/settings`, `/organize`
-- Public routes (no auth required): `/scan`, `/batch`, `/binder` (anonymous users get stricter rate limits on Tier 3), `/speed`, `/packs`, `/leaderboard`, `/privacy`, `/terms`
+- Protected routes (via `authGuard` in `hooks.server.ts`): `/collection`, `/sell`, `/admin`, `/grader`, `/export`, `/market`, `/set-completion`, `/tournaments`, `/settings`, `/organize`, `/war-room`
+- Public routes (no auth required): `/scan` (anonymous users get stricter rate limits on Tier 3), `/packs`, `/privacy`, `/terms`
 - API routes handle their own auth checks
 
 ### Data Flow
@@ -349,7 +362,7 @@ The card database has a layered loading strategy (see `card-db.ts`):
 
 The test suite uses Vitest with three tiers:
 
-- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`
 - **Integration tests**: `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
 - **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
 
@@ -364,7 +377,7 @@ Testing patterns:
 
 Estimated module coverage is ~30%. Key untested areas by priority:
 
-1. **Critical business logic**: `sync.ts` (bidirectional IDB/Supabase sync — race conditions cause data loss), `idb.ts` (IndexedDB offline storage), `collection-service.ts` (collection mutations with Supabase + IDB fallback)
+1. **Critical business logic**: `idb.ts` (IndexedDB offline storage), `collection-service.ts` (collection mutations with Supabase + IDB fallback)
 2. **Security & utilities**: `utils/index.ts` (`escapeHtml` is XSS-critical), `middleware.ts` (bot-blocking regex), `api/upload` (CDR/EXIF stripping)
 3. **Feature quality**: `scan-learning.ts` (OCR corrections), `export-templates.ts` (CSV escaping), `ebay.ts` (URL building, price calc)
 4. **Nice to have**: Store pure logic (collection locking, flag evaluation), `error-tracking.ts`, `version.ts`, `listing-generator.ts`
@@ -443,6 +456,8 @@ Parallel types are defined in `src/lib/data/boba-parallels.ts`. Key types includ
 - `src/lib/data/pack-defaults.ts` — Default pack configurations for simulator
 - `src/lib/data/play-categories.ts` — Play card category taxonomy
 - `src/lib/data/playbook-archetypes.ts` — Playbook archetype definitions
+- `src/lib/data/category-tabs.ts` — Category tab configuration
+- `src/lib/data/parallel-prefixes.ts` — Parallel name prefix mappings
 
 ## Key Conventions
 
