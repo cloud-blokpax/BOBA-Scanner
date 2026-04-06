@@ -64,10 +64,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const heroCardIds = deck.hero_card_ids || [];
 		let heroCards: Card[] = [];
 		if (heroCardIds.length > 0) {
-			const { data: heroData } = await supabase
+			const { data: heroData, error: heroErr } = await supabase
 				.from('cards')
 				.select('*')
 				.in('id', heroCardIds);
+			if (heroErr) {
+				console.error('[deck/lock] Hero card lookup failed:', heroErr.message);
+				throw error(500, 'Failed to load hero cards for validation');
+			}
 			heroCards = (heroData || []) as Card[];
 		}
 

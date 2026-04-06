@@ -46,12 +46,16 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	// Pro check — grading is a premium feature (prevents direct API abuse)
 	if (!locals.supabase) throw error(503, 'Service unavailable');
-	const { data: profile } = await locals.supabase
+	const { data: profile, error: profileErr } = await locals.supabase
 		.from('users')
 		.select('is_pro, is_admin')
 		.eq('auth_user_id', user.id)
 		.single();
 
+	if (profileErr) {
+		console.error('[grade] Profile lookup failed:', profileErr.message);
+		throw error(500, 'Failed to verify account status');
+	}
 	if (!profile?.is_pro && !profile?.is_admin) {
 		throw error(403, 'Pro subscription required for AI grading');
 	}

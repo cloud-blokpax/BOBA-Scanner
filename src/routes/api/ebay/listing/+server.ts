@@ -25,10 +25,14 @@ async function getSellerPolicies(token: string): Promise<{
 	};
 
 	try {
+		const safeJson = async (r: Response, label: string) => {
+			if (!r.ok) throw new Error(`eBay ${label} API returned ${r.status}`);
+			return r.json();
+		};
 		const [fulfillment, payment, returns] = await Promise.all([
-			fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
-			fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json()),
-			fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }).then(r => r.json())
+			fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'fulfillment_policy')),
+			fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'payment_policy')),
+			fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }).then(r => safeJson(r, 'return_policy'))
 		]);
 
 		const findPolicy = (policies: Array<Record<string, string>>, idField: string) => {
@@ -71,8 +75,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// Server-side feature gate
 	if (locals.supabase) {
-		const { data: profile } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
-		const { data: override } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'scan_to_list').maybeSingle();
+		const { data: profile, error: profileErr } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
+		if (profileErr) {
+			console.error('[ebay/listing] Profile lookup failed:', profileErr.message);
+			throw error(500, 'Failed to verify account status');
+		}
+		const { data: override, error: overrideErr } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'scan_to_list').maybeSingle();
+		if (overrideErr) {
+			console.error('[ebay/listing] Feature override lookup failed:', overrideErr.message);
+		}
 		if (override) {
 			if (!override.enabled) throw error(403, 'Feature not available');
 		} else if (!profile?.is_pro && !profile?.is_admin) {

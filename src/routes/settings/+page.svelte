@@ -159,7 +159,7 @@
 		if (ebayStatusFetched) return;
 		ebayStatusFetched = true;
 		fetch('/api/ebay/status')
-			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
 			.then(data => {
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;

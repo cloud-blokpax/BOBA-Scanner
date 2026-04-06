@@ -157,9 +157,9 @@
 			const res = await fetch('/api/market/facets');
 			if (!res.ok) return;
 			const data = await res.json();
-			facets = data.facets;
-			totalPriced = data.totalPriced;
-			totalCards = data.totalCards;
+			facets = data.facets || {};
+			totalPriced = data.totalPriced ?? 0;
+			totalCards = data.totalCards ?? 0;
 		} catch {
 			console.debug('[explorer] Failed to load facets');
 		}
@@ -191,13 +191,13 @@
 			const data = await res.json();
 
 			if (append) {
-				cards = [...cards, ...data.cards];
+				cards = [...cards, ...(data.cards || [])];
 			} else {
-				cards = data.cards;
+				cards = data.cards || [];
 			}
 
-			aggregates = data.aggregates;
-			hasMore = data.pagination.hasMore;
+			aggregates = data.aggregates || null;
+			hasMore = data.pagination?.hasMore ?? false;
 		} catch {
 			showToast('Failed to load market data', '\u26A0\uFE0F');
 		} finally {

@@ -60,12 +60,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const playerEmail = requireEmail(body.player_email);
 
 	// Load tournament and check registration status
-	const { data: tournament } = await supabase
+	const { data: tournament, error: tournamentErr } = await supabase
 		.from('tournaments')
 		.select('*')
 		.eq('id', tournamentId)
 		.single();
 
+	if (tournamentErr && tournamentErr.code !== 'PGRST116') {
+		console.error('[tournament/submit-deck] Tournament lookup failed:', tournamentErr.message);
+		throw error(500, 'Failed to load tournament');
+	}
 	if (!tournament) throw error(404, 'Tournament not found');
 	if (!tournament.is_active) throw error(400, 'Tournament is not active');
 	if (tournament.registration_closed) throw error(400, 'Registration is closed');

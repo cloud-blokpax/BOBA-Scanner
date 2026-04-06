@@ -46,6 +46,13 @@ export const GET: RequestHandler = async ({ locals }) => {
 		console.error('[war-room] Price query failed:', priceRes.error);
 		throw error(500, 'Failed to load war room data');
 	}
+	if (cardRes.error) {
+		console.error('[war-room] Card query failed:', cardRes.error);
+		throw error(500, 'Failed to load card data');
+	}
+	if (playCardRes.error) {
+		console.error('[war-room] Play card query failed:', playCardRes.error);
+	}
 
 	// Build card lookup
 	const cardMap = new Map((cardRes.data || []).map(c => [String(c.id), c]));

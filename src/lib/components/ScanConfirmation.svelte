@@ -121,7 +121,7 @@
 		const controller = new AbortController();
 		historyLoading = true;
 		fetch(`/api/price/${encodeURIComponent(card.id)}/history`, { signal: controller.signal })
-			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
 			.then(data => { historyData = data.history || []; historyLoading = false; })
 			.catch((err) => {
 				if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -137,7 +137,7 @@
 		if (!hasScanToList() || ebayChecked) return;
 		const controller = new AbortController();
 		fetch('/api/ebay/status', { signal: controller.signal })
-			.then(res => res.ok ? res.json() : Promise.reject())
+			.then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
 			.then(data => { ebayConnected = data.connected; })
 			.catch((err) => {
 				if (err instanceof DOMException && err.name === 'AbortError') return;

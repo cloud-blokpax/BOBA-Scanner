@@ -10,8 +10,15 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	// Server-side feature gate
 	if (locals.supabase) {
-		const { data: profile } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
-		const { data: override } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'price_history').maybeSingle();
+		const { data: profile, error: profileErr } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
+		if (profileErr) {
+			console.error('[price/history] Profile lookup failed:', profileErr.message);
+			throw error(500, 'Failed to verify account status');
+		}
+		const { data: override, error: overrideErr } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'price_history').maybeSingle();
+		if (overrideErr) {
+			console.error('[price/history] Feature override lookup failed:', overrideErr.message);
+		}
 		if (override) {
 			if (!override.enabled) throw error(403, 'Feature not available');
 		} else if (!profile?.is_pro && !profile?.is_admin) {
