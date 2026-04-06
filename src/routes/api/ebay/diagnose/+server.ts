@@ -62,6 +62,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const headers = {
 		Authorization: `Bearer ${token}`,
 		'Content-Type': 'application/json',
+		'Accept-Language': 'en-US',
 		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 	};
 
@@ -141,7 +142,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 		const res = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(testSku)}`, {
 			method: 'PUT',
-			headers: { ...headers, 'Content-Language': 'en-US' },
+			headers: { ...headers, 'Content-Language': 'en-US', 'Accept-Language': 'en-US' },
 			body: JSON.stringify(inventoryItem)
 		});
 
