@@ -1,118 +1,90 @@
 /**
- * Rate Limiting
+ * Rate Limiting — Declarative Configuration
  *
  * Primary: Upstash Redis (@upstash/ratelimit)
  * Fallback: In-memory Map (for when Redis is unavailable)
  *
+ * Adding a new limiter = one line in the LIMITERS object.
  * Budget: ~2K Redis commands/day for rate limiting.
  */
 
 import { Ratelimit } from '@upstash/ratelimit';
 import { getRedis } from './redis';
 
-// ── Upstash Rate Limiters ───────────────────────────────────
-
-let scanLimiter: Ratelimit | null = null;
-let anonScanLimiter: Ratelimit | null = null;
-let anonPriceLimiter: Ratelimit | null = null;
-let collectionLimiter: Ratelimit | null = null;
-let mutationLimiter: Ratelimit | null = null;
-let heavyMutationLimiter: Ratelimit | null = null;
-
-function initLimiters() {
-	if (scanLimiter) return;
-
-	const redis = getRedis();
-	if (!redis) {
-		console.warn('[rate-limit] Upstash Redis not configured — using in-memory fallback. Rate limiting will reset on every cold start and is ineffective across concurrent Vercel function instances.');
-		return;
-	}
-
-	// 20 scans per 60 seconds per authenticated user
-	scanLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(20, '60 s'),
-		prefix: 'rl:scan'
-	});
-
-	// 5 scans per 60 seconds per anonymous IP (stricter to prevent abuse)
-	anonScanLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(5, '60 s'),
-		prefix: 'rl:anon-scan'
-	});
-
-	// 30 price lookups per 60 seconds per anonymous IP (separate from scan budget)
-	anonPriceLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(30, '60 s'),
-		prefix: 'rl:anon-price'
-	});
-
-	// 60 collection updates per 60 seconds per user
-	collectionLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(60, '60 s'),
-		prefix: 'rl:col'
-	});
-
-	// 10 mutations per 60 seconds per user (tournament ops, organizer actions, go-pro, etc.)
-	mutationLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(10, '60 s'),
-		prefix: 'rl:mut'
-	});
-
-	// 3 heavy mutations per 60 seconds per user (deck lock, deck submit, upload, eBay listing)
-	heavyMutationLimiter = new Ratelimit({
-		redis,
-		limiter: Ratelimit.slidingWindow(3, '60 s'),
-		prefix: 'rl:hmut'
-	});
+// ── Limiter definitions (single source of truth) ────────────
+interface LimiterConfig {
+	prefix: string;
+	maxRequests: number;
+	windowSeconds: number;
 }
 
-// ── In-Memory Fallback ──────────────────────────────────────
+const LIMITERS: Record<string, LimiterConfig> = {
+	scan:       { prefix: 'rl:scan',       maxRequests: 20, windowSeconds: 60 },
+	anonScan:   { prefix: 'rl:anon-scan',  maxRequests: 5,  windowSeconds: 60 },
+	anonPrice:  { prefix: 'rl:anon-price', maxRequests: 30, windowSeconds: 60 },
+	collection: { prefix: 'rl:col',        maxRequests: 60, windowSeconds: 60 },
+	mutation:   { prefix: 'rl:mut',        maxRequests: 10, windowSeconds: 60 },
+	heavyMut:   { prefix: 'rl:hmut',       maxRequests: 3,  windowSeconds: 60 },
+};
 
-const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
-const WINDOW_MS = 60_000;
-const MAX_SCAN_REQUESTS = 20;
-const MAX_ANON_SCAN_REQUESTS = 5;
-const MAX_ANON_PRICE_REQUESTS = 30;
-const MAX_COLLECTION_REQUESTS = 60;
-const MAX_MUTATION_REQUESTS = 10;
-const MAX_HEAVY_MUTATION_REQUESTS = 3;
+// ── Redis limiters (lazy-initialized once) ──────────────────
+const redisLimiters = new Map<string, Ratelimit>();
+let redisInitDone = false;
 
-function checkInMemory(key: string, maxRequests: number): boolean {
+function getRedisLimiter(name: string): Ratelimit | null {
+	if (!redisInitDone) {
+		redisInitDone = true;
+		const redis = getRedis();
+		if (!redis) {
+			console.warn(
+				'[rate-limit] Upstash Redis not configured — using in-memory fallback. ' +
+				'Rate limiting will reset on every cold start and is ineffective across concurrent Vercel function instances.'
+			);
+		} else {
+			for (const [key, config] of Object.entries(LIMITERS)) {
+				redisLimiters.set(key, new Ratelimit({
+					redis,
+					limiter: Ratelimit.slidingWindow(config.maxRequests, `${config.windowSeconds} s`),
+					prefix: config.prefix,
+				}));
+			}
+		}
+	}
+	return redisLimiters.get(name) ?? null;
+}
+
+// ── In-memory fallback ──────────────────────────────────────
+const memoryMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkInMemory(key: string, maxRequests: number, windowMs: number): boolean {
 	const now = Date.now();
-	const userData = rateLimitMap.get(key) || { count: 0, windowStart: now };
+	const entry = memoryMap.get(key) ?? { count: 0, windowStart: now };
 
-	if (now - userData.windowStart > WINDOW_MS) {
-		userData.count = 0;
-		userData.windowStart = now;
+	if (now - entry.windowStart > windowMs) {
+		entry.count = 0;
+		entry.windowStart = now;
 	}
 
 	// Check limit BEFORE incrementing to avoid off-by-one
-	// (otherwise request maxRequests+1 gets through before being blocked)
-	if (userData.count >= maxRequests) {
-		rateLimitMap.set(key, userData);
+	if (entry.count >= maxRequests) {
+		memoryMap.set(key, entry);
 		return false;
 	}
 
-	userData.count++;
-	rateLimitMap.set(key, userData);
+	entry.count++;
+	memoryMap.set(key, entry);
 
-	// Cleanup old entries periodically
-	if (rateLimitMap.size > 1000) {
-		for (const [k, v] of rateLimitMap) {
-			if (now - v.windowStart > WINDOW_MS * 2) rateLimitMap.delete(k);
+	// Periodic cleanup to prevent memory leak
+	if (memoryMap.size > 1000) {
+		for (const [k, v] of memoryMap) {
+			if (now - v.windowStart > windowMs * 2) memoryMap.delete(k);
 		}
 	}
 
 	return true;
 }
 
-// ── Public API ──────────────────────────────────────────────
-
+// ── Generic rate limit check ────────────────────────────────
 export interface RateLimitResult {
 	success: boolean;
 	limit: number;
@@ -120,191 +92,42 @@ export interface RateLimitResult {
 	reset: number;
 }
 
-/**
- * Check scan rate limit for a user.
- */
-export async function checkScanRateLimit(userId: string): Promise<RateLimitResult> {
-	initLimiters();
+async function checkLimit(limiterName: string, identifier: string): Promise<RateLimitResult> {
+	const config = LIMITERS[limiterName];
+	if (!config) throw new Error(`Unknown rate limiter: ${limiterName}`);
 
-	if (scanLimiter) {
+	const redisLimiter = getRedisLimiter(limiterName);
+	if (redisLimiter) {
 		try {
-			const result = await scanLimiter.limit(userId);
+			const result = await redisLimiter.limit(identifier);
 			return {
 				success: result.success,
 				limit: result.limit,
 				remaining: result.remaining,
-				reset: result.reset
+				reset: result.reset,
 			};
 		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
+			console.debug(`[rate-limit] Redis check failed for ${limiterName}, using in-memory fallback:`, err);
 		}
 	}
 
 	// In-memory fallback
-	const key = `scan:${userId}`;
-	const success = checkInMemory(key, MAX_SCAN_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
+	const windowMs = config.windowSeconds * 1000;
+	const key = `${config.prefix}:${identifier}`;
+	const success = checkInMemory(key, config.maxRequests, windowMs);
+	const count = memoryMap.get(key)?.count ?? 0;
 	return {
 		success,
-		limit: MAX_SCAN_REQUESTS,
-		remaining: Math.max(0, MAX_SCAN_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
+		limit: config.maxRequests,
+		remaining: Math.max(0, config.maxRequests - count),
+		reset: Date.now() + windowMs,
 	};
 }
 
-/**
- * Check scan rate limit for an anonymous IP (stricter than authenticated).
- */
-export async function checkAnonScanRateLimit(ip: string): Promise<RateLimitResult> {
-	initLimiters();
-
-	if (anonScanLimiter) {
-		try {
-			const result = await anonScanLimiter.limit(ip);
-			return {
-				success: result.success,
-				limit: result.limit,
-				remaining: result.remaining,
-				reset: result.reset
-			};
-		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
-		}
-	}
-
-	// In-memory fallback
-	const key = `anon-scan:${ip}`;
-	const success = checkInMemory(key, MAX_ANON_SCAN_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
-	return {
-		success,
-		limit: MAX_ANON_SCAN_REQUESTS,
-		remaining: Math.max(0, MAX_ANON_SCAN_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
-	};
-}
-
-/**
- * Check price lookup rate limit for an anonymous IP (separate from scan budget).
- */
-export async function checkAnonPriceRateLimit(ip: string): Promise<RateLimitResult> {
-	initLimiters();
-
-	if (anonPriceLimiter) {
-		try {
-			const result = await anonPriceLimiter.limit(ip);
-			return {
-				success: result.success,
-				limit: result.limit,
-				remaining: result.remaining,
-				reset: result.reset
-			};
-		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
-		}
-	}
-
-	// In-memory fallback
-	const key = `anon-price:${ip}`;
-	const success = checkInMemory(key, MAX_ANON_PRICE_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
-	return {
-		success,
-		limit: MAX_ANON_PRICE_REQUESTS,
-		remaining: Math.max(0, MAX_ANON_PRICE_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
-	};
-}
-
-/**
- * Check collection update rate limit for a user.
- */
-export async function checkCollectionRateLimit(userId: string): Promise<RateLimitResult> {
-	initLimiters();
-
-	if (collectionLimiter) {
-		try {
-			const result = await collectionLimiter.limit(userId);
-			return {
-				success: result.success,
-				limit: result.limit,
-				remaining: result.remaining,
-				reset: result.reset
-			};
-		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
-		}
-	}
-
-	const key = `col:${userId}`;
-	const success = checkInMemory(key, MAX_COLLECTION_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
-	return {
-		success,
-		limit: MAX_COLLECTION_REQUESTS,
-		remaining: Math.max(0, MAX_COLLECTION_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
-	};
-}
-
-/**
- * Check mutation rate limit (10/min) for tournament ops, organizer actions, go-pro, etc.
- */
-export async function checkMutationRateLimit(userId: string): Promise<RateLimitResult> {
-	initLimiters();
-
-	if (mutationLimiter) {
-		try {
-			const result = await mutationLimiter.limit(userId);
-			return {
-				success: result.success,
-				limit: result.limit,
-				remaining: result.remaining,
-				reset: result.reset
-			};
-		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
-		}
-	}
-
-	const key = `mut:${userId}`;
-	const success = checkInMemory(key, MAX_MUTATION_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
-	return {
-		success,
-		limit: MAX_MUTATION_REQUESTS,
-		remaining: Math.max(0, MAX_MUTATION_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
-	};
-}
-
-/**
- * Check heavy mutation rate limit (3/min) for deck lock, deck submit, upload, eBay listing.
- */
-export async function checkHeavyMutationRateLimit(userId: string): Promise<RateLimitResult> {
-	initLimiters();
-
-	if (heavyMutationLimiter) {
-		try {
-			const result = await heavyMutationLimiter.limit(userId);
-			return {
-				success: result.success,
-				limit: result.limit,
-				remaining: result.remaining,
-				reset: result.reset
-			};
-		} catch (err) {
-			console.debug('[rate-limit] Redis check failed, using in-memory fallback:', err);
-		}
-	}
-
-	const key = `hmut:${userId}`;
-	const success = checkInMemory(key, MAX_HEAVY_MUTATION_REQUESTS);
-	const count = rateLimitMap.get(key)?.count || 0;
-	return {
-		success,
-		limit: MAX_HEAVY_MUTATION_REQUESTS,
-		remaining: Math.max(0, MAX_HEAVY_MUTATION_REQUESTS - count),
-		reset: Date.now() + WINDOW_MS
-	};
-}
+// ── Named exports (identical API — zero consumer changes) ───
+export const checkScanRateLimit = (userId: string) => checkLimit('scan', userId);
+export const checkAnonScanRateLimit = (ip: string) => checkLimit('anonScan', ip);
+export const checkAnonPriceRateLimit = (ip: string) => checkLimit('anonPrice', ip);
+export const checkCollectionRateLimit = (userId: string) => checkLimit('collection', userId);
+export const checkMutationRateLimit = (userId: string) => checkLimit('mutation', userId);
+export const checkHeavyMutationRateLimit = (userId: string) => checkLimit('heavyMut', userId);
