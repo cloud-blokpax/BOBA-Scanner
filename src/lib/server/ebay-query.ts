@@ -38,13 +38,21 @@ export function filterRelevantListings<T extends { title?: string }>(
 		if (!item.title) return false;
 		const t = item.title.toUpperCase();
 
+		// Gate 1: Must reference BoBA — eliminates all non-game listings
+		// that eBay returns via "results matching fewer words"
+		if (!t.includes('BATTLE ARENA') && !t.includes('BOBA')) return false;
+
+		// Gate 2: If the card has a card_number, the listing MUST contain it.
+		// Card numbers like SF-4, BF-120, 42 are the strongest unique identifier.
+		// Without this, a search for "Boz SF-4" would match "Boz 42" (wrong card).
 		if (normalizedCardNum) {
 			const normalizedTitle = t.replace(/[-\s]/g, '');
-			if (normalizedTitle.includes(normalizedCardNum)) return true;
+			return normalizedTitle.includes(normalizedCardNum);
 		}
 
+		// No card_number on the card record — fall back to name matching.
+		// Require hero OR athlete name to appear in the title.
 		if (heroStr && heroStr.length > 2 && t.includes(heroStr)) return true;
-
 		if (athleteStr && athleteStr.length > 2 && t.includes(athleteStr)) return true;
 
 		return false;
