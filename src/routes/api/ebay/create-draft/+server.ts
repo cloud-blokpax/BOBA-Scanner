@@ -159,128 +159,151 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
-	const sku = `BOBA-${body.cardId || Date.now()}`;
+	try {
+		const sku = `BOBA-${body.cardId || Date.now()}`;
 
-	// Use user-provided title/description if available, otherwise generate
-	const listingTitle = body.title || buildTitle(body);
-	const htmlDescription = body.description
-		? plainTextToHtml(body.description)
-		: buildDescription(body);
+		// Use user-provided title/description if available, otherwise generate
+		const listingTitle = body.title || buildTitle(body);
+		const htmlDescription = body.description
+			? plainTextToHtml(body.description)
+			: buildDescription(body);
 
-	// Step 1: Create or update inventory item
-	const inventoryItem = {
-		product: {
-			title: listingTitle,
-			description: htmlDescription,
-			...(body.scanImageUrl ? { imageUrls: [body.scanImageUrl] } : {}),
-			aspects: {
-				'Card Name': [heroName || 'Unknown'],
-				'Set': [body.setCode || 'BoBA'],
-				'Sport': ['Multi-Sport'],
-				'Card Manufacturer': ['Bo Jackson Battle Arena'],
-				...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-				...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
-				...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
+		// Step 1: Create or update inventory item
+		const inventoryItem = {
+			product: {
+				title: listingTitle,
+				description: htmlDescription,
+				...(body.scanImageUrl ? { imageUrls: [body.scanImageUrl] } : {}),
+				aspects: {
+					'Card Name': [heroName || 'Unknown'],
+					'Set': [body.setCode || 'BoBA'],
+					'Sport': ['Multi-Sport'],
+					'Card Manufacturer': ['Bo Jackson Battle Arena'],
+					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
+					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
+					...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
+				}
+			},
+			condition: conditionToEbay(body.condition),
+			conditionDescription: body.notes || undefined,
+			availability: {
+				shipToLocationAvailability: {
+					quantity
+				}
 			}
-		},
-		condition: conditionToEbay(body.condition),
-		conditionDescription: body.notes || undefined,
-		availability: {
-			shipToLocationAvailability: {
-				quantity
+		};
+
+		const itemRes = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(sku)}`, {
+			method: 'PUT',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'application/json',
+				'Content-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+			},
+			body: JSON.stringify(inventoryItem)
+		});
+
+		if (!itemRes.ok) {
+			const errBody = await itemRes.text().catch(() => '');
+			console.error('[ebay/create-draft] Inventory item creation failed:', itemRes.status, errBody);
+			if (itemRes.status === 401) {
+				throw error(403, 'eBay session expired. Reconnect in Settings.');
 			}
+			let message = `eBay inventory item creation failed (${itemRes.status})`;
+			try {
+				const parsed = JSON.parse(errBody);
+				if (parsed.errors?.[0]?.message) {
+					message = parsed.errors[0].message;
+				}
+			} catch { /* use default message */ }
+			throw error(502, message);
 		}
-	};
 
-	const itemRes = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(sku)}`, {
-		method: 'PUT',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-			'Content-Language': 'en-US'
-		},
-		body: JSON.stringify(inventoryItem)
-	});
-
-	if (!itemRes.ok) {
-		const errBody = await itemRes.text().catch(() => '');
-		console.error('[ebay/create-draft] Inventory item creation failed:', itemRes.status, errBody);
-		if (itemRes.status === 401) {
-			throw error(403, 'eBay session expired. Reconnect in Settings.');
+		// Step 2: Look up the seller's business policies
+		const policies = await getSellerPolicies(token);
+		if (!policies) {
+			throw error(400, 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.');
 		}
-		throw error(500, `eBay API error: ${itemRes.status}`);
-	}
 
-	// Step 2: Look up the seller's business policies
-	const policies = await getSellerPolicies(token);
-	if (!policies) {
-		throw error(400, 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.');
-	}
-
-	// Step 3: Create offer (unpublished = draft in Seller Hub)
-	const offer = {
-		sku,
-		marketplaceId: 'EBAY_US',
-		format: 'FIXED_PRICE',
-		listingDescription: htmlDescription,
-		availableQuantity: quantity,
-		pricingSummary: {
-			price: {
-				value: price.toFixed(2),
-				currency: 'USD'
+		// Step 3: Create offer (unpublished = draft in Seller Hub)
+		const offer = {
+			sku,
+			marketplaceId: 'EBAY_US',
+			format: 'FIXED_PRICE',
+			listingDescription: htmlDescription,
+			availableQuantity: quantity,
+			pricingSummary: {
+				price: {
+					value: price.toFixed(2),
+					currency: 'USD'
+				}
+			},
+			categoryId: EBAY_CATEGORY_TRADING_CARDS,
+			listingPolicies: {
+				fulfillmentPolicyId: policies.fulfillmentPolicyId,
+				returnPolicyId: policies.returnPolicyId,
+				paymentPolicyId: policies.paymentPolicyId
 			}
-		},
-		categoryId: EBAY_CATEGORY_TRADING_CARDS,
-		listingPolicies: {
-			fulfillmentPolicyId: policies.fulfillmentPolicyId,
-			returnPolicyId: policies.returnPolicyId,
-			paymentPolicyId: policies.paymentPolicyId
+		};
+
+		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'application/json',
+				'Content-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+			},
+			body: JSON.stringify(offer)
+		});
+
+		if (!offerRes.ok) {
+			const errBody = await offerRes.text().catch(() => '');
+			console.error('[ebay/create-draft] Offer creation failed:', offerRes.status, errBody);
+
+			let message = `eBay offer creation failed (${offerRes.status})`;
+			try {
+				const parsed = JSON.parse(errBody);
+				const errors = parsed.errors || [];
+				const policyError = errors.find((e: { errorId?: number }) =>
+					e.errorId === 25002 || e.errorId === 25001 || e.errorId === 25710
+				);
+				if (policyError) {
+					message = 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.';
+				} else if (errors[0]?.message) {
+					message = errors[0].message;
+				}
+			} catch { /* use default message */ }
+
+			if (offerRes.status === 401) {
+				throw error(403, 'eBay session expired. Reconnect in Settings.');
+			}
+			throw error(502, message);
 		}
-	};
 
-	const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-			'Content-Language': 'en-US'
-		},
-		body: JSON.stringify(offer)
-	});
-
-	if (!offerRes.ok) {
-		const errBody = await offerRes.text().catch(() => '');
-		console.error('[ebay/create-draft] Offer creation failed:', offerRes.status, errBody);
-
-		let message = `eBay offer creation failed (${offerRes.status})`;
+		let offerData;
 		try {
-			const parsed = JSON.parse(errBody);
-			const errors = parsed.errors || [];
-			const policyError = errors.find((e: { errorId?: number }) =>
-				e.errorId === 25002 || e.errorId === 25001 || e.errorId === 25710
-			);
-			if (policyError) {
-				message = 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.';
-			} else if (errors[0]?.message) {
-				message = errors[0].message;
-			}
-		} catch { /* use default message */ }
-
-		if (offerRes.status === 401) {
-			throw error(403, 'eBay session expired. Reconnect in Settings.');
+			offerData = await offerRes.json();
+		} catch {
+			console.debug('[ebay/create-draft] Offer response parse failed');
+			throw error(502, 'Invalid response from eBay offer API');
 		}
-		throw error(500, message);
-	}
+		if (!offerData.offerId) {
+			throw error(502, 'eBay API did not return an offer ID');
+		}
 
-	const offerData = await offerRes.json();
-	if (!offerData.offerId) {
-		throw error(500, 'eBay API did not return an offer ID');
+		return json({
+			success: true,
+			offerId: offerData.offerId,
+			sku,
+			message: 'Draft listing created in your eBay Seller Hub'
+		});
+	} catch (err) {
+		// Re-throw SvelteKit HttpErrors as-is (they already have status + message)
+		if (err && typeof err === 'object' && 'status' in err) throw err;
+		const message = err instanceof Error ? err.message : 'Draft creation failed';
+		console.error('[ebay/create-draft] Unexpected error:', message);
+		throw error(502, `Draft creation failed: ${message}`);
 	}
-
-	return json({
-		success: true,
-		offerId: offerData.offerId,
-		sku,
-		message: 'Draft listing created in your eBay Seller Hub'
-	});
 };
