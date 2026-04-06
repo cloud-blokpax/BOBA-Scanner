@@ -73,7 +73,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 	}
 
 	// Fetch most recent harvest log entry per card for delta tracking (paginated).
-	const harvestMap = new Map<string, Record<string, unknown>>();
+	type HarvestRow = { card_id: string; previous_mid: number | null; price_delta: number | null; price_delta_pct: number | null; price_changed: boolean; auction_count: number | null; is_new_price: boolean; success: boolean };
+	const harvestMap = new Map<string, HarvestRow>();
 	{
 		const BATCH = 200;
 		for (let i = 0; i < cardIds.length; i += BATCH) {
@@ -83,15 +84,16 @@ export const GET: RequestHandler = async ({ locals }) => {
 				.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
 				.eq('success', true)
 				.in('card_id', batch)
-				.order('processed_at', { ascending: false });
+				.order('processed_at', { ascending: false })
+				.returns<HarvestRow[]>();
 			if (harvestErr) {
 				console.error('[market/pulse] harvest_log query failed:', harvestErr.message);
 				continue;
 			}
 			// Deduplicate: keep only the most recent harvest entry per card_id
 			for (const row of data || []) {
-				if (!harvestMap.has(row.card_id as string)) {
-					harvestMap.set(row.card_id as string, row);
+				if (!harvestMap.has(row.card_id)) {
+					harvestMap.set(row.card_id, row);
 				}
 			}
 		}
