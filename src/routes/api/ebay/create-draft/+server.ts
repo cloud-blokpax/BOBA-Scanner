@@ -95,6 +95,7 @@ async function getSellerPolicies(token: string): Promise<{
 	const headers = {
 		Authorization: `Bearer ${token}`,
 		'Content-Type': 'application/json',
+		'Accept-Language': 'en-US',
 		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 	};
 
@@ -203,6 +204,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json',
 				'Content-Language': 'en-US',
+				'Accept-Language': 'en-US',
 				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify(inventoryItem)
@@ -269,6 +271,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json',
 				'Content-Language': 'en-US',
+				'Accept-Language': 'en-US',
 				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify(offer)
