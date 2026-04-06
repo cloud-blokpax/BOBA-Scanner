@@ -72,17 +72,17 @@ function plainTextToHtml(text: string): string {
 }
 
 const CONDITION_MAP: Record<string, string> = {
-	'mint': '2750',
-	'nearmint': '4000',
-	'excellent': '4000',
-	'good': '5000',
-	'fair': '6000',
-	'poor': '7000'
+	'mint': 'LIKE_NEW',
+	'nearmint': 'LIKE_NEW',
+	'excellent': 'LIKE_NEW',
+	'good': 'USED_VERY_GOOD',
+	'fair': 'USED_GOOD',
+	'poor': 'USED_ACCEPTABLE'
 };
 
 function conditionToEbay(condition: string): string {
 	const key = (condition || '').toLowerCase().replace(/[_\s]/g, '');
-	return CONDITION_MAP[key] || '4000';
+	return CONDITION_MAP[key] || 'LIKE_NEW';
 }
 
 async function getSellerPolicies(token: string): Promise<{
