@@ -28,6 +28,7 @@ const FLUSH_INTERVAL = 30_000;
 
 let _sessionId = '';
 let _flushInterval: ReturnType<typeof setInterval> | null = null;
+let _initialized = false;
 
 function getSessionId(): string {
 	if (!_sessionId) {
@@ -106,6 +107,13 @@ function onVisibilityChange(): void {
 export function initErrorTracking(): () => void {
 	if (!browser) return () => {};
 
+	// Guard against double-init leaking duplicate listeners and intervals
+	if (_initialized) {
+		console.warn('[error-tracking] Already initialized — skipping duplicate init');
+		return () => {};
+	}
+	_initialized = true;
+
 	window.addEventListener('error', onError);
 	window.addEventListener('unhandledrejection', onRejection);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -116,6 +124,8 @@ export function initErrorTracking(): () => void {
 		window.removeEventListener('unhandledrejection', onRejection);
 		document.removeEventListener('visibilitychange', onVisibilityChange);
 		if (_flushInterval) clearInterval(_flushInterval);
+		_flushInterval = null;
+		_initialized = false;
 		flushErrors(); // Final flush on cleanup
 	};
 }

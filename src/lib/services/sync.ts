@@ -182,7 +182,7 @@ export function setupAutoSync(): () => void {
 	if (!browser) return () => {};
 
 	// Initial sync (catch to avoid unhandled promise rejection)
-	fullSync().catch((err) => console.warn('Initial sync failed:', err));
+	fullSync().catch((err) => console.error('[sync] Initial sync failed — collection may be stale:', err));
 
 	// Auto-sync every 5 minutes
 	_autoSyncInterval = setInterval(fullSync, AUTO_SYNC_INTERVAL);

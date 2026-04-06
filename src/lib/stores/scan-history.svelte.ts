@@ -60,7 +60,9 @@ if (browser) {
 			// localStorage wins — it's always the most recent successful write
 			_scanHistory = lsData;
 			// Sync IDB to match localStorage (non-blocking)
-			idb.setMeta(IDB_KEY, lsData).catch(() => {});
+			idb.setMeta(IDB_KEY, lsData).catch((err) => {
+				console.warn('[scan-history] IDB sync from localStorage failed:', err);
+			});
 		} else if (idbValid) {
 			// No localStorage data — use IDB and create a backup
 			_scanHistory = idbEntries;
