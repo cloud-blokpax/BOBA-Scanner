@@ -95,6 +95,15 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	// ── Process cards sequentially with 2s spacing ──────
+	// When called by trigger-harvest, use a shorter time budget so the
+	// wrapper function has headroom within its own 60s Vercel limit.
+	const timeBudgetHeader = request.headers.get('x-harvest-time-budget');
+	const maxProcessingMs = timeBudgetHeader
+		? Math.min(parseInt(timeBudgetHeader, 10) || 52000, 52000)
+		: 52000;
+	// Reserve 8s for logging + chain fire
+	const processingCutoff = maxProcessingMs - 8000;
+
 	const startTime = Date.now();
 	let processed = 0;
 	let updated = 0;
@@ -103,8 +112,8 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const harvestLogs: Record<string, unknown>[] = [];
 
 	for (let i = 0; i < candidates.length; i++) {
-		// Stop 8s before timeout to leave room for logging + chain fire
-		if (Date.now() - startTime > 52000) break;
+		// Stop before timeout to leave room for logging + chain fire
+		if (Date.now() - startTime > processingCutoff) break;
 
 		// If eBay is actively throttling us, stop this link.
 		// The chain continues — next link will try fresh after a brief gap.
