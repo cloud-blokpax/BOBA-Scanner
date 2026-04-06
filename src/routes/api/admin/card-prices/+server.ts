@@ -72,30 +72,55 @@ async function fallbackQuery(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	opts: { search: string; filter: string; sort: string; order: string; limit: number; offset: number }
 ) {
-	// Step 1: Get cards (with search filter)
-	let cardsQuery = admin.from('cards')
-		.select('id, name, hero_name, card_number, power, weapon_type, parallel, set_code');
+	// Supabase/PostgREST caps responses at 1,000 rows regardless of .range(),
+	// so we must paginate in chunks of 1,000 to fetch all data.
+	const CHUNK = 1000;
 
-	if (opts.search) {
-		cardsQuery = cardsQuery.or(
-			`name.ilike.%${opts.search}%,card_number.ilike.%${opts.search}%,hero_name.ilike.%${opts.search}%`
-		);
+	// Step 1: Get cards (with search filter) — paginated in 1k chunks
+	type RawCard = {
+		id: string;
+		name: string;
+		hero_name: string | null;
+		card_number: string | null;
+		power: number | null;
+		weapon_type: string | null;
+		parallel: string | null;
+		set_code: string | null;
+	};
+	const allCards: RawCard[] = [];
+	let cardOffset = 0;
+	let cardsDone = false;
+	while (!cardsDone) {
+		let cardsQuery = admin.from('cards')
+			.select('id, name, hero_name, card_number, power, weapon_type, parallel, set_code');
+
+		if (opts.search) {
+			cardsQuery = cardsQuery.or(
+				`name.ilike.%${opts.search}%,card_number.ilike.%${opts.search}%,hero_name.ilike.%${opts.search}%`
+			);
+		}
+
+		cardsQuery = cardsQuery.order('name', { ascending: true });
+
+		const { data: cardRows, error: cardsError } = await cardsQuery.range(cardOffset, cardOffset + CHUNK - 1);
+		if (cardsError) {
+			console.error('[card-prices] Cards query failed:', cardsError.message);
+			return json({ cards: [], pagination: { page: 1, limit: opts.limit, total: 0, totalPages: 0 } });
+		}
+		if (!cardRows || cardRows.length === 0) {
+			cardsDone = true;
+		} else {
+			allCards.push(...cardRows);
+			cardOffset += CHUNK;
+			if (cardRows.length < CHUNK) cardsDone = true;
+		}
 	}
 
-	// Sort by name for the card query (we'll re-sort after join)
-	cardsQuery = cardsQuery.order('name', { ascending: true });
-
-	const { data: allCards, error: cardsError } = await cardsQuery.range(0, 19999);
-	if (cardsError) {
-		console.error('[card-prices] Cards query failed:', cardsError.message);
+	if (allCards.length === 0) {
 		return json({ cards: [], pagination: { page: 1, limit: opts.limit, total: 0, totalPages: 0 } });
 	}
 
-	if (!allCards || allCards.length === 0) {
-		return json({ cards: [], pagination: { page: 1, limit: opts.limit, total: 0, totalPages: 0 } });
-	}
-
-	// Step 2: Get all price_cache entries
+	// Step 2: Get all price_cache entries — paginated in 1k chunks
 	const priceMap = new Map<string, {
 		price_low: number | null;
 		price_mid: number | null;
@@ -105,14 +130,13 @@ async function fallbackQuery(
 		fetched_at: string | null;
 	}>();
 
-	const PAGE_SIZE = 10000;
 	let priceOffset = 0;
 	let priceDone = false;
 	while (!priceDone) {
 		const { data: priceRows } = await admin.from('price_cache')
 			.select('card_id, price_low, price_mid, price_high, listings_count, confidence_score, fetched_at')
 			.eq('source', 'ebay')
-			.range(priceOffset, priceOffset + PAGE_SIZE - 1);
+			.range(priceOffset, priceOffset + CHUNK - 1);
 
 		if (!priceRows || priceRows.length === 0) {
 			priceDone = true;
@@ -127,19 +151,19 @@ async function fallbackQuery(
 					fetched_at: row.fetched_at
 				});
 			}
-			priceOffset += PAGE_SIZE;
-			if (priceRows.length < PAGE_SIZE) priceDone = true;
+			priceOffset += CHUNK;
+			if (priceRows.length < CHUNK) priceDone = true;
 		}
 	}
 
-	// Step 3: Get scan counts per card
+	// Step 3: Get scan counts per card — paginated in 1k chunks
 	const scanCountMap = new Map<string, number>();
 	let scanOffset = 0;
 	let scanDone = false;
 	while (!scanDone) {
 		const { data: harvestRows } = await admin.from('price_harvest_log')
 			.select('card_id')
-			.range(scanOffset, scanOffset + PAGE_SIZE - 1);
+			.range(scanOffset, scanOffset + CHUNK - 1);
 
 		if (!harvestRows || harvestRows.length === 0) {
 			scanDone = true;
@@ -147,8 +171,8 @@ async function fallbackQuery(
 			for (const row of harvestRows) {
 				scanCountMap.set(row.card_id, (scanCountMap.get(row.card_id) || 0) + 1);
 			}
-			scanOffset += PAGE_SIZE;
-			if (harvestRows.length < PAGE_SIZE) scanDone = true;
+			scanOffset += CHUNK;
+			if (harvestRows.length < CHUNK) scanDone = true;
 		}
 	}
 
