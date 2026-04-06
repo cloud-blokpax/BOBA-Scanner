@@ -192,7 +192,12 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 			// A very small count indicates a partial write, corruption, or truncation.
 			const countReasonable = cached.length > 100;
 
-			if (isFirstValid && isLastValid && countReasonable) {
+			// Verify cache freshness — skip stale IDB data that predates the epoch
+			// (e.g. cached before athlete_name was backfilled on existing cards)
+			const lastSync = await idb.getMeta<string>('cards-last-sync');
+			const isCacheFresh = lastSync != null && lastSync >= CARD_DATA_EPOCH;
+
+			if (isFirstValid && isLastValid && countReasonable && isCacheFresh) {
 				cards = cached as Card[];
 
 				// Merge play cards into the index
@@ -210,7 +215,11 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				return cards;
 			}
 
-			console.warn(`[card-db] IDB cache failed validation: count=${cached.length}, firstValid=${String(isFirstValid)}, lastValid=${String(isLastValid)}, countOk=${countReasonable}. Fetching from Supabase.`);
+			if (!isCacheFresh) {
+				console.debug(`[card-db] IDB cache predates data epoch (lastSync=${lastSync ?? 'none'}). Fetching fresh data from Supabase.`);
+			} else {
+				console.warn(`[card-db] IDB cache failed validation: count=${cached.length}, firstValid=${String(isFirstValid)}, lastValid=${String(isLastValid)}, countOk=${countReasonable}. Fetching from Supabase.`);
+			}
 		}
 	} catch (err) {
 		console.debug('[card-db] IDB cache read failed:', err);

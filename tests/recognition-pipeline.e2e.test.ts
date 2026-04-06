@@ -56,7 +56,9 @@ const { MOCK_CARDS, mockImageWorker, mockIdb } = vi.hoisted(() => {
 		getCards: vi.fn().mockResolvedValue(MOCK_CARDS),
 		setCards: vi.fn().mockResolvedValue(undefined),
 		setCardsVersion: vi.fn().mockResolvedValue(undefined),
-		getCardsVersion: vi.fn().mockResolvedValue(null)
+		getCardsVersion: vi.fn().mockResolvedValue(null),
+		getMeta: vi.fn().mockResolvedValue(new Date().toISOString()),
+		setMeta: vi.fn().mockResolvedValue(undefined)
 	};
 
 	return { MOCK_CARDS, mockImageWorker, mockIdb };
