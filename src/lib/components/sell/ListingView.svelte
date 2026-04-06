@@ -38,15 +38,12 @@
 
 	// ── Generated title & description (editable) ────────────
 	function generateTitle(): string {
-		const parts = ['BoBA Bo Jackson Battle Arena'];
-		if (heroName) parts.push(heroName);
-		if (cardNumber) parts.push(`#${cardNumber}`);
-		if (parallel) parts.push(parallel);
-		if (weaponType) parts.push(weaponType);
-		if (setCode) parts.push(setCode);
-		let title = parts.join(' ');
-		if (title.length > 80) title = title.slice(0, 77) + '...';
-		return title;
+		return buildEbayListingTitle({
+			hero_name: heroName,
+			athlete_name: athleteName,
+			parallel: parallel || null,
+			weapon_type: weaponType || null
+		});
 	}
 
 	function generateDescription(): string {

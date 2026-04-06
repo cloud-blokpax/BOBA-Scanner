@@ -13,7 +13,7 @@ import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonPriceRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculatePriceStats } from '$lib/utils/pricing';
-import { buildEbaySearchQuery } from '$lib/server/ebay-query';
+import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params, locals, getClientAddress }) => {
@@ -78,7 +78,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 	// Get card details for search query
 	const { data: card } = await locals.supabase
 		.from('cards')
-		.select('name, hero_name, athlete_name, card_number, set_code')
+		.select('name, hero_name, athlete_name, card_number, set_code, parallel, weapon_type')
 		.eq('id', cardId)
 		.single();
 
@@ -109,7 +109,10 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		}
 
 		const data = await browseRes.json();
-		const items = data.itemSummaries || [];
+		const rawItems: Array<{ title?: string; price?: { value?: string }; buyingOptions?: string[] }> = data.itemSummaries || [];
+
+		// Filter to listings that actually match this card using tiered priority
+		const items = filterRelevantListings(rawItems, card);
 
 		// Separate fixed price from auction
 		const fixedPriceItems = items.filter((item: { buyingOptions?: string[] }) =>

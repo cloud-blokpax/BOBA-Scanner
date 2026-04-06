@@ -229,6 +229,8 @@ interface CardCandidate {
 	name: string | null;
 	card_number: string | null;
 	athlete_name: string | null;
+	parallel: string | null;
+	weapon_type: string | null;
 	priority: number;
 }
 
