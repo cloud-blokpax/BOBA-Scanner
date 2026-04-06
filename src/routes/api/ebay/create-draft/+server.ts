@@ -215,17 +215,29 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			let message = `eBay inventory item creation failed (${itemRes.status})`;
 			try {
 				const parsed = JSON.parse(errBody);
-				if (parsed.errors?.[0]?.message) {
+				if (parsed.errors?.[0]?.longMessage) {
+					message = parsed.errors[0].longMessage;
+				} else if (parsed.errors?.[0]?.message) {
 					message = parsed.errors[0].message;
 				}
 			} catch { /* use default message */ }
 			throw error(502, message);
 		}
 
-		// Step 2: Look up the seller's business policies
+		// Step 2: Try to fetch policies and create a full offer.
+		// Some eBay accounts (Managed Payments) can't access the Business Policy API,
+		// so if this fails we still return success with the inventory item created.
 		const policies = await getSellerPolicies(token);
+
 		if (!policies) {
-			throw error(400, 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.');
+			// Policies unavailable — inventory item is created, user finishes in Seller Hub
+			return json({
+				success: true,
+				partial: true,
+				sku,
+				message: 'Card added to eBay inventory — tap "Finish in Seller Hub" to publish',
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+			});
 		}
 
 		// Step 3: Create offer (unpublished = draft in Seller Hub)
@@ -264,40 +276,38 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const errBody = await offerRes.text().catch(() => '');
 			console.error('[ebay/create-draft] Offer creation failed:', offerRes.status, errBody);
 
-			let message = `eBay offer creation failed (${offerRes.status})`;
-			try {
-				const parsed = JSON.parse(errBody);
-				const errors = parsed.errors || [];
-				const policyError = errors.find((e: { errorId?: number }) =>
-					e.errorId === 25002 || e.errorId === 25001 || e.errorId === 25710
-				);
-				if (policyError) {
-					message = 'Missing eBay business policies. Set up shipping, returns, and payment policies in eBay Seller Hub before listing.';
-				} else if (errors[0]?.message) {
-					message = errors[0].message;
-				}
-			} catch { /* use default message */ }
-
+			// Offer failed but inventory item exists — still a partial success
 			if (offerRes.status === 401) {
 				throw error(403, 'eBay session expired. Reconnect in Settings.');
 			}
-			throw error(502, message);
+
+			return json({
+				success: true,
+				partial: true,
+				sku,
+				message: 'Card added to eBay inventory — finish listing in Seller Hub',
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+			});
 		}
 
 		let offerData;
 		try {
 			offerData = await offerRes.json();
 		} catch {
-			console.debug('[ebay/create-draft] Offer response parse failed');
-			throw error(502, 'Invalid response from eBay offer API');
-		}
-		if (!offerData.offerId) {
-			throw error(502, 'eBay API did not return an offer ID');
+			// Inventory item created, offer parse failed — partial success
+			return json({
+				success: true,
+				partial: true,
+				sku,
+				message: 'Card added to eBay inventory — finish listing in Seller Hub',
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+			});
 		}
 
 		return json({
 			success: true,
-			offerId: offerData.offerId,
+			partial: false,
+			offerId: offerData.offerId || null,
 			sku,
 			message: 'Draft listing created in your eBay Seller Hub'
 		});

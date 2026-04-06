@@ -26,6 +26,7 @@
 	let notes = $state('');
 	let creating = $state(false);
 	let created = $state(false);
+	let sellerHubUrl = $state<string | null>(null);
 	let error = $state<string | null>(null);
 
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
@@ -178,13 +179,19 @@
 				throw new Error(errData.message || errData.error || `Failed: ${res.status}`);
 			}
 
+			const result = await res.json().catch(() => ({ success: true }));
 			created = true;
-			showToast('Draft created in eBay Seller Hub', 'check');
+			sellerHubUrl = result.sellerHubUrl || null;
 
-			if (!backLabel) {
-				setTimeout(() => {
-					if (created) onScanNext();
-				}, 1500);
+			if (result.partial) {
+				showToast('Card added to eBay inventory', 'check');
+			} else {
+				showToast('Draft created in eBay Seller Hub', 'check');
+				if (!backLabel) {
+					setTimeout(() => {
+						if (created) onScanNext();
+					}, 2500);
+				}
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create draft';
@@ -375,7 +382,15 @@
 	</details>
 
 	<!-- Actions -->
-	{#if created}
+	{#if created && sellerHubUrl}
+		<div class="stl-success">
+			<span class="stl-success-icon">✓</span>
+			<span>Card added to eBay inventory</span>
+		</div>
+		<a href={sellerHubUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create">
+			Finish in Seller Hub ↗
+		</a>
+	{:else if created}
 		<div class="stl-success">
 			<span class="stl-success-icon">✓</span>
 			<span>Draft created — opening scanner...</span>
