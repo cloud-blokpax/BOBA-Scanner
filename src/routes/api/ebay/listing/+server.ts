@@ -59,13 +59,13 @@ async function getSellerPolicies(token: string): Promise<{
 	}
 }
 
-const CONDITION_MAP: Record<string, { conditionId: string; conditionDescription: string }> = {
-	'Mint': { conditionId: '1000', conditionDescription: 'Brand New' },
-	'Near Mint': { conditionId: '1000', conditionDescription: 'Near Mint condition' },
-	'Excellent': { conditionId: '1500', conditionDescription: 'Like New, minimal wear' },
-	'Good': { conditionId: '2000', conditionDescription: 'Good condition, light play wear' },
-	'Fair': { conditionId: '2500', conditionDescription: 'Acceptable condition, visible wear' },
-	'Poor': { conditionId: '3000', conditionDescription: 'Heavily played condition' }
+const CONDITION_MAP: Record<string, { conditionEnum: string; conditionDescription: string }> = {
+	'Mint': { conditionEnum: 'LIKE_NEW', conditionDescription: 'Brand New' },
+	'Near Mint': { conditionEnum: 'LIKE_NEW', conditionDescription: 'Near Mint condition' },
+	'Excellent': { conditionEnum: 'LIKE_NEW', conditionDescription: 'Like New, minimal wear' },
+	'Good': { conditionEnum: 'USED_VERY_GOOD', conditionDescription: 'Good condition, light play wear' },
+	'Fair': { conditionEnum: 'USED_GOOD', conditionDescription: 'Acceptable condition, visible wear' },
+	'Poor': { conditionEnum: 'USED_ACCEPTABLE', conditionDescription: 'Heavily played condition' }
 };
 
 // Service-role client is now imported from $lib/server/supabase-admin
@@ -161,7 +161,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						'Card Condition': [condition]
 					}
 				},
-				condition: conditionInfo.conditionId,
+				condition: conditionInfo.conditionEnum,
 				conditionDescription: conditionInfo.conditionDescription,
 				availability: {
 					shipToLocationAvailability: {
