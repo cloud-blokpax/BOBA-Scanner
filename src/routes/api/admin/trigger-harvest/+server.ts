@@ -42,16 +42,29 @@ export const POST: RequestHandler = async ({ locals, url, request }) => {
 			}
 		});
 
+		// Read body as text first — res.json() consumes the stream,
+		// making res.text() fail if JSON parsing throws.
+		const text = await res.text();
+
 		let data: unknown;
 		try {
-			data = await res.json();
+			data = JSON.parse(text);
 		} catch {
 			// Cron returned non-JSON (e.g. Vercel HTML error page)
-			const text = await res.text().catch(() => '');
 			return json({
 				triggered: false,
 				error: `Cron returned non-JSON ${res.status} response`,
-				detail: text.slice(0, 200)
+				detail: text.slice(0, 500)
+			}, { status: 502 });
+		}
+
+		// If the cron itself returned an HTTP error, forward it
+		if (!res.ok) {
+			return json({
+				triggered: false,
+				error: `Cron returned HTTP ${res.status}`,
+				cronStatus: res.status,
+				cronResponse: data
 			}, { status: 502 });
 		}
 
