@@ -165,6 +165,12 @@
 		listingError = null;
 		try {
 			const template = generateListingTemplate(card, priceData);
+			const listingPrice = template.suggested_price || priceData.price_mid;
+			if (!listingPrice || listingPrice <= 0) {
+				listingError = 'No market data available — set a price in the Sell tab before listing.';
+				listingInProgress = false;
+				return;
+			}
 			const res = await fetch('/api/ebay/listing', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -172,7 +178,7 @@
 					card_id: card.id,
 					title: template.title,
 					description: template.description,
-					price: template.suggested_price || (priceData.price_mid ?? 1.99),
+					price: listingPrice,
 					condition: template.condition,
 					scanImageUrl: getScanImageUrl(card.id)
 				})
