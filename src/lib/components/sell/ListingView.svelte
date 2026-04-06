@@ -119,12 +119,14 @@
 			priceData = result.data;
 			// Prefer BIN median for suggested price, fall back to overall median
 			const median = result.data?.buy_now_mid ?? result.data?.price_mid;
-			const suggested = median
-				? Math.round(median * 1.1 * 100) / 100
-				: 1.99;
-			price = suggested.toFixed(2);
+			if (median) {
+				const suggested = Math.round(median * 1.1 * 100) / 100;
+				price = suggested.toFixed(2);
+			} else {
+				price = '';
+			}
 		} catch {
-			price = '1.99';
+			price = '';
 		}
 		priceLoading = false;
 	}
