@@ -12,6 +12,9 @@ import { env } from '$env/dynamic/private';
 import { requireAdmin } from '$lib/server/admin-guard';
 import type { RequestHandler } from './$types';
 
+// Must match or exceed the cron endpoint's maxDuration since we await its response
+export const config = { maxDuration: 60 };
+
 export const POST: RequestHandler = async ({ locals, url, request }) => {
 	await requireAdmin(locals);
 
@@ -39,7 +42,19 @@ export const POST: RequestHandler = async ({ locals, url, request }) => {
 			}
 		});
 
-		const data = await res.json();
+		let data: unknown;
+		try {
+			data = await res.json();
+		} catch {
+			// Cron returned non-JSON (e.g. Vercel HTML error page)
+			const text = await res.text().catch(() => '');
+			return json({
+				triggered: false,
+				error: `Cron returned non-JSON ${res.status} response`,
+				detail: text.slice(0, 200)
+			}, { status: 502 });
+		}
+
 		return json({
 			triggered: true,
 			cronStatus: res.status,
