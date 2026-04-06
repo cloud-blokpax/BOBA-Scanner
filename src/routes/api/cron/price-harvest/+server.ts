@@ -359,12 +359,23 @@ async function refreshCardPrice(
 		// Check confidence threshold before accepting price
 		const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
 
-		// Upsert price cache ONLY if confidence meets threshold
-		if (meetsThreshold) {
-			const { error: cacheError } = await admin.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
-			if (cacheError) {
-				console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
-			}
+		// Always upsert price_cache so the card is marked as "searched".
+		// Cards below threshold get cached with null prices (searched, no price)
+		// so they drop to stale priority instead of being re-searched as "unpriced".
+		const cachePayload = meetsThreshold
+			? priceData
+			: {
+				...priceData,
+				// Zero out prices so it's clearly "searched, none found"
+				price_low: null,
+				price_mid: null,
+				price_high: null,
+				buy_now_low: null,
+				buy_now_mid: null,
+			};
+		const { error: cacheError } = await admin.from('price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
+		if (cacheError) {
+			console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
 		}
 
 		// Write price history only if price changed AND meets threshold
