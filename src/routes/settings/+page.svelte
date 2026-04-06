@@ -22,6 +22,8 @@
 	let ebayConnectedSince = $state<string | null>(null);
 	let ebayLoading = $state(true);
 	let ebayDisconnecting = $state(false);
+	let ebayValidating = $state(false);
+	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
 
 	async function loadProfile() {
 		loading = true;
@@ -183,6 +185,28 @@
 		ebayDisconnecting = false;
 	}
 
+	async function validateEbay() {
+		ebayValidating = true;
+		ebayValidation = null;
+		try {
+			const res = await fetch('/api/ebay/validate', { method: 'POST' });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = await res.json();
+			ebayValidation = data;
+			if (data.valid) {
+				showToast('eBay connection verified', 'check');
+			} else {
+				ebayConnected = false;
+				showToast(data.error || 'eBay connection invalid', 'x');
+			}
+		} catch (err) {
+			console.debug('[settings] eBay validation failed:', err);
+			ebayValidation = { valid: false, error: 'Validation request failed' };
+			showToast('Could not validate eBay connection', 'x');
+		}
+		ebayValidating = false;
+	}
+
 	const isAdmin = $derived($page.data?.session?.user?.app_metadata?.is_admin === true);
 </script>
 
@@ -277,7 +301,7 @@
 					</svg>
 				</button>
 
-				<div class="settings-row">
+				<div class="settings-row ebay-row">
 					<div class="row-icon" style="background: rgba(16,185,129,0.12);">
 						<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" style="color: #10b981;">
 							<path d="M4 4h12v2H4V4zm0 5h12v2H4V9zm0 5h8v2H4v-2z"/>
@@ -285,21 +309,38 @@
 					</div>
 					<div class="row-content">
 						<span class="row-title">eBay seller</span>
-						<span class="row-sub" class:connected={ebayConnected}>
+						<span class="row-sub" class:connected={ebayConnected && ebayValidation?.valid !== false}>
 							{#if ebayLoading}Checking...
 							{:else if ebayConnected}Connected{#if ebayConnectedSince} {new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{/if}
 							{:else if ebayConfigured}Not connected
 							{:else}Coming soon
 							{/if}
 						</span>
+						{#if ebayValidation}
+							<span class="ebay-validation-result" class:valid={ebayValidation.valid} class:invalid={!ebayValidation.valid}>
+								{#if ebayValidation.valid}
+									Verified
+									{#if ebayValidation.sellingLimit}
+										&middot; Limit: {ebayValidation.sellingLimit.quantity} items / ${ebayValidation.sellingLimit.amount.toLocaleString()}
+									{/if}
+								{:else}
+									{ebayValidation.error || 'Connection invalid'}
+								{/if}
+							</span>
+						{/if}
 					</div>
-					{#if ebayConnected}
-						<button class="row-action-btn" onclick={disconnectEbay} disabled={ebayDisconnecting}>
-							{ebayDisconnecting ? '...' : 'Disconnect'}
-						</button>
-					{:else if ebayConfigured}
-						<a href="/auth/ebay" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
-					{/if}
+					<div class="ebay-actions">
+						{#if ebayConnected}
+							<button class="row-action-btn row-action-test" onclick={validateEbay} disabled={ebayValidating}>
+								{ebayValidating ? '...' : 'Test'}
+							</button>
+							<button class="row-action-btn" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+								{ebayDisconnecting ? '...' : 'Disconnect'}
+							</button>
+						{:else if ebayConfigured}
+							<a href="/auth/ebay" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
+						{/if}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -511,6 +552,18 @@
 		text-decoration: none;
 	}
 	.row-action-connect { border-color: var(--success); color: var(--success); }
+	.row-action-test { border-color: var(--info, #3b82f6); color: var(--info, #3b82f6); }
+
+	.ebay-row { flex-wrap: wrap; }
+	.ebay-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
+	.ebay-validation-result {
+		display: block;
+		font-size: 0.625rem;
+		margin-top: 3px;
+		font-weight: 500;
+	}
+	.ebay-validation-result.valid { color: var(--success); }
+	.ebay-validation-result.invalid { color: var(--danger); }
 
 	.chevron { color: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
 
