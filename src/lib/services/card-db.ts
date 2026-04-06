@@ -33,6 +33,14 @@ interface PlayCardRaw {
 }
 
 /**
+ * Minimum valid sync timestamp. Clients whose last sync predates this epoch
+ * will skip incremental refresh and perform a full fetch instead.
+ * Bump this date whenever a bulk data migration touches existing rows
+ * without updating the `updated_at` column (e.g. backfilling athlete_name).
+ */
+const CARD_DATA_EPOCH = '2026-04-06T00:00:00.000Z';
+
+/**
  * Map a play card record to the Card interface so it can be indexed
  * alongside hero cards. Hero-specific fields are set to null.
  */
@@ -298,7 +306,8 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		const lastSyncTime = await idb.getMeta<string>('cards-last-sync');
 		let isIncremental = false;
 
-		if (lastSyncTime && cards.length > 0) {
+		const lastSyncIsStale = lastSyncTime != null && lastSyncTime < CARD_DATA_EPOCH;
+		if (lastSyncTime && cards.length > 0 && !lastSyncIsStale) {
 			// Paginate in 1k chunks to avoid Supabase's 1,000-row default limit
 			const CHUNK = 1000;
 			const newCards: Array<Record<string, unknown>> = [];
