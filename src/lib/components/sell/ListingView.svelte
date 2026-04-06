@@ -10,14 +10,16 @@
 		ebayConnected: boolean;
 		onScanNext: () => void;
 		onDone: () => void;
+		initialCondition?: string;
+		backLabel?: string;
 	}
 
-	let { card, imageUrl, ebayConnected, onScanNext, onDone }: Props = $props();
+	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel }: Props = $props();
 
 	// ── Listing state ───────────────────────────────────────
 	let priceData = $state<{ price_mid: number | null; price_low: number | null; price_high: number | null; listings_count: number | null } | null>(null);
 	let priceLoading = $state(true);
-	let condition = $state('Near Mint');
+	let condition = $state(initialCondition || 'Near Mint');
 	let price = $state('');
 	let quantity = $state(1);
 	let notes = $state('');
@@ -165,9 +167,11 @@
 			created = true;
 			showToast('Draft created in eBay Seller Hub', 'check');
 
-			setTimeout(() => {
-				if (created) onScanNext();
-			}, 1500);
+			if (!backLabel) {
+				setTimeout(() => {
+					if (created) onScanNext();
+				}, 1500);
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create draft';
 		}
@@ -177,7 +181,7 @@
 
 <div class="stl-listing-view">
 	<div class="stl-header">
-		<button class="stl-back" onclick={onScanNext}>← Scan Next</button>
+		<button class="stl-back" onclick={onScanNext}>← {backLabel || 'Scan Next'}</button>
 		<h1 class="stl-title">List Card</h1>
 	</div>
 
@@ -367,7 +371,7 @@
 	{/if}
 
 	<div class="stl-secondary-actions">
-		<button class="stl-text-btn" onclick={onScanNext}>Skip — Scan Next</button>
+		<button class="stl-text-btn" onclick={onScanNext}>{backLabel ? `Cancel — ${backLabel}` : 'Skip — Scan Next'}</button>
 		<button class="stl-text-btn" onclick={onDone}>Done</button>
 	</div>
 </div>

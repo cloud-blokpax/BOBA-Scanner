@@ -109,50 +109,6 @@
 
 	// ── eBay Draft Listing ──────────────────────────
 	let showListingModal = $state(false);
-	let listingPrice = $state('');
-	let listingQuantity = $state(1);
-	let listingLoading = $state(false);
-
-	async function createDraftListing() {
-		if (!item?.card) return;
-		const price = parseFloat(listingPrice);
-		if (isNaN(price) || price <= 0) { showToast('Enter a valid price', 'x'); return; }
-
-		listingLoading = true;
-		try {
-			const card = item.card;
-			const res = await fetch('/api/ebay/create-draft', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					cardId: card.id,
-					heroName: card.hero_name || card.name || '',
-					cardNumber: card.card_number || '',
-					setCode: card.set_code || '',
-					parallel: card.parallel || null,
-					weaponType: card.weapon_type || null,
-					power: card.power ?? null,
-					athleteName: card.athlete_name || null,
-					condition: item.condition || 'near_mint',
-					price,
-					quantity: listingQuantity,
-					notes: item.notes || null,
-					scanImageUrl: item.scan_image_url || null
-				})
-			});
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({ message: 'Failed to create listing' }));
-				showToast(err.message || 'Failed', 'x');
-				return;
-			}
-			showToast('Draft created in eBay Seller Hub!', 'check');
-			showListingModal = false;
-		} catch {
-			showToast('Failed to create listing', 'x');
-		} finally {
-			listingLoading = false;
-		}
-	}
 
 	// ── Manual Correction ──────────────────────────
 	let showCorrection = $state(false);
@@ -293,7 +249,7 @@
 						</a>
 
 						{#if ebayConnected}
-							<button class="action-btn action-list" onclick={() => { showListingModal = true; listingPrice = ''; listingQuantity = 1; }}>
+							<button class="action-btn action-list" onclick={() => { showListingModal = true; }}>
 								🛒 List on eBay
 							</button>
 						{/if}
@@ -327,38 +283,21 @@
 		</div>
 	</div>
 
-	<!-- eBay Listing Price Modal -->
-	{#if showListingModal}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="listing-modal-overlay" onclick={() => { showListingModal = false; }}>
-			<div class="listing-modal" onclick={(e) => e.stopPropagation()}>
-				<h3>List on eBay</h3>
-				<p class="listing-card-name">{card?.hero_name || card?.name} — {card?.card_number}</p>
-
-				{#if !item.scan_image_url}
-					<p class="listing-photo-hint">📷 No photo yet — consider taking one first for a better listing.</p>
-				{/if}
-
-				<div class="listing-fields">
-					<label class="listing-field">
-						<span>Price (USD)</span>
-						<input type="number" step="0.01" min="0.01" placeholder="0.00" bind:value={listingPrice} class="listing-input" />
-					</label>
-					<label class="listing-field listing-field-small">
-						<span>Qty</span>
-						<input type="number" min="1" max="99" bind:value={listingQuantity} class="listing-input" />
-					</label>
-				</div>
-
-				<p class="listing-note">Creates a draft in eBay Seller Hub. Review and publish from there.</p>
-
-				<div class="listing-actions">
-					<button class="listing-cancel" onclick={() => { showListingModal = false; }}>Cancel</button>
-					<button class="listing-submit" onclick={createDraftListing} disabled={listingLoading || !listingPrice}>
-						{listingLoading ? 'Creating...' : 'Create Draft'}
-					</button>
-				</div>
+	<!-- eBay Full Listing View -->
+	{#if showListingModal && card}
+		<div class="listing-fullscreen-overlay" role="dialog" aria-modal="true">
+			<div class="listing-fullscreen-scroll">
+				{#await import('$lib/components/sell/ListingView.svelte') then ListingView}
+					<ListingView.default
+						card={card}
+						imageUrl={item.scan_image_url || null}
+						ebayConnected={ebayConnected}
+						initialCondition={item.condition?.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Near Mint'}
+						backLabel="Back"
+						onScanNext={() => { showListingModal = false; }}
+						onDone={() => { showListingModal = false; }}
+					/>
+				{/await}
 			</div>
 		</div>
 	{/if}
@@ -584,82 +523,20 @@
 		margin-top: 1rem;
 	}
 
-	/* Listing modal */
-	.listing-modal-overlay {
+	/* Full-screen listing overlay */
+	.listing-fullscreen-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+		background: var(--bg-base, #0b1121);
 		z-index: 1100;
-		padding: 1rem;
-	}
-	.listing-modal {
-		background: var(--bg-elevated, #1e293b);
-		border-radius: 16px;
-		padding: 1.5rem;
-		width: 100%;
-		max-width: 340px;
-	}
-	.listing-modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
-	.listing-card-name {
-		font-size: 0.85rem;
-		color: var(--text-secondary);
-		margin-bottom: 1rem;
-	}
-	.listing-photo-hint {
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-		margin-bottom: 0.75rem;
-		padding: 0.5rem;
-		border: 1px dashed var(--border-color);
-		border-radius: 8px;
-	}
-	.listing-fields {
-		display: flex;
-		gap: 0.75rem;
-		margin-bottom: 0.75rem;
-	}
-	.listing-field {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
+	}
+	.listing-fullscreen-scroll {
 		flex: 1;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
-	.listing-field span { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-	.listing-field-small { max-width: 70px; flex: 0 0 70px; }
-	.listing-input {
-		padding: 0.5rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-base);
-		color: var(--text-primary);
-		font-size: 1rem;
-	}
-	.listing-note { font-size: 0.7rem; color: var(--text-tertiary); margin-bottom: 0.75rem; }
-	.listing-actions { display: flex; gap: 0.5rem; }
-	.listing-cancel {
-		flex: 1;
-		padding: 0.625rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: transparent;
-		color: var(--text-secondary);
-		cursor: pointer;
-	}
-	.listing-submit {
-		flex: 2;
-		padding: 0.625rem;
-		border-radius: 8px;
-		border: none;
-		background: #22c55e;
-		color: #fff;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.listing-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-	.listing-submit:hover:not(:disabled) { background: #16a34a; }
 
 	@media (min-width: 768px) {
 		.card-detail-sheet { border-radius: 16px; margin-bottom: 2rem; padding-bottom: 1.5rem; }
