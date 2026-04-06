@@ -14,7 +14,7 @@
 	let email = $state('');
 	let showProfile = $state(false);
 	// Badges state
-	let badges = $state<Array<{ badge_key: string; badge_name: string; badge_description: string; badge_icon: string; earned_at: string }>>([]);
+	let badges = $state<Array<{ badge_key: string; badge_name: string; badge_description: string | null; badge_icon: string | null; earned_at: string }>>([]);
 
 	// eBay connection state
 	let ebayConfigured = $state(false);
@@ -57,8 +57,7 @@
 	async function loadBadges() {
 		const client = getSupabase();
 		if (!client || !user()) return;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const { data } = await (client as any)
+		const { data } = await client
 			.from('user_badges')
 			.select('badge_key, badge_name, badge_description, badge_icon, earned_at')
 			.eq('user_id', user()!.id)

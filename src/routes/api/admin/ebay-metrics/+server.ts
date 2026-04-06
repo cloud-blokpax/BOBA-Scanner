@@ -64,7 +64,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const rpcRes = await admin.rpc('get_price_status_summary');
 	if (rpcRes.data && Array.isArray(rpcRes.data) && rpcRes.data.length > 0) {
-		priceStatus = rpcRes.data;
+		priceStatus = rpcRes.data as unknown as typeof priceStatus;
 	} else {
 		// Fallback: fetch play_cards, price_cache, and harvest log entries,
 		// then cross-reference in JS. Cards searched by the harvester but

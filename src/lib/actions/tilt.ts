@@ -253,9 +253,10 @@ export function tilt(node: HTMLElement, options: TiltOptions = {}): ActionReturn
 		if (gyroStarted) return;
 
 		// iOS requires explicit permission request
-		if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+		const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+		if (typeof DOE.requestPermission === 'function') {
 			try {
-				const permission = await (DeviceOrientationEvent as any).requestPermission();
+				const permission = await DOE.requestPermission();
 				if (permission !== 'granted') return;
 			} catch (err) {
 				console.debug('[tilt] Device orientation permission denied:', err);

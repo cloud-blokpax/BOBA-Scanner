@@ -107,6 +107,11 @@ export interface Database {
 					price_low: number | null;
 					price_mid: number | null;
 					price_high: number | null;
+					buy_now_low: number | null;
+					buy_now_mid: number | null;
+					buy_now_count: number | null;
+					confidence_score: number | null;
+					filtered_count: number | null;
 					listings_count: number | null;
 					fetched_at: string;
 				};
@@ -116,6 +121,11 @@ export interface Database {
 					price_low?: number | null;
 					price_mid?: number | null;
 					price_high?: number | null;
+					buy_now_low?: number | null;
+					buy_now_mid?: number | null;
+					buy_now_count?: number | null;
+					confidence_score?: number | null;
+					filtered_count?: number | null;
 					listings_count?: number | null;
 					fetched_at?: string;
 				};
@@ -720,6 +730,322 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['community_corrections']['Insert']>;
 				Relationships: [];
 			};
+			pack_configurations: {
+				Row: {
+					id: string;
+					box_type: string;
+					set_code: string;
+					display_name: string;
+					slots: Record<string, unknown>[];
+					packs_per_box: number;
+					is_active: boolean;
+					box_guarantees: Record<string, unknown> | null;
+					created_at: string;
+					updated_at: string;
+					updated_by: string | null;
+				};
+				Insert: {
+					id?: string;
+					box_type: string;
+					set_code: string;
+					display_name: string;
+					slots: Record<string, unknown>[];
+					packs_per_box?: number;
+					is_active?: boolean;
+					box_guarantees?: Record<string, unknown> | null;
+					updated_at?: string;
+					updated_by?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['pack_configurations']['Insert']>;
+				Relationships: [];
+			};
+			deck_snapshots: {
+				Row: {
+					id: string;
+					code: string;
+					deck_id: string;
+					format_id: string | null;
+					is_valid: boolean;
+					violations: unknown[];
+					hero_cards: unknown[];
+					play_cards: unknown[];
+					hot_dog_count: number;
+					player_name: string;
+					locked_at: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					code: string;
+					deck_id: string;
+					format_id?: string | null;
+					is_valid?: boolean;
+					violations?: unknown[];
+					hero_cards?: unknown[];
+					play_cards?: unknown[];
+					hot_dog_count?: number;
+					player_name?: string;
+					locked_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['deck_snapshots']['Insert']>;
+				Relationships: [];
+			};
+			user_badges: {
+				Row: {
+					id: string;
+					user_id: string;
+					badge_key: string;
+					badge_name: string;
+					badge_description: string | null;
+					badge_icon: string | null;
+					earned_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					badge_key: string;
+					badge_name: string;
+					badge_description?: string | null;
+					badge_icon?: string | null;
+					earned_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['user_badges']['Insert']>;
+				Relationships: [];
+			};
+			price_harvest_log: {
+				Row: {
+					id: string;
+					run_id: string;
+					card_id: string;
+					priority: number;
+					search_query: string | null;
+					price_changed: boolean;
+					threshold_rejected: boolean;
+					duration_ms: number | null;
+					created_at: string;
+					old_price_mid: number | null;
+					new_price_mid: number | null;
+					previous_mid: number | null;
+					price_delta: number | null;
+					price_delta_pct: number | null;
+					auction_count: number | null;
+					is_new_price: boolean;
+					success: boolean;
+					buy_now_low: number | null;
+					buy_now_count: number | null;
+					listings_count: number | null;
+					error_message: string | null;
+					processed_at: string | null;
+				};
+				Insert: {
+					id?: string;
+					run_id: string;
+					card_id: string;
+					priority?: number;
+					search_query?: string | null;
+					price_changed?: boolean;
+					threshold_rejected?: boolean;
+					duration_ms?: number | null;
+					old_price_mid?: number | null;
+					new_price_mid?: number | null;
+					previous_mid?: number | null;
+					price_delta?: number | null;
+					price_delta_pct?: number | null;
+					auction_count?: number | null;
+					is_new_price?: boolean;
+					success?: boolean;
+					buy_now_low?: number | null;
+					buy_now_count?: number | null;
+					listings_count?: number | null;
+					error_message?: string | null;
+					processed_at?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['price_harvest_log']['Insert']>;
+				Relationships: [];
+			};
+			error_logs: {
+				Row: {
+					id: string;
+					type: string;
+					message: string;
+					stack: string | null;
+					url: string | null;
+					user_agent: string | null;
+					session_id: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					type: string;
+					message: string;
+					stack?: string | null;
+					url?: string | null;
+					user_agent?: string | null;
+					session_id?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['error_logs']['Insert']>;
+				Relationships: [];
+			};
+			scan_flags: {
+				Row: {
+					id: string;
+					user_id: string;
+					scan_id: string;
+					card_identified: string | null;
+					card_suggested: string | null;
+					status: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					scan_id: string;
+					card_identified?: string | null;
+					card_suggested?: string | null;
+					status?: string;
+				};
+				Update: Partial<Database['public']['Tables']['scan_flags']['Insert']>;
+				Relationships: [];
+			};
+			changelog_entries: {
+				Row: {
+					id: string;
+					title: string;
+					body: string;
+					published: boolean;
+					is_notification: boolean;
+					published_at: string | null;
+					created_at: string;
+					updated_at: string;
+					created_by: string | null;
+				};
+				Insert: {
+					id?: string;
+					title: string;
+					body: string;
+					published?: boolean;
+					is_notification?: boolean;
+					published_at?: string | null;
+					created_by?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['changelog_entries']['Insert']>;
+				Relationships: [];
+			};
+			admin_activity_log: {
+				Row: {
+					id: string;
+					admin_id: string;
+					action: string;
+					entity_type: string | null;
+					entity_id: string | null;
+					details: Record<string, unknown> | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					admin_id: string;
+					action: string;
+					entity_type?: string | null;
+					entity_id?: string | null;
+					details?: Record<string, unknown> | null;
+				};
+				Update: Partial<Database['public']['Tables']['admin_activity_log']['Insert']>;
+				Relationships: [];
+			};
+			ebay_api_log: {
+				Row: {
+					id: string;
+					calls_used: number;
+					calls_remaining: number;
+					calls_limit: number;
+					reset_at: string;
+					chain_depth: number;
+					cards_processed: number;
+					cards_updated: number;
+					cards_errored: number;
+					status: string;
+					recorded_at: string;
+				};
+				Insert: {
+					id?: string;
+					calls_used: number;
+					calls_remaining: number;
+					calls_limit: number;
+					reset_at: string;
+					chain_depth?: number;
+					cards_processed?: number;
+					cards_updated?: number;
+					cards_errored?: number;
+					status?: string;
+					recorded_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['ebay_api_log']['Insert']>;
+				Relationships: [];
+			};
+			dbs_scores: {
+				Row: {
+					id: string;
+					set_code: string;
+					card_number: string;
+					dbs_score: number;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					id?: string;
+					set_code: string;
+					card_number: string;
+					dbs_score: number;
+				};
+				Update: Partial<Database['public']['Tables']['dbs_scores']['Insert']>;
+				Relationships: [];
+			};
+			play_cards: {
+				Row: {
+					id: string;
+					card_number: string;
+					name: string;
+					release: string;
+					dbs: number | null;
+					hot_dog_cost: number | null;
+					ability_text: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					card_number: string;
+					name: string;
+					release: string;
+					dbs?: number | null;
+					hot_dog_cost?: number | null;
+					ability_text?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['play_cards']['Insert']>;
+				Relationships: [];
+			};
+			donations: {
+				Row: {
+					id: string;
+					user_id: string;
+					tier_key: string;
+					tier_amount: number;
+					payment_method: string;
+					time_added: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					tier_key: string;
+					tier_amount: number;
+					payment_method: string;
+					time_added: string;
+				};
+				Update: Partial<Database['public']['Tables']['donations']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -767,6 +1093,30 @@ export interface Database {
 					time_added: boolean;
 					cooldown_active: boolean;
 				};
+			};
+			get_harvest_candidates: {
+				Args: { p_run_id: string; p_limit?: number };
+				Returns: Array<{ card_id: string; priority: number; card_type: string; name: string }>;
+			};
+			get_harvest_summary: {
+				Args: { p_run_id: string };
+				Returns: Record<string, unknown>;
+			};
+			get_price_status_summary: {
+				Args: Record<string, never>;
+				Returns: Array<{ card_type: string; total: number; priced: number; unpriced: number }>;
+			};
+			get_card_price_details: {
+				Args: { p_search?: string | null; p_filter?: string; p_sort?: string; p_order?: string; p_limit?: number; p_offset?: number };
+				Returns: Array<Record<string, unknown>>;
+			};
+			get_card_price_details_count: {
+				Args: { p_search?: string | null; p_filter?: string };
+				Returns: Array<{ total: number }>;
+			};
+			cleanup_old_records: {
+				Args: Record<string, never>;
+				Returns: void;
 			};
 		};
 		Enums: Record<string, never>;

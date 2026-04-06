@@ -13,20 +13,21 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
+import type { Database } from '$lib/types/database';
 
-let _adminClient: SupabaseClient | null = null;
+let _adminClient: SupabaseClient<Database> | null = null;
 
 /**
  * Get a Supabase client with service-role credentials.
  * Returns null if not configured (graceful degradation).
  */
-export function getAdminClient(): SupabaseClient | null {
+export function getAdminClient(): SupabaseClient<Database> | null {
 	if (_adminClient) return _adminClient;
 
 	const url = publicEnv.PUBLIC_SUPABASE_URL ?? '';
 	const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 	if (!url || !serviceKey) return null;
 
-	_adminClient = createClient(url, serviceKey);
+	_adminClient = createClient<Database>(url, serviceKey);
 	return _adminClient;
 }

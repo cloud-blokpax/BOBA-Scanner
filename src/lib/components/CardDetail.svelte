@@ -12,10 +12,10 @@
 
 	const hasPriceHistory = featureEnabled('price_history');
 
-	let tiltAction: ((node: HTMLElement, params?: any) => ActionReturn) | null = null;
+	let tiltAction: ((node: HTMLElement, params?: Record<string, unknown>) => ActionReturn) | null = null;
 	import('$lib/actions/tilt').then(m => { tiltAction = m.tilt; });
 
-	function tilt(node: HTMLElement, params?: any): ActionReturn {
+	function tilt(node: HTMLElement, params?: Record<string, unknown>): ActionReturn {
 		if (tiltAction) return tiltAction(node, params);
 		let cleanup: ActionReturn | void;
 		import('$lib/actions/tilt').then(m => { cleanup = m.tilt(node, params); });

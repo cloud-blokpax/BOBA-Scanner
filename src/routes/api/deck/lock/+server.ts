@@ -43,8 +43,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const formatId = requireString(body.format_id, 'format_id');
 
 		// Fetch the deck from user_decks (JSONB-based storage)
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const { data: rawDeck, error: deckErr } = await (supabase as any)
+		const { data: rawDeck, error: deckErr } = await supabase
 			.from('user_decks')
 			.select('*')
 			.eq('id', deckId)
@@ -123,8 +122,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			locked_at: new Date().toISOString()
 		};
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const { error: snapErr } = await (adminClient as any).from('deck_snapshots').insert(snapshotData);
+		const { error: snapErr } = await adminClient.from('deck_snapshots').insert(snapshotData);
 
 		if (snapErr) {
 			console.error('[deck/lock] Snapshot insert failed:', snapErr);

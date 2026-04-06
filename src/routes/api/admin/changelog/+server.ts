@@ -87,7 +87,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
 
-	const body = await parseJsonBody(request);
+	const body = await parseJsonBody<Record<string, unknown>>(request);
 	const { id, title, body: content, published, is_notification } = body;
 
 	if (!id) throw error(400, 'Entry ID is required');
@@ -104,7 +104,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	const { error: dbError } = await admin
 		.from('changelog_entries')
 		.update(updates)
-		.eq('id', id);
+		.eq('id', id as string);
 
 	if (dbError) {
 		console.error('[admin/changelog] PUT DB error:', dbError.message);
@@ -124,13 +124,14 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'Too many requests' }, { status: 429, headers: { 'X-RateLimit-Limit': String(rateLimit.limit), 'X-RateLimit-Remaining': String(rateLimit.remaining), 'X-RateLimit-Reset': String(rateLimit.reset) } });
 	}
 
-	const { id } = await parseJsonBody(request);
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const { id } = body;
 	if (!id) throw error(400, 'Entry ID is required');
 
 	const { error: dbError } = await admin
 		.from('changelog_entries')
 		.delete()
-		.eq('id', id);
+		.eq('id', id as string);
 
 	if (dbError) {
 		console.error('[admin/changelog] DELETE DB error:', dbError.message);

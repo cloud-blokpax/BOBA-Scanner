@@ -81,6 +81,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			const { data, error: harvestErr } = await admin
 				.from('price_harvest_log')
 				.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
+				.returns<Array<{ card_id: string; previous_mid: number | null; price_delta: number | null; price_delta_pct: number | null; price_changed: boolean; auction_count: number | null; is_new_price: boolean; success: boolean }>>()
 				.eq('success', true)
 				.in('card_id', batch)
 				.order('processed_at', { ascending: false });

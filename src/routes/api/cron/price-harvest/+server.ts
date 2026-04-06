@@ -13,6 +13,7 @@ import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import type { Database } from '$lib/types/database';
 import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
@@ -148,7 +149,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Batch insert harvest logs ────────────────────────
 	if (harvestLogs.length > 0) {
 		try {
-			await admin.from('price_harvest_log').insert(harvestLogs);
+			await admin.from('price_harvest_log').insert(harvestLogs as Database['public']['Tables']['price_harvest_log']['Insert'][]);
 		} catch (err) {
 			console.error('[harvest] Log batch insert failed:', err instanceof Error ? err.message : err);
 		}
@@ -246,7 +247,7 @@ async function getNextCandidates(
 		return [];
 	}
 
-	return (data as CardCandidate[]) || [];
+	return (data as unknown as CardCandidate[]) || [];
 }
 
 // ── Single card price refresh ───────────────────────────────

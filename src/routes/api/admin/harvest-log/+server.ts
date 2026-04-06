@@ -55,10 +55,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	{
 		let runOffset = 0;
 		let done = false;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const adminAny2 = admin as any;
 		while (!done) {
-			const { data } = await adminAny2
+			const { data } = await admin
 				.from('price_harvest_log')
 				.select('run_id')
 				.order('processed_at', { ascending: false })
@@ -89,17 +87,27 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 
 	// ── Summary + detail rows in parallel ───────────────────
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const adminAny = admin as any;
-
 	// Run summary aggregation in SQL (avoids 1,000-row client limit)
 	// and detail pagination in parallel
 	const [summaryRes, detailRes] = await Promise.all([
-		adminAny.rpc('get_harvest_summary', { p_run_id: runId }),
-		buildDetailQuery(adminAny, runId, filter, sort, offset, limit)
+		admin.rpc('get_harvest_summary', { p_run_id: runId }),
+		buildDetailQuery(admin, runId, filter, sort, offset, limit)
 	]);
 
-	const s = summaryRes.data?.[0] ?? summaryRes.data ?? {};
+	interface HarvestSummary {
+		total?: number;
+		changed?: number;
+		new_prices?: number;
+		zero_results?: number;
+		errors?: number;
+		avg_duration?: number;
+		max_depth?: number;
+		started_at?: string | null;
+		ended_at?: string | null;
+	}
+
+	const rawSummary = summaryRes.data as unknown as HarvestSummary | HarvestSummary[] | null;
+	const s: HarvestSummary = (Array.isArray(rawSummary) ? rawSummary[0] : rawSummary) ?? {};
 
 	return json({
 		runId,
@@ -124,8 +132,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	});
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildDetailQuery(admin: any, runId: string, filter: Filter, sort: 'newest' | 'oldest', offset: number, limit: number) {
+function buildDetailQuery(admin: NonNullable<ReturnType<typeof getAdminClient>>, runId: string, filter: Filter, sort: 'newest' | 'oldest', offset: number, limit: number) {
 	let query = admin
 		.from('price_harvest_log')
 		.select(DETAIL_COLUMNS, { count: 'exact' })

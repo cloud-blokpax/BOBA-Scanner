@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth';
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
-import { parseJsonBody, requireString, requireNumber } from '$lib/server/validate';
+import { parseJsonBody, requireString, requireNumber, requireAuth } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
@@ -70,8 +70,7 @@ const CONDITION_MAP: Record<string, { conditionId: string; conditionDescription:
 const getServiceClient = getAdminClient;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const user = locals.user;
-	if (!user) throw error(401, 'Authentication required');
+	const user = await requireAuth(locals);
 
 	// Server-side feature gate
 	if (locals.supabase) {

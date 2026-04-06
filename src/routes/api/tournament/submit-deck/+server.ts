@@ -5,6 +5,7 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculateTotalDbs } from '$lib/data/boba-dbs-scores';
 import type { RequestHandler } from './$types';
 import type { Card } from '$lib/types';
+import type { DeckValidationResult } from '$lib/services/deck-validator';
 
 function generateVerificationCode(): string {
 	const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -127,11 +128,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// Run server-side validation (skip for sealed tournaments)
 	const formatId = tournament.format_id || 'apex_playmaker';
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let validation: { isValid: boolean; formatName: string; violations: any[]; warnings: string[]; stats: any };
+	let validation: DeckValidationResult;
 
 	if (isSealed) {
-		const sealedViolations: { rule: string; message: string; severity: string }[] = [];
+		const sealedViolations: { rule: string; message: string; severity: 'error' | 'warning' }[] = [];
 
 		// Validate hero count
 		if (heroCards.length > tournament.max_heroes) {
@@ -174,17 +174,28 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 		}
 
+			const sealedTotalPower = heroCards.reduce((sum, c) => sum + (c.power || 0), 0);
+		const powers = heroCards.map(c => c.power || 0);
 		validation = {
 			isValid: sealedViolations.length === 0,
+			formatId,
 			formatName: 'Sealed',
 			violations: sealedViolations,
 			warnings: [],
 			stats: {
 				totalHeroes: heroCards.length,
-				totalPower: heroCards.reduce((sum, c) => sum + (c.power || 0), 0),
+				totalPower: sealedTotalPower,
 				averagePower: heroCards.length > 0
-					? Math.round((heroCards.reduce((sum, c) => sum + (c.power || 0), 0) / heroCards.length) * 10) / 10
+					? Math.round((sealedTotalPower / heroCards.length) * 10) / 10
 					: 0,
+				maxPower: powers.length > 0 ? Math.max(...powers) : 0,
+				minPower: powers.length > 0 ? Math.min(...powers) : 0,
+				uniqueVariations: heroCards.length,
+				powerLevelCounts: {},
+				weaponCounts: {},
+				parallelCounts: {},
+				madnessUnlockedInserts: [],
+				madnessTotalApexAllowed: 0,
 				dbsTotal: calculateTotalDbs(playEntries.map(p => ({ cardNumber: p.card_number, setCode: p.set_code })))?.total
 					?? playEntries.reduce((sum, p) => sum + (p.dbs_score || 0), 0)
 			}
