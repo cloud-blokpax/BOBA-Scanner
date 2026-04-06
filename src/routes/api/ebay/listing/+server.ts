@@ -149,7 +149,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			headers: {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json',
-				'Content-Language': 'en-US'
+				'Content-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify({
 				product: {
@@ -191,7 +192,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			headers: {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json',
-				'Content-Language': 'en-US'
+				'Content-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify({
 				sku,
@@ -245,7 +247,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${token}`,
-				'Content-Type': 'application/json'
+				'Content-Type': 'application/json',
+				'Content-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			}
 		});
 
