@@ -15,6 +15,11 @@ import {
 import { getSupabase } from '$lib/services/supabase';
 import type { CollectionItem } from '$lib/types';
 
+/** Lazy import to avoid circular dependency (sync.ts imports from this file) */
+function triggerPush(): void {
+	import('$lib/services/sync').then(m => m.schedulePush()).catch(() => {});
+}
+
 // ── Private mutable state ──────────────────────────────────
 let _items = $state<CollectionItem[]>([]);
 let _loading = $state(false);
@@ -129,6 +134,8 @@ export async function addToCollection(
 		} else {
 			_items = [item, ..._items];
 		}
+
+		triggerPush();
 	})();
 
 	_addLocks.set(lockKey, promise);
@@ -193,6 +200,7 @@ export async function updateQuantity(itemId: string, quantity: number): Promise<
 	const cardId = _items.find((i) => i.id === itemId)?.card_id;
 	if (cardId) markLocallyModified(cardId);
 	_items = _items.map((i) => i.id === itemId ? { ...i, quantity } : i);
+	triggerPush();
 }
 
 export async function removeFromCollection(itemId: string): Promise<void> {
@@ -203,4 +211,5 @@ export async function removeFromCollection(itemId: string): Promise<void> {
 		markLocallyModified(cardId);
 		await recordDeletion(cardId);
 	}
+	triggerPush();
 }
