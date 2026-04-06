@@ -5,6 +5,8 @@ import { parseJsonBody, requireString, requireNumber, requireAuth } from '$lib/s
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
+export const config = { maxDuration: 60 };
+
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
 const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
 const EBAY_CATEGORY_TRADING_CARDS = '183454';

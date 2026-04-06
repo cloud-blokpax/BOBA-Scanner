@@ -4,6 +4,8 @@ import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth'
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/server/validate';
 
+export const config = { maxDuration: 60 };
+
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
 const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
 const EBAY_CATEGORY_TRADING_CARDS = '261328';

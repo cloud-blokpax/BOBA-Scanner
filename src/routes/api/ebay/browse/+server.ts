@@ -13,6 +13,8 @@ import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonScanRateLimit } from '$lib/server/rate-limit';
 import { parseJsonBody } from '$lib/server/validate';
+
+export const config = { maxDuration: 60 };
 import { calculatePriceStats } from '$lib/utils/pricing';
 import { filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';

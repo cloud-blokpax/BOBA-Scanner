@@ -13,6 +13,8 @@
 
 import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
+
+export const config = { maxDuration: 60 };
 import { checkEbayDailyLimit } from '$lib/server/redis';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { parseJsonBody } from '$lib/server/validate';

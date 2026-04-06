@@ -13,6 +13,8 @@ import { checkEbayDailyLimit } from '$lib/server/redis';
 import { checkAnonPriceRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculatePriceStats } from '$lib/utils/pricing';
+
+export const config = { maxDuration: 60 };
 import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
