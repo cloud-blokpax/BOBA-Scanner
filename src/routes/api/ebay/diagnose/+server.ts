@@ -135,7 +135,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 					'Card Manufacturer': ['Bo Jackson Battle Arena']
 				}
 			},
-			condition: '4000',
+			condition: 'LIKE_NEW',
 			availability: { shipToLocationAvailability: { quantity: 1 } }
 		};
 
