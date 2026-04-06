@@ -101,6 +101,15 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			}
 		}
 
+		// Validate decoded payload size to prevent memory exhaustion
+		// (base64 is ~33% overhead, so 15MB encoded ≈ 11MB decoded, but verify explicitly)
+		for (const img of images) {
+			const decodedSize = Math.ceil((img as string).length * 3 / 4);
+			if (decodedSize > 11_000_000) {
+				throw error(400, 'Decoded image exceeds 11MB limit');
+			}
+		}
+
 		// Verify the images are actually JPEG by checking the magic bytes
 		// JPEG files start with FF D8 FF (base64: /9j/)
 		if (!imageData.startsWith('/9j/')) {

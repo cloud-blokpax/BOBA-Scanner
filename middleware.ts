@@ -68,12 +68,33 @@ export default function middleware(request: NextRequest): Response | undefined {
     });
   }
 
-  // Suspicious header checks (currently none — x-forwarded-for-original removed
-  // because it's set by legitimate CDNs and corporate proxies)
+  // Block suspiciously short User-Agent strings (legitimate browsers always send detailed UA)
+  if (userAgent.length < 15) {
+    return new Response(forbidden403Page(), {
+      status: 403,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  }
 
   // Check for missing Accept header on navigation requests (browsers always send it)
   const acceptHeader = request.headers.get('accept');
   if (!acceptHeader && pathname === '/') {
+    return new Response(forbidden403Page(), {
+      status: 403,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  }
+
+  // Block navigation requests without Accept header containing text/html
+  // (real browsers always send Accept: text/html for page loads)
+  if (
+    !pathname.startsWith('/api/') &&
+    request.method === 'GET' &&
+    acceptHeader &&
+    !acceptHeader.includes('text/html') &&
+    !acceptHeader.includes('*/*') &&
+    !pathname.match(/\.\w{2,5}$/)  // skip asset requests
+  ) {
     return new Response(forbidden403Page(), {
       status: 403,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },

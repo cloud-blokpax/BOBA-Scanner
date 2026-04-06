@@ -144,6 +144,18 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 };
 
 /**
+ * Security headers: add defense-in-depth headers to all responses.
+ */
+const securityHeaders: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('X-Frame-Options', 'DENY');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+	return response;
+};
+
+/**
  * Auth guard: protect routes that require authentication.
  * API routes handle their own auth via getUser() checks.
  */
@@ -184,7 +196,7 @@ const requestLogger: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(globalRateLimit, supabaseHandle, authGuard, requestLogger);
+export const handle = sequence(globalRateLimit, supabaseHandle, securityHeaders, authGuard, requestLogger);
 
 export const handleError = ({ error, event, status, message }: { error: unknown; event: { url: URL; request: Request }; status: number; message: string }) => {
 	const ua = event.request.headers.get('user-agent') || 'unknown';

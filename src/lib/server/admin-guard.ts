@@ -29,7 +29,7 @@ export async function requireAdmin(locals: App.Locals): Promise<User> {
 	const isAdmin = profile?.is_admin === true
 		|| user.app_metadata?.is_admin === true;
 
-	if (!isAdmin) throw error(403, 'Admin access required');
+	if (!isAdmin) throw error(403, 'Forbidden');
 
 	return user;
 }

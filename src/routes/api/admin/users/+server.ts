@@ -69,8 +69,8 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	const body = await parseJsonBody<Record<string, unknown>>(request);
 	const { user_id, updates } = body as { user_id?: string; updates?: Record<string, unknown> };
 
-	if (!user_id) throw error(400, 'user_id is required');
-	if (!updates || typeof updates !== 'object') throw error(400, 'updates object is required');
+	if (!user_id || typeof user_id !== 'string' || user_id.length > 64) throw error(400, 'user_id is required');
+	if (!updates || typeof updates !== 'object' || Array.isArray(updates)) throw error(400, 'updates object is required');
 
 	const allowed = ['is_pro', 'is_organizer', 'is_admin', 'card_limit', 'api_calls_limit'];
 	const safeUpdates: Record<string, unknown> = {};
@@ -121,6 +121,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!Array.isArray(user_ids) || user_ids.length === 0) {
 		throw error(400, 'user_ids array is required');
 	}
+	if (user_ids.length > 100) {
+		throw error(400, 'Bulk operations limited to 100 users at a time');
+	}
+	// Validate all user_ids are strings to prevent injection
+	if (!user_ids.every((id): id is string => typeof id === 'string' && id.length <= 64)) {
+		throw error(400, 'Invalid user_id format in array');
+	}
 
 	switch (action) {
 		case 'update_role': {
@@ -154,6 +161,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			return json({ success: true, affected: user_ids.length });
 		}
 		default:
-			throw error(400, `Unknown bulk action: ${action}`);
+			throw error(400, 'Unknown bulk action');
 	}
 };

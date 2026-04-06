@@ -4,13 +4,27 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const code = url.searchParams.get('code');
 	const rawRedirect = url.searchParams.get('redirectTo') ?? '/';
-	// Prevent open redirect: only allow safe relative paths on the same origin
-	// Block //, /\, and any protocol-relative or scheme-based redirects
-	const isSafePath = rawRedirect.startsWith('/') &&
-		!rawRedirect.startsWith('//') &&
-		!rawRedirect.startsWith('/\\') &&
-		!rawRedirect.includes('://');
-	const redirectTo = isSafePath ? rawRedirect : '/';
+	// Prevent open redirect: parse against a dummy base to catch all bypass tricks
+	// (protocol-relative, encoded slashes, backslash variants, null bytes, etc.)
+	let redirectTo = '/';
+	try {
+		const parsed = new URL(rawRedirect, 'http://localhost');
+		// Only allow paths that stay on the same origin (hostname must be localhost from our dummy base)
+		if (
+			parsed.hostname === 'localhost' &&
+			parsed.protocol === 'http:' &&
+			parsed.pathname.startsWith('/') &&
+			!rawRedirect.includes('\0') &&
+			!rawRedirect.includes('\r') &&
+			!rawRedirect.includes('\n')
+		) {
+			// Reconstruct clean path+search+hash only (no host, no credentials)
+			redirectTo = parsed.pathname + parsed.search + parsed.hash;
+		}
+	} catch {
+		// Malformed URL — fall back to homepage
+		redirectTo = '/';
+	}
 
 	if (code) {
 		const { error } = await locals.supabase.auth.exchangeCodeForSession(code);
