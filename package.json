@@ -8,7 +8,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate:card-seed": "node scripts/generate-card-seed.js"
+    "generate:card-seed": "node scripts/generate-card-seed.js",
+    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.generated.ts"
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",
