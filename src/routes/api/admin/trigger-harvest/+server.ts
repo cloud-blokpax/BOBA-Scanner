@@ -38,7 +38,10 @@ export const POST: RequestHandler = async ({ locals, url, request }) => {
 			headers: {
 				'Authorization': `Bearer ${cronSecret}`,
 				'X-Harvest-Chain-Depth': String(chainDepth),
-				'X-Harvest-No-Chain': 'true'
+				'X-Harvest-No-Chain': 'true',
+				// Give cron a shorter time budget so this wrapper function
+				// has headroom to parse the response within its own 60s limit
+				'X-Harvest-Time-Budget': '45000'
 			}
 		});
 
