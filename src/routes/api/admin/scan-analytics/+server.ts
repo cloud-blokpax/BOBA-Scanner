@@ -41,9 +41,27 @@ export const GET: RequestHandler = async ({ locals }) => {
 		admin.from('api_call_logs').select('id, user_id, call_type, error_message, success, created_at')
 			.order('created_at', { ascending: false })
 			.limit(100),
-		admin.from('api_call_logs').select('created_at, success')
-			.gte('created_at', todayIso)
-			.eq('call_type', 'scan')
+		// Today's scans — paginated in 1k chunks (Supabase caps at 1,000 rows)
+		(async () => {
+			const CHUNK = 1000;
+			const rows: Array<{ created_at: string; success: boolean }> = [];
+			let offset = 0;
+			let done = false;
+			while (!done) {
+				const { data } = await admin.from('api_call_logs')
+					.select('created_at, success')
+					.gte('created_at', todayIso)
+					.eq('call_type', 'scan')
+					.range(offset, offset + CHUNK - 1);
+				if (!data || data.length === 0) { done = true; }
+				else {
+					rows.push(...(data as Array<{ created_at: string; success: boolean }>));
+					offset += CHUNK;
+					if (data.length < CHUNK) done = true;
+				}
+			}
+			return { data: rows };
+		})()
 	]);
 
 	// Build hourly heatmap from today's scans
@@ -59,13 +77,28 @@ export const GET: RequestHandler = async ({ locals }) => {
 		}
 	}
 
-	// Build 14-day trend
-	const { data: trendRows } = await admin
-		.from('api_call_logs')
-		.select('created_at')
-		.gte('created_at', fourteenDaysAgo.toISOString())
-		.eq('call_type', 'scan')
-		.order('created_at', { ascending: true });
+	// Build 14-day trend — paginated in 1k chunks
+	const trendRows: Array<{ created_at: string }> = [];
+	{
+		const CHUNK = 1000;
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data } = await admin
+				.from('api_call_logs')
+				.select('created_at')
+				.gte('created_at', fourteenDaysAgo.toISOString())
+				.eq('call_type', 'scan')
+				.order('created_at', { ascending: true })
+				.range(offset, offset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				trendRows.push(...(data as Array<{ created_at: string }>));
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+	}
 
 	const trendData = new Array(14).fill(0);
 	if (trendRows) {

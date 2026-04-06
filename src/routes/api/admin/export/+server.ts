@@ -28,34 +28,52 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	let data: Record<string, unknown>[] = [];
 	let filename = 'export';
 
+	// Supabase/PostgREST caps at 1,000 rows — paginate large tables in chunks
+	const CHUNK = 1000;
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	async function fetchAllRows(buildQuery: () => any): Promise<Record<string, unknown>[]> {
+		const rows: Record<string, unknown>[] = [];
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data } = await buildQuery().range(offset, offset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				rows.push(...data);
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+		return rows;
+	}
+
 	switch (type) {
 		case 'users': {
-			const { data: rows } = await admin
-				.from('users')
-				.select('id, email, name, is_admin, is_pro, is_organizer, scan_count, cards_in_collection, created_at')
-				.order('created_at', { ascending: false });
-			data = rows || [];
+			data = await fetchAllRows(() =>
+				admin.from('users')
+					.select('id, email, name, is_admin, is_pro, is_organizer, scan_count, cards_in_collection, created_at')
+					.order('created_at', { ascending: false })
+			);
 			filename = 'users';
 			break;
 		}
 		case 'scans': {
-			const { data: rows } = await admin
-				.from('api_call_logs')
-				.select('*')
-				.eq('call_type', 'scan')
-				.order('created_at', { ascending: false })
-				.limit(5000);
-			data = rows || [];
+			data = await fetchAllRows(() =>
+				admin.from('api_call_logs')
+					.select('*')
+					.eq('call_type', 'scan')
+					.order('created_at', { ascending: false })
+			);
 			filename = 'scans';
 			break;
 		}
 		case 'prices': {
-			const { data: rows } = await admin
-				.from('price_cache')
-				.select('*')
-				.order('fetched_at', { ascending: false })
-				.limit(5000);
-			data = rows || [];
+			data = await fetchAllRows(() =>
+				admin.from('price_cache')
+					.select('*')
+					.order('fetched_at', { ascending: false })
+			);
 			filename = 'prices';
 			break;
 		}
