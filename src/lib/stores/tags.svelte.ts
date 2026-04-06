@@ -17,7 +17,7 @@ function saveTags(tags: Map<string, string[]>): void {
 	const obj: Record<string, string[]> = {};
 	for (const [key, val] of tags) { obj[key] = val; }
 	idb.setMeta(IDB_KEY, obj).catch(err => {
-		console.debug('[tags] Tags save to IDB failed:', err);
+		console.warn('[tags] Tags save to IDB failed:', err);
 	});
 }
 
@@ -31,7 +31,7 @@ if (browser) {
 			_cardTags = new Map(Object.entries(raw));
 		}
 	}).catch(err => {
-		console.debug('[tags] Tags load from IDB failed:', err);
+		console.warn('[tags] Tags load from IDB failed:', err);
 	});
 }
 

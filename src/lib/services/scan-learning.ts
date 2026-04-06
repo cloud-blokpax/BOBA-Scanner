@@ -66,7 +66,7 @@ function saveCorrections(): void {
 		obj[key] = val;
 	}
 	idb.setMeta(IDB_KEY, obj).catch(err => {
-		console.debug('[scan-learning] Corrections save to IDB failed:', err);
+		console.warn('[scan-learning] Corrections save to IDB failed:', err);
 	});
 }
 

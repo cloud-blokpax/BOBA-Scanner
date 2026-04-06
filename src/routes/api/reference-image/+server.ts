@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				p_icon: '📸'
 			});
 			if (shutterbug) badgesAwarded.push('shutterbug');
-		} catch { /* badge award is non-critical */ }
+		} catch (err) { console.warn('[reference-image] Shutterbug badge award failed:', err); }
 
 		// Milestone badges based on total reference images held
 		try {
@@ -135,11 +135,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 								p_icon: m.icon
 							});
 							if (awarded) badgesAwarded.push(m.key);
-						} catch { /* badge award is non-critical */ }
+						} catch (err) { console.warn(`[reference-image] Badge ${m.key} award failed:`, err); }
 					}
 				}
 			}
-		} catch { /* milestone badge check is non-critical */ }
+		} catch (err) { console.warn('[reference-image] Milestone badge check failed:', err); }
 	}
 
 	return json({

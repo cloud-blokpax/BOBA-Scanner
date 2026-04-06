@@ -253,8 +253,9 @@ export async function initWorkers(): Promise<void> {
 			}
 		}
 
-		// Eagerly load OCR corrections into memory for synchronous lookups
-		loadCorrectionsFromIdb().catch((err) => console.warn('[scan] Failed to load OCR corrections from IDB:', err));
+		// Load OCR corrections into memory for synchronous lookups.
+		// Awaited so corrections are available before the first scan.
+		await loadCorrectionsFromIdb().catch((err) => console.warn('[scan] Failed to load OCR corrections from IDB:', err));
 
 		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
 		// skipped gracefully and we fall through to Tier 3 (Claude API).

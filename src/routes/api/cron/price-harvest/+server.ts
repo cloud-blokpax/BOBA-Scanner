@@ -133,7 +133,8 @@ export const GET: RequestHandler = async ({ request, url }) => {
 					consecutive429s = 0;
 				}
 			}
-		} catch {
+		} catch (err) {
+			console.error(`[harvest] Card ${card.id} (${card.card_number}) threw unexpectedly:`, err instanceof Error ? err.message : err);
 			processed++;
 			errors++;
 		}
