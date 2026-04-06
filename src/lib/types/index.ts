@@ -109,6 +109,9 @@ export interface PriceData {
 	price_high: number | null;
 	listings_count: number | null;
 	fetched_at: string;
+	buy_now_low?: number | null;
+	buy_now_mid?: number | null;
+	buy_now_count?: number | null;
 }
 
 // ── Hash Cache ──────────────────────────────────────────────────
