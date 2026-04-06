@@ -81,6 +81,10 @@ export function crossValidateCardResult(
 
 		// ── Step 2: Fuzzy match on card_number ──
 		const fuzzyResults = findSimilarCardNumbers(ai.cardNumber, 2);
+
+		// If we have multiple hero-name-verified matches at the same distance,
+		// use power to disambiguate
+		const verifiedMatches: typeof fuzzyResults = [];
 		for (const match of fuzzyResults) {
 			if (!ai.heroName) {
 				// No hero name to verify — accept best fuzzy match with reduced confidence
@@ -101,17 +105,29 @@ export function crossValidateCardResult(
 			);
 
 			if (nameScore > 0.7) {
-				// Fuzzy number match + hero name agrees → MEDIUM CONFIDENCE
-				return {
-					card: match.card,
-					confidence: Math.min(ai.confidence, 0.75),
-					validationMethod: 'fuzzy_match',
-					warnings: [
-						`Fuzzy matched card number: AI read "${ai.cardNumber}", ` +
-						`matched to "${match.card.card_number}" (distance: ${match.distance})`
-					]
-				};
+				verifiedMatches.push(match);
 			}
+		}
+
+		if (verifiedMatches.length > 0) {
+			// If we have power info and multiple candidates, prefer power match
+			let bestMatch = verifiedMatches[0];
+			if (ai.power && verifiedMatches.length > 1) {
+				const powerMatch = verifiedMatches.find(m => m.card.power === ai.power);
+				if (powerMatch) {
+					bestMatch = powerMatch;
+				}
+			}
+
+			return {
+				card: bestMatch.card,
+				confidence: Math.min(ai.confidence, 0.75),
+				validationMethod: 'fuzzy_match',
+				warnings: [
+					`Fuzzy matched card number: AI read "${ai.cardNumber}", ` +
+					`matched to "${bestMatch.card.card_number}" (distance: ${bestMatch.distance})`
+				]
+			};
 		}
 
 		// ── Step 2b: Trigram similarity for card numbers with unusual prefixes ──

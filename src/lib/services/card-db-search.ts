@@ -98,7 +98,14 @@ export function findSimilarCardNumbers(
 		}
 	}
 
-	results.sort((a, b) => a.distance - b.distance);
+	results.sort((a, b) => {
+		// Primary: lower distance wins
+		if (a.distance !== b.distance) return a.distance - b.distance;
+		// Secondary: prefer card numbers with similar length to the query
+		const aLenDiff = Math.abs(a.cardNumber.length - normalized.length);
+		const bLenDiff = Math.abs(b.cardNumber.length - normalized.length);
+		return aLenDiff - bLenDiff;
+	});
 	return results;
 }
 
