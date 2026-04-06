@@ -140,7 +140,22 @@
 				});
 
 				if (!res.ok) {
-					harvestProgress.lastStatus = `HTTP ${res.status}`;
+					// Parse error body for diagnostic info
+					let errorDetail = `HTTP ${res.status}`;
+					try {
+						const errData = await res.json();
+						errorDetail = errData.error || errData.detail || errorDetail;
+					} catch { /* use default */ }
+
+					// Retry on transient 502/503/504 (up to 2 retries with backoff)
+					if (res.status >= 502 && res.status <= 504 && (harvestProgress.errors % 3) < 2) {
+						harvestProgress.lastStatus = `${errorDetail} — retrying...`;
+						harvestProgress.errors++;
+						await new Promise(r => setTimeout(r, 3000 * ((harvestProgress.errors % 3) + 1)));
+						continue;
+					}
+
+					harvestProgress.lastStatus = errorDetail;
 					harvestProgress.errors++;
 					break;
 				}
@@ -174,7 +189,7 @@
 			} catch (err) {
 				harvestProgress.lastStatus = 'Network error';
 				harvestProgress.errors++;
-				// Retry once after a short delay
+				// Retry after a short delay
 				await new Promise(r => setTimeout(r, 2000));
 				continue;
 			}
