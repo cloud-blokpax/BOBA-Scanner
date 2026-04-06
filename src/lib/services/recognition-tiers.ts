@@ -273,7 +273,9 @@ export async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 	);
 
 	if (validated.card) {
-		const card = claudeAthlete && !validated.card.athlete_name
+		// Always prefer Claude's athlete_name reading — the vision model is more
+		// reliable than seed data which may have incorrect hero→athlete mappings.
+		const card = claudeAthlete
 			? { ...validated.card, athlete_name: claudeAthlete }
 			: validated.card;
 		console.debug(

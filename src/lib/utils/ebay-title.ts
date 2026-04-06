@@ -1,17 +1,18 @@
 /**
  * Canonical eBay title/query builder for BoBA cards.
  *
- * Format: Hero Name - Bo Jackson Battle Arena - Athlete Name - Parallel - Weapon - Card Number
- * Priority (1=highest, drop from the end first):
- *   1. Hero Name
- *   2. "Bo Jackson Battle Arena"
- *   3. Athlete Name
- *   4. Parallel
- *   5. Weapon
- *   6. Card Number
+ * Listing title format (80 char max):
+ *   [Hero Name] - "Bo Jackson Battle Arena" - [Athlete Name] - [Parallel] - [Weapon]
  *
- * eBay listing titles: hard cap at 80 characters.
- * Search queries: no hard limit, but shorter is better.
+ * Truncation: drops the LAST field entirely if adding it would exceed 80 chars.
+ * Never cuts a field in the middle — if a field doesn't fit, it and all lower-priority
+ * fields are omitted.
+ *
+ * Search query tiers (see ebay-query.ts for server-side usage):
+ *   1. Card Number (exact)
+ *   2. Hero Name + Parallel + Weapon (exact)
+ *   3. Athlete Name + Parallel + Weapon (exact)
+ *   4. Fuzzy / broad
  */
 
 const GAME_NAME = 'Bo Jackson Battle Arena';
@@ -26,11 +27,19 @@ export interface EbayCardInfo {
 	card_number?: string | null;
 }
 
+const SKIP_PARALLELS = new Set(['paper', 'base']);
+
+function cleanParallel(parallel: string | null | undefined): string {
+	const p = (parallel || '').trim();
+	if (!p || SKIP_PARALLELS.has(p.toLowerCase())) return '';
+	return p;
+}
+
 /**
- * Build the full canonical eBay string for a card.
- * Returns all parts in priority order.
+ * Build the listing title parts in priority order.
+ * Format: Hero Name, "Bo Jackson Battle Arena", Athlete Name, Parallel, Weapon
  */
-function buildFullParts(card: EbayCardInfo): string[] {
+function buildTitleParts(card: EbayCardInfo): string[] {
 	const parts: string[] = [];
 
 	const heroName = (card.hero_name || card.name || '').trim();
@@ -41,28 +50,27 @@ function buildFullParts(card: EbayCardInfo): string[] {
 	const athlete = (card.athlete_name || '').trim();
 	if (athlete) parts.push(athlete);
 
-	const parallel = (card.parallel || '').trim();
-	if (parallel && parallel.toLowerCase() !== 'paper' && parallel.toLowerCase() !== 'base') {
-		parts.push(parallel);
-	}
+	const parallel = cleanParallel(card.parallel);
+	if (parallel) parts.push(parallel);
 
 	const weapon = (card.weapon_type || '').trim();
 	if (weapon) parts.push(weapon);
-
-	const cardNum = (card.card_number || '').trim();
-	if (cardNum) parts.push(cardNum);
 
 	return parts;
 }
 
 /**
  * Build an eBay listing title (max 80 chars).
- * Drops parts from the end (lowest priority) until it fits.
+ *
+ * Drops fields from the end (lowest priority) until the joined string fits.
+ * Keeps at least Hero + "Bo Jackson Battle Arena".
+ * Never truncates mid-field.
  */
 export function buildEbayListingTitle(card: EbayCardInfo): string {
 	const MAX_LENGTH = 80;
-	const parts = buildFullParts(card);
+	const parts = buildTitleParts(card);
 
+	// Try full title first
 	let title = parts.join(SEPARATOR);
 	if (title.length <= MAX_LENGTH) return title;
 
@@ -72,6 +80,7 @@ export function buildEbayListingTitle(card: EbayCardInfo): string {
 		title = parts.join(SEPARATOR);
 	}
 
+	// Final safety: if even Hero + Game Name exceeds 80, hard-truncate
 	if (title.length > MAX_LENGTH) {
 		title = title.substring(0, MAX_LENGTH);
 	}
@@ -80,17 +89,35 @@ export function buildEbayListingTitle(card: EbayCardInfo): string {
 }
 
 /**
- * Build an eBay search query (no character limit, but concise).
- * Includes all available parts for the best search results.
+ * Build a full eBay search query (no character limit).
+ * Includes card number, hero, game name, athlete, parallel, weapon.
  */
 export function buildEbaySearchQuery(card: EbayCardInfo): string {
-	const parts = buildFullParts(card);
+	const parts: string[] = [];
+
+	const heroName = (card.hero_name || card.name || '').trim();
+	if (heroName) parts.push(heroName);
+
+	parts.push(GAME_NAME);
+
+	const athlete = (card.athlete_name || '').trim();
+	if (athlete) parts.push(athlete);
+
+	const parallel = cleanParallel(card.parallel);
+	if (parallel) parts.push(parallel);
+
+	const weapon = (card.weapon_type || '').trim();
+	if (weapon) parts.push(weapon);
+
+	const cardNum = (card.card_number || '').trim();
+	if (cardNum) parts.push(cardNum);
+
 	return parts.join(SEPARATOR);
 }
 
 /**
- * Build a shorter eBay search query for API calls.
- * Drops weapon and parallel for broader results.
+ * Build a concise eBay API query for Browse API searches.
+ * Includes hero + game + athlete + card number (drops parallel/weapon for breadth).
  */
 export function buildEbayApiQuery(card: EbayCardInfo): string {
 	const parts: string[] = [];

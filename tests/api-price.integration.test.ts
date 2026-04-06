@@ -32,7 +32,7 @@ function makeLocals() {
 							single: vi.fn().mockResolvedValue({ data: null })
 						}),
 						single: vi.fn().mockResolvedValue({
-							data: { name: 'Bo Jackson', card_number: 'BF-108', set_code: 'ALPHA' }
+							data: { name: 'Bo Jackson', hero_name: 'Boz', athlete_name: 'Bo Jackson', card_number: 'BF-108', set_code: 'ALPHA', parallel: null, weapon_type: 'Steel' }
 						})
 					})
 				}),
@@ -100,10 +100,10 @@ describe('GET /api/price/[cardId]', () => {
 				ok: true,
 				json: () => Promise.resolve({
 					itemSummaries: [
-						{ price: { value: '5.00' } },
-						{ price: { value: '10.00' } },
-						{ price: { value: '15.00' } },
-						{ price: { value: '20.00' } }
+						{ title: 'BoBA Battle Arena Boz BF-108 Steel', price: { value: '5.00' } },
+						{ title: 'BoBA Battle Arena Boz BF-108 Steel', price: { value: '10.00' } },
+						{ title: 'BoBA Battle Arena Boz BF-108 Steel', price: { value: '15.00' } },
+						{ title: 'BoBA Battle Arena Boz BF-108 Steel', price: { value: '20.00' } }
 					]
 				})
 			});
