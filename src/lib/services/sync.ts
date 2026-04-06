@@ -155,10 +155,18 @@ export async function fullSync(): Promise<void> {
 					mergedItems.push(local);
 				}
 			} else if (remote && local) {
-				// Both exist — keep the one with the later timestamp
+				// Both exist — keep the one with the later timestamp.
+				// Use a 5-second tolerance to avoid flipping on clock skew between devices.
+				// When timestamps are within tolerance, prefer the higher quantity to avoid data loss.
 				const remoteTime = new Date(remote.added_at).getTime();
 				const localTime = localModAt || new Date(local.added_at).getTime();
-				mergedItems.push(localTime > remoteTime ? local : remote);
+				const CLOCK_SKEW_TOLERANCE = 5000;
+				if (Math.abs(localTime - remoteTime) < CLOCK_SKEW_TOLERANCE) {
+					// Within tolerance — prefer higher quantity to avoid data loss
+					mergedItems.push((local.quantity ?? 1) >= (remote.quantity ?? 1) ? local : remote);
+				} else {
+					mergedItems.push(localTime > remoteTime ? local : remote);
+				}
 			}
 		}
 

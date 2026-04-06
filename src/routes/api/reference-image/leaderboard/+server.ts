@@ -8,13 +8,15 @@ import type { RequestHandler } from './$types';
 
 type AnySupabase = import('@supabase/supabase-js').SupabaseClient<any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export const GET: RequestHandler = async ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.supabase) return json({ leaderboard: [], user_rank: null });
 
 	// Tables/views not in generated types — narrowed to AnySupabase for method safety
 	const client = locals.supabase as AnySupabase;
 
-	const userId = url.searchParams.get('user_id');
+	// Only allow users to query their own rank (prevents user enumeration)
+	const { user } = await locals.safeGetSession();
+	const userId = user?.id ?? null;
 
 	// Fetch top 25
 	const { data: leaderboard } = await client

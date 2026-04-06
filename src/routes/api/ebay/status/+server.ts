@@ -1,11 +1,17 @@
 import { json, error } from '@sveltejs/kit';
 import { isSellerOAuthConfigured } from '$lib/server/ebay-seller-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	const user = locals.user;
+	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Authentication required');
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many requests' }, { status: 429 });
+	}
 
 	const configured = isSellerOAuthConfigured();
 	if (!configured) return json({ configured, connected: false });

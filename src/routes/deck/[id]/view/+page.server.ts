@@ -33,11 +33,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.eq('id', id)
 		.maybeSingle();
 
-	let typedDeck = deck as unknown as (SharedDeck & { is_shared?: boolean });
+	let typedDeck: SharedDeck | null = deck as SharedDeck | null;
 
 	// Only expose user_decks to the owner or if explicitly shared
-	if (typedDeck && typedDeck.user_id !== user?.id && !typedDeck.is_shared) {
-		typedDeck = null as unknown as SharedDeck;
+	if (typedDeck && typedDeck.user_id !== user?.id && !(typedDeck as SharedDeck & { is_shared?: boolean }).is_shared) {
+		typedDeck = null;
 	}
 
 	if (!typedDeck) {
@@ -47,11 +47,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.eq('id', id)
 			.single();
 		if (!shared) throw error(404, 'Deck not found');
-		typedDeck = shared as unknown as SharedDeck;
+		typedDeck = shared as SharedDeck;
 	}
 
 	// Increment view count atomically (non-blocking)
-	Promise.resolve(locals.supabase.rpc('increment_shared_deck_views', { deck_id: id })).catch((err) => console.debug('[deck-view] View count increment failed:', err));
+	Promise.resolve(locals.supabase.rpc('increment_shared_deck_views', { deck_id: id })).catch((err) => console.warn('[deck-view] View count increment failed:', err));
 
 	return { deck: typedDeck };
 };
