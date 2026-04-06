@@ -3,89 +3,40 @@
 	import { onMount } from 'svelte';
 	import { getSupabase } from '$lib/services/supabase';
 	import { showToast } from '$lib/stores/toast.svelte';
-	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
+	import { getFormat } from '$lib/data/tournament-formats';
 	import { validateDeck } from '$lib/services/deck-validator';
 	import { fetchUserDecks, type UserDeck } from '$lib/services/deck-service';
 	import { getDbs } from '$lib/data/boba-dbs-scores';
 	import SealedDeckEntry from '$lib/components/tournament/SealedDeckEntry.svelte';
+	import InfoStep from '$lib/components/tournament-entry/InfoStep.svelte';
+	import ConfirmStep from '$lib/components/tournament-entry/ConfirmStep.svelte';
+	import DoneStep from '$lib/components/tournament-entry/DoneStep.svelte';
+	import type { TournamentInfo, HeroCardEntry, PlayCardEntry, PlayerInfo, DeckData, SubmissionResult } from '$lib/components/tournament-entry/types';
 	import type { Card } from '$lib/types';
 
-	interface TournamentInfo {
-		id: string;
-		code: string;
-		name: string;
-		max_heroes: number;
-		max_plays: number;
-		max_bonus: number;
-		require_email: boolean;
-		require_name: boolean;
-		require_discord: boolean;
-		format_id: string | null;
-		deck_type: 'constructed' | 'sealed';
-		description: string | null;
-		venue: string | null;
-		event_date: string | null;
-		entry_fee: string | null;
-		prize_pool: string | null;
-		max_players: number | null;
-		submission_deadline: string | null;
-		registration_closed: boolean;
-	}
-
-	interface HeroCardEntry {
-		card_id: string;
-		card_number: string;
-		hero_name: string;
-		power: number;
-		weapon_type: string;
-		parallel: string;
-		set_code: string;
-	}
-
-	interface PlayCardEntry {
-		card_number: string;
-		name: string;
-		set_code: string;
-		dbs_score: number;
-	}
-
+	// ── Wizard state ────────────────────────────────────────
+	let step = $state<'code' | 'info' | 'deck' | 'confirm' | 'done'>('code');
 	let tournament = $state<TournamentInfo | null>(null);
 	let loading = $state(true);
 	let fetchError = $state<string | null>(null);
-
-	// Step navigation
-	let step = $state<'code' | 'info' | 'deck' | 'confirm' | 'done'>('code');
 	let codeInput = $state('');
 
-	// Player info
-	let regName = $state('');
-	let regEmail = $state('');
-	let regDiscord = $state('');
-
-	// Deck selection
-	let deckSource = $state<'existing' | 'csv' | null>(null);
-	let userDecks = $state<UserDeck[]>([]);
-	let selectedDeckId = $state<string | null>(null);
-	let csvInput = $state('');
+	// ── Shared data flowing between steps ───────────────────
+	let player = $state<PlayerInfo>({ name: '', email: '', discord: '' });
 	let heroCards = $state<HeroCardEntry[]>([]);
 	let playCards = $state<PlayCardEntry[]>([]);
 	let hotDogCount = $state(10);
 	let foilHotDogCount = $state(0);
 	let sourceDeckId = $state<string | null>(null);
+	let existingSubmission = $state(false);
+	let submissionResult = $state<SubmissionResult | null>(null);
 
-	// Validation
+	// ── Deck step state ─────────────────────────────────────
+	let deckSource = $state<'existing' | 'csv' | null>(null);
+	let userDecks = $state<UserDeck[]>([]);
+	let selectedDeckId = $state<string | null>(null);
+	let csvInput = $state('');
 	let validationResult = $state<ReturnType<typeof validateDeck> | null>(null);
-
-	// Submission
-	let submitting = $state(false);
-	let submissionResult = $state<{
-		verification_code: string;
-		verify_url: string;
-		is_valid: boolean;
-	} | null>(null);
-
-	// Existing submission
-	let existingSubmission = $state<Record<string, unknown> | null>(null);
 
 	const formatInfo = $derived(tournament?.format_id ? getFormat(tournament.format_id) : null);
 	const isSealed = $derived(tournament?.deck_type === 'sealed');
@@ -107,6 +58,7 @@
 		return `${hours}h ${mins}m remaining`;
 	});
 
+	// ── Lifecycle ────────────────────────────────────────────
 	onMount(async () => {
 		const code = $page.url.searchParams.get('code');
 		if (code) {
@@ -136,7 +88,7 @@
 			// Pre-fill user info
 			const currentUser = $page.data.user;
 			if (currentUser) {
-				regEmail = currentUser.email || '';
+				player.email = currentUser.email || '';
 				const client = getSupabase();
 				if (client) {
 					const { data: profile } = await client
@@ -145,8 +97,8 @@
 						.eq('auth_user_id', currentUser.id)
 						.single();
 					if (profile) {
-						regName = profile.name || '';
-						regDiscord = profile.discord_id || '';
+						player.name = profile.name || '';
+						player.discord = profile.discord_id || '';
 					}
 
 					// Check for existing submission
@@ -157,14 +109,14 @@
 						.eq('user_id', currentUser.id)
 						.maybeSingle();
 					if (existing) {
-						existingSubmission = existing;
+						existingSubmission = true;
 						heroCards = (existing.hero_cards || []) as HeroCardEntry[];
 						playCards = (existing.play_entries || []) as PlayCardEntry[];
 						hotDogCount = existing.hot_dog_count || 10;
 						foilHotDogCount = existing.foil_hot_dog_count || 0;
-						regName = existing.player_name || regName;
-						regEmail = existing.player_email || regEmail;
-						regDiscord = existing.player_discord || regDiscord;
+						player.name = existing.player_name || player.name;
+						player.email = existing.player_email || player.email;
+						player.discord = existing.player_discord || player.discord;
 						runValidation();
 					}
 				}
@@ -183,26 +135,7 @@
 		loadTournament(codeInput.trim().toUpperCase());
 	}
 
-	function proceedToInfo() {
-		step = 'info';
-	}
-
-	function proceedToDeck() {
-		if (!regEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) {
-			showToast('Valid email is required', 'x');
-			return;
-		}
-		if (tournament?.require_name && !regName.trim()) {
-			showToast('Name is required', 'x');
-			return;
-		}
-		if (tournament?.require_discord && !regDiscord.trim()) {
-			showToast('Discord ID is required', 'x');
-			return;
-		}
-		step = 'deck';
-		if (!isSealed) loadUserDecks();
-	}
+	// ── Deck step functions ─────────────────────────────────
 
 	async function loadUserDecks() {
 		if (!tournament?.format_id) return;
@@ -214,11 +147,9 @@
 		sourceDeckId = deck.id;
 		deckSource = 'existing';
 
-		// Load the full card data for this deck
 		const client = getSupabase();
 		if (!client) return;
 
-		// Fetch hero card details
 		if (deck.hero_card_ids?.length > 0) {
 			const { data: cards } = await client
 				.from('cards')
@@ -238,7 +169,6 @@
 			}
 		}
 
-		// Map play entries
 		if (deck.play_entries?.length > 0) {
 			playCards = deck.play_entries.map((p) => ({
 				card_number: p.cardNumber,
@@ -263,8 +193,6 @@
 			showToast('No card numbers found', 'x');
 			return;
 		}
-
-		// Resolve card numbers against the database
 		resolveCardNumbers(lines);
 	}
 
@@ -285,12 +213,10 @@
 			return;
 		}
 
-		// Separate hero vs play cards based on card type
 		const heroes: HeroCardEntry[] = [];
 		const plays: PlayCardEntry[] = [];
 
 		for (const card of cards as Card[]) {
-			// Check if it's a play card (has no power or power is 0)
 			if (!card.power) {
 				plays.push({
 					card_number: card.card_number || '',
@@ -324,35 +250,15 @@
 		}
 
 		const heroCardsAsCards = heroCards.map((c) => ({
-			id: c.card_id,
-			card_number: c.card_number,
-			hero_name: c.hero_name,
-			name: c.hero_name,
-			power: c.power,
-			weapon_type: c.weapon_type,
-			parallel: c.parallel,
-			set_code: c.set_code,
-			rarity: null,
-			athlete_name: null,
-			battle_zone: null,
-			image_url: null,
-			created_at: ''
+			id: c.card_id, card_number: c.card_number, hero_name: c.hero_name, name: c.hero_name,
+			power: c.power, weapon_type: c.weapon_type, parallel: c.parallel, set_code: c.set_code,
+			rarity: null, athlete_name: null, battle_zone: null, image_url: null, created_at: ''
 		}));
 
 		const playCardsAsCards = playCards.map((p) => ({
-			id: '',
-			card_number: p.card_number,
-			hero_name: null,
-			name: p.name,
-			power: null,
-			weapon_type: null,
-			parallel: null,
-			set_code: p.set_code,
-			rarity: null,
-			athlete_name: null,
-			battle_zone: null,
-			image_url: null,
-			created_at: ''
+			id: '', card_number: p.card_number, hero_name: null, name: p.name, power: null,
+			weapon_type: null, parallel: null, set_code: p.set_code, rarity: null,
+			athlete_name: null, battle_zone: null, image_url: null, created_at: ''
 		}));
 
 		validationResult = validateDeck(heroCardsAsCards, tournament.format_id, playCardsAsCards);
@@ -367,38 +273,9 @@
 		step = 'confirm';
 	}
 
-	async function submitDeck() {
-		if (!tournament) return;
-		submitting = true;
-		try {
-			const res = await fetch('/api/tournament/submit-deck', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					tournament_id: tournament.id,
-					player_name: regName.trim(),
-					player_email: regEmail.trim(),
-					player_discord: regDiscord.trim() || null,
-					hero_cards: heroCards,
-					play_entries: playCards,
-					hot_dog_count: hotDogCount,
-					foil_hot_dog_count: foilHotDogCount,
-					source_deck_id: sourceDeckId
-				})
-			});
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({}));
-				throw new Error(err.message || 'Submission failed');
-			}
-			const result = await res.json();
-			submissionResult = result;
-			step = 'done';
-			showToast('Deck submitted!', 'check');
-		} catch (err) {
-			showToast(err instanceof Error ? err.message : 'Submission failed', 'x');
-		}
-		submitting = false;
-	}
+	const currentDeck = $derived<DeckData>({
+		heroCards, playCards, hotDogCount, foilHotDogCount, sourceDeckId
+	});
 </script>
 
 <svelte:head>
@@ -491,34 +368,12 @@
 		{#if !isRegistrationOpen()}
 			<div class="closed-banner">Registration is closed for this tournament.</div>
 		{:else}
-			{#if existingSubmission}
-				<div class="existing-banner">
-					You already have a submission for this tournament. You can update it below.
-				</div>
-			{/if}
-
-			<div class="step-card">
-				<h2>Your Information</h2>
-				<div class="form-group">
-					<label for="reg-email">Email <span class="required">*</span></label>
-					<input id="reg-email" type="email" bind:value={regEmail} placeholder="you@example.com" />
-				</div>
-				<div class="form-group">
-					<label for="reg-name">
-						Name
-						{#if tournament.require_name}<span class="required">*</span>{:else}<span class="optional">(optional)</span>{/if}
-					</label>
-					<input id="reg-name" type="text" bind:value={regName} placeholder="Your name" />
-				</div>
-				<div class="form-group">
-					<label for="reg-discord">
-						Discord ID
-						{#if tournament.require_discord}<span class="required">*</span>{:else}<span class="optional">(optional)</span>{/if}
-					</label>
-					<input id="reg-discord" type="text" bind:value={regDiscord} placeholder="username#1234" />
-				</div>
-				<button class="primary-btn" onclick={proceedToDeck}>Next: Select Deck</button>
-			</div>
+			<InfoStep
+				{tournament}
+				initial={player}
+				{existingSubmission}
+				onProceed={(info) => { player = info; step = 'deck'; if (!isSealed) loadUserDecks(); }}
+			/>
 		{/if}
 
 	{:else if tournament && step === 'deck'}
@@ -535,13 +390,12 @@
 				maxPlays={tournament.max_plays}
 				maxBonus={tournament.max_bonus}
 				onProceed={proceedToConfirm}
-				onBack={proceedToInfo}
+				onBack={() => (step = 'info')}
 			/>
 		{:else}
 			<div class="step-card">
 				<h2>Select Your Deck</h2>
 
-				<!-- Deck source options -->
 				<div class="deck-options">
 					<button
 						class="option-btn"
@@ -597,7 +451,6 @@
 					</div>
 				{/if}
 
-				<!-- Validation Panel -->
 				{#if heroCards.length > 0}
 					<div class="validation-panel" class:valid={validationResult?.isValid} class:invalid={validationResult && !validationResult.isValid}>
 						<div class="val-header">
@@ -645,7 +498,6 @@
 						{/if}
 					</div>
 
-					<!-- Hot dog count -->
 					<div class="form-group hot-dog-row">
 						<label for="hot-dogs">Hot Dog Cards</label>
 						<input id="hot-dogs" type="number" bind:value={hotDogCount} min="0" max="20" class="narrow-input" />
@@ -657,7 +509,7 @@
 				{/if}
 
 				<div class="deck-actions">
-					<button class="secondary-btn" onclick={proceedToInfo}>Back</button>
+					<button class="secondary-btn" onclick={() => (step = 'info')}>Back</button>
 					<button
 						class="primary-btn"
 						onclick={proceedToConfirm}
@@ -674,80 +526,22 @@
 			<h1>{tournament.name}</h1>
 		</header>
 
-		<div class="step-card">
-			<h2>Confirm Submission</h2>
-
-			<div class="confirm-section">
-				<h3>Player</h3>
-				<p>{regName} &mdash; {regEmail}</p>
-			</div>
-
-			<div class="confirm-section">
-				<h3>Deck Summary</h3>
-				<div class="val-stats">
-					<div class="val-stat">
-						<span class="val-num">{heroCards.length}</span>
-						<span class="val-label">Heroes</span>
-					</div>
-					<div class="val-stat">
-						<span class="val-num">{playCards.length}</span>
-						<span class="val-label">Plays</span>
-					</div>
-					<div class="val-stat">
-						<span class="val-num">{hotDogCount}</span>
-						<span class="val-label">Hot Dogs</span>
-					</div>
-					<div class="val-stat">
-						<span class="val-num">{validationResult?.stats.dbsTotal ?? dbsTotal}</span>
-						<span class="val-label">DBS</span>
-					</div>
-				</div>
-			</div>
-
-			{#if isSealed}
-				<div class="confirm-validation valid">Sealed Pool</div>
-			{:else if validationResult}
-				<div class="confirm-validation" class:valid={validationResult.isValid} class:invalid={!validationResult.isValid}>
-					{validationResult.isValid ? 'Deck is valid for ' + validationResult.formatName : 'Deck has validation errors'}
-				</div>
-			{/if}
-
-			<div class="deck-actions">
-				<button class="secondary-btn" onclick={() => (step = 'deck')}>Back</button>
-				<button
-					class="primary-btn"
-					onclick={submitDeck}
-					disabled={submitting}
-				>
-					{submitting ? 'Submitting...' : existingSubmission ? 'Update Submission' : 'Submit Deck'}
-				</button>
-			</div>
-		</div>
+		<ConfirmStep
+			{tournament}
+			{player}
+			deck={currentDeck}
+			{existingSubmission}
+			onBack={() => (step = 'deck')}
+			onDone={(result) => { submissionResult = result; step = 'done'; }}
+		/>
 
 	{:else if step === 'done' && submissionResult}
-		<div class="done-card">
-			<h2>Deck Submitted!</h2>
-			<p>Your deck has been submitted for <strong>{tournament?.name}</strong>.</p>
-
-			<div class="verify-section">
-				<p class="verify-label">Verification Code</p>
-				<p class="verify-code">{submissionResult.verification_code}</p>
-				<a href={submissionResult.verify_url} class="verify-link">View Verification Page</a>
-			</div>
-
-			{#if !submissionResult.is_valid}
-				<p class="warn-text">Note: Your deck has validation issues. You may want to resubmit with a valid deck.</p>
-			{/if}
-
-			<div class="done-actions">
-				<a href="/tournaments" class="primary-btn done-link">Back to Tournaments</a>
-				{#if isRegistrationOpen()}
-					<button class="secondary-btn" onclick={() => { step = 'deck'; existingSubmission = {}; }}>
-						Modify Deck
-					</button>
-				{/if}
-			</div>
-		</div>
+		<DoneStep
+			tournamentName={tournament?.name || ''}
+			result={submissionResult}
+			canModify={isRegistrationOpen()}
+			onModify={() => { step = 'deck'; existingSubmission = true; }}
+		/>
 	{/if}
 </div>
 
@@ -822,23 +616,14 @@
 		font-weight: 600;
 		margin-bottom: 1rem;
 	}
-	.existing-banner {
-		background: #2563eb20;
-		color: #2563eb;
-		border-radius: 8px;
-		padding: 0.75rem;
-		text-align: center;
-		font-size: 0.85rem;
-		margin-bottom: 1rem;
-	}
 
 	/* Step cards */
-	.step-card {
+	:global(.step-card) {
 		background: var(--bg-elevated);
 		border-radius: 12px;
 		padding: 1.25rem;
 	}
-	.step-card h1, .step-card h2 {
+	:global(.step-card) h1, :global(.step-card) h2 {
 		font-size: 1.1rem;
 		font-weight: 700;
 		margin-bottom: 0.25rem;
@@ -848,19 +633,19 @@
 		color: var(--text-secondary);
 		margin-bottom: 1rem;
 	}
-	.form-group {
+	:global(.form-group) {
 		margin-bottom: 0.75rem;
 	}
-	.form-group label {
+	:global(.form-group) label {
 		display: block;
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--text-secondary);
 		margin-bottom: 4px;
 	}
-	.required { color: #ef4444; }
-	.optional { font-weight: 400; color: var(--text-tertiary); }
-	.form-group input {
+	:global(.required) { color: #ef4444; }
+	:global(.optional) { font-weight: 400; color: var(--text-tertiary); }
+	:global(.form-group) input {
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		border-radius: 8px;
@@ -876,7 +661,7 @@
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
-	.primary-btn {
+	:global(.primary-btn) {
 		width: 100%;
 		padding: 0.75rem;
 		border-radius: 10px;
@@ -891,8 +676,8 @@
 		text-decoration: none;
 		display: block;
 	}
-	.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-	.secondary-btn {
+	:global(.primary-btn):disabled { opacity: 0.6; cursor: not-allowed; }
+	:global(.secondary-btn) {
 		flex: 1;
 		padding: 0.75rem;
 		border-radius: 10px;
@@ -996,19 +781,19 @@
 	.val-badge.valid { background: #16a34a20; color: #16a34a; }
 	.val-badge.invalid { background: #ef444420; color: #ef4444; }
 	.val-format { font-size: 0.85rem; color: var(--text-secondary); }
-	.val-stats {
+	:global(.val-stats) {
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 0.5rem;
 		margin-bottom: 0.5rem;
 	}
-	.val-stat { text-align: center; }
-	.val-num {
+	:global(.val-stat) { text-align: center; }
+	:global(.val-num) {
 		display: block;
 		font-size: 1.1rem;
 		font-weight: 700;
 	}
-	.val-label {
+	:global(.val-label) {
 		font-size: 0.7rem;
 		color: var(--text-tertiary);
 	}
@@ -1036,30 +821,30 @@
 		margin-left: 0.5rem;
 	}
 
-	.deck-actions {
+	:global(.deck-actions) {
 		display: flex;
 		gap: 0.75rem;
 		margin-top: 0.75rem;
 	}
-	.deck-actions .primary-btn {
+	:global(.deck-actions) :global(.primary-btn) {
 		flex: 2;
 		margin-top: 0;
 	}
 
 	/* Confirm */
-	.confirm-section {
+	:global(.confirm-section) {
 		margin-bottom: 1rem;
 	}
-	.confirm-section h3 {
+	:global(.confirm-section) h3 {
 		font-size: 0.85rem;
 		font-weight: 700;
 		color: var(--text-secondary);
 		margin-bottom: 0.25rem;
 	}
-	.confirm-section p {
+	:global(.confirm-section) p {
 		font-size: 0.9rem;
 	}
-	.confirm-validation {
+	:global(.confirm-validation) {
 		padding: 0.625rem;
 		border-radius: 8px;
 		text-align: center;
@@ -1067,38 +852,38 @@
 		font-size: 0.9rem;
 		margin-bottom: 0.75rem;
 	}
-	.confirm-validation.valid { background: #16a34a20; color: #16a34a; }
-	.confirm-validation.invalid { background: #ef444420; color: #ef4444; }
+	:global(.confirm-validation.valid) { background: #16a34a20; color: #16a34a; }
+	:global(.confirm-validation.invalid) { background: #ef444420; color: #ef4444; }
 
 	/* Done */
-	.done-card {
+	:global(.done-card) {
 		text-align: center;
 		background: var(--bg-elevated);
 		border-radius: 12px;
 		padding: 2rem 1.25rem;
 	}
-	.done-card h2 {
+	:global(.done-card) h2 {
 		font-size: 1.3rem;
 		font-weight: 700;
 		margin-bottom: 0.5rem;
 	}
-	.done-card p {
+	:global(.done-card) p {
 		color: var(--text-secondary);
 		font-size: 0.9rem;
 		margin-bottom: 1rem;
 	}
-	.verify-section {
+	:global(.verify-section) {
 		background: var(--bg-base);
 		border-radius: 10px;
 		padding: 1rem;
 		margin-bottom: 1rem;
 	}
-	.verify-label {
+	:global(.verify-label) {
 		font-size: 0.75rem;
 		color: var(--text-tertiary);
 		margin-bottom: 0.25rem;
 	}
-	.verify-code {
+	:global(.verify-code) {
 		font-family: monospace;
 		font-size: 1.5rem;
 		font-weight: 700;
@@ -1106,20 +891,29 @@
 		color: var(--accent-primary);
 		margin-bottom: 0.5rem;
 	}
-	.verify-link {
+	:global(.verify-link) {
 		font-size: 0.85rem;
 		color: var(--accent-primary);
 	}
-	.warn-text {
+	:global(.warn-text) {
 		color: #f59e0b;
 		font-size: 0.85rem;
 	}
-	.done-actions {
+	:global(.done-actions) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		max-width: 300px;
 		margin: 1rem auto 0;
 	}
-	.done-link { text-align: center; }
+	:global(.done-link) { text-align: center; }
+	:global(.existing-banner) {
+		background: #2563eb20;
+		color: #2563eb;
+		border-radius: 8px;
+		padding: 0.75rem;
+		text-align: center;
+		font-size: 0.85rem;
+		margin-bottom: 1rem;
+	}
 </style>
