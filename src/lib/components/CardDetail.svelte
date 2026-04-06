@@ -384,7 +384,7 @@
 	.card-detail-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 1000;
+		z-index: var(--z-modal-backdrop, 1040);
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
@@ -394,13 +394,14 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
-		background: rgba(0, 0, 0, 0.6);
+		background: rgba(0, 0, 0, 0.75);
 		border: none;
 		appearance: none;
 		cursor: default;
 	}
 	.card-detail-sheet {
 		position: relative;
+		z-index: 1;
 		width: 100%;
 		max-width: 500px;
 		max-height: 90vh;
@@ -409,6 +410,8 @@
 		background: var(--surface-secondary, #0d1524);
 		border-radius: 16px 16px 0 0;
 		padding: 1.5rem;
+		padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+		box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.5);
 	}
 	.detail-scroll {
 		overflow-y: auto;
@@ -659,7 +662,7 @@
 	.listing-submit:hover:not(:disabled) { background: #16a34a; }
 
 	@media (min-width: 768px) {
-		.card-detail-sheet { border-radius: 16px; margin-bottom: 2rem; }
+		.card-detail-sheet { border-radius: 16px; margin-bottom: 2rem; padding-bottom: 1.5rem; }
 		.card-detail-overlay { align-items: center; }
 	}
 </style>
