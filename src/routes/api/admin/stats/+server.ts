@@ -95,9 +95,9 @@ export const GET: RequestHandler = async ({ locals }) => {
 	]);
 
 	// Helper to paginate timestamp queries in 1k chunks (Supabase row limit)
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	async function fetchAllTimestamps(
 		table: string,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		filters: (q: any) => any
 	): Promise<Array<{ created_at: string }>> {
 		const CHUNK = 1000;

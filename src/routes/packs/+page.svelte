@@ -175,8 +175,7 @@
 		const client = getSupabase();
 		if (client) {
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const { data } = await (client as any)
+				const { data } = await client
 					.from('pack_configurations')
 					.select('*')
 					.eq('box_type', selectedBox)
@@ -187,12 +186,12 @@
 				if (data?.slots) {
 					const defaultConfig = getBoxConfig(selectedBox, selectedSet);
 					// Merge cardFormat from defaults for configs saved before the field existed
-					slots = (data.slots as SlotConfig[]).map((slot: SlotConfig, i: number) => ({
+					slots = (data.slots as unknown as SlotConfig[]).map((slot: SlotConfig, i: number) => ({
 						...slot,
 						cardFormat: slot.cardFormat || defaultConfig?.slots[i]?.cardFormat || 'any'
 					}));
 					packsPerBox = data.packs_per_box || defaultConfig?.packsPerBox || 10;
-					guarantees = data.box_guarantees || defaultConfig?.guarantees || [];
+					guarantees = (data.box_guarantees as unknown as BoxGuarantee[]) || defaultConfig?.guarantees || [];
 					return;
 				}
 			} catch {

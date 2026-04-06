@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { startCamera, stopCamera, toggleTorch, captureFrame, checkCameraPermission, getActiveStream } from '$lib/services/camera';
+	import { onMount } from 'svelte';
+	import { captureFrame } from '$lib/services/camera';
+	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
 	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance, isFuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
@@ -47,7 +48,7 @@
 	const cameraReady = $derived(!['initializing', 'error'].includes(phase));
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
-	let torchOn = $state(false);
+	const camera = useScannerCamera(embedded);
 	let revealedCard = $state<Card | null>(null);
 	let blurWarning = $state(false);
 	let glareRegions = $state<Array<{ x: number; y: number; w: number; h: number }>>([]);
@@ -55,7 +56,6 @@
 	let showFlash = $state(false);
 	let autoAnalyzeInterval: ReturnType<typeof setInterval> | null = null;
 	let cardDetectedSince = $state<number | null>(null);
-	let cameraError = $state<string | null>(null);
 	let guidanceText = $state<string | null>(null);
 	let guidanceLastChanged = $state(0);
 	const GUIDANCE_COOLDOWN = 1500;
@@ -65,8 +65,6 @@
 	let stableFrameCount = $state(0);
 	const STABLE_FRAMES_REQUIRED = 3; // Reduced from 4 — mobile phones can't hold perfectly still for 1s
 	const STABILITY_THRESHOLD = 5;    // Increased from 3 — allow more micro-jitter between frames
-
-	let _visibilityHandler: (() => void) | null = null;
 
 	// AR Price Overlay state
 	let overlayData = $state<{
@@ -82,8 +80,6 @@
 	let _lastOverlayHash: string | null = null;
 
 	let showFirstRunGuide = $state(false);
-	let showCameraExplainer = $state(false);
-	let showPermissionBlocked = $state(false);
 
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
@@ -139,114 +135,53 @@
 		return 'idle';
 	});
 
-	async function initCamera() {
-		try {
-			// Reuse existing active stream if available (avoids re-prompt on iOS)
-			const existing = getActiveStream();
-			let stream: MediaStream;
-			if (existing) {
-				stream = existing;
-			} else {
-				stream = await startCamera();
-			}
-			if (videoEl) {
-				videoEl.srcObject = stream;
-				await videoEl.play();
-				phase = 'idle';
-				startAutoAnalyze();
-
-				// First-run check — show briefly then auto-dismiss
-				const { idb } = await import('$lib/services/idb');
-				const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
-				if (!hasScanned) {
-					showFirstRunGuide = true;
-					// Auto-dismiss after 3 seconds so it doesn't block the scanner
-					setTimeout(() => {
-						showFirstRunGuide = false;
-						// Mark as seen so it doesn't show again
-						idb.setMeta('has_completed_first_scan', true);
-					}, 3000);
-				}
-			}
-		} catch (err) {
-			console.error('Camera error:', err);
-			phase = 'error';
-			if (err instanceof DOMException) {
-				if (err.name === 'NotAllowedError') {
-					showPermissionBlocked = true;
-					cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
-				} else if (err.name === 'NotFoundError') {
-					cameraError = 'No camera found on this device. Try uploading a photo instead.';
-				} else if (err.name === 'NotReadableError') {
-					cameraError = 'Camera is in use by another app. Close other apps and try again.';
-				} else {
-					cameraError = 'Could not access camera. Make sure you are using HTTPS.';
-				}
-			} else {
-				cameraError = 'Camera failed to start. Please reload the page.';
-			}
-		}
+	function onCameraReady() {
+		phase = 'idle';
+		startAutoAnalyze();
 	}
 
-	onMount(async () => {
-		// Check permission state before prompting
-		const permission = await checkCameraPermission();
+	let _cleanupVisibility: (() => void) | null = null;
 
-		if (permission === 'granted' || embedded) {
-			// Already granted, or embedded mode (skip explainer) — go straight to camera
-			await initCamera();
-		} else if (permission === 'denied') {
-			// Blocked — show help to re-enable
-			phase = 'error';
-			showPermissionBlocked = true;
-			cameraError = 'Camera access was denied. Please enable camera permissions in your browser settings and reload.';
-		} else {
-			// First time or unknown — show pre-prompt explainer
-			showCameraExplainer = true;
+	onMount(async () => {
+		if (videoEl) {
+			try {
+				await camera.initCamera(videoEl, onCameraReady);
+			} catch {
+				phase = 'error';
+			}
+
+			// First-run guide check
+			const { idb } = await import('$lib/services/idb');
+			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
+			if (!hasScanned) {
+				showFirstRunGuide = true;
+				setTimeout(() => {
+					showFirstRunGuide = false;
+					idb.setMeta('has_completed_first_scan', true);
+				}, 3000);
+			}
 		}
 
-		_visibilityHandler = () => {
-			if (document.visibilityState === 'hidden') {
-				// Don't stop the camera — just pause analysis.
-				// Stopping the stream on iOS kills the permission grant,
-				// causing a re-prompt when the user returns.
-				stopAutoAnalyze();
-				torchOn = false;
-			} else if (document.visibilityState === 'visible' && phase !== 'error') {
-				// Stream should still be alive — just restart analysis.
-				// If the stream died (rare), re-acquire it.
-				const existing = getActiveStream();
-				if (existing && videoEl) {
-					videoEl.srcObject = existing;
-					videoEl.play().then(() => {
-						phase = 'idle';
-						startAutoAnalyze();
-					}).catch(() => {
-						// Stream died, re-acquire
-						initCamera();
-					});
-				} else {
-					initCamera();
-				}
-			}
-		};
-		document.addEventListener('visibilitychange', _visibilityHandler);
+		_cleanupVisibility = camera.setupVisibilityHandler(
+			videoEl!,
+			() => { phase = 'idle'; startAutoAnalyze(); },
+			() => { stopAutoAnalyze(); }
+		);
 	});
 
-	onDestroy(() => {
-		stopAutoAnalyze();
-		stopCamera();
-		resetScanner();
-		// Release any in-progress foil capture bitmaps (GPU memory)
-		foilCaptures.forEach(b => b.close());
-		foilCaptures = [];
-		if (_overlayTimeout) {
-			clearTimeout(_overlayTimeout);
-			_overlayTimeout = null;
-		}
-		if (_visibilityHandler) {
-			document.removeEventListener('visibilitychange', _visibilityHandler);
-		}
+	$effect(() => {
+		return () => {
+			stopAutoAnalyze();
+			camera.destroy();
+			resetScanner();
+			foilCaptures.forEach(b => b.close());
+			foilCaptures = [];
+			if (_overlayTimeout) {
+				clearTimeout(_overlayTimeout);
+				_overlayTimeout = null;
+			}
+			_cleanupVisibility?.();
+		};
 	});
 
 	function startAutoAnalyze() {
@@ -693,9 +628,8 @@
 	}
 
 	async function handleTorchToggle() {
-		torchOn = !torchOn;
 		triggerHaptic('tap');
-		await toggleTorch(torchOn);
+		await camera.handleTorchToggle();
 	}
 
 	async function handleFileUpload(event: Event) {
@@ -774,7 +708,7 @@
 			{foilStep}
 			foilCapturesNeeded={FOIL_CAPTURES_NEEDED}
 			foilGuidance={FOIL_GUIDANCE}
-			{cameraError}
+			cameraError={camera.cameraError}
 		/>
 
 		<!-- AR Price Overlay -->
@@ -803,9 +737,9 @@
 		{#if cameraReady}
 			<button
 				class="torch-btn"
-				class:torch-on={torchOn}
+				class:torch-on={camera.torchOn}
 				onclick={handleTorchToggle}
-				aria-label={torchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+				aria-label={camera.torchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
 			>
 				⚡
 			</button>
@@ -826,7 +760,7 @@
 		{/if}
 
 		<!-- Camera permission pre-prompt explainer -->
-		{#if showCameraExplainer}
+		{#if camera.showExplainer}
 			<div class="permission-explainer">
 				<div class="permission-explainer-content">
 					<div class="permission-icon">
@@ -837,7 +771,7 @@
 					</div>
 					<h3 class="permission-title">Camera Access Needed</h3>
 					<p class="permission-desc">BOBA Scanner uses your camera to identify cards instantly. We never store photos without your permission.</p>
-					<button class="permission-continue" onclick={() => { showCameraExplainer = false; initCamera(); }}>
+					<button class="permission-continue" onclick={() => { if (videoEl) camera.acceptExplainer(videoEl, onCameraReady).catch(() => { phase = 'error'; }); }}>
 						Continue to Scan
 					</button>
 					<p class="permission-tip">
@@ -848,7 +782,7 @@
 		{/if}
 
 		<ScannerControls
-			{torchOn}
+			torchOn={camera.torchOn}
 			{foilMode}
 			{cameraReady}
 			{scanning}

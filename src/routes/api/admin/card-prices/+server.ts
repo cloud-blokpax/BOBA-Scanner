@@ -54,7 +54,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		p_filter: filter
 	});
 
-	const total = countData?.[0]?.total ?? rows?.length ?? 0;
+	const rawCount = countData as unknown as Array<{ total: number }> | number | null;
+	const total = (Array.isArray(rawCount) ? rawCount[0]?.total : rawCount) ?? rows?.length ?? 0;
 
 	return json({
 		cards: rows || [],

@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth';
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
-import { parseJsonBody, requireNumber, optionalString } from '$lib/server/validate';
+import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/server/validate';
 
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
 const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
@@ -114,8 +114,7 @@ async function getSellerPolicies(token: string): Promise<{
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const user = locals.user;
-	if (!user) throw error(401, 'Authentication required');
+	const user = await requireAuth(locals);
 
 	const rateLimit = await checkHeavyMutationRateLimit(user.id);
 	if (!rateLimit.success) {

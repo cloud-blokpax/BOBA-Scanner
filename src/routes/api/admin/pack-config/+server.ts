@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { parseJsonBody } from '$lib/server/validate';
+import { parseJsonBody, requireString } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
@@ -13,27 +13,33 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const boxType = url.searchParams.get('box_type');
 
-	// pack_configurations is not yet in the generated Supabase types
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let query = (admin as any)
-		.from('pack_configurations')
-		.select('*')
-		.eq('is_active', true);
-
 	if (boxType) {
-		query = query.eq('box_type', boxType).limit(1).maybeSingle();
+		const { data, error: dbErr } = await admin
+			.from('pack_configurations')
+			.select('*')
+			.eq('is_active', true)
+			.eq('box_type', boxType)
+			.limit(1)
+			.maybeSingle();
+
+		if (dbErr) {
+			console.error('[admin/pack-config] GET DB error:', dbErr.message);
+			throw error(500, 'Database operation failed');
+		}
+		return json(data || null);
 	} else {
-		query = query.order('box_type');
+		const { data, error: dbErr } = await admin
+			.from('pack_configurations')
+			.select('*')
+			.eq('is_active', true)
+			.order('box_type');
+
+		if (dbErr) {
+			console.error('[admin/pack-config] GET DB error:', dbErr.message);
+			throw error(500, 'Database operation failed');
+		}
+		return json(data || []);
 	}
-
-	const { data, error: dbErr } = await query;
-
-	if (dbErr) {
-		console.error('[admin/pack-config] GET DB error:', dbErr.message);
-		throw error(500, 'Database operation failed');
-	}
-
-	return json(data || (boxType ? null : []));
 };
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
@@ -50,7 +56,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const body = await parseJsonBody(request);
-	const { id, box_type, set_code, display_name, slots, packs_per_box } = body as Record<string, unknown>;
+	const { id, slots, packs_per_box } = body as Record<string, unknown>;
+	const box_type = requireString(body.box_type, 'box_type');
+	const set_code = (body.set_code as string) || 'alpha';
+	const display_name = (body.display_name as string) || box_type;
 
 	// Validate slot weights
 	if (!Array.isArray(slots)) throw error(400, 'slots must be an array');
@@ -70,23 +79,21 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 
 	const record = {
 		box_type,
-		set_code: set_code || 'alpha',
-		display_name: display_name || box_type,
-		slots,
-		packs_per_box: packs_per_box || 10,
+		set_code,
+		display_name,
+		slots: slots as Record<string, unknown>[],
+		packs_per_box: (packs_per_box as number) || 10,
 		is_active: true,
 		updated_at: new Date().toISOString(),
 		updated_by: user.id
 	};
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const supabase = admin as any;
 	let result;
 	if (id) {
-		const { data, error: dbErr } = await supabase
+		const { data, error: dbErr } = await admin
 			.from('pack_configurations')
 			.update(record)
-			.eq('id', id)
+			.eq('id', id as string)
 			.select()
 			.single();
 
@@ -96,7 +103,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		}
 		result = data;
 	} else {
-		const { data, error: dbErr } = await supabase
+		const { data, error: dbErr } = await admin
 			.from('pack_configurations')
 			.insert(record)
 			.select()

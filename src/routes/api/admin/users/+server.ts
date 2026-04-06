@@ -49,8 +49,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			console.error('[admin/users] GET fallback DB error:', fallback.error.message);
 			throw error(500, 'Database operation failed');
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		data = (fallback.data ?? []).map((u: any) => ({ ...u, is_organizer: false }));
+		data = (fallback.data ?? []).map((u) => ({ ...u, is_organizer: false }));
 	}
 
 	return json(data ?? []);

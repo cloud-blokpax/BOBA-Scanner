@@ -39,8 +39,8 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	const { error: dbError } = await adminClient.from('feature_flags').upsert(
 		{
 			feature_key,
-			display_name: updates.display_name || feature_key,
-			...dbUpdates,
+			display_name: (updates.display_name as string) || feature_key,
+			...(dbUpdates as Partial<{ description: string | null; enabled_globally: boolean; enabled_for_guest: boolean; enabled_for_authenticated: boolean; enabled_for_pro: boolean; enabled_for_admin: boolean }>),
 			updated_at: new Date().toISOString()
 		},
 		{ onConflict: 'feature_key' }
