@@ -9,7 +9,6 @@
  */
 
 import { browser } from '$app/environment';
-import { writable } from 'svelte/store';
 import { showToast } from '$lib/stores/toast.svelte';
 
 export interface ReferenceSubmissionResult {
@@ -29,8 +28,16 @@ export interface ReferenceSubmissionResult {
 const MIN_SUBMISSION_CONFIDENCE = 0.8;
 
 // Track locally how many reference images this user holds (for profile display)
-export const myTopImageCount = writable<number | null>(null);
-export const myRank = writable<number | null>(null);
+let _myTopImageCount: number | null = null;
+let _myRank: number | null = null;
+
+export function getMyTopImageCount(): number | null {
+	return _myTopImageCount;
+}
+
+export function getMyRank(): number | null {
+	return _myRank;
+}
 
 /**
  * Attempt to submit a scan as a reference image.
@@ -101,11 +108,11 @@ export async function loadMyReferenceStats(userId: string): Promise<void> {
 		if (!res.ok) return;
 		const data = await res.json();
 		if (data.user_rank) {
-			myTopImageCount.set(data.user_rank.top_images);
-			myRank.set(data.user_rank.rank);
+			_myTopImageCount = data.user_rank.top_images;
+			_myRank = data.user_rank.rank;
 		} else {
-			myTopImageCount.set(0);
-			myRank.set(null);
+			_myTopImageCount = 0;
+			_myRank = null;
 		}
 	} catch {
 		// Non-critical

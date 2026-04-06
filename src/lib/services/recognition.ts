@@ -8,7 +8,6 @@
  * Expected: 85-95% of scans resolved without Claude API calls.
  */
 
-import * as Comlink from 'comlink';
 import { idb } from './idb';
 import { findCard, getCardById, loadCardDatabase, normalizeCardNum, getAllCards, searchCards, findSimilarCardNumbers } from './card-db';
 import { getSupabase } from './supabase';
@@ -18,8 +17,8 @@ export let _fuzzyHashRpcDisabled = false;
 export function disableFuzzyHashRpc(): void { _fuzzyHashRpcDisabled = true; }
 /** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
 let _upsertHashRpcDisabled = false;
-import { checkCorrection, recordCorrection, loadCorrectionsFromIdb } from '$lib/services/scan-learning';
-import { initOcr, recognizeText, terminateOcr } from '$lib/services/ocr';
+import { checkCorrection, recordCorrection } from '$lib/services/scan-learning';
+import { initOcr, recognizeText } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
 import { getCardImageUrl } from '$lib/utils/image-url';
@@ -29,114 +28,18 @@ import { userId } from '$lib/stores/auth.svelte';
 import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry, ValidationMethod } from '$lib/types';
+import { createThumbnailDataUrl, createListingImageBlob } from './scan-image-utils';
+import {
+	getImageWorker,
+	initWorkers,
+	isOcrAvailable,
+	wasOcrRetryAttempted,
+	markOcrRetryAttempted,
+	markOcrAvailable
+} from './recognition-workers';
 
-/**
- * Create a small data-URL thumbnail from a bitmap for scan history display.
- * Produces a ~2-5KB JPEG suitable for IndexedDB/localStorage persistence.
- */
-function createThumbnailDataUrl(bitmap: ImageBitmap): string | null {
-	try {
-		if (typeof document === 'undefined') return null;
-
-		const MAX_W = 80;
-		const MAX_H = 112;
-		const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);
-		const w = Math.round(bitmap.width * scale);
-		const h = Math.round(bitmap.height * scale);
-
-		const canvas = document.createElement('canvas');
-		canvas.width = w;
-		canvas.height = h;
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return null;
-
-		ctx.drawImage(bitmap, 0, 0, w, h);
-		return canvas.toDataURL('image/jpeg', 0.6);
-	} catch (err) {
-		console.debug('[recognition] Thumbnail creation failed:', err);
-		return null;
-	}
-}
-
-/**
- * Create a listing-quality JPEG blob from a camera bitmap.
- * If cropRegion is provided, crops to that region first.
- * If no cropRegion, attempts a center-crop to card aspect ratio (5:7).
- * Produces a clean card-focused image for Supabase Storage and eBay.
- */
-function createListingImageBlob(
-	bitmap: ImageBitmap,
-	cropRegion?: { x: number; y: number; width: number; height: number } | null
-): Promise<Blob | null> {
-	try {
-		if (typeof document === 'undefined') return Promise.resolve(null);
-
-		const CARD_ASPECT = 5 / 7;
-		const MAX_W = 600;
-		const MAX_H = 840;
-
-		let srcX = 0;
-		let srcY = 0;
-		let srcW = bitmap.width;
-		let srcH = bitmap.height;
-
-		if (cropRegion) {
-			srcX = Math.max(0, Math.round(cropRegion.x));
-			srcY = Math.max(0, Math.round(cropRegion.y));
-			srcW = Math.min(bitmap.width - srcX, Math.round(cropRegion.width));
-			srcH = Math.min(bitmap.height - srcY, Math.round(cropRegion.height));
-		} else {
-			// No crop region — center-crop to card aspect ratio
-			const imgAspect = bitmap.width / bitmap.height;
-			if (imgAspect > CARD_ASPECT) {
-				const targetW = bitmap.height * CARD_ASPECT;
-				srcX = Math.round((bitmap.width - targetW) / 2);
-				srcW = Math.round(targetW);
-			} else if (imgAspect < CARD_ASPECT * 0.85) {
-				const targetH = bitmap.width / CARD_ASPECT;
-				srcY = Math.round((bitmap.height - targetH) / 2);
-				srcH = Math.round(targetH);
-			}
-		}
-
-		const scale = Math.min(MAX_W / srcW, MAX_H / srcH, 1);
-		const outW = Math.round(srcW * scale);
-		const outH = Math.round(srcH * scale);
-
-		const canvas = document.createElement('canvas');
-		canvas.width = outW;
-		canvas.height = outH;
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return Promise.resolve(null);
-
-		ctx.drawImage(bitmap, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
-
-		return new Promise((resolve) => {
-			canvas.toBlob(
-				(blob) => resolve(blob),
-				'image/jpeg',
-				0.85
-			);
-		});
-	} catch (err) {
-		console.debug('[recognition] Listing image creation failed:', err);
-		return Promise.resolve(null);
-	}
-}
-
-// ── Worker instances ────────────────────────────────────────
-
-let imageWorker: Comlink.Remote<{
-	computeDHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
-	computePHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
-	hammingDistance: (a: string, b: string) => number;
-	resizeForUpload: (bitmap: ImageBitmap, max?: number) => Promise<Blob>;
-	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;
-	checkGlare: (bitmap: ImageBitmap, brightnessThreshold?: number, areaThreshold?: number) => Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }>;
-	analyzeCardPresence: (bitmap: ImageBitmap, blurThreshold?: number) => Promise<{ cardDetected: boolean; isSharp: boolean; variance: number }>;
-	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
-	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
-}> | null = null;
+// Re-export worker functions for backward compatibility
+export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
 
 /**
  * Per-scan context to avoid global state pollution when concurrent scans run.
@@ -148,140 +51,6 @@ interface ScanContext {
 	lastOcrReading: string | null;
 	lastTier3FailReason: string | null;
 	cropRegion?: { x: number; y: number; width: number; height: number } | null;
-}
-
-/**
- * Analyze a video frame for card presence and sharpness (for auto-capture).
- */
-export async function analyzeFrame(bitmap: ImageBitmap): Promise<{
-	cardDetected: boolean;
-	isSharp: boolean;
-}> {
-	await initWorkers();
-	const result = await imageWorker!.analyzeCardPresence(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
-	return { cardDetected: result.cardDetected, isSharp: result.isSharp };
-}
-
-/**
- * Check image quality (blur + glare) before capture.
- * Returns null if quality is acceptable, or a reason string if not.
- */
-export async function checkImageQuality(bitmap: ImageBitmap): Promise<{
-	isBlurry: boolean;
-	variance: number;
-	hasGlare: boolean;
-	glareRegions: Array<{ x: number; y: number; w: number; h: number }>;
-}> {
-	await initWorkers();
-	const [blur, glare] = await Promise.all([
-		imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold),
-		imageWorker!.checkGlare(bitmap)
-	]);
-	return {
-		isBlurry: blur.isBlurry,
-		variance: blur.variance,
-		hasGlare: glare.hasGlare,
-		glareRegions: glare.regions
-	};
-}
-
-/**
- * Compute a quick frame hash for stability detection (not card matching).
- * Used by Scanner.svelte to detect frame-to-frame stability before auto-capture.
- */
-export async function computeFrameHash(bitmap: ImageBitmap): Promise<string> {
-	await initWorkers();
-	return imageWorker!.computeDHash(bitmap, 8);
-}
-
-/**
- * Compute Hamming distance between two hex hash strings.
- * Exposed for Scanner.svelte stability detection.
- */
-export async function computeHammingDistance(a: string, b: string): Promise<number> {
-	await initWorkers();
-	return imageWorker!.hammingDistance(a, b);
-}
-
-/**
- * Composite multiple captures using darkest-pixel selection (for foil mode).
- * Runs in the web worker off the main thread.
- */
-export async function compositeForFoilMode(bitmaps: ImageBitmap[]): Promise<ImageBitmap> {
-	await initWorkers();
-	return imageWorker!.compositeMinPixel(bitmaps);
-}
-
-/**
- * Initialize the Web Workers. Call once on app start.
- * Uses a shared promise to prevent duplicate Worker creation from concurrent calls.
- */
-let _workerInitPromise: Promise<void> | null = null;
-let _ocrAvailable = false;
-let _ocrRetryAttempted = false;
-let _initFailCount = 0;
-const MAX_INIT_RETRIES = 3;
-
-/** Reset the worker failure counter so navigation acts as a retry. */
-export function resetWorkerFailCount(): void {
-	_initFailCount = 0;
-}
-
-export async function initWorkers(): Promise<void> {
-	if (imageWorker) return;
-	if (_initFailCount >= MAX_INIT_RETRIES) {
-		throw new Error('Image worker failed to initialize after multiple attempts. Please reload the page.');
-	}
-	// Return existing in-flight promise to prevent duplicate Worker creation
-	// from concurrent calls (e.g., batch/binder scanning).
-	if (_workerInitPromise) return _workerInitPromise;
-
-	_workerInitPromise = (async () => {
-		// Double-check after acquiring the "lock" — another call may have
-		// resolved between our first check and promise assignment.
-		if (!imageWorker) {
-			try {
-				const ImageWorker = new Worker(
-					new URL('$lib/workers/image-processor.ts', import.meta.url),
-					{ type: 'module' }
-				);
-				imageWorker = Comlink.wrap(ImageWorker);
-			} catch (err) {
-				imageWorker = null;
-				console.error('[scan] Worker constructor failed:', err);
-				throw err;
-			}
-		}
-
-		// Load OCR corrections into memory for synchronous lookups.
-		// Awaited so corrections are available before the first scan.
-		await loadCorrectionsFromIdb().catch((err) => console.warn('[scan] Failed to load OCR corrections from IDB:', err));
-
-		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
-		// skipped gracefully and we fall through to Tier 3 (Claude API).
-		try {
-			await Promise.race([
-				initOcr(),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('OCR init timed out')), 15000)
-				)
-			]);
-			_ocrAvailable = true;
-			console.debug('[scan] Tesseract OCR initialized successfully');
-		} catch (err) {
-			_ocrAvailable = false;
-			console.warn('[scan] Tesseract OCR failed to initialize — Tier 2 disabled:', err);
-		}
-	})();
-
-	try {
-		await _workerInitPromise;
-		_initFailCount = 0;
-	} catch (err) {
-		_initFailCount++;
-		_workerInitPromise = null;
-		throw err;
-	}
 }
 
 /**
@@ -358,7 +127,7 @@ export async function recognizeCard(
 
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
-		const blurResult = await imageWorker!.checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
+		const blurResult = await getImageWorker().checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
 		console.debug(`[scan] Blur check: variance=${blurResult.variance.toFixed(1)}, threshold=${BOBA_SCAN_CONFIG.blurThreshold}, isBlurry=${blurResult.isBlurry}`);
 		if (blurResult.isBlurry) {
 			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
@@ -440,7 +209,7 @@ export async function recognizeCard(
 			const { scanQueue } = await import('./idb');
 			const imageBlob = imageSource instanceof Blob
 				? imageSource
-				: await imageWorker!.resizeForUpload(bitmap, 1024);
+				: await getImageWorker().resizeForUpload(bitmap, 1024);
 			await scanQueue.add(imageBlob);
 		} catch (err) {
 			console.warn(`[scan:${traceId}] Offline queue failed — scan will be lost:`, err);
@@ -458,8 +227,8 @@ export async function recognizeCard(
 	// ── TIER 2: OCR + Fuzzy Match ────────────────────────────
 	// One-time retry if OCR failed during initial setup.
 	// Set the flag BEFORE the await to prevent concurrent scans from both retrying.
-	if (!_ocrAvailable && !_ocrRetryAttempted && navigator.onLine) {
-		_ocrRetryAttempted = true;
+	if (!isOcrAvailable() && !wasOcrRetryAttempted() && navigator.onLine) {
+		markOcrRetryAttempted();
 		try {
 			await Promise.race([
 				initOcr(),
@@ -467,21 +236,21 @@ export async function recognizeCard(
 					setTimeout(() => reject(new Error('OCR retry timed out')), 10000)
 				)
 			]);
-			_ocrAvailable = true;
+			markOcrAvailable();
 			console.debug('[scan] Tesseract OCR initialized on retry');
 		} catch (err) {
 			console.warn('[scan] Tesseract OCR retry failed — Tier 2 remains disabled:', err);
 		}
 	}
 
-	if (_ocrAvailable) {
+	if (isOcrAvailable()) {
 		onTierChange?.(2);
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
 		try {
 			const tier2Result = await runTier2(bitmap, ctx);
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}`);
-				const hash = await imageWorker!.computeDHash(bitmap);
+				const hash = await getImageWorker().computeDHash(bitmap);
 				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap);
 				return finalize(tier2Result);
 			}
@@ -501,7 +270,7 @@ export async function recognizeCard(
 	const tier3Result = await runTier3(bitmap, ctx);
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}`);
-		const hash = await imageWorker!.computeDHash(bitmap);
+		const hash = await getImageWorker().computeDHash(bitmap);
 		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
@@ -519,7 +288,7 @@ export async function recognizeCard(
 // ── Tier 1: Hash Cache Lookup ───────────────────────────────
 
 async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResult | null> {
-	const hash = await imageWorker!.computeDHash(bitmap);
+	const hash = await getImageWorker().computeDHash(bitmap);
 
 	// Layer 1: IndexedDB exact match (instant, free)
 	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
@@ -594,8 +363,8 @@ async function runTier1(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 				let pHashVerified = true;
 				if (match.phash_256) {
 					try {
-						const queryPHash = await imageWorker!.computePHash(bitmap, 16);
-						const pHashDist = await imageWorker!.hammingDistance(queryPHash, match.phash_256);
+						const queryPHash = await getImageWorker().computePHash(bitmap, 16);
+						const pHashDist = await getImageWorker().hammingDistance(queryPHash, match.phash_256);
 						// pHash threshold: 256-bit hash, allow up to 20 bits different
 						pHashVerified = pHashDist <= 20;
 						if (!pHashVerified) {
@@ -661,7 +430,7 @@ async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 		try {
 			// Preprocess region in image worker
 			const processedBlob = await withTimeout(
-				imageWorker!.preprocessForOCR(bitmap, region),
+				getImageWorker().preprocessForOCR(bitmap, region),
 				Math.min(3000, remaining), 'OCR preprocess'
 			);
 
@@ -719,7 +488,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	let response: Response;
 	try {
 		// Resize for upload
-		const imageBlob = await imageWorker!.resizeForUpload(bitmap, 1024);
+		const imageBlob = await getImageWorker().resizeForUpload(bitmap, 1024);
 		console.debug(`[scan:${ctx.traceId}:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
 
 		const formData = new FormData();
@@ -814,7 +583,7 @@ async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<ScanResu
 	// Negative cache: prevent repeated Tier 3 calls for unrecognized cards
 	if (claudeNumber) {
 		try {
-			const hash = await imageWorker!.computeDHash(bitmap);
+			const hash = await getImageWorker().computeDHash(bitmap);
 			await idb.setHash({
 				phash: hash,
 				card_id: `__unrecognized:${claudeNumber}`,
@@ -1029,9 +798,9 @@ async function writeHashToAllLayers(
 ): Promise<void> {
 	// Compute pHash if bitmap is available (for enhanced matching)
 	let phash256: string | null = null;
-	if (bitmap && imageWorker) {
+	if (bitmap) {
 		try {
-			phash256 = await imageWorker.computePHash(bitmap, 16);
+			phash256 = await getImageWorker().computePHash(bitmap, 16);
 		} catch (err) {
 			console.debug('[scan] pHash computation failed:', err);
 		}
@@ -1074,11 +843,12 @@ async function writeHashToAllLayers(
 	// IMPORTANT: We must do the bitmap work (resize + blur check) SYNCHRONOUSLY
 	// before this function returns, because the caller will close the bitmap
 	// in a finally block. Only the network upload is fire-and-forget.
-	if (bitmap && imageWorker && confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence) {
+	if (bitmap && confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence) {
 		try {
 			// Do bitmap operations NOW, before the caller closes the bitmap
-			const uploadBlob = await imageWorker.resizeForUpload(bitmap, 800);
-			const { variance: blurVariance } = await imageWorker.checkBlurry(bitmap, 100);
+			const worker = getImageWorker();
+			const uploadBlob = await worker.resizeForUpload(bitmap, 800);
+			const { variance: blurVariance } = await worker.checkBlurry(bitmap, 100);
 
 			// Only the network submission is fire-and-forget
 			if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
