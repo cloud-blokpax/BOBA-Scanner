@@ -93,7 +93,11 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	if (!adminClient) return null;
 
 	const { data: tokenRow, error } = await adminClient.from('ebay_seller_tokens').select('*').eq('user_id', userId).maybeSingle();
-	if (error || !tokenRow) return null;
+	if (error) {
+		console.error('[ebay-seller-auth] Token lookup failed:', error.message);
+		return null;
+	}
+	if (!tokenRow) return null;
 
 	// Check if access token is still valid (5-minute buffer)
 	if (Date.now() < new Date(tokenRow.access_token_expires_at).getTime() - 300_000) return tokenRow.access_token;
@@ -112,6 +116,8 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	});
 
 	if (!response.ok) {
+		const errorBody = await response.text().catch(() => '');
+		console.error(`[ebay-seller-auth] Token refresh failed (${response.status}):`, errorBody);
 		if (response.status === 400 || response.status === 401) await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
 		return null;
 	}

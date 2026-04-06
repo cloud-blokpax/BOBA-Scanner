@@ -181,9 +181,10 @@ export function projectHDFlow(
 
 	for (let battle = 0; battle < 7; battle++) {
 		// Substitution cost
+		const ceilSubs = Math.ceil(weaponMatchSubs);
 		const subCostThisBattle =
-			battle < Math.ceil(weaponMatchSubs)
-				? Math.min(2, (weaponMatchSubs * 2) / Math.ceil(weaponMatchSubs))
+			ceilSubs > 0 && battle < ceilSubs
+				? Math.min(2, (weaponMatchSubs * 2) / ceilSubs)
 				: 0;
 		hd = Math.max(0, hd - subCostThisBattle);
 

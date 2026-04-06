@@ -26,8 +26,9 @@ export const GET: RequestHandler = async ({ url, locals, cookies }) => {
 		const parsed = JSON.parse(rawCookie);
 		storedState = parsed.state;
 		userId = parsed.userId;
-	} catch {
+	} catch (err) {
 		// Backwards compatibility: old cookie format was just the state string
+		console.warn('[ebay-callback] Cookie JSON parse failed, falling back to legacy format:', err instanceof Error ? err.message : err);
 		storedState = rawCookie;
 		userId = locals.user?.id ?? '';
 	}

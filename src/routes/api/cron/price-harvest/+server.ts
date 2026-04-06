@@ -150,7 +150,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		try {
 			await admin.from('price_harvest_log').insert(harvestLogs);
 		} catch (err) {
-			console.debug('[harvest] Log batch insert failed:', err);
+			console.error('[harvest] Log batch insert failed:', err instanceof Error ? err.message : err);
 		}
 	}
 
@@ -175,11 +175,11 @@ export const GET: RequestHandler = async ({ request, url }) => {
 					'Authorization': `Bearer ${cronSecret}`,
 					'X-Harvest-Chain-Depth': String(chainDepth + 1)
 				}
-			}).catch(() => {
-				// Chain break is OK — next cron trigger will resume
+			}).catch((err) => {
+				console.warn('[harvest] Chain link fetch failed — next cron trigger will resume:', err instanceof Error ? err.message : err);
 			});
-		} catch {
-			// fetch() itself failed — chain ends here
+		} catch (err) {
+			console.warn('[harvest] fetch() constructor failed — chain ends here:', err instanceof Error ? err.message : err);
 		}
 	}
 
@@ -188,7 +188,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	try {
 		const count = await redis.get<number>(`ebay-calls:${today}`);
 		currentUsed = count ?? usedToday;
-	} catch { /* use pre-batch count */ }
+	} catch (err) { console.debug('[harvest] Post-batch Redis read failed, using pre-batch count:', err instanceof Error ? err.message : err); }
 
 	try {
 		await admin.from('ebay_api_log').insert({
@@ -203,7 +203,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			status: consecutive429s >= 3 ? 'rate_limited' : 'running',
 			recorded_at: new Date().toISOString()
 		});
-	} catch { /* non-critical */ }
+	} catch (err) { console.warn('[harvest] ebay_api_log insert failed:', err instanceof Error ? err.message : err); }
 
 	return json({
 		success: true,
@@ -272,7 +272,7 @@ async function refreshCardPrice(
 		const key = `ebay-calls:${today}`;
 		const count = await redis.incr(key);
 		if (count === 1) await redis.expire(key, 86400);
-	} catch { /* best-effort */ }
+	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
 
 	// Fetch previous price for delta tracking
 	let previousMid: number | null = null;
@@ -290,7 +290,7 @@ async function refreshCardPrice(
 		} else {
 			isNewPrice = true;
 		}
-	} catch { /* non-critical — delta tracking is best-effort */ }
+	} catch (err) { console.debug('[harvest] Previous price fetch failed (delta tracking):', err instanceof Error ? err.message : err); }
 
 	try {
 		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
@@ -520,7 +520,7 @@ async function logHarvestComplete(
 			status: reason,
 			recorded_at: new Date().toISOString()
 		});
-	} catch { /* non-critical */ }
+	} catch (err) { console.warn('[harvest] Harvest-complete log insert failed:', err instanceof Error ? err.message : err); }
 }
 
 function getNextResetTime(): string {

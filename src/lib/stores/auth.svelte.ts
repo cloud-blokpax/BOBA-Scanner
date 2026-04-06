@@ -31,6 +31,9 @@ export function initAuth(): { ready: Promise<void>; cleanup: () => void } {
 			try {
 				const { data: { user: validatedUser }, error: authErr } = await client.auth.getUser();
 				if (authErr || !validatedUser) {
+					if (authErr) {
+						console.warn('[auth] getUser() failed during init:', authErr.message);
+					}
 					_session = null;
 					_user = null;
 					return;

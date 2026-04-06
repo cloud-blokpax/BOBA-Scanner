@@ -114,7 +114,7 @@ async function _refreshProfile(userId: string): Promise<void> {
 		_userProfileForUserId = userId;
 		_userProfileFetchedAt = Date.now();
 	} catch (err) {
-		console.debug('[feature-flags] Profile refresh failed:', err);
+		console.warn('[feature-flags] Profile refresh failed — role checks may be stale:', err);
 	}
 }
 
@@ -148,6 +148,7 @@ export async function loadFeatureFlags(): Promise<void> {
 		const flagMap = new Map<string, FeatureFlag>();
 
 		if (flagErr) {
+			console.warn('[feature-flags] Supabase fetch failed, using hardcoded defaults:', flagErr.message ?? flagErr);
 			for (const def of FEATURE_DEFINITIONS) {
 				flagMap.set(def.feature_key, def);
 			}
