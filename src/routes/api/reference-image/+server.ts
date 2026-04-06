@@ -72,7 +72,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			p_confidence: confidence,
 			p_user_id: user.id,
 			p_user_name: displayName,
-			p_blur_variance: isNaN(blurVariance) ? null : blurVariance
+			p_blur_variance: isNaN(blurVariance) ? 0 : blurVariance
 		});
 	} catch (err) {
 		console.error('[reference-image] RPC submit_reference_image failed:', err);
