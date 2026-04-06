@@ -94,37 +94,41 @@ export const GET: RequestHandler = async ({ locals }) => {
 		checkSystemHealth()
 	]);
 
-	// Build 14-day trend data (scans per day)
-	const { data: trendData } = await admin
-		.from('api_call_logs')
-		.select('created_at')
-		.gte('created_at', fourteenDaysAgo)
-		.eq('call_type', 'scan')
-		.order('created_at', { ascending: true })
-		.limit(50000);
+	// Helper to paginate timestamp queries in 1k chunks (Supabase row limit)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	async function fetchAllTimestamps(
+		table: string,
+		filters: (q: any) => any
+	): Promise<Array<{ created_at: string }>> {
+		const CHUNK = 1000;
+		const rows: Array<{ created_at: string }> = [];
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const q = filters(admin!.from(table).select('created_at'));
+			const { data } = await q
+				.order('created_at', { ascending: true })
+				.range(offset, offset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				rows.push(...(data as Array<{ created_at: string }>));
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+		return rows;
+	}
 
-	const scanTrend = buildDailyTrend(trendData || [], 14);
+	// Build 14-day trends in parallel (paginated)
+	const [trendData, signupTrendData, errorTrendData] = await Promise.all([
+		fetchAllTimestamps('api_call_logs', q => q.gte('created_at', fourteenDaysAgo).eq('call_type', 'scan')),
+		fetchAllTimestamps('users', q => q.gte('created_at', fourteenDaysAgo)),
+		fetchAllTimestamps('api_call_logs', q => q.gte('created_at', fourteenDaysAgo).eq('success', false)),
+	]);
 
-	// Build 14-day user signup trend
-	const { data: signupTrendData } = await admin
-		.from('users')
-		.select('created_at')
-		.gte('created_at', fourteenDaysAgo)
-		.order('created_at', { ascending: true })
-		.limit(10000);
-
-	const signupTrend = buildDailyTrend(signupTrendData || [], 14);
-
-	// Build 14-day error trend
-	const { data: errorTrendData } = await admin
-		.from('api_call_logs')
-		.select('created_at')
-		.gte('created_at', fourteenDaysAgo)
-		.eq('success', false)
-		.order('created_at', { ascending: true })
-		.limit(50000);
-
-	const errorTrend = buildDailyTrend(errorTrendData || [], 14);
+	const scanTrend = buildDailyTrend(trendData, 14);
+	const signupTrend = buildDailyTrend(signupTrendData, 14);
+	const errorTrend = buildDailyTrend(errorTrendData, 14);
 
 	// Calculate AI cost estimate ($0.002 per Tier 3 scan)
 	const scansCount = scansToday.count || 0;

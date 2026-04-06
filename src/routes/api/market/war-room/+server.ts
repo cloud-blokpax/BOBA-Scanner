@@ -16,52 +16,80 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');
 
+	// Paginate all large tables in 1k chunks (Supabase caps at 1,000 rows).
+	const CHUNK = 1000;
+
 	// Fetch hero cards with pricing via two-query approach
 	// (avoids PostgREST LEFT JOIN issues with large tables)
-	const [priceRes, cardRes, playPriceRes, playCardRes] = await Promise.all([
-		admin
-			.from('price_cache')
-			.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
-			.eq('source', 'ebay')
-			.not('price_mid', 'is', null)
-			.order('price_mid', { ascending: false })
-			.limit(5000),
-		admin
-			.from('cards')
-			.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
-			.limit(20000),
-		admin
-			.from('price_cache')
-			.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, confidence_score')
-			.eq('source', 'ebay')
-			.not('price_mid', 'is', null)
-			.limit(5000),
+	const [priceData, cardData, playPriceData, playCardRes] = await Promise.all([
+		// price_cache for heroes — paginated
+		(async () => {
+			const rows: Array<Record<string, unknown>> = [];
+			let offset = 0;
+			let done = false;
+			while (!done) {
+				const { data } = await admin
+					.from('price_cache')
+					.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
+					.eq('source', 'ebay')
+					.not('price_mid', 'is', null)
+					.order('price_mid', { ascending: false })
+					.range(offset, offset + CHUNK - 1);
+				if (!data || data.length === 0) { done = true; }
+				else { rows.push(...data); offset += CHUNK; if (data.length < CHUNK) done = true; }
+			}
+			return rows;
+		})(),
+		// cards — paginated
+		(async () => {
+			const rows: Array<Record<string, unknown>> = [];
+			let offset = 0;
+			let done = false;
+			while (!done) {
+				const { data } = await admin
+					.from('cards')
+					.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
+					.range(offset, offset + CHUNK - 1);
+				if (!data || data.length === 0) { done = true; }
+				else { rows.push(...data); offset += CHUNK; if (data.length < CHUNK) done = true; }
+			}
+			return rows;
+		})(),
+		// price_cache for plays — paginated
+		(async () => {
+			const rows: Array<Record<string, unknown>> = [];
+			let offset = 0;
+			let done = false;
+			while (!done) {
+				const { data } = await admin
+					.from('price_cache')
+					.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, confidence_score')
+					.eq('source', 'ebay')
+					.not('price_mid', 'is', null)
+					.range(offset, offset + CHUNK - 1);
+				if (!data || data.length === 0) { done = true; }
+				else { rows.push(...data); offset += CHUNK; if (data.length < CHUNK) done = true; }
+			}
+			return rows;
+		})(),
 		admin
 			.from('play_cards')
 			.select('id, name, card_number, release, dbs, hot_dog_cost')
 			.limit(1000),
 	]);
 
-	if (priceRes.error) {
-		console.error('[war-room] Price query failed:', priceRes.error);
-		throw error(500, 'Failed to load war room data');
-	}
-	if (cardRes.error) {
-		console.error('[war-room] Card query failed:', cardRes.error);
-		throw error(500, 'Failed to load card data');
-	}
 	if (playCardRes.error) {
 		console.error('[war-room] Play card query failed:', playCardRes.error);
 	}
 
 	// Build card lookup
-	const cardMap = new Map((cardRes.data || []).map(c => [String(c.id), c]));
+	const cardMap = new Map(cardData.map(c => [String(c.id), c]));
 
 	// Merge heroes: iterate price rows (already sorted by price desc), match to cards
-	const heroes = (priceRes.data || [])
+	const heroes = priceData
 		.filter(pr => cardMap.has(String(pr.card_id)))
 		.map(pr => {
-			const card = cardMap.get(String(pr.card_id))! as Record<string, unknown>;
+			const card = cardMap.get(String(pr.card_id))!;
 			const mid = Number(pr.price_mid ?? 0);
 			const pwr = Number(card.power ?? 0);
 			const bn = pr.buy_now_mid != null ? Number(pr.buy_now_mid) : mid;
@@ -86,7 +114,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		});
 
 	// Build play card pricing
-	const playPriceMap = new Map((playPriceRes.data || []).map(p => [String(p.card_id), p]));
+	const playPriceMap = new Map(playPriceData.map(p => [String(p.card_id), p]));
 
 	const plays = (playCardRes.data || [])
 		.filter(pc => playPriceMap.has(String(pc.id)))

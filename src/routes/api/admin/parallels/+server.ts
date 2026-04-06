@@ -100,21 +100,30 @@ export const POST: RequestHandler = async ({ locals }) => {
 		}
 	}
 
-	// Discover from cards table
-	const { data: cardData } = await adminClient
-		.from('cards')
-		.select('parallel')
-		.not('parallel', 'is', null)
-		.limit(20000);
-
-	if (cardData) {
-		for (const row of cardData) {
-			const p = row.parallel as string;
-			if (p && !existingNames.has(p.toLowerCase()) && !toSeed.has(p.toLowerCase())) {
-				toSeed.set(p.toLowerCase(), {
-					name: p,
-					rarity: mapParallelToRarity(p) || 'common'
-				});
+	// Discover from cards table (paginated in 1k chunks)
+	{
+		const CHUNK = 1000;
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data: cardData } = await adminClient
+				.from('cards')
+				.select('parallel')
+				.not('parallel', 'is', null)
+				.range(offset, offset + CHUNK - 1);
+			if (!cardData || cardData.length === 0) { done = true; }
+			else {
+				for (const row of cardData) {
+					const p = row.parallel as string;
+					if (p && !existingNames.has(p.toLowerCase()) && !toSeed.has(p.toLowerCase())) {
+						toSeed.set(p.toLowerCase(), {
+							name: p,
+							rarity: mapParallelToRarity(p) || 'common'
+						});
+					}
+				}
+				offset += CHUNK;
+				if (cardData.length < CHUNK) done = true;
 			}
 		}
 	}

@@ -18,23 +18,50 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');
 
-	// Get all card IDs that have pricing data
-	const { data: pricedIds } = await admin
-		.from('price_cache')
-		.select('card_id')
-		.eq('source', 'ebay')
-		.not('price_mid', 'is', null)
-		.limit(20000);
+	// Supabase/PostgREST caps at 1,000 rows — paginate in chunks
+	const CHUNK = 1000;
 
-	const pricedSet = new Set((pricedIds || []).map((r: { card_id: string }) => r.card_id));
+	// Get all card IDs that have pricing data (paginated)
+	const pricedSet = new Set<string>();
+	{
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data } = await admin
+				.from('price_cache')
+				.select('card_id')
+				.eq('source', 'ebay')
+				.not('price_mid', 'is', null)
+				.range(offset, offset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				for (const r of data) pricedSet.add((r as { card_id: string }).card_id);
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+	}
 
-	// Fetch all cards with filterable attributes (lightweight — no joins)
-	const { data: allCards } = await admin
-		.from('cards')
-		.select('id, parallel, weapon_type, set_code, rarity, hero_name, power')
-		.limit(20000);
+	// Fetch all cards with filterable attributes (paginated)
+	const allCards: Array<Record<string, unknown>> = [];
+	{
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data } = await admin
+				.from('cards')
+				.select('id, parallel, weapon_type, set_code, rarity, hero_name, power')
+				.range(offset, offset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				allCards.push(...data);
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+	}
 
-	if (!allCards) return json({ facets: {}, totalPriced: 0, totalCards: 0 });
+	if (allCards.length === 0) return json({ facets: {}, totalPriced: 0, totalCards: 0 });
 
 	const cardRows = allCards;
 

@@ -81,13 +81,27 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	if (powerMin > 0) cardQuery = cardQuery.gte('power', powerMin);
 	if (powerMax > 0) cardQuery = cardQuery.lte('power', powerMax);
 
-	const { data: cardRows, error: cardErr } = await cardQuery.limit(5000);
-	if (cardErr) {
-		console.error('[market/explore] Card query failed:', cardErr);
-		throw error(500, 'Failed to query card data');
+	// Paginate in 1k chunks to avoid Supabase's 1,000-row default limit
+	const CHUNK = 1000;
+	const cardRows: Array<Record<string, unknown>> = [];
+	{
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data, error: cardErr } = await cardQuery.range(offset, offset + CHUNK - 1);
+			if (cardErr) {
+				console.error('[market/explore] Card query failed:', cardErr);
+				throw error(500, 'Failed to query card data');
+			}
+			if (!data || data.length === 0) { done = true; }
+			else {
+				cardRows.push(...data);
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
 	}
-
-	if (!cardRows || cardRows.length === 0) {
+	if (cardRows.length === 0) {
 		return json({
 			cards: [],
 			aggregates: buildAggregates([]),
@@ -247,14 +261,26 @@ async function handlePlayCards(
 			priceQuery = priceQuery.order('price_mid', { ascending: true });
 	}
 
-	priceQuery = priceQuery.limit(5000);
-
-	const { data: priceRows, error: priceErr } = await priceQuery;
-	if (priceErr) {
-		console.error('[market/explore] Play card price query failed:', priceErr);
-		throw error(500, 'Failed to query play card prices');
+	// Paginate in 1k chunks to avoid Supabase's 1,000-row limit
+	const priceRows: Array<Record<string, unknown>> = [];
+	{
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data, error: priceErr } = await priceQuery.range(offset, offset + 1000 - 1);
+			if (priceErr) {
+				console.error('[market/explore] Play card price query failed:', priceErr);
+				throw error(500, 'Failed to query play card prices');
+			}
+			if (!data || data.length === 0) { done = true; }
+			else {
+				priceRows.push(...data);
+				offset += 1000;
+				if (data.length < 1000) done = true;
+			}
+		}
 	}
-	if (!priceRows || priceRows.length === 0) {
+	if (priceRows.length === 0) {
 		return json({
 			cards: [],
 			aggregates: buildAggregates([]),
