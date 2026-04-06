@@ -24,12 +24,12 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const { data, error: dbError } = await admin
 		.from('user_feature_overrides')
 		.select('user_id, feature_key, enabled')
-		.order('created_at', { ascending: false })
+		.order('feature_key', { ascending: true })
 		.limit(200);
 
 	if (dbError) {
 		console.error('[admin/user-overrides] GET error:', dbError.message);
-		throw error(500, 'Database operation failed');
+		throw error(500, `Database operation failed: ${dbError.message}`);
 	}
 
 	// Resolve user emails
