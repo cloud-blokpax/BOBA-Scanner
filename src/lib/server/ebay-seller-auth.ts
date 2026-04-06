@@ -147,6 +147,55 @@ export async function isSellerConnected(userId: string): Promise<boolean> {
 	return new Date(data.refresh_token_expires_at).getTime() > Date.now();
 }
 
+export interface SellerValidationResult {
+	valid: boolean;
+	username?: string;
+	sellingLimit?: { amount: number; quantity: number };
+	error?: string;
+}
+
+/**
+ * Validates the eBay seller connection by making a lightweight API call.
+ * Uses the Sell Account API's /privilege endpoint to verify the token works
+ * and retrieve basic seller info. This catches cases where the user revoked
+ * access on eBay's side or the token was otherwise invalidated.
+ */
+export async function validateSellerConnection(userId: string): Promise<SellerValidationResult> {
+	const token = await getSellerToken(userId);
+	if (!token) return { valid: false, error: 'No valid token — please reconnect your eBay account' };
+
+	try {
+		const res = await fetch('https://api.ebay.com/sell/account/v1/privilege', {
+			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+		});
+
+		if (res.status === 401 || res.status === 403) {
+			// Token rejected by eBay — clean up stale row
+			const adminClient = getServiceClient();
+			if (adminClient) await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
+			return { valid: false, error: 'eBay rejected the token — please reconnect your account' };
+		}
+
+		if (!res.ok) {
+			const body = await res.text().catch(() => '');
+			console.error(`[ebay-seller-auth] Privilege check failed (${res.status}):`, body);
+			return { valid: false, error: `eBay API error (${res.status})` };
+		}
+
+		const data = await res.json();
+		return {
+			valid: true,
+			sellingLimit: data.sellingLimit ? {
+				amount: data.sellingLimit.amount?.value ?? 0,
+				quantity: data.sellingLimit.quantity ?? 0
+			} : undefined
+		};
+	} catch (err) {
+		console.error('[ebay-seller-auth] Privilege check network error:', err);
+		return { valid: false, error: 'Could not reach eBay — try again later' };
+	}
+}
+
 export async function disconnectSeller(userId: string): Promise<void> {
 	const adminClient = getServiceClient();
 	if (!adminClient) return;
