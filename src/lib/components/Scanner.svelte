@@ -2,9 +2,10 @@
 	import { onMount } from 'svelte';
 	import { captureFrame } from '$lib/services/camera';
 	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
+	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
-	import { checkImageQuality, analyzeFrame, compositeForFoilMode, computeFrameHash, computeHammingDistance, isFuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
+	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
@@ -23,7 +24,6 @@
 		isAuthenticated?: boolean;
 		paused?: boolean;
 		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
-		/** When true, scanner fits its parent container instead of taking 100dvh */
 		embedded?: boolean;
 	} = $props();
 
@@ -52,32 +52,6 @@
 	let revealedCard = $state<Card | null>(null);
 	let blurWarning = $state(false);
 	let glareRegions = $state<Array<{ x: number; y: number; w: number; h: number }>>([]);
-	let bracketState = $state<'idle' | 'detected' | 'locked'>('idle');
-	let showFlash = $state(false);
-	let autoAnalyzeInterval: ReturnType<typeof setInterval> | null = null;
-	let cardDetectedSince = $state<number | null>(null);
-	let guidanceText = $state<string | null>(null);
-	let guidanceLastChanged = $state(0);
-	const GUIDANCE_COOLDOWN = 1500;
-
-	// Frame stability detection
-	let lastFrameHash = $state<string | null>(null);
-	let stableFrameCount = $state(0);
-	const STABLE_FRAMES_REQUIRED = 3; // Reduced from 4 — mobile phones can't hold perfectly still for 1s
-	const STABILITY_THRESHOLD = 5;    // Increased from 3 — allow more micro-jitter between frames
-
-	// AR Price Overlay state
-	let overlayData = $state<{
-		cardName: string;
-		cardNumber: string | null;
-		price: number | null;
-		priceFetchedAt: string | null;
-		source: 'local' | 'community';
-	} | null>(null);
-	let overlayVisible = $state(false);
-	let _overlayTimeout: ReturnType<typeof setTimeout> | null = null;
-	let _overlayLookupInProgress = false;
-	let _lastOverlayHash: string | null = null;
 
 	let showFirstRunGuide = $state(false);
 
@@ -101,7 +75,17 @@
 		legendary:  { color: '#F59E0B', glow: 28, pulses: 3 }
 	};
 
-	const stabilityProgress = $derived(stableFrameCount / STABLE_FRAMES_REQUIRED);
+	// ── Auto-analyze composable ─────────────────────────────
+	const analysis = useScannerAnalysis(
+		() => videoEl,
+		() => cameraReady && !scanning && !paused && !fileDialogOpen,
+		async () => {
+			if (scanning || paused || foilMode) return;
+			await handleCapture();
+		},
+	);
+
+	const stabilityProgress = $derived(analysis.stableFrameCount / 3);
 	const revealColor = $derived(RARITY_COLORS[revealedCard?.rarity ?? ''] ?? null);
 	const bracketAnimClass = $derived.by(() => {
 		if (!scanSuccess || !revealColor) return '';
@@ -137,7 +121,7 @@
 
 	function onCameraReady() {
 		phase = 'idle';
-		startAutoAnalyze();
+		analysis.start();
 	}
 
 	let _cleanupVisibility: (() => void) | null = null;
@@ -150,7 +134,6 @@
 				phase = 'error';
 			}
 
-			// First-run guide check
 			const { idb } = await import('$lib/services/idb');
 			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
 			if (!hasScanned) {
@@ -164,44 +147,21 @@
 
 		_cleanupVisibility = camera.setupVisibilityHandler(
 			videoEl!,
-			() => { phase = 'idle'; startAutoAnalyze(); },
-			() => { stopAutoAnalyze(); }
+			() => { phase = 'idle'; analysis.start(); },
+			() => { analysis.stop(); }
 		);
 	});
 
 	$effect(() => {
 		return () => {
-			stopAutoAnalyze();
+			analysis.destroy();
 			camera.destroy();
 			resetScanner();
 			foilCaptures.forEach(b => b.close());
 			foilCaptures = [];
-			if (_overlayTimeout) {
-				clearTimeout(_overlayTimeout);
-				_overlayTimeout = null;
-			}
 			_cleanupVisibility?.();
 		};
 	});
-
-	function startAutoAnalyze() {
-		if (autoAnalyzeInterval) return;
-		autoAnalyzeInterval = setInterval(runAutoAnalyze, 250);
-	}
-
-	function stopAutoAnalyze() {
-		if (autoAnalyzeInterval) {
-			clearInterval(autoAnalyzeInterval);
-			autoAnalyzeInterval = null;
-		}
-	}
-
-	function updateGuidance(text: string | null) {
-		const now = Date.now();
-		if (now - guidanceLastChanged < GUIDANCE_COOLDOWN && guidanceText !== null) return;
-		guidanceText = text;
-		guidanceLastChanged = now;
-	}
 
 	function formatOverlayDate(isoDate: string): string {
 		const date = new Date(isoDate);
@@ -217,241 +177,11 @@
 		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 	}
 
-	async function lookupOverlayPrice(hash: string) {
-		if (hash === _lastOverlayHash || _overlayLookupInProgress) return;
-		_lastOverlayHash = hash;
-		_overlayLookupInProgress = true;
-
-		try {
-			const { idb } = await import('$lib/services/idb');
-			const { getCardById, loadCardDatabase } = await import('$lib/services/card-db');
-
-			// Ensure card DB is loaded before attempting lookup — on cold start
-			// the idIndex is empty and getCardById will always return undefined
-			await loadCardDatabase();
-
-			// Step 1: Local IndexedDB hash lookup
-			let cardId: string | null = null;
-			let source: 'local' | 'community' = 'local';
-
-			const localEntry = await idb.getHash(hash) as { card_id: string; confidence: number } | undefined;
-			if (localEntry && !localEntry.card_id.startsWith('__unrecognized:')) {
-				cardId = localEntry.card_id;
-				source = 'local';
-			}
-
-			// Step 2: Supabase shared hash lookup (only on local miss + online)
-			if (!cardId && navigator.onLine) {
-				try {
-					const { getSupabase } = await import('$lib/services/supabase');
-					const client = getSupabase();
-					if (client) {
-						// Exact match first
-						const { data: exactMatch } = await client
-							.from('hash_cache')
-							.select('card_id, confidence')
-							.eq('phash', hash)
-							.maybeSingle();
-
-						if (exactMatch && !(exactMatch.card_id as string).startsWith('__unrecognized:')) {
-							cardId = exactMatch.card_id as string;
-							source = 'community';
-							await idb.setHash({
-								phash: hash,
-								card_id: exactMatch.card_id as string,
-								confidence: exactMatch.confidence as number
-							});
-						}
-
-						// Fuzzy match if exact missed
-						if (!cardId && !isFuzzyHashRpcDisabled() && /^[0-9a-f]{16}$/.test(hash)) {
-							const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
-								query_hash: hash,
-								max_distance: 5
-							});
-							if (fuzzyErr) {
-								disableFuzzyHashRpc();
-							}
-
-							if (fuzzyMatch && (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>).length > 0) {
-								const match = (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>)[0];
-								if (!match.card_id.startsWith('__unrecognized:')) {
-									cardId = match.card_id;
-									source = 'community';
-									const confidence = match.confidence * (1 - match.distance * 0.015);
-									await idb.setHash({
-										phash: hash,
-										card_id: match.card_id,
-										confidence
-									});
-								}
-							}
-						}
-					}
-				} catch (err) {
-					console.debug('[ar-overlay] Supabase hash lookup failed:', err);
-				}
-			}
-
-			if (!cardId) {
-				overlayData = null;
-				overlayVisible = false;
-				return;
-			}
-
-			const card = getCardById(cardId);
-			if (!card) {
-				overlayData = null;
-				overlayVisible = false;
-				return;
-			}
-
-			// Step 3: Get price — local first, then Supabase
-			let price: number | null = null;
-			let priceFetchedAt: string | null = null;
-
-			// Relax TTL to 7 days for overlay — stale price > no price
-			const OVERLAY_PRICE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-			const localPrice = await idb.getPrice(cardId, OVERLAY_PRICE_MAX_AGE) as Record<string, unknown> | undefined;
-			if (localPrice) {
-				price = (localPrice.buy_now_low as number) ?? (localPrice.price_low as number) ?? (localPrice.price_mid as number) ?? null;
-				priceFetchedAt = (localPrice.fetched_at as string) ?? null;
-			}
-
-			// Supabase price_cache if local miss and online
-			if (price === null && navigator.onLine) {
-				try {
-					const { getSupabase } = await import('$lib/services/supabase');
-					const client = getSupabase();
-					if (client) {
-						const { data: cachedPrice } = await client
-							.from('price_cache')
-							.select('price_low, price_mid, price_high, fetched_at, listings_count')
-							.eq('card_id', cardId)
-							.eq('source', 'ebay')
-							.maybeSingle();
-
-						if (cachedPrice) {
-							const cp = cachedPrice as Record<string, unknown>;
-							price = (cp.buy_now_low as number) ?? (cp.price_low as number) ?? (cp.price_mid as number) ?? null;
-							priceFetchedAt = (cp.fetched_at as string) ?? null;
-							await idb.setPrice({ card_id: cardId, ...cachedPrice });
-						}
-					}
-				} catch (err) {
-					console.debug('[ar-overlay] Supabase price lookup failed:', err);
-				}
-			}
-
-			// Show the overlay
-			overlayData = {
-				cardName: card.hero_name || card.name || 'Unknown',
-				cardNumber: card.card_number || null,
-				price,
-				priceFetchedAt,
-				source
-			};
-			overlayVisible = true;
-
-			if (_overlayTimeout) clearTimeout(_overlayTimeout);
-			_overlayTimeout = setTimeout(() => {
-				overlayVisible = false;
-			}, 4000);
-		} catch (err) {
-			console.debug('[ar-overlay] Lookup failed:', err);
-		} finally {
-			_overlayLookupInProgress = false;
-		}
-	}
-
-	async function runAutoAnalyze() {
-		if (!videoEl || !cameraReady || scanning || paused || fileDialogOpen) {
-			bracketState = 'idle';
-			cardDetectedSince = null;
-			stableFrameCount = 0;
-			lastFrameHash = null;
-			return;
-		}
-
-		let bitmap: ImageBitmap | null = null;
-		try {
-			bitmap = await captureFrame(videoEl);
-			const result = await analyzeFrame(bitmap);
-
-			if (result.cardDetected && result.isSharp) {
-				const frameHash = await computeFrameHash(bitmap);
-				bitmap.close();
-				bitmap = null;
-
-				if (lastFrameHash) {
-					const dist = await computeHammingDistance(lastFrameHash, frameHash);
-					if (dist <= STABILITY_THRESHOLD) {
-						stableFrameCount++;
-					} else {
-						stableFrameCount = 1;
-					}
-				} else {
-					stableFrameCount = 1;
-				}
-				lastFrameHash = frameHash;
-
-				// AR Price Overlay: attempt lookup on first stable frame
-				// to give Supabase round-trip time before auto-capture at frame 4
-				if (stableFrameCount === 1) {
-					lookupOverlayPrice(frameHash).catch((err) => console.debug('[scanner] AR overlay price lookup failed:', err));
-				}
-
-				if (stableFrameCount >= STABLE_FRAMES_REQUIRED) {
-					bracketState = 'locked';
-					stableFrameCount = 0;
-					lastFrameHash = null;
-					updateGuidance(null);
-					triggerAutoCapture();
-				} else if (!cardDetectedSince) {
-					cardDetectedSince = Date.now();
-					bracketState = 'detected';
-					updateGuidance('Hold still...');
-				}
-			} else {
-				bitmap.close();
-				bitmap = null;
-				stableFrameCount = 0;
-				lastFrameHash = null;
-				cardDetectedSince = null;
-				overlayData = null;
-				overlayVisible = false;
-				_lastOverlayHash = null;
-				if (result.cardDetected && !result.isSharp) {
-					bracketState = 'idle';
-					updateGuidance('Hold steady...');
-				} else {
-					bracketState = 'idle';
-					updateGuidance('Position card within the frame');
-				}
-			}
-		} catch (err) {
-			console.debug('[Scanner] Frame analysis failed:', err);
-			bitmap?.close();
-		}
-	}
-
-	async function triggerAutoCapture() {
-		if (scanning || paused || foilMode) return;
-		overlayData = null;
-		overlayVisible = false;
-		showFlash = true;
-		setTimeout(() => { showFlash = false; }, 150);
-		triggerHaptic('tap');
-		await handleCapture();
-		bracketState = 'idle';
-	}
-
 	let lastFailReason = $state<string | null>(null);
 
 	function handleScanResult(result: ScanResult | null, imageUrl?: string) {
-		// Resume video feed (was paused during capture for freeze-frame effect)
 		if (videoEl && videoEl.paused) {
-			videoEl.play().catch(() => { /* stream may have ended */ });
+			videoEl.play().catch(() => {});
 		}
 		if (result?.card) {
 			revealedCard = result.card;
@@ -462,7 +192,6 @@
 			else if (r === 'ultra_rare') triggerHaptic('ultraRare');
 			else triggerHaptic('success');
 			onResult?.(result, imageUrl);
-			// Mark first scan complete
 			if (showFirstRunGuide) {
 				showFirstRunGuide = false;
 				import('$lib/services/idb').then(({ idb }) => {
@@ -489,17 +218,13 @@
 		return canvas.toDataURL('image/jpeg', 0.85);
 	}
 
-
 	async function handleCapture() {
 		if (!videoEl || scanning || paused) return;
 		phase = 'capturing';
 		blurWarning = false;
 		glareRegions = [];
 
-		// Visual feedback: flash + freeze the video feed
-		showFlash = true;
-		setTimeout(() => { showFlash = false; }, 150);
-		videoEl.pause(); // Freeze the frame so user sees what was captured
+		videoEl.pause();
 		triggerHaptic('tap');
 
 		try {
@@ -520,7 +245,6 @@
 			}
 
 			phase = 'processing';
-			// Compute crop region from viewfinder guide for both display and storage
 			let cropRegion: { x: number; y: number; width: number; height: number } | null = null;
 			try {
 				const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
@@ -528,17 +252,11 @@
 					const guideRect = guideEl.getBoundingClientRect();
 					const videoRect = videoEl.getBoundingClientRect();
 					if (guideRect.width >= 10 && guideRect.height >= 10) {
-						cropRegion = cropToCardRegion(
-							videoEl.videoWidth,
-							videoEl.videoHeight,
-							guideRect,
-							videoRect
-						);
+						cropRegion = cropToCardRegion(videoEl.videoWidth, videoEl.videoHeight, guideRect, videoRect);
 					}
 				}
 			} catch { /* ignore */ }
 
-			// Use cropped image for display (cleaner), full frame for AI recognition
 			const croppedUrl = cropRegion ? cropFrame(videoEl, cropRegion) : null;
 			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
 			let scanResult;
@@ -551,25 +269,11 @@
 				handleScanResult(scanResult, imageUrl);
 			} else {
 				const errorMsg = scanState().error || 'Scan failed unexpectedly';
-				handleScanResult({
-					card_id: null,
-					card: null,
-					scan_method: 'claude',
-					confidence: 0,
-					processing_ms: 0,
-					failReason: errorMsg
-				}, imageUrl);
+				handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: errorMsg }, imageUrl);
 			}
 		} catch (err) {
 			console.error('[Scanner] handleCapture error:', err);
-			handleScanResult({
-				card_id: null,
-				card: null,
-				scan_method: 'claude',
-				confidence: 0,
-				processing_ms: 0,
-				failReason: 'Scanner error — please try again'
-			});
+			handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: 'Scanner error — please try again' });
 		}
 	}
 
@@ -580,9 +284,6 @@
 		foilCaptures = [...foilCaptures, bitmap];
 		foilStep = foilCaptures.length;
 		triggerHaptic('tap');
-
-		showFlash = true;
-		setTimeout(() => { showFlash = false; }, 150);
 
 		if (foilCaptures.length >= FOIL_CAPTURES_NEEDED) {
 			phase = 'processing';
@@ -599,28 +300,14 @@
 					handleScanResult(scanResult, imageUrl);
 				} else {
 					const errorMsg = scanState().error || 'Scan failed unexpectedly';
-					handleScanResult({
-						card_id: null,
-						card: null,
-						scan_method: 'claude',
-						confidence: 0,
-						processing_ms: 0,
-						failReason: errorMsg
-					}, imageUrl);
+					handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: errorMsg }, imageUrl);
 				}
 			} catch (err) {
 				console.error('[Scanner] handleFoilCapture error:', err);
 				foilCaptures.forEach(b => b.close());
 				foilCaptures = [];
 				foilStep = 0;
-				handleScanResult({
-					card_id: null,
-					card: null,
-					scan_method: 'claude',
-					confidence: 0,
-					processing_ms: 0,
-					failReason: 'Foil scan error — please try again'
-				});
+				handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: 'Foil scan error — please try again' });
 			}
 		} else {
 			phase = 'idle';
@@ -647,25 +334,11 @@
 				handleScanResult(result, imageUrl);
 			} else {
 				const errorMsg = scanState().error || 'Scan failed unexpectedly';
-				handleScanResult({
-					card_id: null,
-					card: null,
-					scan_method: 'claude',
-					confidence: 0,
-					processing_ms: 0,
-					failReason: errorMsg
-				}, imageUrl);
+				handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: errorMsg }, imageUrl);
 			}
 		} catch (err) {
 			console.error('[Scanner] handleFileUpload error:', err);
-			handleScanResult({
-				card_id: null,
-				card: null,
-				scan_method: 'claude',
-				confidence: 0,
-				processing_ms: 0,
-				failReason: 'Failed to process image — try a different photo'
-			});
+			handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: 'Failed to process image — try a different photo' });
 		} finally {
 			input.value = '';
 		}
@@ -691,18 +364,18 @@
 		></video>
 
 		<ScannerViewfinder
-			{bracketState}
+			bracketState={analysis.bracketState}
 			{bracketAnimClass}
 			{scanFailed}
 			{revealColor}
 			{scanSuccess}
 			{cameraReady}
-			{showFlash}
+			showFlash={analysis.showFlash}
 			{blurWarning}
 			{glareRegions}
 			{statusType}
 			{revealedCard}
-			{guidanceText}
+			guidanceText={analysis.guidanceText}
 			{scanning}
 			{foilMode}
 			{foilStep}
@@ -712,18 +385,18 @@
 		/>
 
 		<!-- AR Price Overlay -->
-		{#if overlayVisible && overlayData && !scanning && !paused}
+		{#if analysis.overlayVisible && analysis.overlayData && !scanning && !paused}
 			<div class="ar-price-overlay">
 				<div class="ar-price-badge">
-					<span class="ar-price-name">{overlayData.cardName}</span>
-					{#if overlayData.cardNumber}
-						<span class="ar-price-number">{overlayData.cardNumber}</span>
+					<span class="ar-price-name">{analysis.overlayData.cardName}</span>
+					{#if analysis.overlayData.cardNumber}
+						<span class="ar-price-number">{analysis.overlayData.cardNumber}</span>
 					{/if}
-					{#if overlayData.price !== null}
-						<span class="ar-price-value">${overlayData.price.toFixed(2)}</span>
-						{#if overlayData.priceFetchedAt}
+					{#if analysis.overlayData.price !== null}
+						<span class="ar-price-value">${analysis.overlayData.price.toFixed(2)}</span>
+						{#if analysis.overlayData.priceFetchedAt}
 							<span class="ar-price-date">
-								Last recorded eBay price &middot; {formatOverlayDate(overlayData.priceFetchedAt)}
+								Last recorded eBay price &middot; {formatOverlayDate(analysis.overlayData.priceFetchedAt)}
 							</span>
 						{/if}
 					{:else}
@@ -733,7 +406,7 @@
 			</div>
 		{/if}
 
-		<!-- Torch toggle (top-right of viewfinder) -->
+		<!-- Torch toggle -->
 		{#if cameraReady}
 			<button
 				class="torch-btn"
@@ -759,7 +432,6 @@
 			</div>
 		{/if}
 
-		<!-- Camera permission pre-prompt explainer -->
 		{#if camera.showExplainer}
 			<div class="permission-explainer">
 				<div class="permission-explainer-content">
@@ -794,8 +466,7 @@
 			onFileUpload={handleFileUpload}
 			onFileDialogOpen={() => {
 				fileDialogOpen = true;
-				stableFrameCount = 0;
-				lastFrameHash = null;
+				analysis.resetStability();
 			}}
 			onFileDialogClose={() => { fileDialogOpen = false; }}
 		/>
@@ -926,7 +597,6 @@
 		to { opacity: 1; transform: translateX(-50%) translateY(0); }
 	}
 
-	/* Camera permission pre-prompt */
 	.permission-explainer {
 		position: absolute;
 		inset: 0;
