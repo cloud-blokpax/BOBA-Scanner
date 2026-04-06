@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
-	import { generateListingTemplate } from '$lib/services/listing-generator';
+	import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 	import type { Card } from '$lib/types';
 
 	interface Props {
@@ -19,11 +19,92 @@
 	let priceLoading = $state(true);
 	let condition = $state('Near Mint');
 	let price = $state('');
+	let quantity = $state(1);
+	let notes = $state('');
 	let creating = $state(false);
 	let created = $state(false);
 	let error = $state<string | null>(null);
 
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
+
+	// ── Editable card fields that feed into eBay listing ────
+	let heroName = $state(card.hero_name || card.name || '');
+	let cardNumber = $state(card.card_number || '');
+	let setCode = $state(card.set_code || '');
+	let parallel = $state(card.parallel || '');
+	let weaponType = $state(card.weapon_type || '');
+	let athleteName = $state(card.athlete_name || '');
+	let power = $state(card.power ? String(card.power) : '');
+
+	// ── Generated title & description (editable) ────────────
+	function generateTitle(): string {
+		const parts = ['BoBA Bo Jackson Battle Arena'];
+		if (heroName) parts.push(heroName);
+		if (cardNumber) parts.push(`#${cardNumber}`);
+		if (parallel) parts.push(parallel);
+		if (weaponType) parts.push(weaponType);
+		if (setCode) parts.push(setCode);
+		let title = parts.join(' ');
+		if (title.length > 80) title = title.slice(0, 77) + '...';
+		return title;
+	}
+
+	function generateDescription(): string {
+		const lines = [
+			`Bo Jackson Battle Arena - ${heroName || 'Hero Card'}`,
+			'',
+		];
+		if (cardNumber) lines.push(`Card Number: ${cardNumber}`);
+		if (athleteName) lines.push(`Athlete Inspiration: ${athleteName}`);
+		if (setCode) lines.push(`Set: ${setCode}`);
+		if (parallel) lines.push(`Parallel/Variant: ${parallel}`);
+		if (weaponType) lines.push(`Weapon Type: ${weaponType}`);
+		if (power) lines.push(`Power: ${power}`);
+		lines.push(`Condition: ${condition}`);
+		if (notes) lines.push(`Notes: ${notes}`);
+		lines.push('');
+		lines.push('Listed with BOBA Scanner - boba.cards');
+		return lines.filter(l => l !== undefined).join('\n');
+	}
+
+	let title = $state(generateTitle());
+	let description = $state(generateDescription());
+	let titleManuallyEdited = $state(false);
+	let descManuallyEdited = $state(false);
+
+	// Auto-regenerate title/description when card fields change, unless manually edited
+	$effect(() => {
+		// Touch all reactive deps
+		const _deps = [heroName, cardNumber, setCode, parallel, weaponType, athleteName, power, condition, notes];
+		if (!titleManuallyEdited) {
+			title = generateTitle();
+		}
+		if (!descManuallyEdited) {
+			description = generateDescription();
+		}
+	});
+
+	// ── Aspects preview (what eBay sees as item specifics) ──
+	let aspects = $derived(() => {
+		const a: Array<{ label: string; value: string }> = [
+			{ label: 'Card Name', value: heroName || 'Unknown' },
+			{ label: 'Set', value: setCode || 'BoBA' },
+			{ label: 'Sport', value: 'Multi-Sport' },
+			{ label: 'Card Manufacturer', value: 'Bo Jackson Battle Arena' },
+		];
+		if (cardNumber) a.push({ label: 'Card Number', value: cardNumber });
+		if (parallel) a.push({ label: 'Parallel/Variety', value: parallel });
+		if (athleteName) a.push({ label: 'Player/Athlete', value: athleteName });
+		return a;
+	});
+
+	const CONDITION_MAP: Record<string, string> = {
+		'Mint': 'Mint (2750)',
+		'Near Mint': 'Near Mint or Better (4000)',
+		'Excellent': 'Near Mint or Better (4000)',
+		'Good': 'Good (5000)',
+		'Fair': 'Acceptable (6000)',
+	};
 
 	// Fetch price data on mount
 	$effect(() => {
@@ -57,24 +138,25 @@
 		error = null;
 
 		try {
-			const template = generateListingTemplate(card, priceData, condition);
 			const res = await fetch('/api/ebay/create-draft', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					cardId: card.id,
-					heroName: card.hero_name || card.name,
-					cardNumber: card.card_number,
-					setCode: card.set_code,
-					parallel: card.parallel,
-					weaponType: card.weapon_type,
-					power: card.power,
-					athleteName: card.athlete_name,
+					heroName,
+					cardNumber,
+					setCode,
+					parallel: parallel || null,
+					weaponType: weaponType || null,
+					power: power ? parseInt(power) : null,
+					athleteName: athleteName || null,
 					condition,
 					price: numPrice,
-					quantity: 1,
-					notes: null,
-					scanImageUrl: null
+					quantity,
+					notes: notes || null,
+					scanImageUrl: imageUrl,
+					title,
+					description
 				})
 			});
 
@@ -86,7 +168,6 @@
 			created = true;
 			showToast('Draft created in eBay Seller Hub', 'check');
 
-			// Auto-advance to next scan after brief success display
 			setTimeout(() => {
 				if (created) onScanNext();
 			}, 1500);
@@ -103,17 +184,68 @@
 		<h1 class="stl-title">List Card</h1>
 	</div>
 
-	<!-- Card info -->
+	<!-- Card preview -->
 	<div class="stl-card-info">
 		{#if imageUrl}
-			<img src={imageUrl} alt={card.hero_name || 'Card'} class="stl-card-image" />
+			<img src={imageUrl} alt={heroName || 'Card'} class="stl-card-image" />
 		{:else}
 			<div class="stl-card-placeholder">🎴</div>
 		{/if}
 		<div class="stl-card-details">
-			<span class="stl-card-name">{card.hero_name || card.name || 'Unknown'}</span>
-			<span class="stl-card-meta">{card.card_number || ''}</span>
-			<span class="stl-card-meta">{card.set_code || ''}{card.parallel ? ` · ${card.parallel}` : ''}</span>
+			<span class="stl-card-name">{heroName || 'Unknown'}</span>
+			<span class="stl-card-meta">{cardNumber || ''}</span>
+			<span class="stl-card-meta">{setCode || ''}{parallel ? ` · ${parallel}` : ''}</span>
+		</div>
+	</div>
+
+	<!-- eBay Title -->
+	<div class="stl-field">
+		<label class="stl-label" for="stl-title">
+			eBay Title
+			<span class="stl-char-count" class:over={title.length > 80}>{title.length}/80</span>
+		</label>
+		<input
+			id="stl-title"
+			type="text"
+			class="stl-text-input"
+			bind:value={title}
+			maxlength="80"
+			oninput={() => { titleManuallyEdited = true; }}
+		/>
+	</div>
+
+	<!-- Card Details (editable fields that feed aspects + description) -->
+	<div class="stl-section">
+		<span class="stl-section-label">Card Details</span>
+		<div class="stl-field-grid">
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-hero">Hero Name</label>
+				<input id="stl-hero" type="text" class="stl-text-input" bind:value={heroName} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-athlete">Athlete</label>
+				<input id="stl-athlete" type="text" class="stl-text-input" bind:value={athleteName} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-cardnum">Card Number</label>
+				<input id="stl-cardnum" type="text" class="stl-text-input" bind:value={cardNumber} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-set">Set</label>
+				<input id="stl-set" type="text" class="stl-text-input" bind:value={setCode} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-parallel">Parallel / Variant</label>
+				<input id="stl-parallel" type="text" class="stl-text-input" bind:value={parallel} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-weapon">Weapon Type</label>
+				<input id="stl-weapon" type="text" class="stl-text-input" bind:value={weaponType} />
+			</div>
+			<div class="stl-field stl-field-half">
+				<label class="stl-label" for="stl-power">Power</label>
+				<input id="stl-power" type="number" class="stl-text-input" bind:value={power} min="0" max="500" />
+			</div>
 		</div>
 	</div>
 
@@ -132,11 +264,25 @@
 				</button>
 			{/each}
 		</div>
+		<span class="stl-field-hint">eBay mapping: {CONDITION_MAP[condition] || condition}</span>
+	</div>
+
+	<!-- Condition Notes -->
+	<div class="stl-field">
+		<label class="stl-label" for="stl-notes">Condition Notes</label>
+		<input
+			id="stl-notes"
+			type="text"
+			class="stl-text-input"
+			bind:value={notes}
+			placeholder="e.g. Light corner wear, pack fresh"
+		/>
+		<span class="stl-field-hint">Shown as condition description on eBay</span>
 	</div>
 
 	<!-- Price -->
 	<div class="stl-field">
-		<label class="stl-label" for="stl-price">Your Price</label>
+		<label class="stl-label" for="stl-price">Price</label>
 		<div class="stl-price-row">
 			<span class="stl-dollar">$</span>
 			<input
@@ -150,17 +296,56 @@
 			/>
 		</div>
 		{#if priceLoading}
-			<span class="stl-price-hint">Loading market data...</span>
+			<span class="stl-field-hint">Loading market data...</span>
 		{:else if priceData?.price_mid}
-			<span class="stl-price-hint">
+			<span class="stl-field-hint">
 				Market: ${priceData.price_mid.toFixed(2)} median
 				{#if priceData.price_low}· ${priceData.price_low.toFixed(2)} low{/if}
 				{#if priceData.listings_count}· {priceData.listings_count} listings{/if}
 			</span>
 		{:else}
-			<span class="stl-price-hint">No market data available</span>
+			<span class="stl-field-hint">No market data available</span>
 		{/if}
 	</div>
+
+	<!-- Quantity -->
+	<div class="stl-field">
+		<label class="stl-label" for="stl-qty">Quantity</label>
+		<input
+			id="stl-qty"
+			type="number"
+			class="stl-text-input stl-qty-input"
+			bind:value={quantity}
+			min="1"
+			max="99"
+		/>
+	</div>
+
+	<!-- Description -->
+	<div class="stl-field">
+		<label class="stl-label" for="stl-desc">Listing Description</label>
+		<textarea
+			id="stl-desc"
+			class="stl-textarea"
+			bind:value={description}
+			rows="8"
+			oninput={() => { descManuallyEdited = true; }}
+		></textarea>
+	</div>
+
+	<!-- eBay Item Specifics (aspects) — read-only preview -->
+	<details class="stl-aspects-details">
+		<summary class="stl-section-label stl-summary">eBay Item Specifics</summary>
+		<div class="stl-aspects">
+			{#each aspects() as aspect}
+				<div class="stl-aspect-row">
+					<span class="stl-aspect-key">{aspect.label}</span>
+					<span class="stl-aspect-val">{aspect.value}</span>
+				</div>
+			{/each}
+		</div>
+		<span class="stl-field-hint">Auto-generated from card details above. Category: Trading Cards (261328)</span>
+	</details>
 
 	<!-- Actions -->
 	{#if created}
@@ -195,6 +380,7 @@
 		max-width: 600px;
 		margin: 0 auto;
 		padding: 1rem;
+		padding-bottom: 6rem;
 	}
 
 	.stl-header {
@@ -270,18 +456,103 @@
 		color: var(--text-secondary, #94a3b8);
 	}
 
-	.stl-field {
+	/* Section labels */
+	.stl-section {
 		margin-bottom: 1.25rem;
 	}
 
-	.stl-label {
+	.stl-section-label {
 		display: block;
 		font-size: 0.75rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+		color: var(--accent-primary, #3b82f6);
+		margin-bottom: 0.625rem;
+	}
+
+	/* Field grid for card details */
+	.stl-field-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
+	.stl-field-half {
+		flex: 1 1 calc(50% - 0.375rem);
+		min-width: 140px;
+	}
+
+	.stl-field {
+		margin-bottom: 1rem;
+	}
+
+	.stl-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 		color: var(--text-muted, #475569);
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.375rem;
+	}
+
+	.stl-char-count {
+		font-size: 0.7rem;
+		font-weight: 500;
+		color: var(--text-muted, #475569);
+	}
+
+	.stl-char-count.over {
+		color: #ef4444;
+	}
+
+	.stl-text-input {
+		width: 100%;
+		padding: 0.5rem 0.625rem;
+		border-radius: 8px;
+		border: 1px solid var(--border, rgba(148,163,184,0.15));
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.875rem;
+		box-sizing: border-box;
+	}
+
+	.stl-text-input:focus {
+		outline: none;
+		border-color: var(--accent-primary, #3b82f6);
+	}
+
+	.stl-qty-input {
+		width: 80px;
+	}
+
+	.stl-textarea {
+		width: 100%;
+		padding: 0.5rem 0.625rem;
+		border-radius: 8px;
+		border: 1px solid var(--border, rgba(148,163,184,0.15));
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.8rem;
+		font-family: inherit;
+		resize: vertical;
+		box-sizing: border-box;
+		line-height: 1.5;
+	}
+
+	.stl-textarea:focus {
+		outline: none;
+		border-color: var(--accent-primary, #3b82f6);
+	}
+
+	.stl-field-hint {
+		display: block;
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		margin-top: 0.25rem;
 	}
 
 	.stl-condition-chips {
@@ -322,7 +593,7 @@
 
 	.stl-price-input {
 		flex: 1;
-		padding: 0.625rem 0.75rem;
+		padding: 0.5rem 0.625rem;
 		border-radius: 8px;
 		border: 1px solid var(--border, rgba(148,163,184,0.15));
 		background: var(--bg-elevated, #121d34);
@@ -335,11 +606,47 @@
 
 	.stl-price-input::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; }
 
-	.stl-price-hint {
-		display: block;
-		font-size: 0.75rem;
+	/* Aspects collapsible */
+	.stl-aspects-details {
+		margin-bottom: 1.25rem;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		border-radius: 10px;
+		padding: 0.75rem;
+		background: var(--bg-elevated, #121d34);
+	}
+
+	.stl-summary {
+		cursor: pointer;
+		margin-bottom: 0;
+		user-select: none;
+	}
+
+	.stl-aspects-details[open] .stl-summary {
+		margin-bottom: 0.5rem;
+	}
+
+	.stl-aspects {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.stl-aspect-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.25rem 0;
+		border-bottom: 1px solid rgba(148,163,184,0.06);
+		font-size: 0.8rem;
+	}
+
+	.stl-aspect-key {
 		color: var(--text-muted, #475569);
-		margin-top: 0.375rem;
+	}
+
+	.stl-aspect-val {
+		color: var(--text-secondary, #94a3b8);
+		font-weight: 600;
+		text-align: right;
 	}
 
 	.stl-btn {
