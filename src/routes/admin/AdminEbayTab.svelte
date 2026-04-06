@@ -2,6 +2,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import Sparkline from './Sparkline.svelte';
 	import HarvestResults from './HarvestResults.svelte';
+	import AdminCardPrices from './AdminCardPrices.svelte';
 
 	let loading = $state(true);
 	interface PriceStatusGroup {
@@ -40,6 +41,9 @@
 	// ── Confidence threshold ─────────────────────────────
 	let confidenceThreshold = $state(0);
 	let savingThreshold = $state(false);
+
+	// ── Card price browser ──────────────────────────────
+	let showCardPrices = $state(false);
 
 	$effect(() => {
 		loadEbay();
@@ -411,6 +415,19 @@
 
 		<!-- Harvest Results -->
 		<HarvestResults />
+
+		<!-- Card Price Browser -->
+		<div class="actions-section">
+			<div class="section-header-row">
+				<h3 class="section-title">Card Price Browser</h3>
+				<button class="action-btn" onclick={() => showCardPrices = !showCardPrices}>
+					{showCardPrices ? 'Hide' : 'Show All Cards'}
+				</button>
+			</div>
+			{#if showCardPrices}
+				<AdminCardPrices />
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -719,5 +736,16 @@
 		border-color: var(--danger) !important;
 		color: var(--danger) !important;
 		width: 100%;
+	}
+
+	.section-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
+	}
+
+	.section-header-row .section-title {
+		margin-bottom: 0;
 	}
 </style>
