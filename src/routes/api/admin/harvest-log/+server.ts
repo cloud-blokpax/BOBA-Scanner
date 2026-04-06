@@ -49,15 +49,30 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	// ── Resolve run_id ──────────────────────────────────────
 	let runId = url.searchParams.get('run_id') || '';
 
-	// Fetch available runs (distinct run_ids, most recent first)
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const { data: runRows } = await (admin as any)
-		.from('price_harvest_log')
-		.select('run_id')
-		.order('processed_at', { ascending: false })
-		.limit(5000);
+	// Fetch available runs (distinct run_ids, most recent first) — paginated in 1k chunks
+	const CHUNK = 1000;
+	const allRunRows: Array<{ run_id: string }> = [];
+	{
+		let runOffset = 0;
+		let done = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const adminAny2 = admin as any;
+		while (!done) {
+			const { data } = await adminAny2
+				.from('price_harvest_log')
+				.select('run_id')
+				.order('processed_at', { ascending: false })
+				.range(runOffset, runOffset + CHUNK - 1);
+			if (!data || data.length === 0) { done = true; }
+			else {
+				allRunRows.push(...(data as Array<{ run_id: string }>));
+				runOffset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
+		}
+	}
 
-	const availableRuns = [...new Set<string>((runRows || []).map((r: { run_id: string }) => r.run_id))];
+	const availableRuns = [...new Set<string>(allRunRows.map(r => r.run_id))];
 
 	if (!runId && availableRuns.length > 0) {
 		runId = availableRuns[0];

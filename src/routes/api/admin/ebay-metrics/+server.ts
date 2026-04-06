@@ -10,26 +10,27 @@ import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
-/** Paginate through all rows of a Supabase query, collecting card_ids into a Set. */
+/** Paginate through all rows of a Supabase query, collecting card_ids into a Set.
+ *  Uses 1,000-row chunks to stay within Supabase/PostgREST default row limit. */
 async function fetchAllCardIds(
 	admin: ReturnType<typeof getAdminClient> & object,
 	table: string
 ): Promise<Set<string>> {
 	const ids = new Set<string>();
-	const PAGE = 10000;
+	const CHUNK = 1000;
 	let offset = 0;
 	let done = false;
 
 	while (!done) {
-		const { data } = await admin.from(table).select('card_id').range(offset, offset + PAGE - 1);
+		const { data } = await admin.from(table).select('card_id').range(offset, offset + CHUNK - 1);
 		if (!data || data.length === 0) {
 			done = true;
 		} else {
 			for (const row of data) {
 				ids.add((row as { card_id: string }).card_id);
 			}
-			offset += PAGE;
-			if (data.length < PAGE) done = true;
+			offset += CHUNK;
+			if (data.length < CHUNK) done = true;
 		}
 	}
 	return ids;
@@ -72,26 +73,44 @@ export const GET: RequestHandler = async ({ locals }) => {
 		//
 		// We paginate price_cache and price_harvest_log to avoid Supabase's
 		// default 1000-row limit and handle tables with 100K+ rows.
+		const CHUNK = 1000;
 		const [heroTotalRes, playCardsRes, priceCacheRows, harvestCardIds] = await Promise.all([
 			admin.from('cards').select('id', { count: 'exact', head: true }),
-			admin.from('play_cards').select('id, card_number').limit(20000),
-			// Paginate price_cache — need card_id + price_mid for classification
+			// Paginate play_cards in 1k chunks (Supabase caps at 1,000 rows)
+			(async () => {
+				const rows: Array<{ id: string; card_number: string }> = [];
+				let offset = 0;
+				let done = false;
+				while (!done) {
+					const { data } = await admin.from('play_cards')
+						.select('id, card_number')
+						.range(offset, offset + CHUNK - 1);
+					if (!data || data.length === 0) {
+						done = true;
+					} else {
+						for (const r of data) rows.push(r as { id: string; card_number: string });
+						offset += CHUNK;
+						if (data.length < CHUNK) done = true;
+					}
+				}
+				return { data: rows };
+			})(),
+			// Paginate price_cache in 1k chunks
 			(async () => {
 				const rows: Array<{ card_id: string; price_mid: number | null }> = [];
-				const PAGE = 10000;
 				let offset = 0;
 				let done = false;
 				while (!done) {
 					const { data } = await admin.from('price_cache')
 						.select('card_id, price_mid')
 						.eq('source', 'ebay')
-						.range(offset, offset + PAGE - 1);
+						.range(offset, offset + CHUNK - 1);
 					if (!data || data.length === 0) {
 						done = true;
 					} else {
 						for (const r of data) rows.push(r as { card_id: string; price_mid: number | null });
-						offset += PAGE;
-						if (data.length < PAGE) done = true;
+						offset += CHUNK;
+						if (data.length < CHUNK) done = true;
 					}
 				}
 				return rows;

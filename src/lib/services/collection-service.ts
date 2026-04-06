@@ -20,19 +20,33 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 
 	if (supabase) {
 		try {
-			const { data, error } = await supabase
-				.from('collections')
-				.select(`
-					*,
-					card:cards(*)
-				`)
-				.order('added_at', { ascending: false });
+			// Paginate in 1k chunks to avoid Supabase's 1,000-row default limit
+			const CHUNK = 1000;
+			const allData: Array<Record<string, unknown>> = [];
+			let offset = 0;
+			let done = false;
+			while (!done) {
+				const { data, error } = await supabase
+					.from('collections')
+					.select(`
+						*,
+						card:cards(*)
+					`)
+					.order('added_at', { ascending: false })
+					.range(offset, offset + CHUNK - 1);
 
-			if (error) throw error;
+				if (error) throw error;
+				if (!data || data.length === 0) { done = true; }
+				else {
+					allData.push(...data);
+					offset += CHUNK;
+					if (data.length < CHUNK) done = true;
+				}
+			}
 
-			const items = (data || []).filter(
+			const items = allData.filter(
 				(row: Record<string, unknown>) => row && typeof row.card_id === 'string'
-			) as CollectionItem[];
+			) as unknown as CollectionItem[];
 
 			// Cache in IndexedDB for offline use
 			try {

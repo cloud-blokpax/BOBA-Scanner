@@ -295,11 +295,30 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		let isIncremental = false;
 
 		if (lastSyncTime && cards.length > 0) {
-			const { data: newCards, error } = await supabase
-				.from('cards')
-				.select('*')
-				.gt('updated_at', lastSyncTime);
-			if (!error && newCards && newCards.length > 0) {
+			// Paginate in 1k chunks to avoid Supabase's 1,000-row default limit
+			const CHUNK = 1000;
+			const newCards: Array<Record<string, unknown>> = [];
+			let incrError: Error | null = null;
+			{
+				let offset = 0;
+				let done = false;
+				while (!done) {
+					const { data, error: err } = await supabase
+						.from('cards')
+						.select('*')
+						.gt('updated_at', lastSyncTime)
+						.range(offset, offset + CHUNK - 1);
+					if (err) { incrError = err as unknown as Error; done = true; }
+					else if (!data || data.length === 0) { done = true; }
+					else {
+						newCards.push(...data);
+						offset += CHUNK;
+						if (data.length < CHUNK) done = true;
+					}
+				}
+			}
+			const error = incrError;
+			if (!error && newCards.length > 0) {
 				const cardMap = new Map(cards.map(c => [c.id, c]));
 				for (const card of newCards) {
 					cardMap.set((card as { id: string }).id, card as unknown as Card);

@@ -20,76 +20,104 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');
 
-	// Fetch price_cache joined with card metadata.
-	const { data: priceRows, error: priceErr } = await admin
-		.from('price_cache')
-		.select('card_id, price_low, price_mid, price_high, listings_count, buy_now_low, buy_now_mid, buy_now_count, filtered_count, confidence_score, fetched_at')
-		.eq('source', 'ebay')
-		.not('price_mid', 'is', null)
-		.order('price_mid', { ascending: false })
-		.limit(5000);
+	// Supabase/PostgREST caps at 1,000 rows per request, so we paginate in chunks.
+	const CHUNK = 1000;
 
-	if (priceErr) {
-		console.error('[market/pulse] price_cache query failed:', priceErr);
-		throw error(500, 'Failed to load market data');
-	}
-
-	if (!priceRows || priceRows.length === 0) {
-		return json({ movers: [], insights: null, summary: null });
-	}
-
-	// Fetch card metadata for all priced cards
-	const cardIds = priceRows.map(r => r.card_id);
-	const { data: cardRows, error: cardErr } = await admin
-		.from('cards')
-		.select('id, hero_name, name, card_number, set_code, rarity')
-		.in('id', cardIds)
-		.limit(5000);
-
-	if (cardErr) {
-		console.error('[market/pulse] cards query failed:', cardErr.message);
-		throw error(500, 'Failed to load card metadata');
-	}
-
-	const cardMap = new Map((cardRows || []).map(c => [c.id, c]));
-
-	// Fetch most recent harvest log entry per card for delta tracking.
-	const { data: harvestRows, error: harvestErr } = await admin
-		.from('price_harvest_log')
-		.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
-		.eq('success', true)
-		.in('card_id', cardIds)
-		.order('processed_at', { ascending: false })
-		.limit(10000);
-
-	if (harvestErr) {
-		console.error('[market/pulse] harvest_log query failed:', harvestErr.message);
-	}
-
-	// Deduplicate: keep only the most recent harvest entry per card_id
-	const harvestMap = new Map<string, NonNullable<typeof harvestRows>[number]>();
-	for (const row of harvestRows || []) {
-		if (!harvestMap.has(row.card_id)) {
-			harvestMap.set(row.card_id, row);
+	// Fetch all priced entries from price_cache (paginated)
+	const priceRows: Array<Record<string, unknown>> = [];
+	{
+		let offset = 0;
+		let done = false;
+		while (!done) {
+			const { data, error: priceErr } = await admin
+				.from('price_cache')
+				.select('card_id, price_low, price_mid, price_high, listings_count, buy_now_low, buy_now_mid, buy_now_count, filtered_count, confidence_score, fetched_at')
+				.eq('source', 'ebay')
+				.not('price_mid', 'is', null)
+				.order('price_mid', { ascending: false })
+				.range(offset, offset + CHUNK - 1);
+			if (priceErr) {
+				console.error('[market/pulse] price_cache query failed:', priceErr);
+				throw error(500, 'Failed to load market data');
+			}
+			if (!data || data.length === 0) { done = true; }
+			else {
+				priceRows.push(...data);
+				offset += CHUNK;
+				if (data.length < CHUNK) done = true;
+			}
 		}
 	}
 
-	// Fetch last 14 price_history data points per card for sparklines.
-	const { data: historyRows, error: historyErr } = await admin
-		.from('price_history')
-		.select('card_id, price_mid, recorded_at')
-		.in('card_id', cardIds)
-		.order('recorded_at', { ascending: true })
-		.limit(70000);
-
-	if (historyErr) {
-		console.error('[market/pulse] price_history query failed:', historyErr.message);
+	if (priceRows.length === 0) {
+		return json({ movers: [], insights: null, summary: null });
 	}
 
+	// Fetch card metadata for all priced cards (paginated in batches of 200 via .in())
+	const cardIds = priceRows.map(r => r.card_id as string);
+	const cardMap = new Map<string, Record<string, unknown>>();
+	{
+		const BATCH = 200;
+		for (let i = 0; i < cardIds.length; i += BATCH) {
+			const batch = cardIds.slice(i, i + BATCH);
+			const { data, error: cardErr } = await admin
+				.from('cards')
+				.select('id, hero_name, name, card_number, set_code, rarity')
+				.in('id', batch);
+			if (cardErr) {
+				console.error('[market/pulse] cards query failed:', cardErr.message);
+				throw error(500, 'Failed to load card metadata');
+			}
+			for (const c of data || []) cardMap.set(c.id as string, c);
+		}
+	}
+
+	// Fetch most recent harvest log entry per card for delta tracking (paginated).
+	const harvestMap = new Map<string, Record<string, unknown>>();
+	{
+		const BATCH = 200;
+		for (let i = 0; i < cardIds.length; i += BATCH) {
+			const batch = cardIds.slice(i, i + BATCH);
+			const { data, error: harvestErr } = await admin
+				.from('price_harvest_log')
+				.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
+				.eq('success', true)
+				.in('card_id', batch)
+				.order('processed_at', { ascending: false });
+			if (harvestErr) {
+				console.error('[market/pulse] harvest_log query failed:', harvestErr.message);
+				continue;
+			}
+			// Deduplicate: keep only the most recent harvest entry per card_id
+			for (const row of data || []) {
+				if (!harvestMap.has(row.card_id as string)) {
+					harvestMap.set(row.card_id as string, row);
+				}
+			}
+		}
+	}
+
+	// Fetch price_history for sparklines (paginated in batches by card_id).
 	const historyMap = new Map<string, number[]>();
-	for (const row of historyRows || []) {
-		if (!historyMap.has(row.card_id)) historyMap.set(row.card_id, []);
-		historyMap.get(row.card_id)!.push(Number(row.price_mid));
+	{
+		const BATCH = 200;
+		for (let i = 0; i < cardIds.length; i += BATCH) {
+			const batch = cardIds.slice(i, i + BATCH);
+			const { data, error: historyErr } = await admin
+				.from('price_history')
+				.select('card_id, price_mid, recorded_at')
+				.in('card_id', batch)
+				.order('recorded_at', { ascending: true });
+			if (historyErr) {
+				console.error('[market/pulse] price_history query failed:', historyErr.message);
+				continue;
+			}
+			for (const row of data || []) {
+				const cid = row.card_id as string;
+				if (!historyMap.has(cid)) historyMap.set(cid, []);
+				historyMap.get(cid)!.push(Number(row.price_mid));
+			}
+		}
 	}
 	// Keep only last 14 per card
 	for (const [k, v] of historyMap) {
@@ -122,10 +150,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const cards: MergedCard[] = [];
 	for (const price of priceRows) {
-		const card = cardMap.get(price.card_id);
+		const cid = String(price.card_id);
+		const card = cardMap.get(cid);
 		if (!card) continue;
 
-		const harvest = harvestMap.get(price.card_id);
+		const harvest = harvestMap.get(cid);
 		const mid = Number(price.price_mid);
 		const bnMid = price.buy_now_mid != null ? Number(price.buy_now_mid) : null;
 		const prevMid = harvest?.previous_mid != null ? Number(harvest.previous_mid) : null;
@@ -134,23 +163,23 @@ export const GET: RequestHandler = async ({ locals }) => {
 		const aucCount = harvest?.auction_count ?? 0;
 		const bnCount = price.buy_now_count ?? 0;
 		const bnPremium = (bnMid && mid && mid > 0) ? ((bnMid - mid) / mid) * 100 : 0;
-		const history = historyMap.get(price.card_id) || [mid];
+		const history = historyMap.get(cid) || [mid];
 
 		cards.push({
-			id: price.card_id,
-			hero: card.hero_name || card.name || 'Unknown',
-			num: card.card_number || '',
-			set: card.set_code || '',
-			rarity: card.rarity || 'Common',
+			id: cid,
+			hero: String(card.hero_name || card.name || 'Unknown'),
+			num: String(card.card_number || ''),
+			set: String(card.set_code || ''),
+			rarity: String(card.rarity || 'Common'),
 			mid,
 			low: Number(price.price_low ?? mid),
 			high: Number(price.price_high ?? mid),
 			bnMid,
 			bnLow: price.buy_now_low != null ? Number(price.buy_now_low) : null,
-			bnCount,
-			aucCount,
-			listings: price.listings_count ?? 0,
-			filtered: price.filtered_count ?? 0,
+			bnCount: Number(bnCount ?? 0),
+			aucCount: Number(aucCount ?? 0),
+			listings: Number(price.listings_count ?? 0),
+			filtered: Number(price.filtered_count ?? 0),
 			conf: Number(price.confidence_score ?? 0),
 			prevMid,
 			delta,
