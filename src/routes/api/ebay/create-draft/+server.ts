@@ -22,6 +22,8 @@ interface DraftRequest {
 	quantity: number;
 	notes: string | null;
 	scanImageUrl: string | null;
+	title: string | null;
+	description: string | null;
 }
 
 function buildTitle(req: DraftRequest): string {
@@ -53,6 +55,18 @@ function buildDescription(req: DraftRequest): string {
 	lines.push('</ul>');
 	lines.push('<p>Listed with BOBA Scanner - boba.cards</p>');
 	return lines.join('\n');
+}
+
+/** Convert user-edited plain text description to simple HTML for eBay */
+function plainTextToHtml(text: string): string {
+	const escaped = text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
+	const paragraphs = escaped.split(/\n{2,}/);
+	return paragraphs
+		.map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+		.join('\n');
 }
 
 const CONDITION_MAP: Record<string, string> = {
@@ -147,11 +161,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const sku = `BOBA-${body.cardId || Date.now()}`;
 
+	// Use user-provided title/description if available, otherwise generate
+	const listingTitle = body.title || buildTitle(body);
+	const htmlDescription = body.description
+		? plainTextToHtml(body.description)
+		: buildDescription(body);
+
 	// Step 1: Create or update inventory item
 	const inventoryItem = {
 		product: {
-			title: buildTitle(body),
-			description: buildDescription(body),
+			title: listingTitle,
+			description: htmlDescription,
 			...(body.scanImageUrl ? { imageUrls: [body.scanImageUrl] } : {}),
 			aspects: {
 				'Card Name': [heroName || 'Unknown'],
@@ -202,7 +222,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		sku,
 		marketplaceId: 'EBAY_US',
 		format: 'FIXED_PRICE',
-		listingDescription: buildDescription(body),
+		listingDescription: htmlDescription,
 		availableQuantity: quantity,
 		pricingSummary: {
 			price: {
