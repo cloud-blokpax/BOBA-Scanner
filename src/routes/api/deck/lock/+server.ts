@@ -58,6 +58,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			name: string;
 			hero_card_ids: string[];
 			play_entries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
+			hot_dog_count: number;
 		};
 
 		// Resolve hero card IDs to full Card objects for validation
@@ -113,8 +114,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			})),
 			play_cards: (deck.play_entries || []).map((p) => ({
 				card_number: p.cardNumber,
-				name: p.name
+				set_code: p.setCode,
+				name: p.name,
+				dbs: p.dbs
 			})),
+			hot_dog_count: deck.hot_dog_count ?? 10,
 			player_name: user.email?.split('@')[0] || 'Player',
 			locked_at: new Date().toISOString()
 		};

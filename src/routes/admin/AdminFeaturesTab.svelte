@@ -45,7 +45,7 @@
 
 	async function toggleFlagRole(
 		featureKey: string,
-		role: 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_member' | 'enabled_for_admin',
+		role: 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_pro' | 'enabled_for_admin',
 		currentValue: boolean
 	) {
 		savingFlag = featureKey;
@@ -126,7 +126,7 @@
 							{ key: 'enabled_globally', label: 'Global' },
 							{ key: 'enabled_for_guest', label: 'Guest' },
 							{ key: 'enabled_for_authenticated', label: 'Auth' },
-							{ key: 'enabled_for_member', label: 'Member' },
+							{ key: 'enabled_for_pro', label: 'Pro' },
 							{ key: 'enabled_for_admin', label: 'Admin' }
 						] as tier}
 							<label class="toggle-label">
@@ -134,7 +134,7 @@
 								<button
 									class="toggle-btn"
 									class:toggle-on={flag[tier.key as keyof FeatureFlag]}
-									onclick={() => toggleFlagRole(flag.feature_key, tier.key as 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_member' | 'enabled_for_admin', !!flag[tier.key as keyof FeatureFlag])}
+									onclick={() => toggleFlagRole(flag.feature_key, tier.key as 'enabled_globally' | 'enabled_for_guest' | 'enabled_for_authenticated' | 'enabled_for_pro' | 'enabled_for_admin', !!flag[tier.key as keyof FeatureFlag])}
 									disabled={savingFlag === flag.feature_key}
 									aria-label="Toggle {tier.label} for {flag.feature_key}"
 								></button>

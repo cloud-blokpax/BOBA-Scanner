@@ -350,6 +350,7 @@ export async function recognizeCard(
 	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null };
 
 	// Convert to ImageBitmap for worker transfer
+	const ownsBitmap = !(imageSource instanceof ImageBitmap);
 	const bitmap =
 		imageSource instanceof ImageBitmap
 			? imageSource
@@ -361,6 +362,7 @@ export async function recognizeCard(
 		console.debug(`[scan] Blur check: variance=${blurResult.variance.toFixed(1)}, threshold=${BOBA_SCAN_CONFIG.blurThreshold}, isBlurry=${blurResult.isBlurry}`);
 		if (blurResult.isBlurry) {
 			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
+			if (ownsBitmap) bitmap.close();
 			return {
 				card_id: null,
 				card: null,
@@ -434,11 +436,15 @@ export async function recognizeCard(
 
 	// ── Offline handling: queue for later if no network ──────
 	if (!navigator.onLine) {
-		const { scanQueue } = await import('./idb');
-		const imageBlob = imageSource instanceof Blob
-			? imageSource
-			: await imageWorker!.resizeForUpload(bitmap, 1024);
-		await scanQueue.add(imageBlob);
+		try {
+			const { scanQueue } = await import('./idb');
+			const imageBlob = imageSource instanceof Blob
+				? imageSource
+				: await imageWorker!.resizeForUpload(bitmap, 1024);
+			await scanQueue.add(imageBlob);
+		} catch (err) {
+			console.warn(`[scan:${traceId}] Offline queue failed — scan will be lost:`, err);
+		}
 		return finalize({
 			card_id: null,
 			card: null,
