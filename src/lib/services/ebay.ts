@@ -6,7 +6,7 @@
  */
 
 import { browser } from '$app/environment';
-import { buildEbaySearchQuery } from '$lib/utils/ebay-title';
+import { buildEbaySearchQuery, buildEbayApiQuery } from '$lib/utils/ebay-title';
 
 /** EPN affiliate parameters. */
 const EPN_PARAMS: Record<string, string> = {
@@ -43,7 +43,7 @@ export function buildEbaySearchUrl(card: {
 	weapon_type?: string | null;
 	name?: string | null;
 }): string {
-	const query = buildEbaySearchQuery(card);
+	const query = buildEbayApiQuery(card);
 	const params = new URLSearchParams({
 		_nkw: query,
 		...EPN_PARAMS
@@ -62,7 +62,7 @@ export function buildEbaySoldUrl(card: {
 	weapon_type?: string | null;
 	name?: string | null;
 }): string {
-	const query = buildEbaySearchQuery(card);
+	const query = buildEbayApiQuery(card);
 	const params = new URLSearchParams({
 		_nkw: query,
 		LH_Sold: '1',
