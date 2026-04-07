@@ -1,7 +1,7 @@
 // Vercel Edge Middleware — Bot & Scraper Protection
 // Returns 403 Forbidden for known bots, scrapers, and automated tools
 
-import type { NextRequest } from '@vercel/edge';
+// Uses standard Web API Request — no @vercel/edge dependency needed
 
 const BLOCKED_USER_AGENTS = [
   // Scrapers & crawlers
@@ -32,6 +32,7 @@ const BLOCKED_USER_AGENTS = [
 const ALLOWED_PATHS = [
   '/api/health',            // monitoring / uptime checks
   '/api/auth/',             // OAuth callbacks (redirects from providers)
+  '/api/cron/',             // QStash / Vercel cron jobs (automated, no browser UA)
   '/.well-known/',          // standard well-known paths
 ];
 
@@ -40,7 +41,7 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
-export default function middleware(request: NextRequest): Response | undefined {
+export default function middleware(request: Request): Response | undefined {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
