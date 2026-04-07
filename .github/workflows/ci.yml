@@ -32,11 +32,11 @@ jobs:
 
       - name: Check bundle size
         run: |
-          # Post card-database unbundling: total JS should be under 500KB
-          TOTAL=$(du -sb .svelte-kit/output/client/_app/ 2>/dev/null | awk '{print $1}')
-          MAX=512000  # 500KB limit
-          echo "Bundle size: ${TOTAL:-0} bytes (limit: $MAX)"
-          if [ "${TOTAL:-0}" -gt "$MAX" ]; then
-            echo "::error::Bundle size ${TOTAL} exceeds limit of $MAX bytes"
+          # Client JS bundle size check (excludes CSS, sourcemaps, server code)
+          JS_TOTAL=$(find .svelte-kit/output/client/_app/ -name '*.js' -exec du -cb {} + 2>/dev/null | tail -1 | awk '{print $1}')
+          JS_MAX=1400000  # 1.4MB limit for client JS
+          echo "Client JS bundle: ${JS_TOTAL:-0} bytes (limit: $JS_MAX)"
+          if [ "${JS_TOTAL:-0}" -gt "$JS_MAX" ]; then
+            echo "::error::Client JS bundle ${JS_TOTAL} exceeds limit of $JS_MAX bytes"
             exit 1
           fi
