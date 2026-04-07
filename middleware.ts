@@ -37,8 +37,10 @@ const ALLOWED_PATHS = [
 ];
 
 export const config = {
-  // Run middleware on all routes except static assets that Vercel serves from CDN
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Run middleware on all routes except static assets and API routes.
+  // API routes have their own auth (CRON_SECRET, QStash signatures, session checks),
+  // so bot-blocking middleware is redundant and actively breaks automated callers.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 };
 
 export default function middleware(request: Request): Response | undefined {
