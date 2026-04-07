@@ -1,9 +1,9 @@
 /**
- * Download Carde.io Card Images to Supabase Storage
+ * Download Card Images to Supabase Storage
  *
- * Fetches all BoBA card images from GCS and uploads them to your
- * Supabase Storage bucket. Then generates SQL to update image_url
- * to point to your own copies.
+ * Reads all cards with GCS image_url from Supabase, downloads the images,
+ * and uploads them to your own Supabase Storage bucket. Then generates SQL
+ * to update image_url to point to your copies.
  *
  * Prerequisites:
  *   - .env file with PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
@@ -18,7 +18,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 import { config } from 'dotenv';
 
 // Load .env
@@ -27,9 +27,6 @@ config();
 // ── Config ───────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.PUBLIC_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const GAME_ID = '651f3b0e5f72a5fca3f6fe34';
-const API_BASE = 'https://play-api.carde.io/v1/cards';
-const PAGE_SIZE = 50;
 const STORAGE_BUCKET = 'scans';
 const STORAGE_PREFIX = 'card-images';
 const CONCURRENCY = parseInt(process.argv.find(a => a.startsWith('--concurrency='))?.split('=')[1] || '5');
@@ -38,24 +35,21 @@ const SKIP_EXISTING = process.argv.includes('--skip-existing');
 
 // ── Validate env ─────────────────────────────────────────────────
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('❌ Missing env vars. Need PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env');
+  console.error('Missing env vars. Need PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env');
   process.exit(1);
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ── Types ────────────────────────────────────────────────────────
-interface CardeCard {
+interface CardRow {
   id: string;
-  name: string;
-  slug: string;
-  imageUrl: string;
-  cardType: { name: string };
-  subtype: { name: string };
-  element: { name: string };
+  image_url: string;
 }
 
 interface DownloadResult {
+  cardId: string;
+  gcsUrl: string;
   slug: string;
   success: boolean;
   supabaseUrl?: string;
@@ -63,82 +57,74 @@ interface DownloadResult {
   skipped?: boolean;
 }
 
-// ── Fetch all cards from Carde.io API ────────────────────────────
-async function fetchAllCards(): Promise<CardeCard[]> {
-  // Try loading from cached JSON first (from the backfill script)
-  const cachePath = 'scripts/output/carde-mapping.json';
-  if (existsSync(cachePath)) {
-    console.log('📦 Loading card data from cached mapping file...');
-    const cached = JSON.parse(readFileSync(cachePath, 'utf-8'));
-    // Convert mapping format back to CardeCard format
-    return cached.map((c: Record<string, string>) => ({
-      id: c.carde_id,
-      name: c.carde_name,
-      slug: c.carde_slug,
-      imageUrl: c.image_url,
-      cardType: { name: c.card_type },
-      subtype: { name: '' },
-      element: { name: c.weapon_type || 'None' },
-    }));
-  }
+// ── Extract slug from GCS URL ────────────────────────────────────
+function extractSlug(gcsUrl: string): string {
+  // URL pattern: https://storage.googleapis.com/cardeio-images/.../small/SLUG.webp
+  const match = gcsUrl.match(/\/([^/]+)\.webp$/);
+  return match ? match[1] : '';
+}
 
-  console.log('🌐 Fetching card data from Carde.io API...');
-  const all: CardeCard[] = [];
-  let page = 1;
+// ── Fetch all cards with GCS image URLs from Supabase ────────────
+async function fetchCardsWithGcsImages(): Promise<CardRow[]> {
+  console.log('Querying Supabase for cards with GCS image URLs...');
+  const all: CardRow[] = [];
+  const PAGE = 1000;
+  let from = 0;
 
   while (true) {
-    const url = `${API_BASE}/${GAME_ID}?limit=${PAGE_SIZE}&page=${page}`;
-    const res = await fetch(url);
-    if (!res.ok) break;
+    const { data, error } = await supabase
+      .from('cards')
+      .select('id, image_url')
+      .like('image_url', '%storage.googleapis.com/cardeio-images%')
+      .range(from, from + PAGE - 1);
 
-    const json = await res.json();
-    const data = json.data as CardeCard[];
+    if (error) {
+      console.error('Supabase query error:', error.message);
+      break;
+    }
     if (!data || data.length === 0) break;
 
     all.push(...data);
-    if (page >= json.pagination.totalPages) break;
-    page++;
+    if (data.length < PAGE) break;
+    from += PAGE;
   }
 
-  console.log(`✓ Fetched ${all.length} cards\n`);
   return all;
 }
 
-// ── Check if image already exists in storage ─────────────────────
-async function imageExists(storagePath: string): Promise<boolean> {
-  const { data } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .list(STORAGE_PREFIX, {
-      search: storagePath.replace(`${STORAGE_PREFIX}/`, ''),
-      limit: 1
-    });
-  return (data?.length ?? 0) > 0;
-}
+// ── Download from GCS and upload to Supabase Storage ─────────────
+async function downloadAndUpload(card: CardRow): Promise<DownloadResult> {
+  const slug = extractSlug(card.image_url);
+  if (!slug) {
+    return { cardId: card.id, gcsUrl: card.image_url, slug: '', success: false, error: 'Could not extract slug from URL' };
+  }
 
-// ── Download from GCS and upload to Supabase ─────────────────────
-async function downloadAndUpload(card: CardeCard): Promise<DownloadResult> {
-  const storagePath = `${STORAGE_PREFIX}/${card.slug}.webp`;
+  const storagePath = `${STORAGE_PREFIX}/${slug}.webp`;
 
   try {
     // Check if already exists
     if (SKIP_EXISTING) {
-      const exists = await imageExists(storagePath);
-      if (exists) {
-        return { slug: card.slug, success: true, skipped: true };
+      const { data } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .list(STORAGE_PREFIX, { search: `${slug}.webp`, limit: 1 });
+      if (data && data.length > 0) {
+        return { cardId: card.id, gcsUrl: card.image_url, slug, success: true, skipped: true };
       }
     }
 
     // Download from GCS
-    const response = await fetch(card.imageUrl);
+    const response = await fetch(card.image_url);
     if (!response.ok) {
-      return { slug: card.slug, success: false, error: `GCS returned ${response.status}` };
+      return { cardId: card.id, gcsUrl: card.image_url, slug, success: false, error: `GCS returned ${response.status}` };
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
 
     if (DRY_RUN) {
       return {
-        slug: card.slug,
+        cardId: card.id,
+        gcsUrl: card.image_url,
+        slug,
         success: true,
         supabaseUrl: `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`,
       };
@@ -149,22 +135,22 @@ async function downloadAndUpload(card: CardeCard): Promise<DownloadResult> {
       .from(STORAGE_BUCKET)
       .upload(storagePath, buffer, {
         contentType: 'image/webp',
-        upsert: true,  // overwrite if exists
+        upsert: true,
       });
 
     if (uploadError) {
-      return { slug: card.slug, success: false, error: uploadError.message };
+      return { cardId: card.id, gcsUrl: card.image_url, slug, success: false, error: uploadError.message };
     }
 
     const supabaseUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
-    return { slug: card.slug, success: true, supabaseUrl };
+    return { cardId: card.id, gcsUrl: card.image_url, slug, success: true, supabaseUrl };
   } catch (err) {
-    return { slug: card.slug, success: false, error: String(err) };
+    return { cardId: card.id, gcsUrl: card.image_url, slug, success: false, error: String(err) };
   }
 }
 
 // ── Process in batches with concurrency control ──────────────────
-async function processBatch(cards: CardeCard[]): Promise<DownloadResult[]> {
+async function processBatch(cards: CardRow[]): Promise<DownloadResult[]> {
   const results: DownloadResult[] = [];
   let completed = 0;
 
@@ -178,11 +164,10 @@ async function processBatch(cards: CardeCard[]): Promise<DownloadResult[]> {
     const skipCount = results.filter(r => r.skipped).length;
     const failCount = results.filter(r => !r.success).length;
 
-    // Progress update every 50 cards
     if (completed % 50 === 0 || completed === cards.length) {
       console.log(
         `  Progress: ${completed}/${cards.length} ` +
-        `(✓ ${successCount} uploaded, ⏭ ${skipCount} skipped, ✗ ${failCount} failed)`
+        `(uploaded: ${successCount}, skipped: ${skipCount}, failed: ${failCount})`
       );
     }
   }
@@ -190,15 +175,13 @@ async function processBatch(cards: CardeCard[]): Promise<DownloadResult[]> {
   return results;
 }
 
-// ── Generate SQL to swap GCS URLs → Supabase URLs ───────────────
+// ── Generate SQL to swap GCS URLs to Supabase URLs ───────────────
 function generateSwapSQL(results: DownloadResult[]): string {
   const lines: string[] = [];
 
-  lines.push('-- ═══════════════════════════════════════════════════════════');
-  lines.push('-- Swap GCS image URLs → Supabase Storage URLs');
+  lines.push('-- Swap GCS image URLs to Supabase Storage URLs');
   lines.push(`-- Generated: ${new Date().toISOString()}`);
   lines.push('-- Run this AFTER confirming images uploaded successfully.');
-  lines.push('-- ═══════════════════════════════════════════════════════════');
   lines.push('');
   lines.push('BEGIN;');
   lines.push('');
@@ -206,17 +189,11 @@ function generateSwapSQL(results: DownloadResult[]): string {
   const successful = results.filter(r => r.success && r.supabaseUrl && !r.skipped);
 
   for (const r of successful) {
-    const gcsUrl = `https://storage.googleapis.com/cardeio-images/bo-jackson-battle-arena/cards/small/${r.slug}.webp`;
-    const safeGcsUrl = gcsUrl.replace(/'/g, "''");
+    const safeGcsUrl = r.gcsUrl.replace(/'/g, "''");
     const safeSupaUrl = r.supabaseUrl!.replace(/'/g, "''");
 
-    // Update cards table (hero cards)
     lines.push(`UPDATE cards SET image_url = '${safeSupaUrl}'`);
-    lines.push(`  WHERE image_url = '${safeGcsUrl}';`);
-
-    // Update play_cards table
-    lines.push(`UPDATE play_cards SET image_url = '${safeSupaUrl}'`);
-    lines.push(`  WHERE image_url = '${safeGcsUrl}';`);
+    lines.push(`  WHERE id = '${r.cardId.replace(/'/g, "''")}';`);
     lines.push('');
   }
 
@@ -224,33 +201,38 @@ function generateSwapSQL(results: DownloadResult[]): string {
   lines.push('');
 
   // Verification
-  lines.push('-- ═══ VERIFICATION ═══');
-  lines.push('-- After running, confirm no GCS URLs remain:');
+  lines.push('-- VERIFICATION');
+  lines.push('-- Should return 0:');
   lines.push("SELECT COUNT(*) AS still_on_gcs FROM cards");
   lines.push("  WHERE image_url LIKE '%storage.googleapis.com/cardeio-images%';");
   lines.push('');
+  lines.push('-- Should match your total card count:');
   lines.push("SELECT COUNT(*) AS now_on_supabase FROM cards");
-  lines.push(`  WHERE image_url LIKE '%${SUPABASE_URL}/storage%';`);
+  lines.push(`  WHERE image_url LIKE '${SUPABASE_URL}/storage%';`);
 
   return lines.join('\n');
 }
 
 // ── Main ─────────────────────────────────────────────────────────
 async function main() {
-  console.log('📸 Carde.io Image Download & Upload');
-  console.log('====================================');
+  console.log('Card Image Download & Upload to Supabase Storage');
+  console.log('=================================================');
   console.log(`  Bucket:      ${STORAGE_BUCKET}/${STORAGE_PREFIX}/`);
   console.log(`  Concurrency: ${CONCURRENCY}`);
   console.log(`  Dry run:     ${DRY_RUN}`);
   console.log(`  Skip exist:  ${SKIP_EXISTING}`);
   console.log('');
 
-  // Fetch card data
-  const cards = await fetchAllCards();
-  console.log(`Found ${cards.length} cards to process\n`);
+  // Fetch cards from Supabase that still point to GCS
+  const cards = await fetchCardsWithGcsImages();
+  console.log(`Found ${cards.length} cards with GCS image URLs\n`);
 
-  // Download and upload
-  console.log(DRY_RUN ? '🔍 Dry run — no uploads will happen\n' : '⬇️  Downloading and uploading...\n');
+  if (cards.length === 0) {
+    console.log('Nothing to do — all cards already migrated or no GCS URLs found.');
+    return;
+  }
+
+  console.log(DRY_RUN ? 'Dry run — no uploads will happen\n' : 'Downloading and uploading...\n');
   const results = await processBatch(cards);
 
   // Report
@@ -258,15 +240,15 @@ async function main() {
   const skipped = results.filter(r => r.skipped);
   const failed = results.filter(r => !r.success);
 
-  console.log('\n📊 Results:');
-  console.log(`  ✓ Uploaded:  ${uploaded.length}`);
-  console.log(`  ⏭ Skipped:   ${skipped.length}`);
-  console.log(`  ✗ Failed:    ${failed.length}`);
+  console.log('\nResults:');
+  console.log(`  Uploaded:  ${uploaded.length}`);
+  console.log(`  Skipped:   ${skipped.length}`);
+  console.log(`  Failed:    ${failed.length}`);
 
   if (failed.length > 0) {
-    console.log('\n❌ Failed images:');
+    console.log('\nFailed images:');
     for (const f of failed.slice(0, 20)) {
-      console.log(`  ${f.slug}: ${f.error}`);
+      console.log(`  ${f.cardId} (${f.slug}): ${f.error}`);
     }
     if (failed.length > 20) {
       console.log(`  ... and ${failed.length - 20} more`);
@@ -279,7 +261,7 @@ async function main() {
   if (!DRY_RUN && uploaded.length > 0) {
     const sql = generateSwapSQL(results);
     writeFileSync('scripts/output/swap-image-urls.sql', sql);
-    console.log('\n✓ Generated scripts/output/swap-image-urls.sql');
+    console.log('\nGenerated scripts/output/swap-image-urls.sql');
     console.log('  Run this in Supabase SQL Editor to point image_url at your copies.');
   }
 
@@ -290,15 +272,15 @@ async function main() {
     uploaded: uploaded.length,
     skipped: skipped.length,
     failed: failed.length,
-    failures: failed.map(f => ({ slug: f.slug, error: f.error })),
+    failures: failed.map(f => ({ cardId: f.cardId, slug: f.slug, error: f.error })),
   }, null, 2));
-  console.log('✓ Generated scripts/output/download-results.json');
+  console.log('Generated scripts/output/download-results.json');
 
   if (failed.length > 0) {
-    console.log(`\n⚠ Re-run with --skip-existing to retry only failed images.`);
+    console.log(`\nRe-run with --skip-existing to retry only failed images.`);
   }
 
-  console.log('\n✅ Done!');
+  console.log('\nDone!');
 }
 
 main().catch(err => {
