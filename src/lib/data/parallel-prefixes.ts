@@ -109,6 +109,12 @@ export const PREFIX_TO_PARALLEL: Record<string, string> = {
 	'BL-S': 'super_blast',
 	'BL-SK': 'sidekick_blast',
 
+	// World Champion Series (LA-1 through LA-38)
+	'LA': 'world_champion',
+
+	// Sandstorm Superfan Series (SSE-1 through SSE-29)
+	'SSE': 'sandstorm',
+
 	// Crossover / Sets (recognized but not pullable in standard pack sim)
 	'BLC': 'blast_crossover',
 	'S': 'starter_kit',

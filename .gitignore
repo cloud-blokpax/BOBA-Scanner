@@ -8,6 +8,7 @@ dist/
 .DS_Store
 *.local
 .vercel
+scripts/output/
 
 # Prevent accidentally committing AI-generated review documents
 *-REVIEW.md
