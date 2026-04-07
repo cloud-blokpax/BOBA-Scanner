@@ -1,4 +1,4 @@
-# BOBA Scanner
+# BOBA Scanner 
 
 AI-powered card scanner for Bo Jackson Battle Arena (BoBA) trading cards. Identifies cards from photos using a three-tier pipeline (hash cache, OCR, Claude AI), with pricing via eBay Browse API and full tournament deck building.
 
