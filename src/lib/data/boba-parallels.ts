@@ -86,6 +86,10 @@ export const PARALLEL_TYPES: ParallelType[] = [
 	{ name: 'Super Blast', key: 'super_blast', isFoilTreatment: true, isMadnessInsert: true, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Super Blast parallel (BL-S prefix, Alpha Blast set)', serialization: null },
 	{ name: 'Sidekick Blast', key: 'sidekick_blast', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Sidekick Blast parallel (BL-SK prefix, Alpha Blast set)', serialization: null },
 
+	// --- Special Sets ---
+	{ name: 'World Champion', key: 'world_champion', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['world_champions'], description: 'World Champion Series card (LA prefix)', serialization: null },
+	{ name: 'Sandstorm', key: 'sandstorm', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['sandstorm'], description: 'Sandstorm Superfan Series (SSE prefix)', serialization: null },
+
 	// --- Sets (recognized for prefix matching, not standard parallels) ---
 	{ name: 'Starter Kit', key: 'starter_kit', isFoilTreatment: false, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['starter_kit'], description: 'Starter Kit cards (S-XX/100 format)', serialization: null },
 	{ name: 'Blast Crossover', key: 'blast_crossover', isFoilTreatment: true, isMadnessInsert: false, isWild: false, restrictedToWeapons: [], foundIn: ['blast'], description: 'Alpha Blast crossover cards (BLC prefix)', serialization: null },

@@ -72,5 +72,7 @@ export const RELEASE_TO_SET_NAME: Record<string, string> = {
 	HTD: 'Alpha Blast',
 	BLC: 'Black Label Collection',
 	N24: 'National 2024',
+	WC: 'World Champions',
+	SS: 'Sandstorm Superfan Series',
 	T: 'Tecmo Bowl',
 };
