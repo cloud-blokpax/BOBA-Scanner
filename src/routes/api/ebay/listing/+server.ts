@@ -158,7 +158,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				product: {
 					title,
 					description,
-					...(scanImageUrl ? { imageUrls: [scanImageUrl] } : {}),
+					...(scanImageUrl && scanImageUrl.startsWith('https://') ? { imageUrls: [scanImageUrl] } : {}),
 					aspects: {
 						'Card Game': ['Bo Jackson Battle Arena'],
 						'Card Condition': [condition]

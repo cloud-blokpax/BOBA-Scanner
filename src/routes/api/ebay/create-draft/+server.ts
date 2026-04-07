@@ -178,7 +178,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			product: {
 				title: listingTitle,
 				description: htmlDescription,
-				...(body.scanImageUrl ? { imageUrls: [body.scanImageUrl] } : {}),
+				...(body.scanImageUrl && body.scanImageUrl.startsWith('https://') ? { imageUrls: [body.scanImageUrl] } : {}),
 				aspects: {
 					'Card Name': [heroName || 'Unknown'],
 					'Set': [body.setCode || 'BoBA'],

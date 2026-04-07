@@ -3,6 +3,7 @@
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 	import type { Card, PriceData } from '$lib/types';
 
 	interface Props {
@@ -151,6 +152,16 @@
 		creating = true;
 		error = null;
 
+		// Upload local image to Supabase Storage to get a public URL for eBay
+		let ebayImageUrl: string | null = null;
+		if (imageUrl && card.id) {
+			try {
+				ebayImageUrl = await uploadScanImageForListing(card.id, imageUrl);
+			} catch (err) {
+				console.warn('[ListingView] Image upload failed, listing without image:', err);
+			}
+		}
+
 		try {
 			const res = await fetch('/api/ebay/create-draft', {
 				method: 'POST',
@@ -168,7 +179,7 @@
 					price: numPrice,
 					quantity,
 					notes: notes || null,
-					scanImageUrl: imageUrl,
+					scanImageUrl: ebayImageUrl,
 					title,
 					description
 				})
