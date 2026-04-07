@@ -191,6 +191,45 @@ export async function uploadScanImage(collectionItemId: string, cardId: string, 
 	return urlData.publicUrl;
 }
 
+/**
+ * Upload a scan image to Supabase Storage without requiring a collection item.
+ * Used by the sell flow where the card may not be in the collection.
+ * Returns the public URL or null on failure.
+ */
+export async function uploadScanImageForListing(cardId: string, imageSource: string): Promise<string | null> {
+	const client = getSupabase();
+	if (!client) return null;
+
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return null;
+
+	let blob: Blob;
+	try {
+		const response = await fetch(imageSource);
+		blob = await response.blob();
+	} catch (err) {
+		console.error('[collection] Failed to fetch image source:', err);
+		return null;
+	}
+
+	const filename = `${user.id}/listing_${cardId}_${Date.now()}.jpg`;
+
+	const { error: uploadError } = await client.storage
+		.from('scan-images')
+		.upload(filename, blob, {
+			contentType: 'image/jpeg',
+			upsert: true
+		});
+
+	if (uploadError) {
+		console.error('[collection] Listing image upload failed:', uploadError);
+		return null;
+	}
+
+	const { data: urlData } = client.storage.from('scan-images').getPublicUrl(filename);
+	return urlData?.publicUrl || null;
+}
+
 export async function updateQuantity(itemId: string, quantity: number): Promise<void> {
 	if (quantity <= 0) {
 		await removeFromCollection(itemId);
