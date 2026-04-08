@@ -105,7 +105,11 @@ async function getSellerPolicies(token: string): Promise<{
 
 	try {
 		const safeJson = async (r: Response, label: string) => {
-			if (!r.ok) throw new Error(`eBay ${label} API returned ${r.status}`);
+			if (!r.ok) {
+				const body = await r.text().catch(() => '');
+				console.error(`[ebay/create-draft] ${label} API returned ${r.status}:`, body);
+				throw new Error(`eBay ${label} API returned ${r.status}`);
+			}
 			return r.json();
 		};
 		const [fulfillment, payment, returns] = await Promise.all([
@@ -119,11 +123,30 @@ async function getSellerPolicies(token: string): Promise<{
 			return policies[0][idField] || null;
 		};
 
-		const fulfillmentId = findPolicy(fulfillment.fulfillmentPolicies, 'fulfillmentPolicyId');
-		const paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
-		const returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
+		let fulfillmentId = findPolicy(fulfillment.fulfillmentPolicies, 'fulfillmentPolicyId');
+		let paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
+		let returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
 
-		if (!fulfillmentId || !paymentId || !returnId) return null;
+		// Auto-create missing policies so sellers don't have to configure eBay manually
+		if (!fulfillmentId) {
+			console.log('[ebay/create-draft] No fulfillment policy found — creating default');
+			fulfillmentId = await createDefaultFulfillmentPolicy(headers);
+		}
+		if (!paymentId) {
+			console.log('[ebay/create-draft] No payment policy found — creating default');
+			paymentId = await createDefaultPaymentPolicy(headers);
+		}
+		if (!returnId) {
+			console.log('[ebay/create-draft] No return policy found — creating default');
+			returnId = await createDefaultReturnPolicy(headers);
+		}
+
+		if (!fulfillmentId || !paymentId || !returnId) {
+			console.error('[ebay/create-draft] Missing policies after auto-create attempt:', {
+				fulfillmentId, paymentId, returnId
+			});
+			return null;
+		}
 
 		return {
 			fulfillmentPolicyId: fulfillmentId,
@@ -131,7 +154,92 @@ async function getSellerPolicies(token: string): Promise<{
 			returnPolicyId: returnId
 		};
 	} catch (err) {
-		console.debug('[ebay/create-draft] Seller policies fetch failed:', err);
+		console.error('[ebay/create-draft] Seller policies fetch failed:', err);
+		return null;
+	}
+}
+
+async function createDefaultFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	try {
+		const res = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				name: 'BOBA Scanner - Standard Shipping',
+				marketplaceId: 'EBAY_US',
+				handlingTime: { value: 1, unit: 'BUSINESS_DAY' },
+				shippingOptions: [{
+					optionType: 'DOMESTIC',
+					costType: 'FLAT_RATE',
+					shippingServices: [{
+						shippingServiceCode: 'ShippingMethodStandard',
+						shippingCost: { value: '0.00', currency: 'USD' },
+						sortOrder: 1,
+						freeShipping: true
+					}]
+				}]
+			})
+		});
+		if (!res.ok) {
+			const body = await res.text().catch(() => '');
+			console.error('[ebay/create-draft] Failed to create fulfillment policy:', res.status, body);
+			return null;
+		}
+		const data = await res.json();
+		return data.fulfillmentPolicyId || null;
+	} catch (err) {
+		console.error('[ebay/create-draft] fulfillment policy creation error:', err);
+		return null;
+	}
+}
+
+async function createDefaultPaymentPolicy(headers: Record<string, string>): Promise<string | null> {
+	try {
+		const res = await fetch(`${EBAY_ACCOUNT_URL}/payment_policy`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				name: 'BOBA Scanner - Managed Payments',
+				marketplaceId: 'EBAY_US',
+				paymentMethods: [{ paymentMethodType: 'PERSONAL_CHECK' }]
+			})
+		});
+		if (!res.ok) {
+			const body = await res.text().catch(() => '');
+			console.error('[ebay/create-draft] Failed to create payment policy:', res.status, body);
+			return null;
+		}
+		const data = await res.json();
+		return data.paymentPolicyId || null;
+	} catch (err) {
+		console.error('[ebay/create-draft] payment policy creation error:', err);
+		return null;
+	}
+}
+
+async function createDefaultReturnPolicy(headers: Record<string, string>): Promise<string | null> {
+	try {
+		const res = await fetch(`${EBAY_ACCOUNT_URL}/return_policy`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				name: 'BOBA Scanner - 30 Day Returns',
+				marketplaceId: 'EBAY_US',
+				returnsAccepted: true,
+				returnPeriod: { value: 30, unit: 'DAY' },
+				refundMethod: 'MONEY_BACK',
+				returnShippingCostPayer: 'BUYER'
+			})
+		});
+		if (!res.ok) {
+			const body = await res.text().catch(() => '');
+			console.error('[ebay/create-draft] Failed to create return policy:', res.status, body);
+			return null;
+		}
+		const data = await res.json();
+		return data.returnPolicyId || null;
+	} catch (err) {
+		console.error('[ebay/create-draft] return policy creation error:', err);
 		return null;
 	}
 }
