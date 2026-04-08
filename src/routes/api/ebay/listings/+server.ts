@@ -22,6 +22,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const adminClient = getAdminClient();
 	if (!adminClient) return serviceUnavailable('Database');
 
+	try {
 	const statusFilter = url.searchParams.get('status') || 'all';
 	const validStatuses = ['all', 'draft', 'published', 'sold', 'ended', 'error', 'pending'];
 
