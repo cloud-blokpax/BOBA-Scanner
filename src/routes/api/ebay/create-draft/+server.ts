@@ -244,7 +244,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				partial: true,
 				sku,
 				message: 'Card added to eBay inventory — tap "Finish in Seller Hub" to publish',
-				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
 			});
 		}
 
@@ -295,7 +295,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				partial: true,
 				sku,
 				message: 'Card added to eBay inventory — finish listing in Seller Hub',
-				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
 			});
 		}
 
@@ -309,16 +309,62 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				partial: true,
 				sku,
 				message: 'Card added to eBay inventory — finish listing in Seller Hub',
-				sellerHubUrl: 'https://www.ebay.com/sh/lst/drafts'
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
+			});
+		}
+
+		// Step 4: Publish the offer to make it a live listing.
+		// eBay's Drafts UI does NOT show API-created unpublished offers,
+		// so we must publish for the seller to see/manage it.
+		const offerId = offerData.offerId;
+		if (offerId) {
+			const publishRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${offerId}/publish`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'Content-Type': 'application/json',
+					'Accept-Language': 'en-US',
+					'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+				}
+			});
+
+			if (publishRes.ok) {
+				const publishData = await publishRes.json().catch(() => ({}));
+				const listingId = publishData.listingId;
+				return json({
+					success: true,
+					partial: false,
+					listingId: listingId || null,
+					listingUrl: listingId ? `https://www.ebay.com/itm/${listingId}` : null,
+					offerId,
+					sku,
+					message: listingId
+						? `Listed on eBay! View at ebay.com/itm/${listingId}`
+						: 'Listing published on eBay'
+				});
+			}
+
+			// Publish failed — offer exists but not live
+			const publishErr = await publishRes.text().catch(() => '');
+			console.error('[ebay/create-draft] Publish failed:', publishRes.status, publishErr);
+
+			// Still return the offer info — seller can publish manually from Seller Hub
+			return json({
+				success: true,
+				partial: true,
+				offerId,
+				sku,
+				message: 'Listing created but could not auto-publish. Check your eBay Seller Hub.',
+				sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
 			});
 		}
 
 		return json({
 			success: true,
 			partial: false,
-			offerId: offerData.offerId || null,
+			offerId: offerId || null,
 			sku,
-			message: 'Draft listing created in your eBay Seller Hub'
+			message: 'Listing created on eBay'
 		});
 	} catch (err) {
 		// Re-throw SvelteKit HttpErrors as-is (they already have status + message)

@@ -28,6 +28,7 @@
 	let creating = $state(false);
 	let created = $state(false);
 	let sellerHubUrl = $state<string | null>(null);
+	let listingUrl = $state<string | null>(null);
 	let error = $state<string | null>(null);
 
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
@@ -193,11 +194,14 @@
 			const result = await res.json().catch(() => ({ success: true }));
 			created = true;
 			sellerHubUrl = result.sellerHubUrl || null;
+			listingUrl = result.listingUrl || null;
 
-			if (result.partial) {
+			if (result.listingUrl) {
+				showToast('Listed on eBay!', 'check');
+			} else if (result.partial) {
 				showToast('Card added to eBay inventory', 'check');
 			} else {
-				showToast('Draft created in eBay Seller Hub', 'check');
+				showToast('Listing published on eBay', 'check');
 				if (!backLabel) {
 					setTimeout(() => {
 						if (created) onScanNext();
@@ -393,7 +397,15 @@
 	</details>
 
 	<!-- Actions -->
-	{#if created && sellerHubUrl}
+	{#if created && listingUrl}
+		<div class="stl-success">
+			<span class="stl-success-icon">✓</span>
+			<span>Listed on eBay!</span>
+		</div>
+		<a href={listingUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create">
+			View Listing on eBay ↗
+		</a>
+	{:else if created && sellerHubUrl}
 		<div class="stl-success">
 			<span class="stl-success-icon">✓</span>
 			<span>Card added to eBay inventory</span>
