@@ -71,20 +71,24 @@ function plainTextToHtml(text: string): string {
 		.join('\n');
 }
 
-// eBay Inventory API uses enum strings, NOT numeric condition IDs
+// eBay Inventory API condition enums for Trading Card categories (261328):
+//   LIKE_NEW    = "Graded" (requires conditionDescriptors with grading info)
+//   USED_VERY_GOOD = "Ungraded"
+// All ungraded cards should use USED_VERY_GOOD regardless of physical condition.
+// When we add grading support, graded cards will use LIKE_NEW + conditionDescriptors.
 const CONDITION_MAP: Record<string, string> = {
-	'mint': 'LIKE_NEW',
-	'nearmint': 'LIKE_NEW',
-	'near_mint': 'LIKE_NEW',
-	'excellent': 'LIKE_NEW',
+	'mint': 'USED_VERY_GOOD',
+	'nearmint': 'USED_VERY_GOOD',
+	'near_mint': 'USED_VERY_GOOD',
+	'excellent': 'USED_VERY_GOOD',
 	'good': 'USED_VERY_GOOD',
-	'fair': 'USED_GOOD',
-	'poor': 'USED_ACCEPTABLE'
+	'fair': 'USED_VERY_GOOD',
+	'poor': 'USED_VERY_GOOD'
 };
 
 function conditionToEbay(condition: string): string {
 	const key = (condition || '').toLowerCase().replace(/[_\s]/g, '');
-	return CONDITION_MAP[key] || 'LIKE_NEW';
+	return CONDITION_MAP[key] || 'USED_VERY_GOOD';
 }
 
 async function getSellerPolicies(token: string): Promise<{
