@@ -12,11 +12,54 @@
 		ebayConfigured: boolean;
 		ebayConnected: boolean;
 		ebayChecked: boolean;
+		ebaySellerUsername: string | null;
+		ebaySellerEmail: string | null;
+		ebayConnectedSince: string | null;
+		ebayTokenHealth: { access_token_valid: boolean; refresh_days_remaining: number } | null;
 		onStartScan: () => void;
 		onStartUpload: () => void;
+		onEbayDisconnected: () => void;
 	}
 
-	let { ebayConfigured, ebayConnected, ebayChecked, onStartScan, onStartUpload }: Props = $props();
+	let { ebayConfigured, ebayConnected, ebayChecked, ebaySellerUsername, ebaySellerEmail, ebayConnectedSince, ebayTokenHealth, onStartScan, onStartUpload, onEbayDisconnected }: Props = $props();
+
+	let ebayDisconnecting = $state(false);
+	let ebayValidating = $state(false);
+	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
+
+	async function disconnectEbay() {
+		ebayDisconnecting = true;
+		try {
+			const res = await fetch('/api/ebay/disconnect', { method: 'POST' });
+			if (!res.ok) throw new Error();
+			ebayValidation = null;
+			onEbayDisconnected();
+			showToast('eBay account disconnected', 'check');
+		} catch {
+			showToast('Failed to disconnect eBay', 'x');
+		}
+		ebayDisconnecting = false;
+	}
+
+	async function validateEbay() {
+		ebayValidating = true;
+		ebayValidation = null;
+		try {
+			const res = await fetch('/api/ebay/validate', { method: 'POST' });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = await res.json();
+			ebayValidation = data;
+			if (data.valid) {
+				showToast('eBay connection verified', 'check');
+			} else {
+				showToast(data.error || 'eBay connection invalid', 'x');
+			}
+		} catch {
+			ebayValidation = { valid: false, error: 'Validation request failed' };
+			showToast('Could not validate eBay connection', 'x');
+		}
+		ebayValidating = false;
+	}
 
 	const items = $derived(collectionItems());
 	const loading = $derived(collectionLoading());
@@ -101,15 +144,76 @@
 		<div class="ebay-connect-section">
 			<h2 class="section-heading">eBay Seller</h2>
 			{#if ebayConnected}
-				<div class="ebay-status ebay-connected">
-					<span class="ebay-status-dot"></span>
-					<span>eBay account connected</span>
-					<a href="/settings" class="ebay-manage-link">Manage</a>
+				<div class="ebay-seller-card">
+					<div class="ebay-seller-header">
+						<span class="ebay-status-dot"></span>
+						<span class="ebay-seller-connected-label">Connected</span>
+						<div class="ebay-seller-actions">
+							<button class="ebay-action-btn ebay-action-test" onclick={validateEbay} disabled={ebayValidating}>
+								{ebayValidating ? '...' : 'Test'}
+							</button>
+							<button class="ebay-action-btn ebay-action-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+								{ebayDisconnecting ? '...' : 'Disconnect'}
+							</button>
+						</div>
+					</div>
+
+					<div class="ebay-seller-details">
+						{#if ebaySellerUsername}
+							<div class="ebay-detail-row">
+								<span class="ebay-detail-label">Seller</span>
+								<span class="ebay-detail-value">{ebaySellerUsername}</span>
+							</div>
+						{/if}
+						{#if ebaySellerEmail}
+							<div class="ebay-detail-row">
+								<span class="ebay-detail-label">Email</span>
+								<span class="ebay-detail-value ebay-email">{ebaySellerEmail}</span>
+							</div>
+						{/if}
+						{#if ebayConnectedSince}
+							<div class="ebay-detail-row">
+								<span class="ebay-detail-label">Since</span>
+								<span class="ebay-detail-value">{new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+							</div>
+						{/if}
+						{#if ebayTokenHealth}
+							<div class="ebay-detail-row">
+								<span class="ebay-detail-label">Token</span>
+								<span class="ebay-detail-value">
+									<span class="ebay-token-dot" class:healthy={ebayTokenHealth.access_token_valid} class:expired={!ebayTokenHealth.access_token_valid}></span>
+									{ebayTokenHealth.access_token_valid ? 'Active' : 'Refreshing'}
+									{#if ebayTokenHealth.refresh_days_remaining <= 30}
+										<span class="ebay-token-warning"> · {ebayTokenHealth.refresh_days_remaining}d left</span>
+									{/if}
+								</span>
+							</div>
+						{/if}
+					</div>
+
+					{#if ebayValidation}
+						<div class="ebay-validation-banner" class:valid={ebayValidation.valid} class:invalid={!ebayValidation.valid}>
+							{#if ebayValidation.valid}
+								Verified
+								{#if ebayValidation.sellingLimit}
+									 · Limit: {ebayValidation.sellingLimit.quantity} items / ${ebayValidation.sellingLimit.amount.toLocaleString()}
+								{/if}
+							{:else}
+								{ebayValidation.error || 'Connection invalid'}
+							{/if}
+						</div>
+					{/if}
+
+					{#if !ebaySellerUsername && !ebaySellerEmail}
+						<p class="ebay-reconnect-hint">
+							<a href="/auth/ebay" data-sveltekit-reload>Reconnect</a> to display your seller name and email.
+						</p>
+					{/if}
 				</div>
 			{:else if ebayConfigured}
 				<div class="ebay-connect-card">
 					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
-					<a href="/settings?ebay=setup" class="btn-ebay-connect">Connect eBay Account</a>
+					<a href="/auth/ebay" class="btn-ebay-connect" data-sveltekit-reload>Connect eBay Account</a>
 				</div>
 			{:else}
 				<div class="ebay-connect-card">
@@ -253,16 +357,18 @@
 	/* eBay connection */
 	.ebay-connect-section { margin-bottom: 2rem; }
 
-	.ebay-status {
+	.ebay-seller-card {
+		padding: 0.875rem 1rem;
+		border-radius: 10px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+
+	.ebay-seller-header {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border-radius: 8px;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		font-size: 0.85rem;
-		color: var(--text-secondary, #94a3b8);
+		margin-bottom: 0.75rem;
 	}
 
 	.ebay-status-dot {
@@ -273,13 +379,107 @@
 		flex-shrink: 0;
 	}
 
-	.ebay-manage-link {
+	.ebay-seller-connected-label {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--success, #10b981);
+	}
+
+	.ebay-seller-actions {
 		margin-left: auto;
+		display: flex;
+		gap: 0.375rem;
+	}
+
+	.ebay-action-btn {
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 0.25rem 0.625rem;
+		border-radius: 6px;
+		border: 1px solid var(--border-strong, rgba(148,163,184,0.2));
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+	.ebay-action-btn:disabled { opacity: 0.5; cursor: default; }
+	.ebay-action-test { border-color: var(--info, #3b82f6); color: var(--info, #3b82f6); }
+	.ebay-action-test:hover:not(:disabled) { background: rgba(59,130,246,0.08); }
+	.ebay-action-disconnect:hover:not(:disabled) { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+
+	.ebay-seller-details {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.ebay-detail-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 		font-size: 0.8rem;
+	}
+
+	.ebay-detail-label {
+		width: 48px;
+		flex-shrink: 0;
 		color: var(--text-muted, #475569);
+		font-weight: 500;
+	}
+
+	.ebay-detail-value {
+		color: var(--text-secondary, #94a3b8);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ebay-email {
+		font-size: 0.75rem;
+	}
+
+	.ebay-token-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		margin-right: 4px;
+		vertical-align: middle;
+	}
+	.ebay-token-dot.healthy { background: var(--success, #10b981); }
+	.ebay-token-dot.expired { background: var(--warning, #f59e0b); }
+
+	.ebay-token-warning {
+		color: var(--warning, #f59e0b);
+		font-size: 0.7rem;
+	}
+
+	.ebay-validation-banner {
+		margin-top: 0.625rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+	.ebay-validation-banner.valid {
+		background: rgba(16,185,129,0.1);
+		color: var(--success, #10b981);
+	}
+	.ebay-validation-banner.invalid {
+		background: rgba(239,68,68,0.1);
+		color: var(--danger, #ef4444);
+	}
+
+	.ebay-reconnect-hint {
+		margin-top: 0.625rem;
+		font-size: 0.75rem;
+		color: var(--text-muted, #475569);
+	}
+	.ebay-reconnect-hint a {
+		color: var(--accent-primary, #3b82f6);
 		text-decoration: none;
 	}
-	.ebay-manage-link:hover { color: var(--text-secondary, #94a3b8); }
+	.ebay-reconnect-hint a:hover { text-decoration: underline; }
 
 	.ebay-connect-card {
 		padding: 1rem;

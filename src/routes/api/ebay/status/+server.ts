@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { isSellerOAuthConfigured } from '$lib/server/ebay-seller-auth';
+import { isSellerOAuthConfigured, getSellerProfile } from '$lib/server/ebay-seller-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const { data } = await admin
 		.from('ebay_seller_tokens')
-		.select('access_token_expires_at, refresh_token_expires_at, scopes, updated_at')
+		.select('access_token_expires_at, refresh_token_expires_at, scopes, created_at, updated_at')
 		.eq('user_id', user.id)
 		.maybeSingle();
 
@@ -30,10 +30,15 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const accessExpiresAt = data ? new Date(data.access_token_expires_at).getTime() : 0;
 	const connected = !!data && refreshExpiresAt > now;
 
+	// Fetch seller profile (username/email) in parallel if connected
+	const profile = connected ? await getSellerProfile(user.id) : null;
+
 	return json({
 		configured,
 		connected,
-		connected_since: connected && data?.updated_at ? data.updated_at : null,
+		connected_since: connected && data?.created_at ? data.created_at : null,
+		seller_username: profile?.username ?? null,
+		seller_email: profile?.email ?? null,
 		token_health: connected ? {
 			access_token_valid: accessExpiresAt > now,
 			access_token_expires_at: data!.access_token_expires_at,
