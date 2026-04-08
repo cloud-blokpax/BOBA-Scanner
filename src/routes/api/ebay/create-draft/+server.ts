@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth';
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/server/validate';
+import { getAdminClient } from '$lib/server/supabase-admin';
 
 export const config = { maxDuration: 60 };
 
@@ -317,8 +318,35 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
+	const adminClient = getAdminClient();
+	const sku = `BOBA-${body.cardId || Date.now()}`;
+
+	// Persist listing template to DB for history tracking
+	if (adminClient) {
+		try {
+			await adminClient.from('listing_templates').insert({
+				user_id: user.id,
+				card_id: body.cardId || '',
+				title: body.title || buildTitle(body),
+				description: body.description || null,
+				price,
+				condition: body.condition || 'Near Mint',
+				sku,
+				status: 'pending',
+				scan_image_url: body.scanImageUrl || null,
+				hero_name: heroName || null,
+				card_number: cardNumber || null,
+				set_code: body.setCode || null,
+				parallel: body.parallel || null,
+				weapon_type: body.weaponType || null,
+				created_at: new Date().toISOString()
+			});
+		} catch (err) {
+			console.debug('[ebay/create-draft] Template save failed:', err);
+		}
+	}
+
 	try {
-		const sku = `BOBA-${body.cardId || Date.now()}`;
 
 		// Use user-provided title/description if available, otherwise generate
 		const listingTitle = body.title || buildTitle(body);
@@ -388,6 +416,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		if (!policies) {
 			// Policies unavailable — inventory item is created, user finishes in Seller Hub
+			if (adminClient) {
+				try {
+					await adminClient.from('listing_templates').update({
+						status: 'draft',
+						updated_at: new Date().toISOString()
+					}).eq('sku', sku);
+				} catch { /* non-critical */ }
+			}
 			return json({
 				success: true,
 				partial: true,
@@ -468,6 +504,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			offerData = await offerRes.json();
 		} catch {
 			// Inventory item created, offer parse failed — partial success
+			if (adminClient) {
+				try {
+					await adminClient.from('listing_templates').update({
+						status: 'draft',
+						updated_at: new Date().toISOString()
+					}).eq('sku', sku);
+				} catch { /* non-critical */ }
+			}
 			return json({
 				success: true,
 				partial: true,
@@ -485,6 +529,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			return await publishOffer(offerId, token, sku);
 		}
 
+		// Full success — offer created
+		if (adminClient) {
+			try {
+				await adminClient.from('listing_templates').update({
+					status: 'draft',
+					ebay_offer_id: offerData.offerId || null,
+					updated_at: new Date().toISOString()
+				}).eq('sku', sku);
+			} catch { /* non-critical */ }
+		}
+
 		return json({
 			success: true,
 			partial: false,
@@ -497,6 +552,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (err && typeof err === 'object' && 'status' in err) throw err;
 		const message = err instanceof Error ? err.message : 'Draft creation failed';
 		console.error('[ebay/create-draft] Unexpected error:', message);
+
+		// Update template with error
+		if (adminClient) {
+			try {
+				await adminClient.from('listing_templates').update({
+					status: 'error',
+					error_message: message,
+					updated_at: new Date().toISOString()
+				}).eq('sku', sku);
+			} catch { /* non-critical */ }
+		}
+
 		throw error(502, `Draft creation failed: ${message}`);
 	}
 };
