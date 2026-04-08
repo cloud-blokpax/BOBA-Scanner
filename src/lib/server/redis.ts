@@ -16,8 +16,8 @@ import type { HashCacheEntry } from '$lib/types';
 let redis: Redis | null = null;
 
 export function getRedis(): Redis | null {
-	const upstashUrl = env.UPSTASH_REDIS_REST_URL ?? '';
-	const upstashToken = env.UPSTASH_REDIS_REST_TOKEN ?? '';
+	const upstashUrl = (env.UPSTASH_REDIS_REST_URL ?? '').trim();
+	const upstashToken = (env.UPSTASH_REDIS_REST_TOKEN ?? '').trim();
 	if (!upstashUrl || !upstashToken) return null;
 	if (!redis) {
 		redis = new Redis({ url: upstashUrl, token: upstashToken });
