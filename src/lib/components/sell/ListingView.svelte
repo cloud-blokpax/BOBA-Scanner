@@ -413,6 +413,7 @@
 		<a href={sellerHubUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create">
 			Finish in Seller Hub ↗
 		</a>
+		<button class="stl-text-btn stl-view-listings" onclick={onDone}>View My Listings</button>
 	{:else if created}
 		<div class="stl-success">
 			<span class="stl-success-icon">✓</span>
@@ -826,4 +827,13 @@
 	}
 
 	.stl-text-btn:hover { color: var(--text-secondary, #94a3b8); }
+
+	.stl-view-listings {
+		display: block;
+		width: 100%;
+		text-align: center;
+		margin-top: 0.5rem;
+		color: var(--accent-primary, #3b82f6) !important;
+		font-weight: 600;
+	}
 </style>

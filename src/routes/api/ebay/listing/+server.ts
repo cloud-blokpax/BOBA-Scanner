@@ -136,6 +136,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				condition,
 				sku,
 				status: 'pending',
+				scan_image_url: scanImageUrl,
+				hero_name: (body.heroName as string) || null,
+				card_number: (body.cardNumber as string) || null,
+				set_code: (body.setCode as string) || null,
+				parallel: (body.parallel as string) || null,
+				weapon_type: (body.weaponType as string) || null,
 				created_at: new Date().toISOString()
 			});
 		} catch (err) {

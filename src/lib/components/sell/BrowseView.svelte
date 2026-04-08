@@ -3,6 +3,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
+	import ListingHistory from '$lib/components/sell/ListingHistory.svelte';
 	import { getBuiltInTemplate, generateCSV, downloadFile } from '$lib/services/export-templates';
 	import { getAllTags } from '$lib/stores/tags.svelte';
 	import { onMount } from 'svelte';
@@ -220,6 +221,11 @@
 				</div>
 			{/if}
 		</div>
+	{/if}
+
+	<!-- My Listings -->
+	{#if ebayConnected}
+		<ListingHistory {ebayConnected} />
 	{/if}
 
 	<!-- Scanned Cards -->
