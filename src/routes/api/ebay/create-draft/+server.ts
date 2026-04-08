@@ -250,7 +250,7 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
  * eBay requires this before an offer can be published (provides Item.Country).
  * If none exists, create a default US-based location.
  */
-async function ensureInventoryLocation(token: string): Promise<void> {
+async function ensureInventoryLocation(token: string): Promise<boolean> {
 	const headers = {
 		Authorization: `Bearer ${token}`,
 		'Content-Type': 'application/json',
@@ -264,11 +264,12 @@ async function ensureInventoryLocation(token: string): Promise<void> {
 		if (res.ok) {
 			const data = await res.json();
 			if (data.locations && data.locations.length > 0) {
-				return; // Location already exists
+				return true; // Location already exists
 			}
 		}
 
-		// Create a default location
+		// Create a default location — eBay requires postalCode + stateOrProvince
+		// in addition to country for a valid inventory location
 		const locationKey = 'boba-default';
 		const createRes = await fetch(
 			`${EBAY_INVENTORY_URL}/location/${locationKey}`,
@@ -278,6 +279,8 @@ async function ensureInventoryLocation(token: string): Promise<void> {
 				body: JSON.stringify({
 					location: {
 						address: {
+							postalCode: '10001',
+							stateOrProvince: 'NY',
 							country: 'US'
 						}
 					},
@@ -288,18 +291,22 @@ async function ensureInventoryLocation(token: string): Promise<void> {
 			}
 		);
 
-		if (!createRes.ok) {
-			const errBody = await createRes.text().catch(() => '');
-			console.error('[ebay/create-draft] Inventory location creation failed:', createRes.status, errBody);
-			// If 409 or already exists, that's fine
-			if (createRes.status !== 409) {
-				console.warn('[ebay/create-draft] Could not auto-create inventory location');
-			}
-		} else {
+		if (createRes.ok || createRes.status === 204) {
 			console.log('[ebay/create-draft] Created default inventory location');
+			return true;
 		}
+
+		// 409 = location already exists with this key, which is fine
+		if (createRes.status === 409) {
+			return true;
+		}
+
+		const errBody = await createRes.text().catch(() => '');
+		console.error('[ebay/create-draft] Inventory location creation failed:', createRes.status, errBody);
+		return false;
 	} catch (err) {
 		console.warn('[ebay/create-draft] Inventory location check failed:', err);
+		return false;
 	}
 }
 
@@ -467,15 +474,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(502, message);
 		}
 
-		// Step 2: Ensure seller has an inventory location (required for Item.Country)
-		await ensureInventoryLocation(token);
+		// Step 2: Ensure seller has an inventory location (required for Item.Country on publish)
+		const hasLocation = await ensureInventoryLocation(token);
 
 		// Step 3: Try to fetch policies and create a full offer.
 		// Some eBay accounts (Managed Payments) can't access the Business Policy API,
 		// so if this fails we still return success with the inventory item created.
 		const policies = await getSellerPolicies(token);
 
-		if (!policies) {
+		if (!hasLocation || !policies) {
 			// Policies unavailable — inventory item is created, user finishes in Seller Hub
 			if (adminClient) {
 				try {
