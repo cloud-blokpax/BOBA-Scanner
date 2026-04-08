@@ -38,7 +38,7 @@ interface PlayCardRaw {
  * Bump this date whenever a bulk data migration touches existing rows
  * without updating the `updated_at` column (e.g. backfilling athlete_name).
  */
-const CARD_DATA_EPOCH = '2026-04-06T00:00:00.000Z';
+const CARD_DATA_EPOCH = '2026-04-08T00:00:00.000Z';
 
 /**
  * Map a play card record to the Card interface so it can be indexed
