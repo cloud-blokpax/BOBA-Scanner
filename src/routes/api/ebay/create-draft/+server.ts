@@ -245,6 +245,47 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
 	}
 }
 
+async function publishOffer(offerId: string, token: string, sku: string) {
+	const publishRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${offerId}/publish`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			'Accept-Language': 'en-US',
+			'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+		}
+	});
+
+	if (publishRes.ok) {
+		const publishData = await publishRes.json().catch(() => ({}));
+		const listingId = publishData.listingId;
+		return json({
+			success: true,
+			partial: false,
+			listingId: listingId || null,
+			listingUrl: listingId ? `https://www.ebay.com/itm/${listingId}` : null,
+			offerId,
+			sku,
+			message: listingId
+				? `Listed on eBay! View at ebay.com/itm/${listingId}`
+				: 'Listing published on eBay'
+		});
+	}
+
+	// Publish failed — offer exists but not live
+	const publishErr = await publishRes.text().catch(() => '');
+	console.error('[ebay/create-draft] Publish failed:', publishRes.status, publishErr);
+
+	return json({
+		success: true,
+		partial: true,
+		offerId,
+		sku,
+		message: 'Listing created but could not auto-publish. Check your eBay Seller Hub.',
+		sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
+	});
+}
+
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireAuth(locals);
 
@@ -434,14 +475,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				throw error(403, 'eBay session expired. Reconnect in Settings.');
 			}
 
-			if (adminClient) {
-				try {
-					await adminClient.from('listing_templates').update({
-						status: 'draft',
-						updated_at: new Date().toISOString()
-					}).eq('sku', sku);
-				} catch { /* non-critical */ }
+			// If offer already exists for this SKU, extract the existing offerId and publish it
+			let existingOfferId: string | null = null;
+			try {
+				const parsed = JSON.parse(errBody);
+				const err = parsed.errors?.[0];
+				if (err?.errorId === 25002) {
+					existingOfferId = err.parameters?.find((p: { name: string; value: string }) => p.name === 'offerId')?.value || null;
+				}
+			} catch { /* parse failed */ }
+
+			if (existingOfferId) {
+				console.log('[ebay/create-draft] Offer already exists, publishing:', existingOfferId);
+				return await publishOffer(existingOfferId, token, sku);
 			}
+
 			return json({
 				success: true,
 				partial: true,
@@ -478,45 +526,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// so we must publish for the seller to see/manage it.
 		const offerId = offerData.offerId;
 		if (offerId) {
-			const publishRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${offerId}/publish`, {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'Content-Type': 'application/json',
-					'Accept-Language': 'en-US',
-					'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-				}
-			});
-
-			if (publishRes.ok) {
-				const publishData = await publishRes.json().catch(() => ({}));
-				const listingId = publishData.listingId;
-				return json({
-					success: true,
-					partial: false,
-					listingId: listingId || null,
-					listingUrl: listingId ? `https://www.ebay.com/itm/${listingId}` : null,
-					offerId,
-					sku,
-					message: listingId
-						? `Listed on eBay! View at ebay.com/itm/${listingId}`
-						: 'Listing published on eBay'
-				});
-			}
-
-			// Publish failed — offer exists but not live
-			const publishErr = await publishRes.text().catch(() => '');
-			console.error('[ebay/create-draft] Publish failed:', publishRes.status, publishErr);
-
-			// Still return the offer info — seller can publish manually from Seller Hub
-			return json({
-				success: true,
-				partial: true,
-				offerId,
-				sku,
-				message: 'Listing created but could not auto-publish. Check your eBay Seller Hub.',
-				sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
-			});
+			return await publishOffer(offerId, token, sku);
 		}
 
 		// Full success — offer created
