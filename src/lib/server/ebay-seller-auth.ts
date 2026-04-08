@@ -18,7 +18,8 @@ const SELLER_SCOPES = [
 	'https://api.ebay.com/oauth/api_scope/sell.inventory',
 	'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
 	'https://api.ebay.com/oauth/api_scope/sell.account',
-	'https://api.ebay.com/oauth/api_scope/sell.account.readonly'
+	'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
+	'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly'
 ].join(' ');
 
 // Use shared admin client for service-role operations
@@ -194,6 +195,46 @@ export async function validateSellerConnection(userId: string): Promise<SellerVa
 	} catch (err) {
 		console.error('[ebay-seller-auth] Privilege check network error:', err);
 		return { valid: false, error: 'Could not reach eBay — try again later' };
+	}
+}
+
+export interface SellerProfile {
+	username: string | null;
+	email: string | null;
+}
+
+/**
+ * Fetches the eBay seller's username and email via the Commerce Identity API.
+ * Requires the commerce.identity.readonly scope — returns nulls if the scope
+ * is missing (old connection) or the call fails.
+ */
+export async function getSellerProfile(userId: string): Promise<SellerProfile> {
+	const token = await getSellerToken(userId);
+	if (!token) return { username: null, email: null };
+
+	try {
+		const res = await fetch('https://apiz.ebay.com/commerce/identity/v1/user/', {
+			headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+		});
+
+		if (!res.ok) {
+			if (res.status === 403 || res.status === 401) {
+				// Missing scope or invalid token — not fatal
+				console.warn(`[ebay-seller-auth] Identity API returned ${res.status} — user may need to reconnect for profile info`);
+			} else {
+				console.error(`[ebay-seller-auth] Identity API error (${res.status}):`, await res.text().catch(() => ''));
+			}
+			return { username: null, email: null };
+		}
+
+		const data = await res.json();
+		return {
+			username: data.username ?? null,
+			email: data.email ?? null
+		};
+	} catch (err) {
+		console.error('[ebay-seller-auth] Identity API network error:', err);
+		return { username: null, email: null };
 	}
 }
 

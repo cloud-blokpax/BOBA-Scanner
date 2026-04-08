@@ -11,6 +11,10 @@
 	let ebayConfigured = $state(false);
 	let ebayConnected = $state(false);
 	let ebayChecked = $state(false);
+	let ebaySellerUsername = $state<string | null>(null);
+	let ebaySellerEmail = $state<string | null>(null);
+	let ebayConnectedSince = $state<string | null>(null);
+	let ebayTokenHealth = $state<{ access_token_valid: boolean; refresh_days_remaining: number } | null>(null);
 
 	onMount(() => {
 		fetch('/api/ebay/status')
@@ -18,6 +22,13 @@
 			.then(data => {
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
+				ebaySellerUsername = data.seller_username ?? null;
+				ebaySellerEmail = data.seller_email ?? null;
+				ebayConnectedSince = data.connected_since ?? null;
+				ebayTokenHealth = data.token_health ? {
+					access_token_valid: data.token_health.access_token_valid,
+					refresh_days_remaining: data.token_health.refresh_days_remaining
+				} : null;
 			})
 			.catch((err) => {
 				console.warn('[sell] eBay status check failed:', err);
@@ -172,8 +183,10 @@
 {:else}
 	<BrowseView
 		{ebayConfigured} {ebayConnected} {ebayChecked}
+		{ebaySellerUsername} {ebaySellerEmail} {ebayConnectedSince} {ebayTokenHealth}
 		onStartScan={startScanToList}
 		onStartUpload={startUploadToList}
+		onEbayDisconnected={() => { ebayConnected = false; ebaySellerUsername = null; ebaySellerEmail = null; ebayConnectedSince = null; ebayTokenHealth = null; }}
 	/>
 {/if}
 
