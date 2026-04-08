@@ -13,6 +13,7 @@ import {
 	recordDeletion
 } from '$lib/services/collection-service';
 import { getSupabase } from '$lib/services/supabase';
+import { createListingImageBlob } from '$lib/services/scan-image-utils';
 import type { CollectionItem } from '$lib/types';
 
 /** Lazy import to avoid circular dependency (sync.ts imports from this file) */
@@ -206,9 +207,15 @@ export async function uploadScanImageForListing(cardId: string, imageSource: str
 	let blob: Blob;
 	try {
 		const response = await fetch(imageSource);
-		blob = await response.blob();
+		const rawBlob = await response.blob();
+
+		// Resize/compress to fit Supabase storage limits
+		const bitmap = await createImageBitmap(rawBlob);
+		const compressed = await createListingImageBlob(bitmap);
+		bitmap.close();
+		blob = compressed ?? rawBlob;
 	} catch (err) {
-		console.error('[collection] Failed to fetch image source:', err);
+		console.error('[collection] Failed to fetch/compress image source:', err);
 		return null;
 	}
 
