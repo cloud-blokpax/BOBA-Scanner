@@ -31,7 +31,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	let query = adminClient
 		.from('listing_templates')
-		.select('id, card_id, title, description, price, condition, sku, status, ebay_listing_id, ebay_listing_url, error_message, scan_image_url, hero_name, card_number, set_code, parallel, weapon_type, sold_at, sold_price, ebay_offer_id, created_at, updated_at')
+		.select('*')
 		.eq('user_id', user.id)
 		.order('created_at', { ascending: false })
 		.limit(100);
@@ -64,21 +64,43 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		}
 	}
 
-	// Build response with card image fallback
-	const enrichedListings = (listings || []).map(l => ({
-		...l,
-		card_image_url: cardImages[l.card_id] || null
+	// Build response with card image fallback and safe field access
+	// (some columns may not exist yet in the DB — handle gracefully)
+	const enrichedListings = (listings || []).map((l: Record<string, unknown>) => ({
+		id: l.id ?? null,
+		card_id: l.card_id ?? null,
+		title: l.title ?? null,
+		description: l.description ?? null,
+		price: l.price ?? l.listing_price ?? null,
+		condition: l.condition ?? null,
+		sku: l.sku ?? null,
+		status: l.status ?? 'draft',
+		ebay_listing_id: l.ebay_listing_id ?? null,
+		ebay_listing_url: l.ebay_listing_url ?? null,
+		error_message: l.error_message ?? null,
+		scan_image_url: l.scan_image_url ?? null,
+		hero_name: l.hero_name ?? null,
+		card_number: l.card_number ?? null,
+		set_code: l.set_code ?? null,
+		parallel: l.parallel ?? null,
+		weapon_type: l.weapon_type ?? null,
+		sold_at: l.sold_at ?? null,
+		sold_price: l.sold_price ?? null,
+		ebay_offer_id: l.ebay_offer_id ?? null,
+		created_at: l.created_at ?? null,
+		updated_at: l.updated_at ?? null,
+		card_image_url: cardImages[l.card_id as string] || null
 	}));
 
 	// Compute summary stats
-	const all = listings || [];
+	const all = enrichedListings;
 	const summary = {
 		total: all.length,
 		active: all.filter(l => l.status === 'published' || l.status === 'draft').length,
 		sold: all.filter(l => l.status === 'sold').length,
 		revenue: all
 			.filter(l => l.status === 'sold')
-			.reduce((sum, l) => sum + (l.sold_price ?? l.price ?? 0), 0)
+			.reduce((sum, l) => sum + ((l.sold_price ?? l.price ?? 0) as number), 0)
 	};
 
 	return json({ listings: enrichedListings, summary });

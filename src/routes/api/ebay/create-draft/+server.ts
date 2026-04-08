@@ -245,6 +245,64 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
 	}
 }
 
+/**
+ * Ensure the seller has at least one inventory location.
+ * eBay requires this before an offer can be published (provides Item.Country).
+ * If none exists, create a default US-based location.
+ */
+async function ensureInventoryLocation(token: string): Promise<void> {
+	const headers = {
+		Authorization: `Bearer ${token}`,
+		'Content-Type': 'application/json',
+		'Accept-Language': 'en-US',
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+	};
+
+	try {
+		// Check if any location already exists
+		const res = await fetch(`${EBAY_INVENTORY_URL}/location?limit=1`, { headers });
+		if (res.ok) {
+			const data = await res.json();
+			if (data.locations && data.locations.length > 0) {
+				return; // Location already exists
+			}
+		}
+
+		// Create a default location
+		const locationKey = 'boba-default';
+		const createRes = await fetch(
+			`${EBAY_INVENTORY_URL}/location/${locationKey}`,
+			{
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					location: {
+						address: {
+							country: 'US'
+						}
+					},
+					merchantLocationStatus: 'ENABLED',
+					locationTypes: ['WAREHOUSE'],
+					name: 'Default Shipping Location'
+				})
+			}
+		);
+
+		if (!createRes.ok) {
+			const errBody = await createRes.text().catch(() => '');
+			console.error('[ebay/create-draft] Inventory location creation failed:', createRes.status, errBody);
+			// If 409 or already exists, that's fine
+			if (createRes.status !== 409) {
+				console.warn('[ebay/create-draft] Could not auto-create inventory location');
+			}
+		} else {
+			console.log('[ebay/create-draft] Created default inventory location');
+		}
+	} catch (err) {
+		console.warn('[ebay/create-draft] Inventory location check failed:', err);
+	}
+}
+
 async function publishOffer(offerId: string, token: string, sku: string) {
 	const publishRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${offerId}/publish`, {
 		method: 'POST',
@@ -409,7 +467,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(502, message);
 		}
 
-		// Step 2: Try to fetch policies and create a full offer.
+		// Step 2: Ensure seller has an inventory location (required for Item.Country)
+		await ensureInventoryLocation(token);
+
+		// Step 3: Try to fetch policies and create a full offer.
 		// Some eBay accounts (Managed Payments) can't access the Business Policy API,
 		// so if this fails we still return success with the inventory item created.
 		const policies = await getSellerPolicies(token);
@@ -433,7 +494,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 		}
 
-		// Step 3: Create offer (unpublished = draft in Seller Hub)
+		// Step 4: Create offer (unpublished = draft in Seller Hub)
 		const offer = {
 			sku,
 			marketplaceId: 'EBAY_US',
@@ -521,7 +582,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 		}
 
-		// Step 4: Publish the offer to make it a live listing.
+		// Step 5: Publish the offer to make it a live listing.
 		// eBay's Drafts UI does NOT show API-created unpublished offers,
 		// so we must publish for the seller to see/manage it.
 		const offerId = offerData.offerId;

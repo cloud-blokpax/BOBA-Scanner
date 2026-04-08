@@ -60,6 +60,43 @@ async function getSellerPolicies(token: string): Promise<{
 	}
 }
 
+/**
+ * Ensure the seller has at least one inventory location (provides Item.Country).
+ */
+async function ensureInventoryLocation(token: string): Promise<void> {
+	const headers = {
+		Authorization: `Bearer ${token}`,
+		'Content-Type': 'application/json',
+		'Accept-Language': 'en-US',
+		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+	};
+
+	try {
+		const res = await fetch(`${EBAY_INVENTORY_URL}/location?limit=1`, { headers });
+		if (res.ok) {
+			const data = await res.json();
+			if (data.locations && data.locations.length > 0) return;
+		}
+
+		const createRes = await fetch(`${EBAY_INVENTORY_URL}/location/boba-default`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				location: { address: { country: 'US' } },
+				merchantLocationStatus: 'ENABLED',
+				locationTypes: ['WAREHOUSE'],
+				name: 'Default Shipping Location'
+			})
+		});
+
+		if (!createRes.ok && createRes.status !== 409) {
+			console.warn('[ebay/listing] Could not auto-create inventory location:', createRes.status);
+		}
+	} catch (err) {
+		console.warn('[ebay/listing] Inventory location check failed:', err);
+	}
+}
+
 const CONDITION_MAP: Record<string, { conditionEnum: string; conditionDescription: string }> = {
 	'Mint': { conditionEnum: 'LIKE_NEW', conditionDescription: 'Brand New' },
 	'Near Mint': { conditionEnum: 'LIKE_NEW', conditionDescription: 'Near Mint condition' },
@@ -185,6 +222,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const errMsg = errData?.errors?.[0]?.message || `Inventory item creation failed: ${inventoryRes.status}`;
 			throw new Error(errMsg);
 		}
+
+		// Ensure seller has an inventory location (required for Item.Country)
+		await ensureInventoryLocation(token);
 
 		// Fetch seller's business policies
 		const policies = await getSellerPolicies(token);
