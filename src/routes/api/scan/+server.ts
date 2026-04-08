@@ -31,7 +31,7 @@ const CARD_ID_TOOL: Anthropic.Messages.Tool = {
 			card_number: { type: 'string', description: 'Exact text from BOTTOM-LEFT. Paper cards are numeric only (e.g. "130"). Parallel cards are PREFIX-NUMBER (e.g. "BF-108"). Null if unreadable.' },
 			power: { type: 'number', description: 'Large number from TOP-RIGHT corner. Only hero cards have this. Null for play cards.' },
 			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
-			variant: { type: 'string', enum: ['base', 'foil', 'battlefoil', 'paper', 'inspired_ink'] },
+			variant: { type: 'string', enum: ['base', 'paper', 'foil', 'battlefoil', 'inspired_ink', 'rad', 'blizzard', 'grandmas_linoleum', 'bubblegum', 'color', 'mixtape', 'miami_ice', 'fire_tracks', 'silver', 'headliner', 'cyber', 'grillin', 'power_glove', 'alt', 'other_parallel'], description: 'Card variant/parallel type. Use paper for standard numeric-only cards. Use other_parallel if the parallel is identifiable but not in this list — describe it in the parallel field.' },
 			parallel: { type: 'string', description: 'Specific parallel name if identifiable, or null' },
 			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null. Only hero cards have weapons.' },
 			confidence: { type: 'number', description: '0.0 to 1.0' },
@@ -162,7 +162,7 @@ CRITICAL INSTRUCTIONS FOR READING ANY CARD:
    - Do NOT use the power value (top right) as the card number.
 3. CARD NAME: Read the large title text at the TOP of the card. For hero cards this is the hero name. For play cards this is the play name.
 4. POWER: ONLY for hero cards — read the number in the TOP RIGHT corner. For play cards, set to null.
-5. PARALLEL/VARIANT: Look for special treatments. Common parallels: Inspired Ink Battlefoil, 80's Rad Battlefoil, Grandma's Linoleum Battlefoil, Blizzard Battlefoil, Color Battlefoil, Bubblegum Battlefoil, Mixtape Battlefoil, Miami Ice Battlefoil, Fire Tracks Battlefoil. If the card has no special treatment, it is a standard paper card.
+5. PARALLEL/VARIANT: Look for special treatments. Common parallels: Inspired Ink Battlefoil (BFA-), Metallic Inspired Ink (MBFA-), 80's Rad Battlefoil (RAD-), Grandma's Linoleum Battlefoil (GBF-/GLBF-), Blizzard Battlefoil (BLBF-), Color Battlefoil (CBF-), Bubblegum Battlefoil (BGBF-), Mixtape Battlefoil (MIX-), Miami Ice Battlefoil (MI-), Fire Tracks Battlefoil (FT-), Silver (SBF-), Headliner (HBF-), Cyber (CYB-), Grillin' (GRILL-), Power Glove (PG-), Alt Art (ALT-). If the card has no special treatment (no prefix on card number), it is a standard paper card. Set variant to the matching enum value, or other_parallel if it doesn't match.
 
 If a field is unclear, return null rather than guessing.`,
 			tools: [CARD_ID_TOOL],

@@ -37,10 +37,10 @@ const ALLOWED_PATHS = [
 ];
 
 export const config = {
-  // Run middleware on all routes except static assets and API routes.
-  // API routes have their own auth (CRON_SECRET, QStash signatures, session checks),
-  // so bot-blocking middleware is redundant and actively breaks automated callers.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
+  // Run middleware on all routes except static assets and explicitly automated API routes.
+  // Most API routes benefit from bot blocking since they're called by the browser app.
+  // Exempted paths (cron, auth callbacks) are handled via ALLOWED_PATHS below.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
 export default function middleware(request: Request): Response | undefined {

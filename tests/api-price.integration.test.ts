@@ -33,6 +33,9 @@ function makeLocals() {
 						}),
 						single: vi.fn().mockResolvedValue({
 							data: { name: 'Bo Jackson', hero_name: 'Boz', athlete_name: 'Bo Jackson', card_number: 'BF-108', set_code: 'ALPHA', parallel: null, weapon_type: 'Steel' }
+						}),
+						maybeSingle: vi.fn().mockResolvedValue({
+							data: { name: 'Bo Jackson', hero_name: 'Boz', athlete_name: 'Bo Jackson', card_number: 'BF-108', set_code: 'ALPHA', parallel: null, weapon_type: 'Steel' }
 						})
 					})
 				}),

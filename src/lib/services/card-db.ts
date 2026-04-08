@@ -34,9 +34,12 @@ interface PlayCardRaw {
 
 /**
  * Minimum valid sync timestamp. Clients whose last sync predates this epoch
- * will skip incremental refresh and perform a full fetch instead.
- * Bump this date whenever a bulk data migration touches existing rows
- * without updating the `updated_at` column (e.g. backfilling athlete_name).
+ * skip incremental refresh and do a full fetch instead.
+ *
+ * WHEN TO BUMP: After any bulk data migration that touches existing rows
+ * without updating `updated_at` (e.g. backfilling athlete_name, re-seeding).
+ *
+ * Last bumped: 2026-04-08 (athlete_name backfill across all sets).
  */
 const CARD_DATA_EPOCH = '2026-04-08T00:00:00.000Z';
 

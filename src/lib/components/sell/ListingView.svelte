@@ -48,7 +48,8 @@
 			hero_name: heroName,
 			athlete_name: athleteName,
 			parallel: parallel || null,
-			weapon_type: weaponType || null
+			weapon_type: weaponType || null,
+			card_number: cardNumber || null
 		});
 	}
 

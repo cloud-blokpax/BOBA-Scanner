@@ -45,7 +45,17 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 			}
 
 			const items = allData.filter(
-				(row: Record<string, unknown>) => row && typeof row.card_id === 'string'
+				(row: Record<string, unknown>) => {
+					if (!row || typeof row.card_id !== 'string') return false;
+					// Guard: if the card join returned null (e.g. card_id references
+					// play_cards which has no FK from collections), skip the item.
+					// Without this, components crash on item.card.hero_name access.
+					if (!row.card) {
+						console.warn(`[collection] Item ${row.id} has card_id=${row.card_id} but card join returned null — skipping`);
+						return false;
+					}
+					return true;
+				}
 			) as unknown as CollectionItem[];
 
 			// Cache in IndexedDB for offline use

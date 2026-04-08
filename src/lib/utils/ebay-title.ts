@@ -37,7 +37,10 @@ function cleanParallel(parallel: string | null | undefined): string {
 
 /**
  * Build the listing title parts in priority order.
- * Format: Hero Name, "Bo Jackson Battle Arena", Athlete Name, Parallel, Weapon
+ * Format: Hero Name, "Bo Jackson Battle Arena", Athlete Name, Parallel, Weapon, Card Number
+ *
+ * Card Number is lowest priority — dropped first during truncation.
+ * This matches the canonical eBay title format documented in CLAUDE.md.
  */
 function buildTitleParts(card: EbayCardInfo): string[] {
 	const parts: string[] = [];
@@ -55,6 +58,9 @@ function buildTitleParts(card: EbayCardInfo): string[] {
 
 	const weapon = (card.weapon_type || '').trim();
 	if (weapon) parts.push(weapon);
+
+	const cardNum = (card.card_number || '').trim();
+	if (cardNum) parts.push(cardNum);
 
 	return parts;
 }

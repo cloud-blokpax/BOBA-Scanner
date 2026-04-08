@@ -4,9 +4,22 @@ import type { LayoutServerLoad } from './$types';
 // TTL: 5 minutes. Evicted on auth state change (new session).
 const profileCache = new Map<string, { isAdmin: boolean; isPro: boolean; proUntil: string | null; ts: number }>();
 const PROFILE_CACHE_TTL = 5 * 60 * 1000;
+const PROFILE_CACHE_MAX_SIZE = 500;
+
+/** Evict stale entries to prevent unbounded memory growth on warm instances. */
+function evictStaleProfiles(): void {
+	if (profileCache.size <= PROFILE_CACHE_MAX_SIZE) return;
+	const now = Date.now();
+	for (const [key, entry] of profileCache) {
+		if (now - entry.ts > PROFILE_CACHE_TTL * 2) {
+			profileCache.delete(key);
+		}
+	}
+}
 
 export const load: LayoutServerLoad = async ({ locals, depends }) => {
 	depends('supabase:auth');
+	evictStaleProfiles();
 
 	try {
 		const { session, user } = await locals.safeGetSession();
@@ -39,12 +52,17 @@ export const load: LayoutServerLoad = async ({ locals, depends }) => {
 				const proUntilDate = new Date(proUntil);
 				if (proUntilDate < new Date()) {
 					isPro = false;
-					// Fire-and-forget cleanup — cast needed because is_pro isn't in the generated Insert type
-					locals.supabase.from('users')
-						.update({ is_pro: false } as Record<string, unknown>)
-						.eq('auth_user_id', user.id)
-						.then(() => { profileCache.delete(user.id); });
-
+					// Await the cleanup so it completes before Vercel tears down the function.
+					// Cast needed because is_pro isn't in the generated Insert type.
+					try {
+						await locals.supabase.from('users')
+							.update({ is_pro: false } as Record<string, unknown>)
+							.eq('auth_user_id', user.id);
+						profileCache.delete(user.id);
+					} catch (err) {
+						console.warn('[layout] Pro expiry cleanup failed:', err);
+						profileCache.delete(user.id);
+					}
 				}
 			}
 		}
