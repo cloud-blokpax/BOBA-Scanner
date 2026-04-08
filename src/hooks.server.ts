@@ -96,25 +96,22 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 	 * getSession() reads from cookies which users can tamper with.
 	 * getUser() validates the JWT with Supabase servers.
 	 */
+	let sessionCache: { session: import('@supabase/supabase-js').Session | null; user: import('@supabase/supabase-js').User | null } | null = null;
+
 	event.locals.safeGetSession = async () => {
+		if (sessionCache) return sessionCache;
+
 		try {
 			const {
 				data: { session }
 			} = await event.locals.supabase.auth.getSession();
 
 			if (!session) {
-				return { session: null, user: null };
+				sessionCache = { session: null, user: null };
+				return sessionCache;
 			}
 
-			// Trust the session if the JWT has >5 minutes remaining.
-			// This avoids a round-trip to Supabase Auth on every request.
-			const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-			const fiveMinutes = 5 * 60 * 1000;
-			if (expiresAt - Date.now() > fiveMinutes) {
-				return { session, user: session.user };
-			}
-
-			// Near expiry or no expiry info — validate with getUser()
+			// Always validate with getUser() — never trust session.user from cookies
 			const {
 				data: { user },
 				error
@@ -122,13 +119,16 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 
 			if (error) {
 				console.warn('[auth] getUser() failed:', error.message);
-				return { session: null, user: null };
+				sessionCache = { session: null, user: null };
+				return sessionCache;
 			}
 
-			return { session, user };
+			sessionCache = { session, user };
+			return sessionCache;
 		} catch (err) {
 			console.error('[auth] safeGetSession crashed (likely corrupted cookies):', err);
-			return { session: null, user: null };
+			sessionCache = { session: null, user: null };
+			return sessionCache;
 		}
 	};
 
