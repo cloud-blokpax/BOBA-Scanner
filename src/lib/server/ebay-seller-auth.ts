@@ -11,14 +11,16 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 
-// Minimal scopes — only request what the app actually uses (inventory + account policy reads).
-// Over-provisioning scopes risks seller account compromise if tokens are leaked.
+// Minimal scopes — only request what the app actually uses.
+// sell.inventory + sell.account for listing creation.
+// sell.fulfillment.readonly for tracking sold items / orders.
 const SELLER_SCOPES = [
 	'https://api.ebay.com/oauth/api_scope',
 	'https://api.ebay.com/oauth/api_scope/sell.inventory',
 	'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
 	'https://api.ebay.com/oauth/api_scope/sell.account',
-	'https://api.ebay.com/oauth/api_scope/sell.account.readonly'
+	'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
+	'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly'
 ].join(' ');
 
 // Use shared admin client for service-role operations
