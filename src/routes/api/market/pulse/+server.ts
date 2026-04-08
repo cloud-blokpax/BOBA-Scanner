@@ -79,12 +79,16 @@ export const GET: RequestHandler = async ({ locals }) => {
 		const BATCH = 200;
 		for (let i = 0; i < cardIds.length; i += BATCH) {
 			const batch = cardIds.slice(i, i + BATCH);
+			// Limit to batch.length rows — the dedup loop only keeps the first
+			// (most recent) row per card_id anyway. Without this limit, the query
+			// returns ALL historical harvest entries and grows unboundedly over time.
 			const { data, error: harvestErr } = await admin
 				.from('price_harvest_log')
 				.select('card_id, previous_mid, price_delta, price_delta_pct, price_changed, auction_count, is_new_price, success')
 				.eq('success', true)
 				.in('card_id', batch)
 				.order('processed_at', { ascending: false })
+				.limit(batch.length)
 				.returns<HarvestRow[]>();
 			if (harvestErr) {
 				console.error('[market/pulse] harvest_log query failed:', harvestErr.message);

@@ -130,7 +130,6 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 			if (result.success) {
 				updated++;
-				consecutive429s = 0;
 			}
 
 			if (result.logEntry) {
@@ -139,7 +138,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 				const errMsg = String(result.logEntry.error_message || '');
 				if (errMsg.includes('429')) {
 					consecutive429s++;
-				} else if (result.success) {
+				} else {
+					// Any non-429 response (success OR other error) resets the
+					// consecutive 429 counter — only sequential 429s should stop the chain
 					consecutive429s = 0;
 				}
 			}

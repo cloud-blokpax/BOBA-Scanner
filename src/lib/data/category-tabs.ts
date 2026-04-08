@@ -45,7 +45,10 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	category: string;
 	tabs: CategoryTab[];
 } | null {
-	// /export routes to Sell when mode=ebay, Collection otherwise
+	// /export serves two contexts:
+	// - Collection export (CSV/text) — default, shows Collection tabs
+	// - eBay export (listing-ready format) — triggered by ?mode=ebay, shows Sell tabs
+	// This dual-mode is intentional. The export page UI adapts based on the mode param.
 	if (pathname === '/export') {
 		if (search.includes('mode=ebay')) {
 			return { category: 'Sell', tabs: SELL_TABS };

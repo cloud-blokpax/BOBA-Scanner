@@ -77,12 +77,37 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		}
 	}
 
-	// Get card details for search query
-	const { data: card } = await locals.supabase
+	// Get card details for search query — check hero cards first, fall back to play cards
+	let card: { name: string | null; hero_name: string | null; athlete_name: string | null; card_number: string | null; set_code: string | null; parallel: string | null; weapon_type: string | null } | null = null;
+
+	const { data: heroCard } = await locals.supabase
 		.from('cards')
 		.select('name, hero_name, athlete_name, card_number, set_code, parallel, weapon_type')
 		.eq('id', cardId)
-		.single();
+		.maybeSingle();
+
+	if (heroCard) {
+		card = heroCard;
+	} else {
+		// Fall back to play_cards table (play cards, bonus plays, hot dogs)
+		const { data: playCard } = await locals.supabase
+			.from('play_cards')
+			.select('name, card_number, release')
+			.eq('id', cardId)
+			.maybeSingle();
+
+		if (playCard) {
+			card = {
+				name: playCard.name,
+				hero_name: null,
+				athlete_name: null,
+				card_number: playCard.card_number,
+				set_code: playCard.release || null,
+				parallel: null,
+				weapon_type: null
+			};
+		}
+	}
 
 	if (!card) {
 		throw error(404, 'Card not found');

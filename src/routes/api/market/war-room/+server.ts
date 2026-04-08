@@ -55,22 +55,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 			return rows;
 		})(),
-		// price_cache for plays — paginated
-		(async () => {
-			const rows: Array<Record<string, unknown>> = [];
-			let offset = 0;
-			let done = false;
-			while (!done) {
-				const { data } = await admin
-					.from('price_cache')
-					.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, confidence_score')
-					.eq('source', 'ebay')
-					.not('price_mid', 'is', null)
-					.range(offset, offset + CHUNK - 1);
-				if (!data || data.length === 0) { done = true; }
-				else { rows.push(...data); offset += CHUNK; if (data.length < CHUNK) done = true; }
-			}
-			return rows;
+		// Play cards — fetch card details first, then prices only for those IDs.
+		// This avoids a redundant full-table scan of price_cache (already done for heroes above).
+		(async (): Promise<Array<Record<string, unknown>>> => {
+			// Return empty — play prices will be extracted from hero priceData below
+			return [];
 		})(),
 		admin
 			.from('play_cards')
@@ -113,8 +102,14 @@ export const GET: RequestHandler = async ({ locals }) => {
 			};
 		});
 
-	// Build play card pricing
-	const playPriceMap = new Map(playPriceData.map(p => [String(p.card_id), p]));
+	// Build play card pricing — reuse the hero priceData which already contains
+	// ALL price_cache rows (play card prices are in the same table)
+	const playCardIds = new Set((playCardRes.data || []).map(pc => String(pc.id)));
+	const playPriceMap = new Map(
+		priceData
+			.filter(p => playCardIds.has(String(p.card_id)))
+			.map(p => [String(p.card_id), p])
+	);
 
 	const plays = (playCardRes.data || [])
 		.filter(pc => playPriceMap.has(String(pc.id)))

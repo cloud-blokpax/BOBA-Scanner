@@ -1,11 +1,5 @@
 {
   "framework": "sveltekit",
-  "crons": [
-    {
-      "path": "/api/cron/price-harvest",
-      "schedule": "45 4 * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",

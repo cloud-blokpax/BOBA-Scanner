@@ -71,6 +71,7 @@ interface UserProfile {
 let _userProfile = $state<UserProfile | null>(null);
 let _userProfileForUserId: string | null = null;
 let _userProfileFetchedAt = 0;
+let _refreshPromise: Promise<void> | null = null;
 const PROFILE_MAX_AGE = 60_000;
 
 function roleCheck(flag: FeatureFlag): boolean {
@@ -102,19 +103,30 @@ function roleCheck(flag: FeatureFlag): boolean {
 }
 
 async function _refreshProfile(userId: string): Promise<void> {
+	// Deduplicate: if a refresh is already in flight, piggyback on it
+	if (_refreshPromise) return _refreshPromise;
+
+	_refreshPromise = (async () => {
+		try {
+			const client = getSupabase();
+			if (!client) return;
+			const { data: profile } = await client
+				.from('users')
+				.select('is_pro, is_admin')
+				.eq('auth_user_id', userId)
+				.single();
+			_userProfile = profile || null;
+			_userProfileForUserId = userId;
+			_userProfileFetchedAt = Date.now();
+		} catch (err) {
+			console.warn('[feature-flags] Profile refresh failed — role checks may be stale:', err);
+		}
+	})();
+
 	try {
-		const client = getSupabase();
-		if (!client) return;
-		const { data: profile } = await client
-			.from('users')
-			.select('is_pro, is_admin')
-			.eq('auth_user_id', userId)
-			.single();
-		_userProfile = profile || null;
-		_userProfileForUserId = userId;
-		_userProfileFetchedAt = Date.now();
-	} catch (err) {
-		console.warn('[feature-flags] Profile refresh failed — role checks may be stale:', err);
+		await _refreshPromise;
+	} finally {
+		_refreshPromise = null;
 	}
 }
 
@@ -177,6 +189,9 @@ export async function loadFeatureFlags(): Promise<void> {
 			_userProfileForUserId = currentUser.id;
 			_userProfileFetchedAt = Date.now();
 
+			// user_feature_overrides.user_id references auth.users.id (same as currentUser.id).
+			// If this table is later changed to reference users.id (public table PK),
+			// resolve through the users table like tournaments do.
 			const { data: overrides } = await client
 				.from('user_feature_overrides')
 				.select('feature_key, enabled')
