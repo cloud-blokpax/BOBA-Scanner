@@ -36,33 +36,33 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		.order('created_at', { ascending: false })
 		.limit(100);
 
-	if (statusFilter !== 'all') {
-		query = query.eq('status', statusFilter);
-	}
-
-	const { data: listings, error: listErr } = await query;
-
-	if (listErr) {
-		console.error('[ebay/listings] Query failed:', listErr.message);
-		return apiError('Failed to load listings', 500);
-	}
-
-	// Fetch card image URLs as fallback for listings without scan images
-	const cardIds = [...new Set((listings || []).map(l => l.card_id).filter(Boolean))];
-	let cardImages: Record<string, string> = {};
-
-	if (cardIds.length > 0) {
-		const { data: cards } = await adminClient
-			.from('cards')
-			.select('id, image_url')
-			.in('id', cardIds);
-
-		if (cards) {
-			cardImages = Object.fromEntries(
-				cards.filter(c => c.image_url).map(c => [c.id, c.image_url!])
-			);
+		if (statusFilter !== 'all') {
+			query = query.eq('status', statusFilter);
 		}
-	}
+
+		const { data: listings, error: listErr } = await query;
+
+		if (listErr) {
+			console.error('[ebay/listings] Query failed:', listErr.message, listErr.details, listErr.hint);
+			return apiError('Failed to load listings', 500);
+		}
+
+		// Fetch card image URLs as fallback for listings without scan images
+		const cardIds = [...new Set((listings || []).map(l => l.card_id).filter(Boolean))];
+		let cardImages: Record<string, string> = {};
+
+		if (cardIds.length > 0) {
+			const { data: cards } = await adminClient
+				.from('cards')
+				.select('id, image_url')
+				.in('id', cardIds);
+
+			if (cards) {
+				cardImages = Object.fromEntries(
+					cards.filter(c => c.image_url).map(c => [c.id, c.image_url!])
+				);
+			}
+		}
 
 	// Build response with card image fallback and safe field access
 	// (some columns may not exist yet in the DB — handle gracefully)
@@ -103,5 +103,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			.reduce((sum, l) => sum + ((l.sold_price ?? l.price ?? 0) as number), 0)
 	};
 
-	return json({ listings: enrichedListings, summary });
+		return json({ listings: enrichedListings, summary });
+	} catch (err) {
+		// Re-throw SvelteKit HttpErrors (401, 403, etc.) as-is
+		if (err && typeof err === 'object' && 'status' in err) throw err;
+		console.error('[ebay/listings] Unexpected error:', err);
+		return apiError('Failed to load listings', 500);
+	}
 };
