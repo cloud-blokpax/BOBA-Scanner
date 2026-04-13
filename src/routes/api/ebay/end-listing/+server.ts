@@ -53,7 +53,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					headers: {
 						Authorization: `Bearer ${token}`,
 						'Content-Type': 'application/json',
-						'Accept-Language': 'en-US',
 						'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 					}
 				}
@@ -74,7 +73,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					headers: {
 						Authorization: `Bearer ${token}`,
 						'Content-Type': 'application/json',
-						'Content-Language': 'en-US',
 						'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 					}
 				}
@@ -97,7 +95,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					method: 'DELETE',
 					headers: {
 						Authorization: `Bearer ${token}`,
-						'Content-Language': 'en-US',
 						'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 					}
 				}
