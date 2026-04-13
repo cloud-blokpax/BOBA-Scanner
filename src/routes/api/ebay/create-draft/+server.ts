@@ -93,6 +93,21 @@ function conditionToEbay(condition: string): string {
 	return CONDITION_MAP[key] || 'USED_VERY_GOOD';
 }
 
+const CONDITION_DESCRIPTOR_MAP: Record<string, string> = {
+	'mint': '400010',
+	'nearmint': '400010',
+	'near_mint': '400010',
+	'excellent': '400011',
+	'good': '400012',
+	'fair': '400013',
+	'poor': '400013'
+};
+
+function conditionToDescriptorId(condition: string): string {
+	const key = (condition || '').toLowerCase().replace(/[_\s]/g, '');
+	return CONDITION_DESCRIPTOR_MAP[key] || '400010';
+}
+
 async function getSellerPolicies(token: string): Promise<{
 	fulfillmentPolicyId: string;
 	paymentPolicyId: string;
@@ -459,13 +474,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					'Set': [body.setCode || 'BoBA'],
 					'Sport': ['Multi-Sport'],
 					'Card Manufacturer': ['Bo Jackson Battle Arena'],
-					'Card Condition': ['Ungraded'],
 					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
 					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
 					...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
 				}
 			},
 			condition: conditionToEbay(body.condition),
+			conditionDescriptors: [
+				{ name: '40001', values: [conditionToDescriptorId(body.condition)] }
+			],
 			conditionDescription: body.notes || undefined,
 			availability: {
 				shipToLocationAvailability: {
