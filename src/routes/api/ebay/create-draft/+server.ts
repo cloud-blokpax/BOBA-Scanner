@@ -459,6 +459,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					'Set': [body.setCode || 'BoBA'],
 					'Sport': ['Multi-Sport'],
 					'Card Manufacturer': ['Bo Jackson Battle Arena'],
+					'Card Condition': ['Ungraded'],
 					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
 					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
 					...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
