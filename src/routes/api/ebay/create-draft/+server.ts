@@ -506,6 +506,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			sku,
 			marketplaceId: 'EBAY_US',
 			format: 'FIXED_PRICE',
+			merchantLocationKey: 'boba-default',
 			listingDescription: htmlDescription,
 			availableQuantity: quantity,
 			pricingSummary: {
@@ -543,19 +544,44 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				throw error(403, 'eBay session expired. Reconnect in Settings.');
 			}
 
-			// If offer already exists for this SKU, extract the existing offerId and publish it
-			let existingOfferId: string | null = null;
+			// If offer already exists for this SKU, update it with merchantLocationKey then publish
 			try {
 				const parsed = JSON.parse(errBody);
-				const err = parsed.errors?.[0];
-				if (err?.errorId === 25002) {
-					existingOfferId = err.parameters?.find((p: { name: string; value: string }) => p.name === 'offerId')?.value || null;
-				}
-			} catch { /* parse failed */ }
+				const firstError = parsed.errors?.[0];
 
-			if (existingOfferId) {
-				console.log('[ebay/create-draft] Offer already exists, publishing:', existingOfferId);
-				return await publishOffer(existingOfferId, token, sku);
+				if (firstError?.errorId === 25002 && firstError?.message?.includes('Offer entity already exists')) {
+					const existingOfferId = firstError.parameters?.find(
+						(p: { name: string; value: string }) => p.name === 'offerId'
+					)?.value;
+
+					if (existingOfferId) {
+						console.log('[ebay/create-draft] Offer already exists, updating with location key:', existingOfferId);
+
+						// Update the existing offer to include merchantLocationKey
+						const updateRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${existingOfferId}`, {
+							method: 'PUT',
+							headers: {
+								Authorization: `Bearer ${token}`,
+								'Content-Type': 'application/json',
+								'Content-Language': 'en-US',
+								'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+							},
+							body: JSON.stringify(offer)
+						});
+
+						if (!updateRes.ok) {
+							const updateErr = await updateRes.text().catch(() => '');
+							console.error('[ebay/create-draft] Offer update failed:', updateRes.status, updateErr);
+							// Fall through to partial success below
+						} else {
+							console.log('[ebay/create-draft] Offer updated, publishing:', existingOfferId);
+
+							return await publishOffer(existingOfferId, token, sku);
+						}
+					}
+				}
+			} catch {
+				// JSON parse failed, fall through to partial success
 			}
 
 			return json({
