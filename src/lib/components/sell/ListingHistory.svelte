@@ -13,11 +13,14 @@
 		id: string;
 		card_id: string;
 		title: string;
+		description: string | null;
 		price: number;
 		condition: string | null;
 		status: string;
+		sku: string | null;
 		ebay_listing_id: string | null;
 		ebay_listing_url: string | null;
+		ebay_offer_id: string | null;
 		scan_image_url: string | null;
 		card_image_url: string | null;
 		hero_name: string | null;
@@ -29,6 +32,7 @@
 		sold_price: number | null;
 		error_message: string | null;
 		created_at: string;
+		updated_at: string | null;
 	}
 
 	interface Summary {
@@ -43,6 +47,7 @@
 	let loading = $state(true);
 	let syncing = $state(false);
 	let activeFilter = $state<string>('all');
+	let expandedId = $state<string | null>(null);
 
 	const filters = ['all', 'active', 'sold', 'drafts'] as const;
 
@@ -83,13 +88,50 @@
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			showToast(data.message || 'Status synced', 'check');
-			// Reload listings to reflect updates
 			await loadListings();
 		} catch (err) {
 			showToast('Sync failed — try again later', 'x');
 			console.warn('[ListingHistory] Sync failed:', err);
 		}
 		syncing = false;
+	}
+
+	async function endListing(id: string) {
+		if (!confirm('End this listing on eBay? This cannot be undone.')) return;
+		try {
+			const res = await fetch('/api/ebay/end-listing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ listingId: id })
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			showToast('Listing ended', 'check');
+			expandedId = null;
+			await loadListings();
+		} catch (err) {
+			showToast('Failed to end listing', 'x');
+		}
+	}
+
+	async function removeListing(id: string) {
+		if (!confirm('Remove from app? (Does not affect eBay)')) return;
+		try {
+			const res = await fetch('/api/ebay/end-listing', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ listingId: id })
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			showToast('Listing removed', 'check');
+			expandedId = null;
+			await loadListings();
+		} catch (err) {
+			showToast('Failed to remove', 'x');
+		}
+	}
+
+	function toggleExpand(id: string) {
+		expandedId = expandedId === id ? null : id;
 	}
 
 	function statusLabel(status: string): string {
@@ -114,6 +156,13 @@
 		if (diffDays === 1) return 'Yesterday';
 		if (diffDays < 7) return `${diffDays}d ago`;
 		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	function formatFullDate(dateStr: string): string {
+		return new Date(dateStr).toLocaleDateString('en-US', {
+			month: 'short', day: 'numeric', year: 'numeric',
+			hour: 'numeric', minute: '2-digit'
+		});
 	}
 
 	function formatPrice(price: number): string {
@@ -196,59 +245,177 @@
 			<!-- Listing rows -->
 			<div class="lh-list">
 				{#each filteredListings as listing (listing.id)}
-					<div class="lh-row">
-						<div class="lh-thumb">
-							{#if listing.scan_image_url}
-								<img src={listing.scan_image_url} alt={listing.hero_name || 'Card'} class="lh-img" />
-							{:else if listing.card_image_url}
-								<OptimizedCardImage src={listing.card_image_url} alt={listing.hero_name || 'Card'} className="lh-img" size="thumb" />
-							{:else}
-								<span class="lh-placeholder">&#x1F3B4;</span>
-							{/if}
-						</div>
-						<div class="lh-info">
-							<span class="lh-name">{listing.hero_name || listing.title}</span>
-							<span class="lh-meta">
-								{listing.card_number || ''}{listing.set_code ? ` · ${listing.set_code}` : ''}{listing.parallel ? ` · ${listing.parallel}` : ''}
-							</span>
-							<span class="lh-meta">{formatDate(listing.created_at)}</span>
-						</div>
-						<div class="lh-right">
-							<span class="lh-price">
-								{#if listing.status === 'sold' && listing.sold_price}
-									{formatPrice(listing.sold_price)}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="lh-card" class:expanded={expandedId === listing.id}
+						onclick={() => toggleExpand(listing.id)}>
+						<div class="lh-row">
+							<div class="lh-thumb">
+								{#if listing.scan_image_url}
+									<img src={listing.scan_image_url} alt={listing.hero_name || 'Card'} class="lh-img" />
+								{:else if listing.card_image_url}
+									<OptimizedCardImage src={listing.card_image_url} alt={listing.hero_name || 'Card'} className="lh-img" size="thumb" />
 								{:else}
-									{formatPrice(listing.price)}
+									<span class="lh-placeholder">&#x1F3B4;</span>
 								{/if}
-							</span>
-							<span class="lh-badge lh-badge-{listing.status}">{statusLabel(listing.status)}</span>
-							{#if listing.ebay_listing_url}
-								<a
-									href={listing.ebay_listing_url}
-									target="_blank"
-									rel="noopener noreferrer"
-									class="lh-ebay-link"
-								>
-									eBay &#x2197;
-								</a>
-							{:else if listing.status === 'draft' || listing.status === 'pending'}
-								<a
-									href="https://www.ebay.com/sh/lst/drafts"
-									target="_blank"
-									rel="noopener noreferrer"
-									class="lh-ebay-link"
-								>
-									Seller Hub &#x2197;
-								</a>
-							{/if}
+							</div>
+							<div class="lh-info">
+								<span class="lh-name">{listing.hero_name || listing.title}</span>
+								<span class="lh-meta">
+									{listing.card_number || ''}{listing.set_code ? ` · ${listing.set_code}` : ''}{listing.parallel ? ` · ${listing.parallel}` : ''}
+								</span>
+								<span class="lh-meta">{formatDate(listing.created_at)}</span>
+							</div>
+							<div class="lh-right">
+								<span class="lh-price">
+									{#if listing.status === 'sold' && listing.sold_price}
+										{formatPrice(listing.sold_price)}
+									{:else}
+										{formatPrice(listing.price)}
+									{/if}
+								</span>
+								<span class="lh-badge lh-badge-{listing.status}">{statusLabel(listing.status)}</span>
+							</div>
 						</div>
+
+						{#if expandedId === listing.id}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="lh-detail" onclick={(e) => e.stopPropagation()}>
+								<!-- Title -->
+								<div class="lh-detail-section">
+									<span class="lh-detail-label">Title</span>
+									<span class="lh-detail-value">{listing.title}</span>
+								</div>
+
+								<!-- Card Details grid -->
+								<div class="lh-detail-grid">
+									{#if listing.hero_name}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Hero</span>
+											<span class="lh-detail-value">{listing.hero_name}</span>
+										</div>
+									{/if}
+									{#if listing.card_number}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Card #</span>
+											<span class="lh-detail-value">{listing.card_number}</span>
+										</div>
+									{/if}
+									{#if listing.set_code}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Set</span>
+											<span class="lh-detail-value">{listing.set_code}</span>
+										</div>
+									{/if}
+									{#if listing.parallel}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Parallel</span>
+											<span class="lh-detail-value">{listing.parallel}</span>
+										</div>
+									{/if}
+									{#if listing.weapon_type}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Weapon</span>
+											<span class="lh-detail-value">{listing.weapon_type}</span>
+										</div>
+									{/if}
+									{#if listing.condition}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Condition</span>
+											<span class="lh-detail-value">{listing.condition}</span>
+										</div>
+									{/if}
+								</div>
+
+								<!-- Pricing -->
+								<div class="lh-detail-grid">
+									<div class="lh-detail-field">
+										<span class="lh-detail-label">List Price</span>
+										<span class="lh-detail-value">{formatPrice(listing.price)}</span>
+									</div>
+									{#if listing.sold_price}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Sold Price</span>
+											<span class="lh-detail-value lh-detail-sold">{formatPrice(listing.sold_price)}</span>
+										</div>
+									{/if}
+									{#if listing.sold_at}
+										<div class="lh-detail-field">
+											<span class="lh-detail-label">Sold</span>
+											<span class="lh-detail-value">{formatFullDate(listing.sold_at)}</span>
+										</div>
+									{/if}
+								</div>
+
+								<!-- Description (if exists) -->
+								{#if listing.description}
+									<div class="lh-detail-section">
+										<span class="lh-detail-label">Description</span>
+										<span class="lh-detail-value lh-detail-desc">{listing.description}</span>
+									</div>
+								{/if}
+
+								<!-- System info -->
+								<div class="lh-detail-system">
+									{#if listing.sku}
+										<div class="lh-detail-sys-row">
+											<span class="lh-detail-sys-label">SKU</span>
+											<span class="lh-detail-sys-value">{listing.sku}</span>
+										</div>
+									{/if}
+									{#if listing.ebay_listing_id}
+										<div class="lh-detail-sys-row">
+											<span class="lh-detail-sys-label">eBay Item #</span>
+											<span class="lh-detail-sys-value">{listing.ebay_listing_id}</span>
+										</div>
+									{/if}
+									<div class="lh-detail-sys-row">
+										<span class="lh-detail-sys-label">Created</span>
+										<span class="lh-detail-sys-value">{formatFullDate(listing.created_at)}</span>
+									</div>
+									{#if listing.updated_at}
+										<div class="lh-detail-sys-row">
+											<span class="lh-detail-sys-label">Updated</span>
+											<span class="lh-detail-sys-value">{formatFullDate(listing.updated_at)}</span>
+										</div>
+									{/if}
+								</div>
+
+								<!-- Error message -->
+								{#if listing.error_message}
+									<div class="lh-detail-error">{listing.error_message}</div>
+								{/if}
+
+								<!-- Actions -->
+								<div class="lh-detail-actions">
+									{#if listing.ebay_listing_url}
+										<a href={listing.ebay_listing_url} target="_blank" rel="noopener noreferrer"
+											class="lh-detail-btn lh-detail-btn-ebay">
+											View on eBay &#x2197;
+										</a>
+									{/if}
+									{#if listing.status === 'published' || listing.status === 'draft'}
+										<button class="lh-detail-btn lh-detail-btn-end"
+											onclick={() => endListing(listing.id)}>
+											End Listing
+										</button>
+									{/if}
+									<button class="lh-detail-btn lh-detail-btn-remove"
+										onclick={() => removeListing(listing.id)}>
+										Remove from App
+									</button>
+								</div>
+							</div>
+						{/if}
 					</div>
-					{#if listing.status === 'sold' && listing.sold_at}
+
+					{#if listing.status === 'sold' && listing.sold_at && expandedId !== listing.id}
 						<div class="lh-sold-banner">
 							Sold {formatDate(listing.sold_at)}{listing.sold_price ? ` for ${formatPrice(listing.sold_price)}` : ''}
 						</div>
 					{/if}
-					{#if listing.status === 'error' && listing.error_message}
+					{#if listing.status === 'error' && listing.error_message && expandedId !== listing.id}
 						<div class="lh-error-banner">{listing.error_message}</div>
 					{/if}
 				{/each}
@@ -596,5 +763,182 @@
 		padding: 1.5rem 1rem;
 		color: var(--text-secondary, #94a3b8);
 		font-size: 0.85rem;
+	}
+
+	/* ── Expandable card ── */
+	.lh-card {
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		cursor: pointer;
+		transition: border-color 0.15s;
+		overflow: hidden;
+	}
+
+	.lh-card:hover {
+		border-color: rgba(148,163,184,0.2);
+	}
+
+	.lh-card.expanded {
+		border-color: var(--accent-primary, #3b82f6);
+		border-width: 1px;
+	}
+
+	.lh-card .lh-row {
+		background: none;
+		border: none;
+		border-radius: 0;
+	}
+
+	/* ── Detail panel ── */
+	.lh-detail {
+		padding: 0 0.75rem 0.75rem;
+		border-top: 1px solid rgba(148,163,184,0.08);
+		cursor: default;
+		display: flex;
+		flex-direction: column;
+		gap: 0.625rem;
+	}
+
+	.lh-detail-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		padding-top: 0.5rem;
+	}
+
+	.lh-detail-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem 0.75rem;
+		padding-top: 0.5rem;
+	}
+
+	.lh-detail-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+
+	.lh-detail-label {
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-muted, #475569);
+	}
+
+	.lh-detail-value {
+		font-size: 0.8rem;
+		color: var(--text-primary, #e2e8f0);
+		word-break: break-word;
+	}
+
+	.lh-detail-sold {
+		color: var(--gold, #f59e0b);
+		font-weight: 700;
+	}
+
+	.lh-detail-desc {
+		font-size: 0.75rem;
+		color: var(--text-secondary, #94a3b8);
+		line-height: 1.5;
+		white-space: pre-wrap;
+		max-height: 120px;
+		overflow-y: auto;
+	}
+
+	/* System info */
+	.lh-detail-system {
+		padding: 0.5rem;
+		border-radius: 6px;
+		background: rgba(255,255,255,0.02);
+		border: 1px solid rgba(148,163,184,0.06);
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.lh-detail-sys-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.lh-detail-sys-label {
+		font-size: 0.65rem;
+		color: var(--text-muted, #475569);
+	}
+
+	.lh-detail-sys-value {
+		font-size: 0.7rem;
+		color: var(--text-secondary, #94a3b8);
+		text-align: right;
+		max-width: 60%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.lh-detail-error {
+		padding: 0.375rem 0.5rem;
+		border-radius: 6px;
+		background: rgba(239, 68, 68, 0.08);
+		color: #ef4444;
+		font-size: 0.75rem;
+	}
+
+	/* Action buttons */
+	.lh-detail-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding-top: 0.25rem;
+	}
+
+	.lh-detail-btn {
+		display: block;
+		width: 100%;
+		padding: 0.5rem;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-align: center;
+		text-decoration: none;
+		cursor: pointer;
+		transition: all 0.15s;
+		border: 1px solid;
+	}
+
+	.lh-detail-btn-ebay {
+		background: rgba(59, 130, 246, 0.08);
+		border-color: rgba(59, 130, 246, 0.2);
+		color: var(--accent-primary, #3b82f6);
+	}
+
+	.lh-detail-btn-ebay:hover {
+		background: rgba(59, 130, 246, 0.15);
+	}
+
+	.lh-detail-btn-end {
+		background: rgba(245, 158, 11, 0.08);
+		border-color: rgba(245, 158, 11, 0.2);
+		color: #f59e0b;
+	}
+
+	.lh-detail-btn-end:hover {
+		background: rgba(245, 158, 11, 0.15);
+	}
+
+	.lh-detail-btn-remove {
+		background: none;
+		border-color: rgba(148, 163, 184, 0.1);
+		color: var(--text-muted, #475569);
+	}
+
+	.lh-detail-btn-remove:hover {
+		color: #ef4444;
+		border-color: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.06);
 	}
 </style>
