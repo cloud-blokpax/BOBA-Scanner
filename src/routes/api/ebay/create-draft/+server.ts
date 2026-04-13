@@ -555,30 +555,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					)?.value;
 
 					if (existingOfferId) {
-						console.log('[ebay/create-draft] Offer already exists, updating with location key:', existingOfferId);
+						console.log('[ebay/create-draft] Offer already exists, publishing directly:', existingOfferId);
 
-						// Update the existing offer to include merchantLocationKey
-						const updateHeaders = {
-							'Authorization': `Bearer ${token}`,
-							'Content-Type': 'application/json',
-							'Content-Language': 'en-US',
-							'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-						};
-						const updateRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${existingOfferId}`, {
-							method: 'PUT',
-							headers: updateHeaders,
-							body: JSON.stringify(offer)
-						});
-
-						if (!updateRes.ok) {
-							const updateErr = await updateRes.text().catch(() => '');
-							console.error('[ebay/create-draft] Offer update failed:', updateRes.status, updateErr);
-							// Fall through to partial success below
-						} else {
-							console.log('[ebay/create-draft] Offer updated, publishing:', existingOfferId);
-
-							return await publishOffer(existingOfferId, token, sku);
-						}
+						// Inventory item was already updated in step 1, so product data is current.
+						// Skip offer update (PUT /offer rejects Accept-Language header)
+						// and go straight to publishing.
+						return await publishOffer(existingOfferId, token, sku);
 					}
 				}
 			} catch {
