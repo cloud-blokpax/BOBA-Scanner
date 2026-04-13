@@ -211,7 +211,7 @@ async function createFulfillmentPolicy(
 			body: JSON.stringify({
 				name,
 				marketplaceId: 'EBAY_US',
-				handlingTime: { value: 1, unit: 'BUSINESS_DAY' },
+				handlingTime: { value: 1, unit: 'DAY' },
 				shippingOptions
 			})
 		});
