@@ -49,7 +49,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		}
 
 		// Fetch card image URLs as fallback for listings without scan images
-		const cardIds = [...new Set((listings || []).map(l => l.card_id).filter(Boolean))];
+		const cardIds = [...new Set((listings || []).map(l => l.card_id).filter((id): id is string => Boolean(id)))];
 		let cardImages: Record<string, string> = {};
 
 		if (cardIds.length > 0) {

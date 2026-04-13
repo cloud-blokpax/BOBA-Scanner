@@ -402,7 +402,7 @@ async function publishOffer(offerId: string, token: string, sku: string) {
 				}).eq('sku', sku);
 			}
 		} catch (err) {
-			console.debug('[ebay/create-draft] Template publish update failed:', err);
+			console.error('[ebay/create-draft] Template publish update FAILED:', err);
 		}
 
 		return json({
@@ -500,9 +500,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		try {
 			await adminClient.from('listing_templates').insert({
 				user_id: user.id,
-				card_id: body.cardId || '',
+				card_id: body.cardId || null,
 				title: body.title || buildTitle(body),
-				description: body.description || null,
+				description: body.description || buildDescription(body) || '',
 				price,
 				condition: body.condition || 'Near Mint',
 				sku,
@@ -516,7 +516,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				created_at: new Date().toISOString()
 			});
 		} catch (err) {
-			console.debug('[ebay/create-draft] Template save failed:', err);
+			console.error('[ebay/create-draft] Template save FAILED:', err);
 		}
 	}
 
