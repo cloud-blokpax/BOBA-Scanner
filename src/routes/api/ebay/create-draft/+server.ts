@@ -393,13 +393,16 @@ async function publishOffer(offerId: string, token: string, sku: string) {
 		try {
 			const adminClient = getAdminClient();
 			if (adminClient) {
-				await adminClient.from('listing_templates').update({
+				const { error: updateErr } = await adminClient.from('listing_templates').update({
 					status: 'published',
 					ebay_offer_id: offerId,
 					ebay_listing_id: listingId || null,
 					ebay_listing_url: listingUrl,
 					updated_at: new Date().toISOString()
 				}).eq('sku', sku);
+				if (updateErr) {
+					console.error('[ebay/create-draft] Template publish update FAILED:', updateErr.message, updateErr.details);
+				}
 			}
 		} catch (err) {
 			console.error('[ebay/create-draft] Template publish update FAILED:', err);
@@ -498,7 +501,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Persist listing template to DB for history tracking
 	if (adminClient) {
 		try {
-			await adminClient.from('listing_templates').insert({
+			const { error: insertErr } = await adminClient.from('listing_templates').insert({
 				user_id: user.id,
 				card_id: body.cardId || null,
 				title: body.title || buildTitle(body),
@@ -515,6 +518,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				weapon_type: body.weaponType || null,
 				created_at: new Date().toISOString()
 			});
+			if (insertErr) {
+				console.error('[ebay/create-draft] Template save FAILED:', insertErr.message, insertErr.details, insertErr.hint);
+			}
 		} catch (err) {
 			console.error('[ebay/create-draft] Template save FAILED:', err);
 		}
