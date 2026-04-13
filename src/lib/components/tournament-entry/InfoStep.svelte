@@ -11,8 +11,11 @@
 
 	let { tournament, initial, existingSubmission, onProceed }: Props = $props();
 
+	// svelte-ignore state_referenced_locally
 	let regName = $state(initial.name);
+	// svelte-ignore state_referenced_locally
 	let regEmail = $state(initial.email);
+	// svelte-ignore state_referenced_locally
 	let regDiscord = $state(initial.discord);
 
 	function handleProceed() {

@@ -18,10 +18,22 @@
 
 	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel }: Props = $props();
 
+	// svelte-ignore state_referenced_locally
+	const _init = {
+		condition: initialCondition || 'Near Mint',
+		heroName: card.hero_name || card.name || '',
+		cardNumber: card.card_number || '',
+		setCode: card.set_code || '',
+		parallel: card.parallel || '',
+		weaponType: card.weapon_type || '',
+		athleteName: card.athlete_name || '',
+		power: card.power ? String(card.power) : ''
+	};
+
 	// ── Listing state ───────────────────────────────────────
 	let priceData = $state<PriceData | null>(null);
 	let priceLoading = $state(true);
-	let condition = $state(initialCondition || 'Near Mint');
+	let condition = $state(_init.condition);
 	let price = $state('');
 	let quantity = $state(1);
 	let notes = $state('');
@@ -46,13 +58,13 @@
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
 
 	// ── Editable card fields that feed into eBay listing ────
-	let heroName = $state(card.hero_name || card.name || '');
-	let cardNumber = $state(card.card_number || '');
-	let setCode = $state(card.set_code || '');
-	let parallel = $state(card.parallel || '');
-	let weaponType = $state(card.weapon_type || '');
-	let athleteName = $state(card.athlete_name || '');
-	let power = $state(card.power ? String(card.power) : '');
+	let heroName = $state(_init.heroName);
+	let cardNumber = $state(_init.cardNumber);
+	let setCode = $state(_init.setCode);
+	let parallel = $state(_init.parallel);
+	let weaponType = $state(_init.weaponType);
+	let athleteName = $state(_init.athleteName);
+	let power = $state(_init.power);
 
 	// ── Generated title & description (editable) ────────────
 	function generateTitle(): string {
@@ -581,28 +593,6 @@
 		margin-bottom: 1.25rem;
 	}
 
-	.stl-section-label {
-		display: block;
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--accent-primary, #3b82f6);
-		margin-bottom: 0.625rem;
-	}
-
-	/* Field grid for card details */
-	.stl-field-grid {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-
-	.stl-field-half {
-		flex: 1 1 calc(50% - 0.375rem);
-		min-width: 140px;
-	}
-
 	.stl-field {
 		margin-bottom: 1rem;
 	}
@@ -766,49 +756,6 @@
 
 	.stl-ebay-link:hover {
 		text-decoration: underline;
-	}
-
-	/* Aspects collapsible */
-	.stl-aspects-details {
-		margin-bottom: 1.25rem;
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		border-radius: 10px;
-		padding: 0.75rem;
-		background: var(--bg-elevated, #121d34);
-	}
-
-	.stl-summary {
-		cursor: pointer;
-		margin-bottom: 0;
-		user-select: none;
-	}
-
-	.stl-aspects-details[open] .stl-summary {
-		margin-bottom: 0.5rem;
-	}
-
-	.stl-aspects {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.stl-aspect-row {
-		display: flex;
-		justify-content: space-between;
-		padding: 0.25rem 0;
-		border-bottom: 1px solid rgba(148,163,184,0.06);
-		font-size: 0.8rem;
-	}
-
-	.stl-aspect-key {
-		color: var(--text-muted, #475569);
-	}
-
-	.stl-aspect-val {
-		color: var(--text-secondary, #94a3b8);
-		font-weight: 600;
-		text-align: right;
 	}
 
 	.stl-btn {

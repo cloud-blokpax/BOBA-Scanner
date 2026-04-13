@@ -48,6 +48,7 @@
 	const cameraReady = $derived(!['initializing', 'error'].includes(phase));
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
+	// svelte-ignore state_referenced_locally
 	const camera = useScannerCamera(embedded);
 	let revealedCard = $state<Card | null>(null);
 	let blurWarning = $state(false);
