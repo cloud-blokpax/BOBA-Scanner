@@ -558,11 +558,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						console.log('[ebay/create-draft] Offer already exists, updating with location key:', existingOfferId);
 
 						// Update the existing offer to include merchantLocationKey
-						const updateHeaders = {
-							'Authorization': `Bearer ${token}`,
-							'Content-Type': 'application/json',
-							'Content-Language': 'en-US',
-							'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+const updateHeaders = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'Content-Language': 'en-US',
+    'Accept-Language': 'en-US',
+    'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+};
 						};
 						const updateRes = await fetch(`${EBAY_INVENTORY_URL}/offer/${existingOfferId}`, {
 							method: 'PUT',
