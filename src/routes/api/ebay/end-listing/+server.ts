@@ -42,10 +42,33 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const token = connected ? await getSellerToken(user.id) : null;
 
 	// Withdraw the offer on eBay
-	if (listing.ebay_offer_id && token) {
+	let offerIdToWithdraw = listing.ebay_offer_id;
+
+	// If no offer ID stored, try to find it by SKU
+	if (!offerIdToWithdraw && listing.sku && token) {
+		try {
+			const lookupRes = await fetch(
+				`${EBAY_INVENTORY_URL}/offer?sku=${encodeURIComponent(listing.sku)}&limit=1`,
+				{
+					headers: {
+						Authorization: `Bearer ${token}`,
+						'Content-Type': 'application/json',
+						'Accept-Language': 'en-US',
+						'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+					}
+				}
+			);
+			if (lookupRes.ok) {
+				const data = await lookupRes.json();
+				offerIdToWithdraw = data.offers?.[0]?.offerId || null;
+			}
+		} catch { /* fall through */ }
+	}
+
+	if (offerIdToWithdraw && token) {
 		try {
 			const res = await fetch(
-				`${EBAY_INVENTORY_URL}/offer/${listing.ebay_offer_id}/withdraw`,
+				`${EBAY_INVENTORY_URL}/offer/${offerIdToWithdraw}/withdraw`,
 				{
 					method: 'POST',
 					headers: {
