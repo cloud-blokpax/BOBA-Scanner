@@ -30,6 +30,7 @@
 	let sellerHubUrl = $state<string | null>(null);
 	let listingUrl = $state<string | null>(null);
 	let error = $state<string | null>(null);
+	let showAdvanced = $state(false);
 
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
 
@@ -87,28 +88,6 @@
 			description = generateDescription();
 		}
 	});
-
-	// ── Aspects preview (what eBay sees as item specifics) ──
-	let aspects = $derived(() => {
-		const a: Array<{ label: string; value: string }> = [
-			{ label: 'Card Name', value: heroName || 'Unknown' },
-			{ label: 'Set', value: setCode || 'BoBA' },
-			{ label: 'Sport', value: 'Multi-Sport' },
-			{ label: 'Card Manufacturer', value: 'Bo Jackson Battle Arena' },
-		];
-		if (cardNumber) a.push({ label: 'Card Number', value: cardNumber });
-		if (parallel) a.push({ label: 'Parallel/Variety', value: parallel });
-		if (athleteName) a.push({ label: 'Player/Athlete', value: athleteName });
-		return a;
-	});
-
-	const CONDITION_MAP: Record<string, string> = {
-		'Mint': 'Mint (2750)',
-		'Near Mint': 'Near Mint or Better (4000)',
-		'Excellent': 'Near Mint or Better (4000)',
-		'Good': 'Good (5000)',
-		'Fair': 'Acceptable (6000)',
-	};
 
 	// Fetch price data on mount
 	$effect(() => {
@@ -218,8 +197,12 @@
 
 <div class="stl-listing-view">
 	<div class="stl-header">
-		<button class="stl-back" onclick={onScanNext}>← {backLabel || 'Scan Next'}</button>
-		<h1 class="stl-title">List Card</h1>
+		{#if backLabel}
+			<button class="stl-back" onclick={onDone}>&larr; {backLabel}</button>
+		{:else}
+			<button class="stl-back" onclick={onScanNext}>&larr; Scan Next</button>
+		{/if}
+		<h1 class="stl-title">List on eBay</h1>
 	</div>
 
 	<!-- Card preview -->
@@ -236,166 +219,177 @@
 		</div>
 	</div>
 
-	<!-- eBay Title -->
+	<!-- ── LISTING TITLE ── -->
 	<div class="stl-field">
 		<label class="stl-label" for="stl-title">
-			eBay Title
+			Listing Title
 			<span class="stl-char-count" class:over={title.length > 80}>{title.length}/80</span>
 		</label>
-		<input
-			id="stl-title"
-			type="text"
-			class="stl-text-input"
-			bind:value={title}
-			maxlength="80"
-			oninput={() => { titleManuallyEdited = true; }}
-		/>
+		<input id="stl-title" type="text" class="stl-text-input" bind:value={title}
+			maxlength="80" placeholder="Auto-generated from card data"
+			oninput={() => { titleManuallyEdited = true; }} />
 	</div>
 
-	<!-- Card Details (editable fields that feed aspects + description) -->
-	<div class="stl-section">
-		<span class="stl-section-label">Card Details</span>
-		<div class="stl-field-grid">
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-hero">Hero Name</label>
-				<input id="stl-hero" type="text" class="stl-text-input" bind:value={heroName} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-athlete">Athlete</label>
-				<input id="stl-athlete" type="text" class="stl-text-input" bind:value={athleteName} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-cardnum">Card Number</label>
-				<input id="stl-cardnum" type="text" class="stl-text-input" bind:value={cardNumber} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-set">Set</label>
-				<input id="stl-set" type="text" class="stl-text-input" bind:value={setCode} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-parallel">Parallel / Variant</label>
-				<input id="stl-parallel" type="text" class="stl-text-input" bind:value={parallel} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-weapon">Weapon Type</label>
-				<input id="stl-weapon" type="text" class="stl-text-input" bind:value={weaponType} />
-			</div>
-			<div class="stl-field stl-field-half">
-				<label class="stl-label" for="stl-power">Power</label>
-				<input id="stl-power" type="number" class="stl-text-input" bind:value={power} min="0" max="500" />
-			</div>
-		</div>
-	</div>
-
-	<!-- Condition picker -->
+	<!-- ── CONDITION ── -->
 	<div class="stl-field">
 		<!-- svelte-ignore a11y_label_has_associated_control -->
 		<label class="stl-label">Condition</label>
 		<div class="stl-condition-chips">
 			{#each CONDITIONS as cond}
-				<button
-					class="stl-condition-chip"
-					class:selected={condition === cond}
-					onclick={() => { condition = cond; }}
-				>
-					{cond}
-				</button>
+				<button class="stl-condition-chip" class:selected={condition === cond}
+					onclick={() => { condition = cond; }}>{cond}</button>
 			{/each}
 		</div>
-		<span class="stl-field-hint">eBay mapping: {CONDITION_MAP[condition] || condition}</span>
 	</div>
 
-	<!-- Condition Notes -->
+	<!-- ── PRICE & QUANTITY ── -->
+	<div class="stl-field-row">
+		<div class="stl-field" style="flex:2">
+			<label class="stl-label" for="stl-price">Price</label>
+			<div class="stl-price-row">
+				<span class="stl-dollar">$</span>
+				<input id="stl-price" type="number" class="stl-price-input" bind:value={price}
+					step="0.01" min="0.01" inputmode="decimal" />
+			</div>
+			{#if priceLoading}
+				<span class="stl-field-hint">Loading market data...</span>
+			{:else if priceData && (priceData.buy_now_mid || priceData.price_mid)}
+				<div class="stl-ebay-details">
+					<div class="stl-ebay-detail-row">
+						<span class="stl-ebay-detail-label">BIN Median</span>
+						<span class="stl-ebay-detail-value">{priceData.buy_now_mid != null ? `$${priceData.buy_now_mid.toFixed(2)}` : '—'}</span>
+					</div>
+					<div class="stl-ebay-detail-row">
+						<span class="stl-ebay-detail-label">BIN Low</span>
+						<span class="stl-ebay-detail-value">{priceData.buy_now_low != null ? `$${priceData.buy_now_low.toFixed(2)}` : '—'}</span>
+					</div>
+					<div class="stl-ebay-detail-row">
+						<span class="stl-ebay-detail-label">BIN Listings</span>
+						<span class="stl-ebay-detail-value">{priceData.buy_now_count ?? 0}</span>
+					</div>
+					<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="stl-ebay-link">
+						View on eBay &rarr;
+					</a>
+				</div>
+			{:else}
+				<span class="stl-field-hint">No market data available</span>
+			{/if}
+		</div>
+		<div class="stl-field" style="flex:1">
+			<label class="stl-label" for="stl-qty">Qty</label>
+			<input id="stl-qty" type="number" class="stl-text-input stl-qty-input" bind:value={quantity}
+				min="1" max="99" inputmode="numeric" />
+		</div>
+	</div>
+
+	<!-- ── EBAY ITEM SPECIFICS (all editable) ── -->
+	<div class="stl-section">
+		<h2 class="stl-section-title">eBay Item Specifics</h2>
+
+		<div class="stl-specifics-grid">
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-card-name">Card Name</label>
+				<input id="spec-card-name" type="text" class="stl-text-input" bind:value={heroName} />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-card-number">Card Number</label>
+				<input id="spec-card-number" type="text" class="stl-text-input" bind:value={cardNumber} />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-set">Set</label>
+				<input id="spec-set" type="text" class="stl-text-input" bind:value={setCode} />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-parallel">Parallel/Variety</label>
+				<input id="spec-parallel" type="text" class="stl-text-input" bind:value={parallel}
+					placeholder="None" />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-athlete">Player/Athlete</label>
+				<input id="spec-athlete" type="text" class="stl-text-input" bind:value={athleteName}
+					placeholder="None" />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-weapon">Weapon Type</label>
+				<input id="spec-weapon" type="text" class="stl-text-input" bind:value={weaponType}
+					placeholder="None" />
+			</div>
+
+			<div class="stl-spec-field">
+				<label class="stl-spec-label" for="spec-power">Power</label>
+				<input id="spec-power" type="text" class="stl-text-input" bind:value={power}
+					placeholder="None" inputmode="numeric" />
+			</div>
+
+			<!-- Read-only system fields -->
+			<div class="stl-spec-field stl-spec-readonly">
+				<span class="stl-spec-label">Sport</span>
+				<span class="stl-spec-value">Multi-Sport</span>
+			</div>
+
+			<div class="stl-spec-field stl-spec-readonly">
+				<span class="stl-spec-label">Card Manufacturer</span>
+				<span class="stl-spec-value">Bo Jackson Battle Arena</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- ── NOTES / CONDITION DESCRIPTION ── -->
 	<div class="stl-field">
 		<label class="stl-label" for="stl-notes">Condition Notes</label>
-		<input
-			id="stl-notes"
-			type="text"
-			class="stl-text-input"
-			bind:value={notes}
-			placeholder="e.g. Light corner wear, pack fresh"
-		/>
-		<span class="stl-field-hint">Shown as condition description on eBay</span>
+		<textarea id="stl-notes" class="stl-textarea" bind:value={notes}
+			rows="2" placeholder="Optional — visible to buyers as condition description"></textarea>
 	</div>
 
-	<!-- Price -->
-	<div class="stl-field">
-		<label class="stl-label" for="stl-price">Price</label>
-		<div class="stl-price-row">
-			<span class="stl-dollar">$</span>
-			<input
-				id="stl-price"
-				type="number"
-				class="stl-price-input"
-				bind:value={price}
-				step="0.01"
-				min="0.01"
-				inputmode="decimal"
-			/>
-		</div>
-		{#if priceLoading}
-			<span class="stl-field-hint">Loading market data...</span>
-		{:else if priceData && (priceData.buy_now_mid || priceData.price_mid)}
-			<div class="stl-ebay-details">
-				<div class="stl-ebay-detail-row">
-					<span class="stl-ebay-detail-label">BIN Median</span>
-					<span class="stl-ebay-detail-value">{priceData.buy_now_mid != null ? `$${priceData.buy_now_mid.toFixed(2)}` : '—'}</span>
-				</div>
-				<div class="stl-ebay-detail-row">
-					<span class="stl-ebay-detail-label">BIN Low</span>
-					<span class="stl-ebay-detail-value">{priceData.buy_now_low != null ? `$${priceData.buy_now_low.toFixed(2)}` : '—'}</span>
-				</div>
-				<div class="stl-ebay-detail-row">
-					<span class="stl-ebay-detail-label">BIN Listings</span>
-					<span class="stl-ebay-detail-value">{priceData.buy_now_count ?? 0}</span>
-				</div>
-				<a href={ebayUrl} target="_blank" rel="noopener noreferrer" class="stl-ebay-link">
-					View on eBay →
-				</a>
-			</div>
-		{:else}
-			<span class="stl-field-hint">No market data available</span>
-		{/if}
-	</div>
-
-	<!-- Quantity -->
-	<div class="stl-field">
-		<label class="stl-label" for="stl-qty">Quantity</label>
-		<input
-			id="stl-qty"
-			type="number"
-			class="stl-text-input stl-qty-input"
-			bind:value={quantity}
-			min="1"
-			max="99"
-		/>
-	</div>
-
-	<!-- Description -->
+	<!-- ── LISTING DESCRIPTION ── -->
 	<div class="stl-field">
 		<label class="stl-label" for="stl-desc">Listing Description</label>
-		<textarea
-			id="stl-desc"
-			class="stl-textarea"
-			bind:value={description}
-			rows="8"
-			oninput={() => { descManuallyEdited = true; }}
-		></textarea>
+		<textarea id="stl-desc" class="stl-textarea" bind:value={description}
+			rows="4" oninput={() => { descManuallyEdited = true; }}></textarea>
 	</div>
 
-	<!-- eBay Item Specifics (aspects) — read-only preview -->
-	<details class="stl-aspects-details">
-		<summary class="stl-section-label stl-summary">eBay Item Specifics</summary>
-		<div class="stl-aspects">
-			{#each aspects() as aspect}
-				<div class="stl-aspect-row">
-					<span class="stl-aspect-key">{aspect.label}</span>
-					<span class="stl-aspect-val">{aspect.value}</span>
-				</div>
-			{/each}
+	<!-- ── ADVANCED / SYSTEM FIELDS (collapsible) ── -->
+	<button class="stl-toggle-advanced" onclick={() => showAdvanced = !showAdvanced}>
+		{showAdvanced ? '▾' : '▸'} System Fields
+	</button>
+
+	{#if showAdvanced}
+		<div class="stl-system-fields">
+			<div class="stl-system-row">
+				<span class="stl-system-label">SKU</span>
+				<span class="stl-system-value">BOBA-{card.id || '...'}</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Category</span>
+				<span class="stl-system-value">Trading Cards (261328)</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Marketplace</span>
+				<span class="stl-system-value">EBAY_US</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Format</span>
+				<span class="stl-system-value">Fixed Price</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Currency</span>
+				<span class="stl-system-value">USD</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Location</span>
+				<span class="stl-system-value">Default (US)</span>
+			</div>
+			<div class="stl-system-row">
+				<span class="stl-system-label">Policies</span>
+				<span class="stl-system-value">Auto-fetched from your eBay account</span>
+			</div>
 		</div>
-		<span class="stl-field-hint">Auto-generated from card details above. Category: Trading Cards (261328)</span>
-	</details>
+	{/if}
 
 	<!-- Actions -->
 	{#if created && listingUrl}
@@ -836,5 +830,101 @@
 		margin-top: 0.5rem;
 		color: var(--accent-primary, #3b82f6) !important;
 		font-weight: 600;
+	}
+
+	/* ── Price + Quantity side-by-side row ── */
+	.stl-field-row {
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
+		margin-bottom: 1rem;
+	}
+	.stl-field-row > .stl-field {
+		margin-bottom: 0;
+	}
+
+	/* ── Item Specifics section ── */
+	.stl-section-title {
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--accent-primary, #3b82f6);
+		margin-bottom: 12px;
+	}
+
+	.stl-specifics-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+	}
+
+	.stl-spec-field {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+	.stl-spec-field .stl-text-input {
+		font-size: 0.8rem;
+		padding: 6px 10px;
+	}
+
+	.stl-spec-label {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		font-weight: 500;
+	}
+
+	.stl-spec-readonly {
+		opacity: 0.6;
+	}
+	.stl-spec-value {
+		font-size: 0.8rem;
+		color: var(--text-primary, #e2e8f0);
+		padding: 6px 10px;
+		background: rgba(255, 255, 255, 0.03);
+		border-radius: 8px;
+		border: 1px solid rgba(148, 163, 184, 0.08);
+	}
+
+	/* ── System Fields (collapsible) ── */
+	.stl-toggle-advanced {
+		width: 100%;
+		padding: 8px 0;
+		background: none;
+		border: none;
+		color: var(--text-muted, #475569);
+		font-size: 0.75rem;
+		cursor: pointer;
+		text-align: left;
+	}
+	.stl-toggle-advanced:hover {
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.stl-system-fields {
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid var(--border, rgba(148, 163, 184, 0.10));
+		border-radius: 10px;
+		padding: 10px 14px;
+		margin-bottom: 12px;
+	}
+	.stl-system-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 4px 0;
+	}
+	.stl-system-row + .stl-system-row {
+		border-top: 1px solid rgba(148, 163, 184, 0.06);
+	}
+	.stl-system-label {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+	}
+	.stl-system-value {
+		font-size: 0.75rem;
+		color: var(--text-secondary, #94a3b8);
+		text-align: right;
 	}
 </style>
