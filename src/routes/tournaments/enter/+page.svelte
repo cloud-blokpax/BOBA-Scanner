@@ -835,7 +835,7 @@
 	:global(.confirm-section) {
 		margin-bottom: 1rem;
 	}
-	:global(.confirm-section) h3 {
+	:global(.confirm-section h3) {
 		font-size: 0.85rem;
 		font-weight: 700;
 		color: var(--text-secondary);
