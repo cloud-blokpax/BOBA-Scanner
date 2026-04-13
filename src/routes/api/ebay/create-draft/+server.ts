@@ -484,6 +484,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				{ name: '40001', values: [conditionToDescriptorId(body.condition)] }
 			],
 			conditionDescription: body.notes || undefined,
+			packageWeightAndSize: {
+				weight: {
+					value: price >= 20 ? 4 : 1,
+					unit: 'OUNCE'
+				}
+			},
 			availability: {
 				shipToLocationAvailability: {
 					quantity
