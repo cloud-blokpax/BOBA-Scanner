@@ -31,6 +31,17 @@
 	let listingUrl = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let showAdvanced = $state(false);
+	let forceNew = $state(false);
+	let existingListings = $state<Array<{
+		id: string;
+		sku: string;
+		price: number;
+		ebay_listing_id: string | null;
+		ebay_listing_url: string | null;
+		status: string;
+		created_at: string;
+	}> | null>(null);
+	let showExistingDialog = $state(false);
 
 	const CONDITIONS = ['Mint', 'Near Mint', 'Excellent', 'Good', 'Fair'] as const;
 
@@ -162,9 +173,19 @@
 					notes: notes || null,
 					scanImageUrl: ebayImageUrl,
 					title,
-					description
+					description,
+					forceNew
 				})
 			});
+
+			if (res.status === 409) {
+				// Card already has active listing(s)
+				const data = await res.json();
+				existingListings = data.existingListings || [];
+				showExistingDialog = true;
+				creating = false;
+				return;
+			}
 
 			if (!res.ok) {
 				const errData = await res.json().catch(() => ({ message: 'Failed to create draft' }));
@@ -192,6 +213,12 @@
 			error = err instanceof Error ? err.message : 'Failed to create draft';
 		}
 		creating = false;
+	}
+	function createNewListing() {
+		showExistingDialog = false;
+		existingListings = null;
+		forceNew = true;
+		createEbayDraft();
 	}
 </script>
 
@@ -362,7 +389,7 @@
 		<div class="stl-system-fields">
 			<div class="stl-system-row">
 				<span class="stl-system-label">SKU</span>
-				<span class="stl-system-value">BOBA-{card.id || '...'}</span>
+				<span class="stl-system-value">BOBA-{card.id || '...'}-{'{timestamp}'}</span>
 			</div>
 			<div class="stl-system-row">
 				<span class="stl-system-label">Category</span>
@@ -387,6 +414,38 @@
 			<div class="stl-system-row">
 				<span class="stl-system-label">Policies</span>
 				<span class="stl-system-value">Auto-fetched from your eBay account</span>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Existing listing dialog -->
+	{#if showExistingDialog && existingListings && existingListings.length > 0}
+		<div class="stl-existing-dialog">
+			<div class="stl-existing-header">
+				<span class="stl-existing-icon">⚠️</span>
+				<span class="stl-existing-title">Already Listed</span>
+			</div>
+			<p class="stl-existing-desc">
+				This card has {existingListings.length} active listing{existingListings.length > 1 ? 's' : ''}:
+			</p>
+			<div class="stl-existing-list">
+				{#each existingListings as listing}
+					<div class="stl-existing-row">
+						<span class="stl-existing-price">${listing.price?.toFixed(2) ?? '—'}</span>
+						<span class="stl-existing-status">{listing.status}</span>
+						{#if listing.ebay_listing_url}
+							<a href={listing.ebay_listing_url} target="_blank" rel="noopener" class="stl-existing-link">View ↗</a>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			<div class="stl-existing-actions">
+				<button class="stl-btn stl-btn-create" onclick={createNewListing}>
+					Create New Listing Anyway
+				</button>
+				<button class="stl-text-btn" onclick={() => { showExistingDialog = false; }}>
+					Cancel
+				</button>
 			</div>
 		</div>
 	{/if}
@@ -926,5 +985,82 @@
 		font-size: 0.75rem;
 		color: var(--text-secondary, #94a3b8);
 		text-align: right;
+	}
+
+	/* ── Existing listing dialog ── */
+	.stl-existing-dialog {
+		padding: 1rem;
+		border-radius: 12px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid rgba(245, 158, 11, 0.25);
+		margin-bottom: 1rem;
+	}
+
+	.stl-existing-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.stl-existing-icon { font-size: 1.1rem; }
+
+	.stl-existing-title {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: var(--gold, #f59e0b);
+	}
+
+	.stl-existing-desc {
+		font-size: 0.8rem;
+		color: var(--text-secondary, #94a3b8);
+		margin: 0 0 0.75rem;
+	}
+
+	.stl-existing-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		margin-bottom: 1rem;
+	}
+
+	.stl-existing-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0.625rem;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid var(--border, rgba(148,163,184,0.08));
+	}
+
+	.stl-existing-price {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text-primary, #e2e8f0);
+	}
+
+	.stl-existing-status {
+		font-size: 0.65rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		padding: 0.125rem 0.375rem;
+		border-radius: 4px;
+		background: rgba(34, 197, 94, 0.12);
+		color: #22c55e;
+	}
+
+	.stl-existing-link {
+		margin-left: auto;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--accent-primary, #3b82f6);
+		text-decoration: none;
+	}
+
+	.stl-existing-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 </style>
