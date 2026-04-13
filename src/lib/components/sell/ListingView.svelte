@@ -43,6 +43,28 @@
 	let listingUrl = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let showAdvanced = $state(false);
+	let showListingOptions = $state(false);
+
+	// ── Listing options ──────────────────────────────────────
+	let bestOffer = $state(true);
+	let autoAcceptPrice = $state('');
+	let autoDeclinePrice = $state('');
+	let packageWeightOz = $state('');
+	let listingDuration = $state('GTC');
+
+	// Auto-calculate suggested thresholds when price changes
+	let suggestedAutoAccept = $derived(
+		price ? (parseFloat(price) * 0.9).toFixed(2) : ''
+	);
+	let suggestedAutoDecline = $derived(
+		price ? (parseFloat(price) * 0.6).toFixed(2) : ''
+	);
+	let autoWeight = $derived(
+		price && parseFloat(price) >= 20 ? 4 : 1
+	);
+	let shippingMethod = $derived(
+		price && parseFloat(price) >= 20 ? 'USPS First Class' : 'eBay Standard Envelope'
+	);
 	let forceNew = $state(false);
 	let existingListings = $state<Array<{
 		id: string;
@@ -186,7 +208,12 @@
 					scanImageUrl: ebayImageUrl,
 					title,
 					description,
-					forceNew
+					forceNew,
+					bestOffer,
+					autoAcceptPrice: autoAcceptPrice ? parseFloat(autoAcceptPrice) : null,
+					autoDeclinePrice: autoDeclinePrice ? parseFloat(autoDeclinePrice) : null,
+					packageWeightOz: packageWeightOz ? parseFloat(packageWeightOz) : null,
+					listingDuration: listingDuration !== 'GTC' ? listingDuration : null
 				})
 			});
 
@@ -391,6 +418,88 @@
 		<textarea id="stl-desc" class="stl-textarea" bind:value={description}
 			rows="4" oninput={() => { descManuallyEdited = true; }}></textarea>
 	</div>
+
+	<!-- ── LISTING OPTIONS (expandable) ── -->
+	<button class="stl-toggle-advanced stl-toggle-options" onclick={() => showListingOptions = !showListingOptions}>
+		{showListingOptions ? '▾' : '▸'} Listing Options
+	</button>
+
+	{#if showListingOptions}
+		<div class="stl-options-panel">
+			<!-- Best Offer -->
+			<div class="stl-option-row">
+				<div class="stl-option-label-row">
+					<span class="stl-option-label">Best Offer</span>
+					<button
+						class="stl-toggle-pill"
+						class:active={bestOffer}
+						onclick={() => { bestOffer = !bestOffer; }}
+						role="switch"
+						aria-checked={bestOffer}
+					>
+						<span class="stl-toggle-knob"></span>
+					</button>
+				</div>
+				{#if bestOffer}
+					<div class="stl-option-subfields">
+						<div class="stl-option-subfield">
+							<label class="stl-spec-label" for="auto-accept">Auto-accept above</label>
+							<div class="stl-price-row">
+								<span class="stl-dollar">$</span>
+								<input id="auto-accept" type="number" class="stl-price-input stl-option-input"
+									bind:value={autoAcceptPrice} step="0.01" min="0"
+									placeholder={suggestedAutoAccept} inputmode="decimal" />
+							</div>
+						</div>
+						<div class="stl-option-subfield">
+							<label class="stl-spec-label" for="auto-decline">Auto-decline below</label>
+							<div class="stl-price-row">
+								<span class="stl-dollar">$</span>
+								<input id="auto-decline" type="number" class="stl-price-input stl-option-input"
+									bind:value={autoDeclinePrice} step="0.01" min="0"
+									placeholder={suggestedAutoDecline} inputmode="decimal" />
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Shipping -->
+			<div class="stl-option-row">
+				<span class="stl-option-label">Shipping Method</span>
+				<span class="stl-option-value">{shippingMethod}</span>
+			</div>
+
+			<!-- Package Weight -->
+			<div class="stl-option-row">
+				<div class="stl-option-label-row">
+					<span class="stl-option-label">Package Weight</span>
+				</div>
+				<div class="stl-weight-row">
+					<input type="number" class="stl-text-input stl-weight-input"
+						bind:value={packageWeightOz} step="1" min="1" max="16"
+						placeholder={String(autoWeight)} inputmode="numeric" />
+					<span class="stl-weight-unit">oz</span>
+					<span class="stl-weight-hint">
+						{#if !packageWeightOz}
+							Auto: {autoWeight}oz ({parseFloat(price || '0') >= 20 ? '≥$20 → padded mailer' : '<$20 → toploader'})
+						{/if}
+					</span>
+				</div>
+			</div>
+
+			<!-- Listing Duration -->
+			<div class="stl-option-row">
+				<span class="stl-option-label">Duration</span>
+				<div class="stl-duration-chips">
+					{#each [['GTC', 'Good \'Til Cancelled'], ['DAYS_30', '30 Days'], ['DAYS_60', '60 Days']] as [val, label]}
+						<button class="stl-condition-chip" class:selected={listingDuration === val}
+							onclick={() => { listingDuration = val; }}>{label}</button>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- ── ADVANCED / SYSTEM FIELDS (collapsible) ── -->
 	<button class="stl-toggle-advanced" onclick={() => showAdvanced = !showAdvanced}>
@@ -1009,5 +1118,139 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+
+	/* ── Listing Options panel ── */
+	.stl-toggle-options {
+		color: var(--accent-primary, #3b82f6) !important;
+		font-weight: 600;
+	}
+
+	.stl-options-panel {
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		border-radius: 10px;
+		padding: 0.75rem;
+		margin-bottom: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.stl-option-row {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid rgba(148,163,184,0.06);
+	}
+
+	.stl-option-row:last-child {
+		padding-bottom: 0;
+		border-bottom: none;
+	}
+
+	.stl-option-label-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.stl-option-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-primary, #e2e8f0);
+	}
+
+	.stl-option-value {
+		font-size: 0.8rem;
+		color: var(--text-secondary, #94a3b8);
+		text-align: right;
+	}
+
+	/* Toggle pill */
+	.stl-toggle-pill {
+		position: relative;
+		width: 40px;
+		height: 22px;
+		border-radius: 11px;
+		border: none;
+		background: rgba(148,163,184,0.2);
+		cursor: pointer;
+		transition: background 0.2s;
+		padding: 0;
+	}
+
+	.stl-toggle-pill.active {
+		background: var(--accent-primary, #3b82f6);
+	}
+
+	.stl-toggle-knob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		background: white;
+		transition: transform 0.2s;
+	}
+
+	.stl-toggle-pill.active .stl-toggle-knob {
+		transform: translateX(18px);
+	}
+
+	/* Best Offer subfields */
+	.stl-option-subfields {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 0.25rem;
+	}
+
+	.stl-option-subfield {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.stl-option-input {
+		font-size: 0.85rem !important;
+		padding: 0.375rem 0.5rem !important;
+	}
+
+	/* Weight row */
+	.stl-weight-row {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+
+	.stl-weight-input {
+		width: 60px;
+		text-align: center;
+		-moz-appearance: textfield;
+		appearance: textfield;
+	}
+
+	.stl-weight-input::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; }
+
+	.stl-weight-unit {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-muted, #475569);
+	}
+
+	.stl-weight-hint {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		margin-left: 0.25rem;
+	}
+
+	/* Duration chips */
+	.stl-duration-chips {
+		display: flex;
+		gap: 0.375rem;
+		flex-wrap: wrap;
 	}
 </style>

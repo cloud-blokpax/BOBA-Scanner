@@ -28,6 +28,12 @@ interface DraftRequest {
 	title: string | null;
 	description: string | null;
 	forceNew?: boolean;
+	// Listing options
+	bestOffer?: boolean;
+	autoAcceptPrice?: number | null;
+	autoDeclinePrice?: number | null;
+	packageWeightOz?: number | null;
+	listingDuration?: string | null;
 }
 
 function buildTitle(req: DraftRequest): string {
@@ -381,11 +387,29 @@ async function publishOffer(offerId: string, token: string, sku: string) {
 	if (publishRes.ok) {
 		const publishData = await publishRes.json().catch(() => ({}));
 		const listingId = publishData.listingId;
+		const listingUrl = listingId ? `https://www.ebay.com/itm/${listingId}` : null;
+
+		// Update listing_templates with published status
+		try {
+			const adminClient = getAdminClient();
+			if (adminClient) {
+				await adminClient.from('listing_templates').update({
+					status: 'published',
+					ebay_offer_id: offerId,
+					ebay_listing_id: listingId || null,
+					ebay_listing_url: listingUrl,
+					updated_at: new Date().toISOString()
+				}).eq('sku', sku);
+			}
+		} catch (err) {
+			console.debug('[ebay/create-draft] Template publish update failed:', err);
+		}
+
 		return json({
 			success: true,
 			partial: false,
 			listingId: listingId || null,
-			listingUrl: listingId ? `https://www.ebay.com/itm/${listingId}` : null,
+			listingUrl,
 			offerId,
 			sku,
 			message: listingId
@@ -527,9 +551,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			conditionDescription: body.notes || undefined,
 			packageWeightAndSize: {
 				weight: {
-					value: price >= 20 ? 4 : 1,
+					value: body.packageWeightOz ?? (price >= 20 ? 4 : 1),
 					unit: 'OUNCE'
-				}
+				},
+				packageType: price >= 20 ? 'PACKAGE_THICK_ENVELOPE' : 'LETTER'
 			},
 			availability: {
 				shipToLocationAvailability: {
@@ -596,7 +621,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		// Step 4: Create offer (unpublished = draft in Seller Hub)
-		const offer = {
+		const bestOfferEnabled = body.bestOffer !== false; // default ON
+
+		const offer: Record<string, unknown> = {
 			sku,
 			marketplaceId: 'EBAY_US',
 			format: 'FIXED_PRICE',
@@ -615,8 +642,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					? policies.envelopeFulfillmentPolicyId
 					: policies.fulfillmentPolicyId,
 				returnPolicyId: policies.returnPolicyId,
-				paymentPolicyId: policies.paymentPolicyId
-			}
+				paymentPolicyId: policies.paymentPolicyId,
+				...(bestOfferEnabled ? {
+					bestOfferTerms: {
+						bestOfferEnabled: true,
+						...(body.autoAcceptPrice ? {
+							autoAcceptPrice: {
+								value: body.autoAcceptPrice.toFixed(2),
+								currency: 'USD'
+							}
+						} : {}),
+						...(body.autoDeclinePrice ? {
+							autoDeclinePrice: {
+								value: body.autoDeclinePrice.toFixed(2),
+								currency: 'USD'
+							}
+						} : {})
+					}
+				} : {})
+			},
+			...(body.listingDuration ? { listingDuration: body.listingDuration } : {})
 		};
 
 		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
