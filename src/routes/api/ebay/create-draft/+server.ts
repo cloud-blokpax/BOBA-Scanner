@@ -27,6 +27,7 @@ interface DraftRequest {
 	scanImageUrl: string | null;
 	title: string | null;
 	description: string | null;
+	forceNew?: boolean;
 }
 
 function buildTitle(req: DraftRequest): string {
@@ -384,7 +385,34 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
 	const adminClient = getAdminClient();
-	const sku = `BOBA-${body.cardId || Date.now()}`;
+	const sku = `BOBA-${body.cardId || 'unknown'}-${Date.now()}`;
+
+	// Check for existing active listings for this card
+	if (adminClient && body.cardId) {
+		try {
+			const { data: existingListings } = await adminClient
+				.from('listing_templates')
+				.select('id, sku, price, ebay_listing_id, ebay_listing_url, status, created_at')
+				.eq('user_id', user.id)
+				.eq('card_id', body.cardId)
+				.in('status', ['published', 'draft', 'pending'])
+				.order('created_at', { ascending: false })
+				.limit(5);
+
+			if (existingListings && existingListings.length > 0 && !body.forceNew) {
+				// Return existing listings so the frontend can offer choices
+				return json({
+					success: false,
+					existingListings,
+					message: 'This card already has active listing(s)',
+					cardId: body.cardId
+				}, { status: 409 });
+			}
+		} catch (err) {
+			console.debug('[ebay/create-draft] Existing listing check failed:', err);
+			// Non-critical — continue with new listing
+		}
+	}
 
 	// Persist listing template to DB for history tracking
 	if (adminClient) {
@@ -544,28 +572,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				throw error(403, 'eBay session expired. Reconnect in Settings.');
 			}
 
-			// If offer already exists for this SKU, update it with merchantLocationKey then publish
-			try {
-				const parsed = JSON.parse(errBody);
-				const firstError = parsed.errors?.[0];
-
-				if (firstError?.errorId === 25002 && firstError?.message?.includes('Offer entity already exists')) {
-					const existingOfferId = firstError.parameters?.find(
-						(p: { name: string; value: string }) => p.name === 'offerId'
-					)?.value;
-
-					if (existingOfferId) {
-						console.log('[ebay/create-draft] Offer already exists, publishing directly:', existingOfferId);
-
-						// Inventory item was already updated in step 1, so product data is current.
-						// Skip offer update (PUT /offer rejects Accept-Language header)
-						// and go straight to publishing.
-						return await publishOffer(existingOfferId, token, sku);
-					}
-				}
-			} catch {
-				// JSON parse failed, fall through to partial success
-			}
+			// With unique SKUs, duplicate offers should not occur.
+			// If they somehow do, the partial-success fallback below handles it.
 
 			return json({
 				success: true,
