@@ -385,7 +385,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
 	const adminClient = getAdminClient();
-	const sku = `BOBA-${body.cardId || 'unknown'}-${Date.now()}`;
+	const cardIdShort = (body.cardId || 'unknown').replace(/-/g, '').slice(0, 12);
+	const sku = `BOBA${cardIdShort}${Date.now()}`;
 
 	// Check for existing active listings for this card
 	if (adminClient && body.cardId) {
