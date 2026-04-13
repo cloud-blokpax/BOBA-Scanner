@@ -435,7 +435,7 @@ export interface Database {
 				Row: {
 					id: string;
 					user_id: string;
-					card_id: string;
+					card_id: string | null;
 					title: string;
 					description: string | null;
 					price: number;
@@ -459,7 +459,7 @@ export interface Database {
 				};
 				Insert: {
 					user_id: string;
-					card_id: string;
+					card_id?: string | null;
 					title: string;
 					description?: string | null;
 					price: number;
