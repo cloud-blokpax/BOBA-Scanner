@@ -110,6 +110,7 @@ function conditionToDescriptorId(condition: string): string {
 
 async function getSellerPolicies(token: string): Promise<{
 	fulfillmentPolicyId: string;
+	envelopeFulfillmentPolicyId: string | null;
 	paymentPolicyId: string;
 	returnPolicyId: string;
 } | null> {
@@ -140,14 +141,29 @@ async function getSellerPolicies(token: string): Promise<{
 			return policies[0][idField] || null;
 		};
 
-		let fulfillmentId = findPolicy(fulfillment.fulfillmentPolicies, 'fulfillmentPolicyId');
+		// Look for BOBA-specific policies first, then fall back to any existing policy
+		const allFulfillment = fulfillment.fulfillmentPolicies || [];
+		const envelopePolicy = allFulfillment.find(
+			(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('Envelope')
+		);
+		const firstClassPolicy = allFulfillment.find(
+			(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('First Class')
+		);
+		let envelopeFulfillmentId = envelopePolicy?.fulfillmentPolicyId || null;
+		let fulfillmentId = firstClassPolicy?.fulfillmentPolicyId
+			|| findPolicy(allFulfillment, 'fulfillmentPolicyId');
 		let paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
 		let returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
 
 		// Auto-create missing policies so sellers don't have to configure eBay manually
+		if (!envelopeFulfillmentId) {
+			console.log('[ebay/create-draft] No envelope fulfillment policy — creating');
+			envelopeFulfillmentId = await createEnvelopeFulfillmentPolicy(headers);
+		}
 		if (!fulfillmentId) {
-			console.log('[ebay/create-draft] No fulfillment policy found — creating default');
-			fulfillmentId = await createDefaultFulfillmentPolicy(headers);
+			console.log('[ebay/create-draft] No standard fulfillment policy — creating');
+			fulfillmentId = await createFirstClassFulfillmentPolicy(headers);
+			if (!fulfillmentId) fulfillmentId = envelopeFulfillmentId;
 		}
 		if (!paymentId) {
 			console.log('[ebay/create-draft] No payment policy found — creating default');
@@ -167,6 +183,7 @@ async function getSellerPolicies(token: string): Promise<{
 
 		return {
 			fulfillmentPolicyId: fulfillmentId,
+			envelopeFulfillmentPolicyId: envelopeFulfillmentId,
 			paymentPolicyId: paymentId,
 			returnPolicyId: returnId
 		};
@@ -176,29 +193,29 @@ async function getSellerPolicies(token: string): Promise<{
 	}
 }
 
-async function createDefaultFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+async function createFulfillmentPolicy(
+	headers: Record<string, string>,
+	name: string,
+	shippingOptions: Record<string, unknown>[]
+): Promise<string | null> {
 	try {
 		const res = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy`, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
-				name: 'BOBA Scanner - Standard Shipping',
+				name,
 				marketplaceId: 'EBAY_US',
 				handlingTime: { value: 1, unit: 'BUSINESS_DAY' },
-				shippingOptions: [{
-					optionType: 'DOMESTIC',
-					costType: 'FLAT_RATE',
-					shippingServices: [{
-						shippingServiceCode: 'ShippingMethodStandard',
-						shippingCost: { value: '0.00', currency: 'USD' },
-						sortOrder: 1,
-						freeShipping: true
-					}]
-				}]
+				shippingOptions
 			})
 		});
 		if (!res.ok) {
 			const body = await res.text().catch(() => '');
+			// 409 = policy with this name already exists, try to find it
+			if (res.status === 409) {
+				console.log(`[ebay/create-draft] Fulfillment policy "${name}" already exists`);
+				return null;
+			}
 			console.error('[ebay/create-draft] Failed to create fulfillment policy:', res.status, body);
 			return null;
 		}
@@ -208,6 +225,30 @@ async function createDefaultFulfillmentPolicy(headers: Record<string, string>): 
 		console.error('[ebay/create-draft] fulfillment policy creation error:', err);
 		return null;
 	}
+}
+
+async function createEnvelopeFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	return createFulfillmentPolicy(headers, 'BOBA - eBay Standard Envelope', [{
+		optionType: 'DOMESTIC',
+		costType: 'CALCULATED',
+		shippingServices: [{
+			shippingServiceCode: 'US_eBayStandardEnvelope',
+			freeShipping: false,
+			sortOrder: 1
+		}]
+	}]);
+}
+
+async function createFirstClassFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	return createFulfillmentPolicy(headers, 'BOBA - USPS First Class', [{
+		optionType: 'DOMESTIC',
+		costType: 'CALCULATED',
+		shippingServices: [{
+			shippingServiceCode: 'USPSFirstClass',
+			freeShipping: false,
+			sortOrder: 1
+		}]
+	}]);
 }
 
 async function createDefaultPaymentPolicy(headers: Record<string, string>): Promise<string | null> {
@@ -570,7 +611,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			},
 			categoryId: EBAY_CATEGORY_TRADING_CARDS,
 			listingPolicies: {
-				fulfillmentPolicyId: policies.fulfillmentPolicyId,
+				fulfillmentPolicyId: price < 20 && policies.envelopeFulfillmentPolicyId
+					? policies.envelopeFulfillmentPolicyId
+					: policies.fulfillmentPolicyId,
 				returnPolicyId: policies.returnPolicyId,
 				paymentPolicyId: policies.paymentPolicyId
 			}
