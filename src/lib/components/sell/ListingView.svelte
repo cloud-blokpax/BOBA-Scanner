@@ -437,35 +437,7 @@
 		</div>
 	</div>
 
-	<!-- ── PRIMARY ACTION (visible without scrolling) ── -->
-	{#if !created}
-		{#if !ebayConnected}
-			<a href="/settings?ebay=setup" class="stl-btn stl-btn-connect">Connect eBay to List</a>
-		{:else if atWeeklyLimit}
-			<div class="stl-limit-block">
-				<span class="stl-limit-text">Weekly listing limit reached (3/3)</span>
-				<button class="stl-btn stl-btn-upgrade" onclick={() => setShowGoProModal(true)}>Go Pro for Unlimited</button>
-			</div>
-		{:else}
-			<button
-				class="stl-btn stl-btn-create stl-btn-primary"
-				onclick={createEbayDraft}
-				disabled={creating || !price}
-			>
-				{creating ? 'Creating...' : `List for $${price || '0.00'} on eBay`}
-			</button>
-		{/if}
-	{/if}
-
-	<!-- ── EDIT DETAILS (collapsible — for power sellers) ── -->
-	<button class="stl-toggle-advanced stl-toggle-edit" onclick={() => editDetailsPref.value = !editDetailsPref.value}>
-		{editDetailsPref.value ? '▾' : '▸'} Edit Listing Details
-	</button>
-
-	{#if editDetailsPref.value}
-	<div class="stl-edit-panel">
-
-	<!-- Admin-only: Scraping Test detail panel -->
+	<!-- Admin-only: Scraping Test expandable detail panel (in Price section, not Edit Details) -->
 	{#if isAdmin}
 		<details class="stl-st-details" bind:open={stExpanded}>
 			<summary class="stl-section-label stl-summary">Scraping Test</summary>
@@ -530,6 +502,34 @@
 			</div>
 		</details>
 	{/if}
+
+	<!-- ── PRIMARY ACTION (visible without scrolling) ── -->
+	{#if !created}
+		{#if !ebayConnected}
+			<a href="/settings?ebay=setup" class="stl-btn stl-btn-connect">Connect eBay to List</a>
+		{:else if atWeeklyLimit}
+			<div class="stl-limit-block">
+				<span class="stl-limit-text">Weekly listing limit reached (3/3)</span>
+				<button class="stl-btn stl-btn-upgrade" onclick={() => setShowGoProModal(true)}>Go Pro for Unlimited</button>
+			</div>
+		{:else}
+			<button
+				class="stl-btn stl-btn-create stl-btn-primary"
+				onclick={createEbayDraft}
+				disabled={creating || !price}
+			>
+				{creating ? 'Creating...' : `List for $${price || '0.00'} on eBay`}
+			</button>
+		{/if}
+	{/if}
+
+	<!-- ── EDIT DETAILS (collapsible — for power sellers) ── -->
+	<button class="stl-toggle-advanced stl-toggle-edit" onclick={() => editDetailsPref.value = !editDetailsPref.value}>
+		{editDetailsPref.value ? '▾' : '▸'} Edit Listing Details
+	</button>
+
+	{#if editDetailsPref.value}
+	<div class="stl-edit-panel">
 
 	<!-- ── EBAY ITEM SPECIFICS (all editable) ── -->
 	<div class="stl-section">
