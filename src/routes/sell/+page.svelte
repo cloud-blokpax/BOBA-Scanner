@@ -5,6 +5,12 @@
 	import Scanner from '$lib/components/Scanner.svelte';
 	import BrowseView from '$lib/components/sell/BrowseView.svelte';
 	import ListingView from '$lib/components/sell/ListingView.svelte';
+	import WhatnotPendingView from '$lib/components/sell/WhatnotPendingView.svelte';
+	import {
+		initWhatnotBatch, addCardToBatch, whatnotPendingCards,
+		whatnotBatchTag, whatnotInitialized
+	} from '$lib/stores/whatnot-batch.svelte';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import type { ScanResult, Card } from '$lib/types';
 
 	// ── eBay connection status ──────────────────────────────
@@ -39,7 +45,7 @@
 	});
 
 	// ── State machine ───────────────────────────────────────
-	type SellView = 'browse' | 'scanning' | 'uploading' | 'listing';
+	type SellView = 'browse' | 'scanning' | 'uploading' | 'listing' | 'whatnot-scanning' | 'whatnot-uploading' | 'whatnot-pending';
 	let view = $state<SellView>('browse');
 	let listingCard = $state<Card | null>(null);
 	let listingImageUrl = $state<string | null>(null);
@@ -67,6 +73,66 @@
 		uploadProcessing = false;
 		if (uploadThumbnailUrl) { URL.revokeObjectURL(uploadThumbnailUrl); uploadThumbnailUrl = null; }
 		view = 'uploading';
+	}
+
+	// ── Whatnot flow ─────────────────────────────────────────
+	onMount(() => { initWhatnotBatch(); });
+
+	function startWhatnotScan() {
+		initScanner();
+		listingCard = null;
+		listingImageUrl = null;
+		view = 'whatnot-scanning';
+	}
+
+	function startWhatnotUpload() {
+		listingCard = null;
+		listingImageUrl = null;
+		uploadError = null;
+		uploadProcessing = false;
+		if (uploadThumbnailUrl) { URL.revokeObjectURL(uploadThumbnailUrl); uploadThumbnailUrl = null; }
+		view = 'whatnot-uploading';
+	}
+
+	function handleWhatnotScanResult(result: ScanResult, capturedImageUrl?: string) {
+		if (!result.card) return;
+		addCardToBatch(result.card, capturedImageUrl || null);
+		showToast(`Added ${result.card.hero_name || result.card.name || 'card'} to ${whatnotBatchTag()}`, 'check');
+		// Stay in scanning mode for continuous scanning
+	}
+
+	async function handleWhatnotUploadFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		input.value = '';
+
+		uploadError = null;
+		uploadProcessing = true;
+		if (uploadThumbnailUrl) URL.revokeObjectURL(uploadThumbnailUrl);
+		uploadThumbnailUrl = URL.createObjectURL(file);
+
+		let bitmap: ImageBitmap | null = null;
+		try {
+			await initWorkers();
+			bitmap = await createImageBitmap(file, {
+				resizeWidth: 2048, resizeHeight: 2048, resizeQuality: 'high'
+			});
+			const result = await recognizeCard(bitmap, undefined, { isAuthenticated: true, skipBlurCheck: true });
+			if (result.card_id && result.card) {
+				addCardToBatch(result.card, uploadThumbnailUrl);
+				showToast(`Added ${result.card.hero_name || result.card.name || 'card'} to ${whatnotBatchTag()}`, 'check');
+				uploadThumbnailUrl = null;
+				view = 'whatnot-pending';
+			} else {
+				uploadError = result.failReason || 'Could not identify card. Try a clearer photo.';
+			}
+		} catch (err) {
+			uploadError = err instanceof Error ? err.message : 'Processing failed';
+		} finally {
+			bitmap?.close();
+			uploadProcessing = false;
+		}
 	}
 
 	async function handleUploadFile(event: Event) {
@@ -180,6 +246,63 @@
 		onScanNext={() => { listingCard = null; listingImageUrl = null; if (listingSource === 'upload') { startUploadToList(); } else { startScanToList(); } }}
 		onDone={() => { listingCard = null; listingImageUrl = null; view = 'browse'; }}
 	/>
+{:else if view === 'whatnot-scanning'}
+	<div class="stl-scanner-view">
+		<div class="stl-header">
+			<button class="stl-back" onclick={() => { view = 'whatnot-pending'; }}>← Pending ({whatnotPendingCards().length})</button>
+			<h1 class="stl-title">Scan for Whatnot</h1>
+		</div>
+		<div class="stl-scanner-container">
+			<Scanner
+				onResult={handleWhatnotScanResult}
+				isAuthenticated={true}
+				embedded={true}
+				scanMode="single"
+			/>
+		</div>
+	</div>
+{:else if view === 'whatnot-uploading'}
+	<div class="stl-scanner-view">
+		<div class="stl-header">
+			<button class="stl-back" onclick={() => { if (uploadThumbnailUrl) { URL.revokeObjectURL(uploadThumbnailUrl); uploadThumbnailUrl = null; } view = 'whatnot-pending'; }}>← Pending</button>
+			<h1 class="stl-title">Upload for Whatnot</h1>
+		</div>
+		<div class="upload-container">
+			{#if uploadProcessing}
+				<div class="upload-processing">
+					{#if uploadThumbnailUrl}
+						<img src={uploadThumbnailUrl} alt="Processing" class="upload-preview" />
+					{/if}
+					<div class="upload-spinner"></div>
+					<p class="upload-status-text">Identifying card...</p>
+				</div>
+			{:else}
+				<label class="upload-drop-zone">
+					<span class="upload-icon">📤</span>
+					<span class="upload-text">Select a card photo</span>
+					<span class="upload-hint">JPEG, PNG, or WebP</span>
+					<input
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						onchange={handleWhatnotUploadFile}
+						class="upload-file-input"
+					/>
+				</label>
+				{#if uploadError}
+					<div class="upload-error">
+						<p>{uploadError}</p>
+						<button class="upload-retry-btn" onclick={() => { uploadError = null; }}>Try Another Photo</button>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</div>
+{:else if view === 'whatnot-pending'}
+	<WhatnotPendingView
+		onScan={startWhatnotScan}
+		onUpload={startWhatnotUpload}
+		onDone={() => { view = 'browse'; }}
+	/>
 {:else}
 	<BrowseView
 		{ebayConfigured} {ebayConnected} {ebayChecked}
@@ -187,6 +310,7 @@
 		onStartScan={startScanToList}
 		onStartUpload={startUploadToList}
 		onEbayDisconnected={() => { ebayConnected = false; ebaySellerUsername = null; ebaySellerEmail = null; ebayConnectedSince = null; ebayTokenHealth = null; }}
+		onStartWhatnot={() => { view = 'whatnot-pending'; }}
 	/>
 {/if}
 

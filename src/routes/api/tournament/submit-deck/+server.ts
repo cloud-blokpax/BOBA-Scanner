@@ -3,6 +3,10 @@ import { requireAuth, requireSupabase, parseJsonBody, requireString, requireEmai
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculateTotalDbs } from '$lib/data/boba-dbs-scores';
+
+// Tournament lookup + player count + validation + DBS calc + upsert
+export const config = { maxDuration: 60 };
+
 import type { RequestHandler } from './$types';
 import type { Card } from '$lib/types';
 import type { DeckValidationResult } from '$lib/services/deck-validator';

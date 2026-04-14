@@ -9,6 +9,9 @@ import { json, error } from '@sveltejs/kit';
 import { generateWhatnotCSV, type WhatnotExportCard, type WhatnotExportOptions } from '$lib/services/whatnot-export';
 import type { RequestHandler } from './$types';
 
+// Fetches up to 500 cards + prices + collection + images = multi-query chain
+export const config = { maxDuration: 60 };
+
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to export');
