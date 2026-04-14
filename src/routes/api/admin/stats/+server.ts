@@ -11,7 +11,14 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 import { isEbayConfigured } from '$lib/server/ebay-auth';
+import { getRedis } from '$lib/server/redis';
 import type { RequestHandler } from './$types';
+
+// Health checks + trend RPC + 16 parallel queries can exceed 10s on cold starts
+export const config = { maxDuration: 60 };
+
+const STATS_CACHE_KEY = 'admin:dashboard-stats';
+const STATS_CACHE_TTL = 60; // 60 seconds — admin data doesn't change faster than this
 
 function todayStart(): string {
 	const d = new Date();
@@ -19,21 +26,32 @@ function todayStart(): string {
 	return d.toISOString();
 }
 
-function daysAgo(n: number): string {
-	const d = new Date();
-	d.setDate(d.getDate() - n);
-	d.setHours(0, 0, 0, 0);
-	return d.toISOString();
-}
+// daysAgo removed — no longer needed after get_daily_trends RPC
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
 	await requireAdmin(locals);
 
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
+	// Return cached dashboard if available (60s TTL) — skip if ?fresh=true
+	const bypassCache = url.searchParams.get('fresh') === 'true';
+	if (!bypassCache) {
+		const redis = getRedis();
+		if (redis) {
+			try {
+				const cached = await redis.get<string>(STATS_CACHE_KEY);
+				if (cached) {
+					return json(typeof cached === 'string' ? JSON.parse(cached) : cached);
+				}
+			} catch (err) {
+				console.debug('[admin/stats] Redis cache read failed:', err);
+			}
+		}
+	}
+
 	const today = todayStart();
-	const fourteenDaysAgo = daysAgo(14);
+	// fourteenDaysAgo removed — trend date range now handled inside get_daily_trends RPC
 	const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
 	// Run all queries in parallel
@@ -94,41 +112,19 @@ export const GET: RequestHandler = async ({ locals }) => {
 		checkSystemHealth(admin)
 	]);
 
-	// Helper to paginate timestamp queries in 1k chunks (Supabase row limit)
-	async function fetchAllTimestamps(
-		table: string,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		filters: (q: any) => any
-	): Promise<Array<{ created_at: string }>> {
-		const CHUNK = 1000;
-		const rows: Array<{ created_at: string }> = [];
-		let offset = 0;
-		let done = false;
-		while (!done) {
-			const q = filters(admin!.from(table).select('created_at'));
-			const { data } = await q
-				.order('created_at', { ascending: true })
-				.range(offset, offset + CHUNK - 1);
-			if (!data || data.length === 0) { done = true; }
-			else {
-				rows.push(...(data as Array<{ created_at: string }>));
-				offset += CHUNK;
-				if (data.length < CHUNK) done = true;
-			}
-		}
-		return rows;
+	// Single RPC call replaces three paginated multi-thousand-row fetches.
+	// get_daily_trends returns exactly 14 rows with pre-aggregated counts.
+	let scanTrend: number[] = new Array(14).fill(0);
+	let signupTrend: number[] = new Array(14).fill(0);
+	let errorTrend: number[] = new Array(14).fill(0);
+
+	const { data: trendRows, error: trendErr } = await admin.rpc('get_daily_trends', { p_days: 14 });
+	if (!trendErr && trendRows) {
+		const rows = trendRows as Array<{ trend_date: string; scan_count: number; signup_count: number; error_count: number }>;
+		scanTrend = rows.map(r => Number(r.scan_count));
+		signupTrend = rows.map(r => Number(r.signup_count));
+		errorTrend = rows.map(r => Number(r.error_count));
 	}
-
-	// Build 14-day trends in parallel (paginated)
-	const [trendData, signupTrendData, errorTrendData] = await Promise.all([
-		fetchAllTimestamps('api_call_logs', q => q.gte('created_at', fourteenDaysAgo).eq('call_type', 'scan')),
-		fetchAllTimestamps('users', q => q.gte('created_at', fourteenDaysAgo)),
-		fetchAllTimestamps('api_call_logs', q => q.gte('created_at', fourteenDaysAgo).eq('success', false)),
-	]);
-
-	const scanTrend = buildDailyTrend(trendData, 14);
-	const signupTrend = buildDailyTrend(signupTrendData, 14);
-	const errorTrend = buildDailyTrend(errorTrendData, 14);
 
 	// Calculate AI cost estimate ($0.002 per Tier 3 scan)
 	const scansCount = scansToday.count || 0;
@@ -159,7 +155,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.limit(1)
 		.maybeSingle();
 
-	return json({
+	const responseData = {
 		metrics: {
 			totalUsers: usersTotal.count || 0,
 			usersToday: usersToday.count || 0,
@@ -198,22 +194,19 @@ export const GET: RequestHandler = async ({ locals }) => {
 		})),
 		health: healthChecks,
 		timestamp: new Date().toISOString()
-	});
-};
+	};
 
-function buildDailyTrend(rows: Array<{ created_at: string }>, days: number): number[] {
-	const counts = new Array(days).fill(0);
-	const now = new Date();
-
-	for (const row of rows) {
-		const date = new Date(row.created_at);
-		const daysAgoIdx = Math.floor((now.getTime() - date.getTime()) / 86400000);
-		const idx = days - 1 - daysAgoIdx;
-		if (idx >= 0 && idx < days) counts[idx]++;
+	// Cache the assembled response in Redis (fire-and-forget, non-blocking)
+	const redis = getRedis();
+	if (redis) {
+		redis.set(STATS_CACHE_KEY, JSON.stringify(responseData), { ex: STATS_CACHE_TTL })
+			.catch(err => console.debug('[admin/stats] Redis cache write failed:', err));
 	}
 
-	return counts;
-}
+	return json(responseData);
+};
+
+// buildDailyTrend removed — trend aggregation now handled by get_daily_trends RPC
 
 interface AlertInput {
 	errorsToday: number;

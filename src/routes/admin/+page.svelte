@@ -11,13 +11,18 @@
 	import AdminChangelogTab from './AdminChangelogTab.svelte';
 	import AdminSystemTab from './AdminSystemTab.svelte';
 	import AdminParallelsTab from './AdminParallelsTab.svelte';
-	import AdminConfigTab from './AdminConfigTab.svelte';
+	// AdminConfigTab → folded into AdminSystemTab
+	// AdminLogsTab → folded into AdminScansTab
+	// AdminStatsTab → removed (redundant with Pulse metrics)
 	import AdminPacksTab from './AdminPacksTab.svelte';
-	import AdminLogsTab from './AdminLogsTab.svelte';
-	import AdminStatsTab from './AdminStatsTab.svelte';
 
-	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'features' | 'ebay' | 'changelog' | 'system' | 'parallels' | 'config' | 'packs' | 'logs' | 'stats';
+	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'features' | 'ebay' | 'changelog' | 'system' | 'parallels' | 'packs';
 
+	// Consolidated from 13 tabs to 9:
+	// - Stats removed (redundant with Pulse metrics)
+	// - Config folded into System tab
+	// - Logs folded into Scans tab (was a simpler view of the same data)
+	// - Parallels moved to legacy (reference data, rarely changed)
 	const TABS: { id: TabId; label: string; group: 'main' | 'legacy' }[] = [
 		{ id: 'pulse', label: 'Pulse', group: 'main' },
 		{ id: 'users', label: 'Users', group: 'main' },
@@ -25,13 +30,10 @@
 		{ id: 'scans', label: 'Scans', group: 'main' },
 		{ id: 'features', label: 'Features', group: 'main' },
 		{ id: 'ebay', label: 'eBay', group: 'main' },
+		{ id: 'packs', label: 'Packs', group: 'main' },
 		{ id: 'changelog', label: 'Changelog', group: 'main' },
 		{ id: 'system', label: 'System', group: 'main' },
 		{ id: 'parallels', label: 'Parallels', group: 'legacy' },
-		{ id: 'config', label: 'Config', group: 'legacy' },
-		{ id: 'packs', label: 'Packs', group: 'legacy' },
-		{ id: 'logs', label: 'Logs', group: 'legacy' },
-		{ id: 'stats', label: 'Stats', group: 'legacy' }
 	];
 
 	let activeTab = $state<TabId>('pulse');
@@ -39,6 +41,8 @@
 	let isMobile = $state(true);
 	let showMoreTabs = $state(false);
 	let dismissedAlerts = $state<Set<string>>(new Set());
+	let autoRefresh = $state(false);
+	let autoRefreshTimer = $state<ReturnType<typeof setInterval> | null>(null);
 
 	// Dashboard data from API
 	let dashData = $state<{
@@ -98,6 +102,22 @@
 		loadDashboard();
 	});
 
+	// Auto-refresh: reload dashboard every 60s when enabled
+	$effect(() => {
+		if (autoRefresh) {
+			autoRefreshTimer = setInterval(() => {
+				loadDashboard();
+			}, 60_000);
+		} else if (autoRefreshTimer) {
+			clearInterval(autoRefreshTimer);
+			autoRefreshTimer = null;
+		}
+
+		return () => {
+			if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+		};
+	});
+
 	async function loadDashboard() {
 		loading = true;
 		try {
@@ -147,9 +167,19 @@
 			<div class="mobile-layout">
 				<div class="mobile-header">
 					<h1 class="mobile-title">Admin</h1>
-					{#if lastUpdated}
-						<span class="last-updated">Updated {lastUpdated}</span>
-					{/if}
+					<div class="header-right">
+						<button
+							class="auto-refresh-toggle"
+							class:active={autoRefresh}
+							onclick={() => autoRefresh = !autoRefresh}
+							title={autoRefresh ? 'Auto-refresh ON (60s)' : 'Auto-refresh OFF'}
+						>
+							{autoRefresh ? '⟳ Live' : '⟳'}
+						</button>
+						{#if lastUpdated}
+							<span class="last-updated">Updated {lastUpdated}</span>
+						{/if}
+					</div>
 				</div>
 
 				{#if activeTab === 'pulse'}
@@ -184,25 +214,22 @@
 						<AdminSystemTab {health} />
 					{:else if activeTab === 'parallels'}
 						<AdminParallelsTab />
-					{:else if activeTab === 'config'}
-						<AdminConfigTab />
 					{:else if activeTab === 'packs'}
 						<AdminPacksTab />
-					{:else if activeTab === 'logs'}
-						<AdminLogsTab />
-					{:else if activeTab === 'stats'}
-						<AdminStatsTab stats={{ totalUsers: metrics.totalUsers, totalScans: metrics.totalScans, activeToday: metrics.activeUsers, totalCards: metrics.totalCards }} />
 					{/if}
 				{/if}
 
 				<!-- Mobile Bottom Quick-Nav (only on pulse) -->
 				{#if activeTab === 'pulse'}
 					<div class="mobile-nav-section">
-						<h3 class="mobile-nav-label">All Sections</h3>
+						<h3 class="mobile-nav-label">Jump To</h3>
 						<div class="mobile-nav-grid">
-							{#each TABS.filter((t) => t.id !== 'pulse') as tab}
+							{#each TABS.filter((t) => t.id !== 'pulse' && t.group === 'main') as tab}
 								<button class="mobile-nav-btn" onclick={() => navigateTab(tab.id)}>
 									{tab.label}
+									{#if tab.id === 'cards' && metrics.scanFlagsPending > 0}
+										<span class="mobile-nav-badge">{metrics.scanFlagsPending}</span>
+									{/if}
 								</button>
 							{/each}
 						</div>
@@ -224,9 +251,19 @@
 				<div class="main-content">
 					<div class="desktop-header">
 						<h1 class="desktop-title">Admin Dashboard</h1>
-						{#if lastUpdated}
-							<span class="last-updated">Updated {lastUpdated}</span>
-						{/if}
+						<div class="header-right">
+							<button
+								class="auto-refresh-toggle"
+								class:active={autoRefresh}
+								onclick={() => autoRefresh = !autoRefresh}
+								title={autoRefresh ? 'Auto-refresh ON (60s)' : 'Auto-refresh OFF'}
+							>
+								{autoRefresh ? '⟳ Live' : '⟳'}
+							</button>
+							{#if lastUpdated}
+								<span class="last-updated">Updated {lastUpdated}</span>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Tab Bar -->
@@ -296,14 +333,8 @@
 							<AdminSystemTab {health} />
 						{:else if activeTab === 'parallels'}
 							<AdminParallelsTab />
-						{:else if activeTab === 'config'}
-							<AdminConfigTab />
 						{:else if activeTab === 'packs'}
 							<AdminPacksTab />
-						{:else if activeTab === 'logs'}
-							<AdminLogsTab />
-						{:else if activeTab === 'stats'}
-							<AdminStatsTab stats={{ totalUsers: metrics.totalUsers, totalScans: metrics.totalScans, activeToday: metrics.activeUsers, totalCards: metrics.totalCards }} />
 						{/if}
 					</div>
 				</div>
@@ -415,6 +446,20 @@
 		color: var(--gold);
 	}
 
+	.mobile-nav-badge {
+		display: inline-block;
+		padding: 0 5px;
+		border-radius: 8px;
+		background: var(--warning);
+		color: #000;
+		font-size: 0.6rem;
+		font-weight: 700;
+		min-width: 14px;
+		text-align: center;
+		line-height: 14px;
+		margin-left: 4px;
+	}
+
 	/* DESKTOP LAYOUT */
 	.desktop-layout {
 		display: flex;
@@ -522,5 +567,40 @@
 
 	.tab-content {
 		min-height: 400px;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.auto-refresh-toggle {
+		padding: 0.3rem 0.6rem;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: var(--bg-elevated);
+		color: var(--text-tertiary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 0.15s;
+		white-space: nowrap;
+	}
+
+	.auto-refresh-toggle:hover {
+		border-color: var(--text-secondary);
+		color: var(--text-secondary);
+	}
+
+	.auto-refresh-toggle.active {
+		border-color: var(--success);
+		color: var(--success);
+		background: rgba(16, 185, 129, 0.08);
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-glow {
+		0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+		50% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
 	}
 </style>
