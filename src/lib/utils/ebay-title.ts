@@ -124,18 +124,11 @@ export function buildEbaySearchQuery(card: EbayCardInfo): string {
 /**
  * Build a concise eBay API query for Browse API searches.
  *
- * Priority (highest → lowest):
- *   1. Hero Name — the card's identity
- *   2. Game Name — anchors to BoBA in eBay's search engine
- *   3. Parallel — primary price differentiator between variants
- *   4. Weapon — narrows within a parallel
- *   5. Athlete Name — supplementary context
- *   6. Card Number — lowest priority, rarely in seller listings
+ * Query: Hero Name - "Bo Jackson Battle Arena" - [Parallel] - [Weapon]
  *
- * Card number was previously the only differentiator, but sellers
- * almost never include it (~95% miss rate). Parallel is the field
- * that actually separates a $3 Orange Battlefoil from a $200 Gum
- * Battlefoil, so it must be in the query.
+ * Keeps the search broad enough for eBay to return results.
+ * Athlete name and card number are intentionally excluded —
+ * filterRelevantListings checks those on the way back for precision.
  */
 export function buildEbayApiQuery(card: EbayCardInfo): string {
 	const parts: string[] = [];
@@ -151,17 +144,9 @@ export function buildEbayApiQuery(card: EbayCardInfo): string {
 	const parallel = cleanParallel(card.parallel);
 	if (parallel) parts.push(parallel);
 
-	// 4. Weapon — further narrows within a parallel
+	// 4. Weapon — narrows within a parallel
 	const weapon = (card.weapon_type || '').trim();
 	if (weapon) parts.push(weapon);
-
-	// 5. Athlete Name — supplementary
-	const athlete = (card.athlete_name || '').trim();
-	if (athlete) parts.push(athlete);
-
-	// 6. Card Number — lowest priority, rarely in seller listings
-	const cardNum = (card.card_number || '').trim();
-	if (cardNum) parts.push(cardNum);
 
 	return parts.join(SEPARATOR);
 }
