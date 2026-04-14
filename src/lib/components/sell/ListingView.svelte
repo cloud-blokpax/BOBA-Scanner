@@ -6,7 +6,8 @@
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { generateWhatnotCSV, downloadWhatnotCSV, type WhatnotExportCard } from '$lib/services/whatnot-export';
-	import type { Card, PriceData } from '$lib/types';
+	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
+	import { user } from '$lib/stores/auth.svelte';
 
 	interface Props {
 		card: Card;
@@ -19,6 +20,16 @@
 	}
 
 	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel }: Props = $props();
+
+	// ── Admin-only scraping test data ────────────────────────
+	const currentUser = $derived(user());
+	const isAdmin = $derived(
+		currentUser?.app_metadata?.is_admin === true ||
+		(currentUser as unknown as Record<string, unknown>)?.is_admin === true
+	);
+	let stData = $state<ScrapingTestData | null>(null);
+	let stLoading = $state(false);
+	let stExpanded = $state(false);
 
 	// svelte-ignore state_referenced_locally
 	const _init = {
@@ -140,6 +151,27 @@
 	$effect(() => {
 		loadPrice();
 	});
+
+	// Fetch scraping test data for admin only — server-side protected
+	$effect(() => {
+		if (isAdmin && card.id) {
+			loadStData();
+		}
+	});
+
+	async function loadStData() {
+		stLoading = true;
+		try {
+			const res = await fetch(`/api/admin/st-data?card_id=${encodeURIComponent(card.id)}`);
+			if (res.ok) {
+				const json = await res.json();
+				stData = json.data;
+			}
+		} catch {
+			// Silent fail — non-critical admin feature
+		}
+		stLoading = false;
+	}
 
 	async function loadPrice() {
 		priceLoading = true;
@@ -388,6 +420,28 @@
 			{:else}
 				<span class="stl-field-hint">No market data available</span>
 			{/if}
+
+			<!-- Admin-only: ST price comparison (never rendered for non-admin) -->
+			{#if isAdmin && (stData || stLoading)}
+				<div class="stl-st-price-row">
+					{#if stLoading}
+						<span class="stl-st-label">ST</span>
+						<span class="stl-st-value stl-st-loading">loading...</span>
+					{:else if stData?.st_price != null}
+						<span class="stl-st-label">ST</span>
+						<span class="stl-st-value">${stData.st_price.toFixed(2)}</span>
+						{#if priceData?.buy_now_mid != null}
+							{@const diff = ((priceData.buy_now_mid - stData.st_price) / stData.st_price * 100)}
+							<span class="stl-st-diff" class:positive={diff > 0} class:negative={diff < 0}>
+								{diff > 0 ? '+' : ''}{diff.toFixed(0)}% vs eBay
+							</span>
+						{/if}
+					{:else}
+						<span class="stl-st-label">ST</span>
+						<span class="stl-st-value stl-st-na">N/A</span>
+					{/if}
+				</div>
+			{/if}
 		</div>
 		<div class="stl-field" style="flex:1">
 			<label class="stl-label" for="stl-qty">Qty</label>
@@ -395,6 +449,59 @@
 				min="1" max="99" inputmode="numeric" />
 		</div>
 	</div>
+
+	<!-- Admin-only: Scraping Test detail panel -->
+	{#if isAdmin && stData}
+		<details class="stl-st-details" bind:open={stExpanded}>
+			<summary class="stl-section-label stl-summary">Scraping Test</summary>
+			<div class="stl-st-grid">
+				<div class="stl-st-row">
+					<span class="stl-st-key">ST Price</span>
+					<span class="stl-st-val">{stData.st_price != null ? `$${stData.st_price.toFixed(2)}` : '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">ST Low</span>
+					<span class="stl-st-val">{stData.st_low != null ? `$${stData.st_low.toFixed(2)}` : '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">ST High</span>
+					<span class="stl-st-val">{stData.st_high != null ? `$${stData.st_high.toFixed(2)}` : '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">Source Card Name</span>
+					<span class="stl-st-val">{stData.st_card_name || '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">Source Set</span>
+					<span class="stl-st-val">{stData.st_set_name || '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">Source Variant</span>
+					<span class="stl-st-val">{stData.st_variant || '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">Source Rarity</span>
+					<span class="stl-st-val">{stData.st_rarity || '—'}</span>
+				</div>
+				<div class="stl-st-row">
+					<span class="stl-st-key">Last Updated</span>
+					<span class="stl-st-val">{stData.st_updated ? new Date(stData.st_updated).toLocaleDateString() : '—'}</span>
+				</div>
+				{#if stData.st_image_url}
+					<div class="stl-st-row stl-st-image-row">
+						<span class="stl-st-key">Source Image</span>
+						<img src={stData.st_image_url} alt="Source card" class="stl-st-image" />
+					</div>
+				{/if}
+				{#if stData.st_raw_data}
+					<details class="stl-st-raw">
+						<summary class="stl-st-raw-summary">Raw Data</summary>
+						<pre class="stl-st-raw-pre">{JSON.stringify(stData.st_raw_data, null, 2)}</pre>
+					</details>
+				{/if}
+			</div>
+		</details>
+	{/if}
 
 	<!-- ── EBAY ITEM SPECIFICS (all editable) ── -->
 	<div class="stl-section">
@@ -1320,5 +1427,125 @@
 		display: flex;
 		gap: 0.375rem;
 		flex-wrap: wrap;
+	}
+
+	/* ── Scraping Test: admin-only styles ─────────────────── */
+	.stl-st-price-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: 6px;
+		background: rgba(168, 85, 247, 0.08);
+		border: 1px solid rgba(168, 85, 247, 0.15);
+	}
+
+	.stl-st-label {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: rgba(168, 85, 247, 0.7);
+	}
+
+	.stl-st-value {
+		font-size: 0.875rem;
+		font-weight: 700;
+		color: #a855f7;
+	}
+
+	.stl-st-loading { opacity: 0.5; font-weight: 400; font-style: italic; }
+	.stl-st-na { opacity: 0.4; }
+
+	.stl-st-diff {
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+		margin-left: auto;
+	}
+
+	.stl-st-diff.positive {
+		color: #22c55e;
+		background: rgba(34, 197, 94, 0.1);
+	}
+
+	.stl-st-diff.negative {
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.stl-st-details {
+		margin-bottom: 1.25rem;
+		border: 1px solid rgba(168, 85, 247, 0.15);
+		border-radius: 10px;
+		padding: 0.75rem;
+		background: rgba(168, 85, 247, 0.04);
+	}
+
+	.stl-st-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.stl-st-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.3rem 0;
+		border-bottom: 1px solid rgba(168, 85, 247, 0.06);
+		font-size: 0.8rem;
+	}
+
+	.stl-st-key {
+		color: var(--text-muted, #475569);
+	}
+
+	.stl-st-val {
+		color: #a855f7;
+		font-weight: 600;
+		text-align: right;
+		max-width: 60%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.stl-st-image-row {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+
+	.stl-st-image {
+		width: 100px;
+		height: 140px;
+		object-fit: cover;
+		border-radius: 6px;
+		border: 1px solid rgba(168, 85, 247, 0.2);
+	}
+
+	.stl-st-raw {
+		margin-top: 0.5rem;
+	}
+
+	.stl-st-raw-summary {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		cursor: pointer;
+	}
+
+	.stl-st-raw-pre {
+		font-size: 0.65rem;
+		color: var(--text-muted, #475569);
+		background: var(--bg-surface, #0d1524);
+		border-radius: 6px;
+		padding: 0.5rem;
+		overflow-x: auto;
+		max-height: 200px;
+		overflow-y: auto;
+		margin-top: 0.375rem;
 	}
 </style>
