@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import { initScanner } from '$lib/stores/scanner.svelte';
 	import { recognizeCard, initWorkers } from '$lib/services/recognition';
 	import Scanner from '$lib/components/Scanner.svelte';
 	import BrowseView from '$lib/components/sell/BrowseView.svelte';
+	import SellExportTab from '$lib/components/sell/SellExportTab.svelte';
 	import ListingView from '$lib/components/sell/ListingView.svelte';
 	import WhatnotPendingView from '$lib/components/sell/WhatnotPendingView.svelte';
 	import {
@@ -12,6 +14,9 @@
 	} from '$lib/stores/whatnot-batch.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import type { ScanResult, Card } from '$lib/types';
+
+	// ── Tab routing (from category tabs) ────────────────────
+	const isExportTab = $derived($page.url.searchParams.get('tab') === 'export');
 
 	// ── eBay connection status ──────────────────────────────
 	let ebayConfigured = $state(false);
@@ -303,6 +308,8 @@
 		onUpload={startWhatnotUpload}
 		onDone={() => { view = 'browse'; }}
 	/>
+{:else if isExportTab}
+	<SellExportTab />
 {:else}
 	<BrowseView
 		{ebayConfigured} {ebayConnected} {ebayChecked}

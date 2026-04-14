@@ -34,7 +34,7 @@ export const PLAYBOOK_TABS: CategoryTab[] = [
 
 export const SELL_TABS: CategoryTab[] = [
 	{ label: 'Listings', path: '/sell' },
-	{ label: 'eBay Export', path: '/export?mode=ebay' },
+	{ label: 'eBay Export', path: '/sell?tab=export' },
 ];
 
 /**
@@ -45,14 +45,8 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	category: string;
 	tabs: CategoryTab[];
 } | null {
-	// /export serves two contexts:
-	// - Collection export (CSV/text) — default, shows Collection tabs
-	// - eBay export (listing-ready format) — triggered by ?mode=ebay, shows Sell tabs
-	// This dual-mode is intentional. The export page UI adapts based on the mode param.
+	// /export always shows under Collection tabs
 	if (pathname === '/export') {
-		if (search.includes('mode=ebay')) {
-			return { category: 'Sell', tabs: SELL_TABS };
-		}
 		return { category: 'Collection', tabs: COLLECTION_TABS };
 	}
 
@@ -74,6 +68,7 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	if (pathname === '/sell') {
 		return { category: 'Sell', tabs: SELL_TABS };
 	}
+	// /export without ?mode=ebay still shows under Collection tabs (handled above)
 
 	return null;
 }
