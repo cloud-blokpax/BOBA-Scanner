@@ -326,7 +326,7 @@
 	.stl-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border, rgba(148,163,184,0.10)); }
 	.stl-back { background: none; border: none; color: var(--text-secondary, #94a3b8); font-size: 0.9rem; cursor: pointer; padding: 0.25rem; }
 	.stl-title { font-size: 1.1rem; font-weight: 700; }
-	.stl-scanner-container { height: calc(100dvh - 56px - 68px - 52px); position: relative; }
+	.stl-scanner-container { height: calc(100dvh - 56px - 68px - 52px - 44px); position: relative; }
 
 	/* Upload to List */
 	.upload-container {
@@ -335,7 +335,7 @@
 		align-items: center;
 		justify-content: center;
 		padding: 2rem 1rem;
-		min-height: calc(100dvh - 56px - 68px - 52px);
+		min-height: calc(100dvh - 56px - 68px - 52px - 44px);
 		gap: 1.5rem;
 	}
 

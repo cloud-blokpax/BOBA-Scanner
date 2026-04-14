@@ -102,6 +102,14 @@ function roleCheck(flag: FeatureFlag): boolean {
 	return flag.enabled_for_authenticated === true;
 }
 
+/**
+ * Get the cached user profile (is_pro, is_admin).
+ * Returns null if not yet fetched.
+ */
+export function getUserProfile(): UserProfile | null {
+	return _userProfile;
+}
+
 async function _refreshProfile(userId: string): Promise<void> {
 	// Deduplicate: if a refresh is already in flight, piggyback on it
 	if (_refreshPromise) return _refreshPromise;

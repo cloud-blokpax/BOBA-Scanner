@@ -9,6 +9,7 @@
 	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
 	import { user } from '$lib/stores/auth.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import { getUserProfile } from '$lib/stores/feature-flags.svelte';
 
 	interface Props {
 		card: Card;
@@ -25,8 +26,8 @@
 	// ── Admin-only scraping test data ────────────────────────
 	const currentUser = $derived(user());
 	const isAdmin = $derived(
-		currentUser?.app_metadata?.is_admin === true ||
-		(currentUser as unknown as Record<string, unknown>)?.is_admin === true
+		getUserProfile()?.is_admin === true ||
+		currentUser?.app_metadata?.is_admin === true
 	);
 	let stData = $state<ScrapingTestData | null>(null);
 	let stLoading = $state(false);
