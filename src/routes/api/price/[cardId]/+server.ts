@@ -26,6 +26,10 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		throw error(400, 'Invalid card ID');
 	}
 
+	// Play cards use TEXT IDs (e.g., A---PL-1); hero cards use UUIDs.
+	// Detect early so we route to the correct cache table before the card lookup.
+	const isPlayCard = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cardId);
+
 	if (!isEbayConfigured()) {
 		return json({ error: 'eBay pricing not available' }, { status: 503 });
 	}
@@ -55,10 +59,12 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		return json({ error: 'Database not available' }, { status: 503 });
 	}
 
-	// Check price cache (4-hour freshness) — use service role to bypass RLS
+	// Check price cache (4-hour freshness) — use service role to bypass RLS.
+	// Play cards use play_price_cache (TEXT key); heroes use price_cache (UUID key).
+	const cacheTable = isPlayCard ? 'play_price_cache' : 'price_cache';
 	const cacheClient = getAdminClient() || locals.supabase;
 	const { data: cachedRaw } = await cacheClient
-		.from('price_cache')
+		.from(cacheTable)
 		.select('*')
 		.eq('card_id', cardId)
 		.eq('source', 'ebay')
@@ -172,11 +178,12 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 			fetched_at: new Date().toISOString()
 		};
 
-		// Update cache — use service role to bypass RLS (price_cache is server-managed)
+		// Update cache — use service role to bypass RLS.
+		// Play cards → play_price_cache (TEXT key), heroes → price_cache (UUID key).
 		try {
 			const adminClient = getAdminClient();
 			if (!adminClient) throw new Error('Admin client unavailable for cache write');
-			const { error: cacheError } = await adminClient.from('price_cache').upsert(priceData, {
+			const { error: cacheError } = await adminClient.from(cacheTable).upsert(priceData, {
 				onConflict: 'card_id,source'
 			});
 			if (cacheError) {
@@ -186,12 +193,14 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 			console.error('[api/price] Cache write exception:', err);
 		}
 
-		// Log price data point to history — only when price actually changed
+		// Log price data point to history — only when price actually changed.
+		// Play cards → play_price_history, heroes → price_history.
+		const historyTable = isPlayCard ? 'play_price_history' : 'price_history';
 		try {
 			const historyClient = getAdminClient();
 			if (!historyClient) throw new Error('Admin client unavailable for history write');
 			const { data: lastEntry } = await historyClient
-				.from('price_history')
+				.from(historyTable)
 				.select('price_mid')
 				.eq('card_id', cardId)
 				.order('recorded_at', { ascending: false })
@@ -200,7 +209,7 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 			const priceChanged = !lastEntry || lastEntry.price_mid !== priceData.price_mid;
 			if (priceChanged) {
-				const { error: historyError } = await historyClient.from('price_history').insert({
+				const { error: historyError } = await historyClient.from(historyTable).insert({
 					card_id: cardId,
 					source: 'ebay',
 					price_low: priceData.price_low,

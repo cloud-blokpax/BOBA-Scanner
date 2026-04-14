@@ -95,7 +95,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 				}
 				return { data: rows };
 			})(),
-			// Paginate price_cache in 1k chunks
+			// Paginate price_cache in 1k chunks (hero cards)
 			(async () => {
 				const rows: Array<{ card_id: string; price_mid: number | null }> = [];
 				let offset = 0;
@@ -112,6 +112,13 @@ export const GET: RequestHandler = async ({ locals }) => {
 						offset += CHUNK;
 						if (data.length < CHUNK) done = true;
 					}
+				}
+				// Also fetch play_price_cache (play cards + hot dogs — usually <500 rows)
+				const { data: playPrices } = await admin.from('play_price_cache')
+					.select('card_id, price_mid')
+					.eq('source', 'ebay');
+				if (playPrices) {
+					for (const r of playPrices) rows.push(r as { card_id: string; price_mid: number | null });
 				}
 				return rows;
 			})(),
