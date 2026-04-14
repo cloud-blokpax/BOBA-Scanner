@@ -1064,6 +1064,61 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['donations']['Insert']>;
 				Relationships: [];
 			};
+			play_price_cache: {
+				Row: {
+					card_id: string;
+					source: string;
+					price_low: number | null;
+					price_mid: number | null;
+					price_high: number | null;
+					buy_now_low: number | null;
+					buy_now_mid: number | null;
+					buy_now_count: number | null;
+					confidence_score: number | null;
+					filtered_count: number | null;
+					listings_count: number | null;
+					fetched_at: string;
+				};
+				Insert: {
+					card_id: string;
+					source?: string;
+					price_low?: number | null;
+					price_mid?: number | null;
+					price_high?: number | null;
+					buy_now_low?: number | null;
+					buy_now_mid?: number | null;
+					buy_now_count?: number | null;
+					confidence_score?: number | null;
+					filtered_count?: number | null;
+					listings_count?: number | null;
+					fetched_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['play_price_cache']['Insert']>;
+				Relationships: [];
+			};
+			play_price_history: {
+				Row: {
+					id: string;
+					card_id: string;
+					source: string;
+					price_low: number | null;
+					price_mid: number | null;
+					price_high: number | null;
+					listings_count: number | null;
+					recorded_at: string;
+				};
+				Insert: {
+					card_id: string;
+					source?: string;
+					price_low?: number | null;
+					price_mid?: number | null;
+					price_high?: number | null;
+					listings_count?: number | null;
+					recorded_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['play_price_history']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -1116,6 +1171,10 @@ export interface Database {
 			get_harvest_candidates: {
 				Args: { p_run_id: string; p_limit?: number };
 				Returns: Array<{ card_id: string; priority: number; card_type: string; name: string }>;
+			};
+			get_play_harvest_candidates: {
+				Args: { p_limit: number };
+				Returns: Array<{ id: string; hero_name: string | null; name: string; card_number: string; athlete_name: string | null; parallel: string | null; weapon_type: string | null; priority: number }>;
 			};
 			get_harvest_summary: {
 				Args: { p_run_id: string };

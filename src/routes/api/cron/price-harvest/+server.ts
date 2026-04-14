@@ -165,11 +165,57 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		}
 	}
 
-	// (offset tracking removed — no longer needed)
-
-	// ── Fire next chain link ─────────────────────────────
 	// Skip self-chaining when triggered manually (browser handles the loop)
 	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
+
+	// ── Play card pass (uses remaining budget) ────────────
+	// Only runs if hero processing finished with budget remaining.
+	// With 409 play cards total, this clears the backlog in a few runs.
+	if (!noChain && consecutive429s < 3) {
+		let playUsed = 0;
+		try {
+			const playBudget = Math.min(10, CARDS_PER_RUN - processed);
+			if (playBudget > 0) {
+				const playCandidates = await getPlayCandidates(admin, playBudget);
+
+				for (let i = 0; i < playCandidates.length; i++) {
+					if (Date.now() - startTime > processingCutoff) break;
+					if (consecutive429s >= 3) break;
+
+					const playCard = playCandidates[i];
+					try {
+						const result = await refreshPlayCardPrice(admin, playCard, redis, today, chainDepth, confidenceThreshold);
+						playUsed++;
+						if (result.logEntry) {
+							const errMsg = String(result.logEntry.error_message || '');
+							if (errMsg.includes('429')) {
+								consecutive429s++;
+							} else {
+								consecutive429s = 0;
+							}
+						}
+					} catch (err) {
+						console.error(`[harvest] Play card ${playCard.id} threw:`, err instanceof Error ? err.message : err);
+						playUsed++;
+					}
+
+					if (i < playCandidates.length - 1) {
+						await new Promise(r => setTimeout(r, CARD_DELAY_MS));
+					}
+				}
+
+				// Play card harvest results are tracked via play_price_cache.fetched_at
+				// rather than price_harvest_log (which has UUID card_id constraint).
+
+				processed += playUsed;
+				console.log(`[harvest] Play card pass: ${playUsed} processed`);
+			}
+		} catch (err) {
+			console.warn('[harvest] Play card pass failed:', err instanceof Error ? err.message : err);
+		}
+	}
+
+	// ── Fire next chain link ─────────────────────────────
 	if (!noChain) {
 		// If we hit 429s, wait 30s before chaining to let eBay's burst window reset.
 		// Combined with the next link's own processing time, this creates a ~90s gap
@@ -256,6 +302,26 @@ async function getNextCandidates(
 
 	if (rpcError) {
 		console.error('[harvest] get_harvest_candidates RPC failed:', rpcError);
+		return [];
+	}
+
+	return (data as unknown as CardCandidate[]) || [];
+}
+
+/**
+ * Fetch play card candidates from the play_cards table.
+ * Uses a separate RPC that returns TEXT IDs (not UUIDs).
+ */
+async function getPlayCandidates(
+	admin: NonNullable<ReturnType<typeof getAdminClient>>,
+	limit: number
+): Promise<CardCandidate[]> {
+	const { data, error: rpcError } = await admin.rpc('get_play_harvest_candidates', {
+		p_limit: limit
+	});
+
+	if (rpcError) {
+		console.error('[harvest] get_play_harvest_candidates RPC failed:', rpcError);
 		return [];
 	}
 
@@ -459,6 +525,152 @@ async function refreshCardPrice(
 				error_message: null,
 				duration_ms: Date.now() - callStart,
 				processed_at: new Date().toISOString()
+			}
+		};
+	} catch (err) {
+		return {
+			success: false,
+			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
+				success: false,
+				error_message: err instanceof Error ? err.message : 'Unknown error',
+				isNewPrice, previousMid
+			})
+		};
+	}
+}
+
+/**
+ * Refresh price for a play card. Identical logic to refreshCardPrice
+ * but writes to play_price_cache (TEXT card_id) instead of price_cache (UUID).
+ */
+async function refreshPlayCardPrice(
+	admin: NonNullable<ReturnType<typeof getAdminClient>>,
+	card: CardCandidate,
+	redis: NonNullable<ReturnType<typeof getRedis>>,
+	today: string,
+	chainDepth: number,
+	confidenceThreshold: number
+): Promise<RefreshResult> {
+	const query = buildEbaySearchQuery(card);
+	const callStart = Date.now();
+
+	// Increment Redis counter BEFORE the call
+	try {
+		const key = `ebay-calls:${today}`;
+		const count = await redis.incr(key);
+		if (count === 1) await redis.expire(key, 86400);
+	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
+
+	// Fetch previous price for delta tracking
+	let previousMid: number | null = null;
+	let isNewPrice = false;
+	try {
+		const { data: cached } = await admin
+			.from('play_price_cache')
+			.select('price_mid')
+			.eq('card_id', card.id)
+			.eq('source', 'ebay')
+			.maybeSingle();
+
+		if (cached) {
+			previousMid = (cached as { price_mid: number | null }).price_mid !== null
+				? Number((cached as { price_mid: number | null }).price_mid)
+				: null;
+		} else {
+			isNewPrice = true;
+		}
+	} catch (err) { console.debug('[harvest] Play card previous price fetch failed:', err instanceof Error ? err.message : err); }
+
+	try {
+		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
+		searchUrl.searchParams.set('q', query);
+		searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
+		searchUrl.searchParams.set('limit', '50');
+
+		const res = await ebayFetch(searchUrl.toString());
+		if (!res.ok) {
+			return {
+				success: false,
+				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
+					success: false,
+					error_message: `eBay API returned ${res.status}`,
+					isNewPrice, previousMid
+				})
+			};
+		}
+
+		const data = await res.json();
+		const rawItems: Array<{
+			title?: string;
+			price?: { value?: string };
+			buyingOptions?: string[];
+		}> = data.itemSummaries || [];
+
+		const ebayResultsRaw = rawItems.length;
+		const items = filterRelevantListings(rawItems, card);
+
+		const fixedPriceItems = items.filter(item =>
+			item.buyingOptions?.includes('FIXED_PRICE')
+		);
+
+		const allPrices = items
+			.map(item => parseFloat(item.price?.value || '0'))
+			.filter(p => p > 0);
+
+		const fixedPrices = fixedPriceItems
+			.map(item => parseFloat(item.price?.value || '0'))
+			.filter(p => p > 0);
+
+		const allStats = calculatePriceStats(allPrices);
+		const fixedStats = calculatePriceStats(fixedPrices);
+
+		const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
+
+		// Upsert into play_price_cache (TEXT card_id — no UUID constraint)
+		const cachePayload = {
+			card_id: card.id,
+			source: 'ebay',
+			price_low: meetsThreshold ? (allStats?.low ?? null) : null,
+			price_mid: meetsThreshold ? (allStats?.median ?? null) : null,
+			price_high: meetsThreshold ? (allStats?.high ?? null) : null,
+			listings_count: allPrices.length,
+			buy_now_low: meetsThreshold ? (fixedStats?.low ?? null) : null,
+			buy_now_mid: meetsThreshold ? (fixedStats?.median ?? null) : null,
+			buy_now_count: fixedPrices.length,
+			filtered_count: allStats?.filteredCount ?? 0,
+			confidence_score: allStats?.confidenceScore ?? 0,
+			fetched_at: new Date().toISOString()
+		};
+
+		const { error: cacheError } = await admin.from('play_price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
+		if (cacheError) {
+			console.error(`[harvest] play_price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+		}
+
+		// Write price history if changed and meets threshold
+		const newMid = meetsThreshold ? (allStats?.median ?? null) : null;
+		const priceChanged = previousMid !== newMid;
+
+		if (meetsThreshold && (!previousMid || priceChanged)) {
+			const { error: historyError } = await admin.from('play_price_history').insert({
+				card_id: card.id,
+				source: 'ebay',
+				price_low: allStats?.low ?? null,
+				price_mid: allStats?.median ?? null,
+				price_high: allStats?.high ?? null,
+				listings_count: allPrices.length,
+				recorded_at: new Date().toISOString()
+			});
+			if (historyError) {
+				console.error(`[harvest] play_price_history insert FAILED for ${card.id}:`, historyError.message);
+			}
+		}
+
+		return {
+			success: true,
+			logEntry: {
+				error_message: null,
+				success: true
 			}
 		};
 	} catch (err) {
