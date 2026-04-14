@@ -91,6 +91,33 @@
 	</div>
 {:else if showPriceHistory && historyLoading}
 	<div class="price-sparkline"><div class="price-shimmer" style="width: 100%; height: 40px;"></div></div>
+{:else if !isPro() && historyData.length > 0}
+	{@const prices = historyData.map(d => d.price_mid).filter((p): p is number => p != null)}
+	{#if prices.length > 1}
+		{@const min = Math.min(...prices)}
+		{@const max = Math.max(...prices)}
+		{@const range = max - min || 1}
+		{@const w = 200}
+		{@const h = 40}
+		{@const points = prices.map((p, i) => `${(i / (prices.length - 1)) * w},${h - ((p - min) / range) * h}`).join(' ')}
+		{@const trend = prices[prices.length - 1] - prices[0]}
+		<div class="price-sparkline">
+			<div class="sparkline-header">
+				<span class="sparkline-label">7-Day Trend</span>
+				<span class="sparkline-trend" class:trend-up={trend > 0} class:trend-down={trend < 0}>
+					{trend > 0 ? '↑' : trend < 0 ? '↓' : '→'} ${Math.abs(trend).toFixed(2)}
+				</span>
+			</div>
+			<svg viewBox="0 0 {w} {h}" class="sparkline-svg">
+				<polyline points={points} fill="none" stroke={trend >= 0 ? '#10b981' : '#ef4444'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="pro-upsell-inline" onclick={() => setShowGoProModal(true)}>
+				Go Pro for 90-day history →
+			</div>
+		</div>
+	{/if}
 {:else if !isPro()}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -202,6 +229,16 @@
 	.trend-up { color: var(--success, #10b981); }
 	.trend-down { color: var(--danger, #ef4444); }
 	.sparkline-svg { width: 100%; height: 40px; }
+
+	.pro-upsell-inline {
+		text-align: center;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--gold);
+		cursor: pointer;
+		padding: 0.25rem 0;
+		margin-top: 0.25rem;
+	}
 
 	.pro-preview {
 		cursor: pointer;

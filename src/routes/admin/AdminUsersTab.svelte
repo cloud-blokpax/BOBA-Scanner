@@ -10,9 +10,36 @@
 		is_admin: boolean;
 		is_pro: boolean;
 		is_organizer: boolean;
+		pro_until: string | null;
 		api_calls_used: number;
 		cards_in_collection: number;
 		created_at: string;
+	}
+
+	// Pro date management
+	let proDateUserId = $state<string | null>(null);
+	let proDateInput = $state('');
+
+	function openProDatePicker(user: UserRow) {
+		proDateUserId = user.auth_user_id;
+		// Default to 30 days from now if no existing date
+		const defaultDate = user.pro_until
+			? new Date(user.pro_until).toISOString().split('T')[0]
+			: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+		proDateInput = defaultDate;
+	}
+
+	async function setProUntil(userId: string) {
+		const until = proDateInput ? new Date(proDateInput + 'T23:59:59Z').toISOString() : null;
+		await updateUser(userId, { is_pro: true, pro_until: until });
+		proDateUserId = null;
+		proDateInput = '';
+	}
+
+	async function clearProUntil(userId: string) {
+		await updateUser(userId, { is_pro: false, pro_until: null });
+		proDateUserId = null;
+		proDateInput = '';
 	}
 
 	let users = $state<UserRow[]>([]);
@@ -275,12 +302,25 @@
 								<button
 									class="action-btn"
 									class:active={user.is_pro}
-									onclick={() => updateUser(user.auth_user_id, { is_pro: !user.is_pro })}
+									onclick={() => {
+										if (user.is_pro) {
+											clearProUntil(user.auth_user_id);
+										} else {
+											openProDatePicker(user);
+										}
+									}}
 									disabled={togglingUser === user.auth_user_id}
 									title={user.is_pro ? 'Revoke Pro' : 'Grant Pro'}
 								>
 									{user.is_pro ? 'Pro' : '+Pro'}
 								</button>
+								{#if proDateUserId === user.auth_user_id}
+									<div class="pro-date-picker">
+										<input type="date" bind:value={proDateInput} class="date-input" />
+										<button class="date-confirm" onclick={() => setProUntil(user.auth_user_id)}>Set</button>
+										<button class="date-cancel" onclick={() => { proDateUserId = null; }}>×</button>
+									</div>
+								{/if}
 								<button
 									class="action-btn"
 									class:active={user.is_organizer}
@@ -329,7 +369,15 @@
 											</div>
 											<div class="detail-item">
 												<span class="detail-label">Pro</span>
-												<span class="detail-value">{user.is_pro ? 'Yes' : 'No'}</span>
+												<span class="detail-value">
+													{#if user.is_pro && user.pro_until}
+														Until {new Date(user.pro_until).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+													{:else if user.is_pro}
+														Yes (no expiry)
+													{:else}
+														No
+													{/if}
+												</span>
 											</div>
 										</div>
 									</div>
@@ -586,5 +634,40 @@
 		color: var(--text-tertiary);
 		text-align: center;
 		padding: 0.5rem;
+	}
+
+	.pro-date-picker {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		margin-top: 0.25rem;
+	}
+	.date-input {
+		padding: 2px 4px;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		font-size: 0.7rem;
+		width: 120px;
+	}
+	.date-confirm {
+		padding: 2px 8px;
+		border-radius: 4px;
+		border: 1px solid var(--gold);
+		background: transparent;
+		color: var(--gold);
+		font-size: 0.65rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.date-cancel {
+		padding: 2px 6px;
+		border-radius: 4px;
+		border: none;
+		background: none;
+		color: var(--text-tertiary);
+		font-size: 0.8rem;
+		cursor: pointer;
 	}
 </style>

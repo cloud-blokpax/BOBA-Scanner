@@ -6,6 +6,7 @@
 	import { getPrice } from '$lib/stores/prices.svelte';
 	import { generateCSV, downloadFile, BUILT_IN_TEMPLATES } from '$lib/services/export-templates';
 	import type { ScanResult, Card } from '$lib/types';
+	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 
 	let {
 		isAuthenticated = false,
@@ -276,7 +277,15 @@
 </script>
 
 <div class="camera-roll-import">
-	{#if phase === 'select'}
+	{#if !isPro()}
+		<div class="batch-pro-gate">
+			<div class="batch-pro-icon">📸</div>
+			<h3>Batch Scanning</h3>
+			<p>Scan up to 50 cards at once from your camera roll. Available with Pro.</p>
+			<button class="batch-pro-btn" onclick={() => setShowGoProModal(true)}>Go Pro</button>
+			<button class="batch-close-btn" onclick={() => onClose?.()}>Cancel</button>
+		</div>
+	{:else if phase === 'select'}
 		<!-- Phase 1: File Selection -->
 		<div class="select-phase">
 			<label class="drop-zone">
@@ -413,6 +422,50 @@
 		height: 100%;
 		background: var(--bg-base, #070b14);
 		color: var(--text-primary, #e2e8f0);
+	}
+
+	.batch-pro-gate {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 3rem 1.5rem;
+		text-align: center;
+		min-height: 300px;
+	}
+	.batch-pro-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+	.batch-pro-gate h3 {
+		font-size: 1.1rem;
+		font-weight: 700;
+		color: var(--text-primary);
+		margin-bottom: 0.5rem;
+	}
+	.batch-pro-gate p {
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+		max-width: 280px;
+		line-height: 1.4;
+		margin-bottom: 1rem;
+	}
+	.batch-pro-btn {
+		padding: 0.5rem 1.5rem;
+		border-radius: 8px;
+		border: none;
+		background: var(--gold);
+		color: #000;
+		font-weight: 700;
+		font-size: 0.9rem;
+		cursor: pointer;
+		margin-bottom: 0.5rem;
+	}
+	.batch-close-btn {
+		padding: 0.375rem 1rem;
+		border-radius: 6px;
+		border: none;
+		background: none;
+		color: var(--text-tertiary);
+		font-size: 0.8rem;
+		cursor: pointer;
 	}
 
 	/* Phase 1: Select */

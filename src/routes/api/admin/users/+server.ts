@@ -23,7 +23,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 		const { data } = await locals.supabase
 			.from('users')
-			.select('id, auth_user_id, email, name, is_admin, is_pro, api_calls_used, cards_in_collection, created_at')
+			.select('id, auth_user_id, email, name, is_admin, is_pro, pro_until, api_calls_used, cards_in_collection, created_at')
 			.order('created_at', { ascending: false })
 			.limit(500);
 
@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	// Try with all columns first; fall back to base columns if is_organizer doesn't exist
 	let { data, error: dbError } = await admin
 		.from('users')
-		.select('id, auth_user_id, email, name, is_admin, is_pro, is_organizer, api_calls_used, cards_in_collection, created_at')
+		.select('id, auth_user_id, email, name, is_admin, is_pro, is_organizer, pro_until, api_calls_used, cards_in_collection, created_at')
 		.order('created_at', { ascending: false })
 		.limit(500);
 
@@ -41,7 +41,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// is_organizer may not exist if migration 005 hasn't been applied
 		const fallback = await admin
 			.from('users')
-			.select('id, auth_user_id, email, name, is_admin, is_pro, api_calls_used, cards_in_collection, created_at')
+			.select('id, auth_user_id, email, name, is_admin, is_pro, pro_until, api_calls_used, cards_in_collection, created_at')
 			.order('created_at', { ascending: false })
 			.limit(500);
 
@@ -71,7 +71,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!user_id || typeof user_id !== 'string' || user_id.length > 64) throw error(400, 'user_id is required');
 	if (!updates || typeof updates !== 'object' || Array.isArray(updates)) throw error(400, 'updates object is required');
 
-	const allowed = ['is_pro', 'is_organizer', 'is_admin', 'card_limit', 'api_calls_limit'];
+	const allowed = ['is_pro', 'is_organizer', 'is_admin', 'card_limit', 'api_calls_limit', 'pro_until'];
 	const safeUpdates: Record<string, unknown> = {};
 	for (const key of allowed) {
 		if (updates[key] !== undefined) safeUpdates[key] = updates[key];
@@ -130,7 +130,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	switch (action) {
 		case 'update_role': {
-			const allowed = ['is_pro', 'is_organizer'];
+			const allowed = ['is_pro', 'is_organizer', 'pro_until'];
 			const safeUpdates: Record<string, unknown> = {};
 			for (const key of allowed) {
 				if (updates?.[key] !== undefined) safeUpdates[key] = updates[key];

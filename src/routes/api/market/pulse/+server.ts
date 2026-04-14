@@ -17,6 +17,17 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to view market data');
 
+	// Check pro status for response depth
+	let userIsPro = false;
+	if (locals.supabase) {
+		const { data: profile } = await locals.supabase
+			.from('users')
+			.select('is_pro, is_admin')
+			.eq('auth_user_id', user.id)
+			.single();
+		userIsPro = profile?.is_pro === true || profile?.is_admin === true;
+	}
+
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');
 
@@ -234,7 +245,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const topGainer = [...cards].filter(c => c.deltaPct != null).sort((a, b) => (b.deltaPct ?? 0) - (a.deltaPct ?? 0))[0] || null;
 	const topLoser = [...cards].filter(c => c.deltaPct != null).sort((a, b) => (a.deltaPct ?? 0) - (b.deltaPct ?? 0))[0] || null;
 
-	return json({
+	const responseData: Record<string, unknown> = {
 		summary: {
 			totalMkt: Math.round(totalMkt * 100) / 100,
 			prevMkt: Math.round(prevMkt * 100) / 100,
@@ -255,7 +266,27 @@ export const GET: RequestHandler = async ({ locals }) => {
 		movers,
 		topGainer,
 		topLoser,
-	}, {
+	};
+
+	// Free users: top 5 movers, no detailed insights breakdown
+	if (!userIsPro) {
+		responseData.movers = (movers as unknown[]).slice(0, 5);
+		if (responseData.insights && typeof responseData.insights === 'object') {
+			const ins = responseData.insights as Record<string, unknown>;
+			responseData.insights = {
+				avgConf: ins.avgConf,
+				totalListings: ins.totalListings,
+				totalFiltered: ins.totalFiltered,
+				outliersRemoved: ins.outliersRemoved,
+			};
+		}
+		responseData.is_pro = false;
+		responseData.limited = true;
+	} else {
+		responseData.is_pro = true;
+	}
+
+	return json(responseData, {
 		headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=600' }
 	});
 };

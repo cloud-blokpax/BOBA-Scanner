@@ -438,6 +438,26 @@ async function publishOffer(offerId: string, token: string, sku: string) {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireAuth(locals);
 
+	// Weekly listing limit for free users
+	if (locals.supabase) {
+		const { data: profile } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
+		if (!profile?.is_pro && !profile?.is_admin) {
+			const { data: countResult, error: countErr } = await locals.supabase.rpc('get_weekly_listing_count', { p_user_id: user.id });
+			if (countErr) {
+				console.error('[ebay/create-draft] Weekly count check failed:', countErr.message);
+			}
+			const weeklyCount = typeof countResult === 'number' ? countResult : 0;
+			if (weeklyCount >= 3) {
+				return json({
+					error: 'Weekly listing limit reached',
+					message: 'Free accounts can create 3 listings per week. Upgrade to Pro for unlimited listings.',
+					weekly_count: weeklyCount,
+					weekly_limit: 3
+				}, { status: 403 });
+			}
+		}
+	}
+
 	const rateLimit = await checkHeavyMutationRateLimit(user.id);
 	if (!rateLimit.success) {
 		return json({ error: 'Too many listing requests' }, {

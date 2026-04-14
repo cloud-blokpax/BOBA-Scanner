@@ -8,6 +8,7 @@
 	import { generateWhatnotCSV, downloadWhatnotCSV, type WhatnotExportCard } from '$lib/services/whatnot-export';
 	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
 	import { user } from '$lib/stores/auth.svelte';
+	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 
 	interface Props {
 		card: Card;
@@ -57,6 +58,29 @@
 	let error = $state<string | null>(null);
 	let showAdvanced = $state(false);
 	let showListingOptions = $state(false);
+
+	// ── Weekly listing limit ─────────────────────────────────
+	let weeklyCount = $state(0);
+	let weeklyLimit = $state<number | null>(null);
+	let weeklyRemaining = $state<number | null>(null);
+	let limitLoading = $state(true);
+
+	async function loadWeeklyCount() {
+		try {
+			const res = await fetch('/api/listings/weekly-count');
+			if (res.ok) {
+				const data = await res.json();
+				weeklyCount = data.weekly_count;
+				weeklyLimit = data.weekly_limit;
+				weeklyRemaining = data.remaining ?? null;
+			}
+		} catch { /* ignore */ }
+		limitLoading = false;
+	}
+
+	$effect(() => { loadWeeklyCount(); });
+
+	const atWeeklyLimit = $derived(!isPro() && weeklyLimit !== null && weeklyCount >= weeklyLimit);
 
 	// ── Listing options ──────────────────────────────────────
 	let bestOffer = $state(true);
@@ -761,15 +785,37 @@
 		</button>
 	{/if}
 
+	<!-- Weekly Listing Limit Banner -->
+	{#if !isPro() && weeklyLimit !== null && !limitLoading}
+		<div class="weekly-limit-banner" class:at-limit={atWeeklyLimit}>
+			{#if atWeeklyLimit}
+				<span class="limit-text">Weekly listing limit reached (3/3)</span>
+				<button class="limit-upgrade" onclick={() => setShowGoProModal(true)}>Go Pro for Unlimited</button>
+			{:else}
+				<span class="limit-text">{weeklyRemaining} of {weeklyLimit} free listings remaining this week</span>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Whatnot Export -->
-	<button
-		class="stl-btn stl-btn-whatnot"
-		onclick={handleExportWhatnot}
-		disabled={whatnotExporting}
-		title="Download CSV for Whatnot bulk import"
-	>
-		{whatnotExporting ? 'Exporting...' : 'Export to Whatnot'}
-	</button>
+	{#if isPro()}
+		<button
+			class="stl-btn stl-btn-whatnot"
+			onclick={handleExportWhatnot}
+			disabled={whatnotExporting}
+			title="Download CSV for Whatnot bulk import"
+		>
+			{whatnotExporting ? 'Exporting...' : 'Export to Whatnot'}
+		</button>
+	{:else}
+		<button
+			class="stl-btn stl-btn-whatnot stl-btn-locked"
+			onclick={() => setShowGoProModal(true)}
+			title="Pro feature — export cards to Whatnot"
+		>
+			Export to Whatnot 🔒
+		</button>
+	{/if}
 
 	{#if error}
 		<p class="stl-error">{error}</p>
@@ -1063,6 +1109,39 @@
 	.stl-btn-whatnot:active {
 		background: #6d28d9;
 		transform: scale(0.98);
+	}
+	.stl-btn-locked {
+		opacity: 0.6;
+		border-style: dashed !important;
+	}
+
+	.weekly-limit-banner {
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		background: rgba(59, 130, 246, 0.08);
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		text-align: center;
+		margin: 0.5rem 0;
+	}
+	.weekly-limit-banner.at-limit {
+		background: rgba(245, 158, 11, 0.1);
+		border-color: rgba(245, 158, 11, 0.3);
+	}
+	.limit-text {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+	.limit-upgrade {
+		display: block;
+		margin: 0.375rem auto 0;
+		padding: 0.375rem 1rem;
+		border-radius: 6px;
+		border: 1px solid var(--gold);
+		background: transparent;
+		color: var(--gold);
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
 	}
 
 	.stl-btn-connect {

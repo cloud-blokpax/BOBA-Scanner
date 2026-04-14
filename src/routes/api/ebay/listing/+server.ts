@@ -112,21 +112,34 @@ const getServiceClient = getAdminClient;
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const user = await requireAuth(locals);
 
-	// Server-side feature gate
+	// Server-side feature gate — check overrides (free users now get limited access)
 	if (locals.supabase) {
-		const { data: profile, error: profileErr } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
-		if (profileErr) {
-			console.error('[ebay/listing] Profile lookup failed:', profileErr.message);
-			throw error(500, 'Failed to verify account status');
-		}
 		const { data: override, error: overrideErr } = await locals.supabase.from('user_feature_overrides').select('enabled').eq('user_id', user.id).eq('feature_key', 'scan_to_list').maybeSingle();
 		if (overrideErr) {
 			console.error('[ebay/listing] Feature override lookup failed:', overrideErr.message);
 		}
-		if (override) {
-			if (!override.enabled) throw error(403, 'Feature not available');
-		} else if (!profile?.is_pro && !profile?.is_admin) {
-			throw error(403, 'Premium feature — upgrade to access Scan-to-List');
+		if (override && !override.enabled) {
+			throw error(403, 'Feature not available');
+		}
+	}
+
+	// Weekly listing limit for free users
+	if (locals.supabase) {
+		const { data: profile } = await locals.supabase.from('users').select('is_pro, is_admin').eq('auth_user_id', user.id).single();
+		if (!profile?.is_pro && !profile?.is_admin) {
+			const { data: countResult, error: countErr } = await locals.supabase.rpc('get_weekly_listing_count', { p_user_id: user.id });
+			if (countErr) {
+				console.error('[ebay/listing] Weekly count check failed:', countErr.message);
+			}
+			const weeklyCount = typeof countResult === 'number' ? countResult : 0;
+			if (weeklyCount >= 3) {
+				return json({
+					error: 'Weekly listing limit reached',
+					message: 'Free accounts can create 3 listings per week. Upgrade to Pro for unlimited listings.',
+					weekly_count: weeklyCount,
+					weekly_limit: 3
+				}, { status: 403 });
+			}
 		}
 	}
 
