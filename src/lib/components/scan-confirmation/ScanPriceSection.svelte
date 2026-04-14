@@ -20,7 +20,7 @@
 		historyData: Array<{ date: string; price_mid: number | null }>;
 		historyLoading: boolean;
 		showPriceHistory: boolean;
-		card?: { card_number?: string | null; hero_name?: string | null; athlete_name?: string | null } | null;
+		card?: { card_number?: string | null; hero_name?: string | null; athlete_name?: string | null; parallel?: string | null; weapon_type?: string | null } | null;
 	} = $props();
 
 	const ebayUrl = $derived(card ? buildEbaySearchUrl(card) : null);

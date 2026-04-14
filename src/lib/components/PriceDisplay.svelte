@@ -13,11 +13,14 @@
 	} = $props();
 
 	// Build eBay search URL if we have card metadata
+	// Must include parallel — it's the primary price differentiator
 	const ebayUrl = $derived(
 		card ? buildEbaySearchUrl({
 			card_number: card.card_number,
 			hero_name: card.hero_name,
-			athlete_name: card.athlete_name
+			athlete_name: card.athlete_name,
+			parallel: card.parallel,
+			weapon_type: card.weapon_type
 		}) : null
 	);
 
