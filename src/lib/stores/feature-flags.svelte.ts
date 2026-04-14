@@ -110,6 +110,18 @@ export function getUserProfile(): UserProfile | null {
 	return _userProfile;
 }
 
+/**
+ * Ensure the user profile (is_pro, is_admin) is loaded.
+ * Call this from components that need role checks but don't go through feature flags.
+ */
+export async function ensureProfileLoaded(): Promise<void> {
+	const currentUser = user();
+	if (!currentUser) return;
+	// Already loaded for this user and still fresh
+	if (_userProfile && _userProfileForUserId === currentUser.id && Date.now() - _userProfileFetchedAt < PROFILE_MAX_AGE) return;
+	await _refreshProfile(currentUser.id);
+}
+
 async function _refreshProfile(userId: string): Promise<void> {
 	// Deduplicate: if a refresh is already in flight, piggyback on it
 	if (_refreshPromise) return _refreshPromise;

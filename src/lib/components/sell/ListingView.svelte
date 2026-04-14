@@ -10,7 +10,7 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { uiPref } from '$lib/stores/ui-prefs.svelte';
-	import { getUserProfile } from '$lib/stores/feature-flags.svelte';
+	import { getUserProfile, ensureProfileLoaded } from '$lib/stores/feature-flags.svelte';
 
 	interface Props {
 		card: Card;
@@ -178,6 +178,12 @@
 	// Fetch price data on mount
 	$effect(() => {
 		loadPrice();
+	});
+
+	// Ensure user profile (is_admin) is loaded — needed because the sell flow
+	// doesn't check feature flags, which is the normal trigger for profile loading.
+	$effect(() => {
+		ensureProfileLoaded();
 	});
 
 	// Fetch scraping test data for admin only — server-side protected
