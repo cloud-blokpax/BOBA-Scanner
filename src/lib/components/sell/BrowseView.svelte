@@ -120,6 +120,19 @@
 		</button>
 	</div>
 
+	<!-- Whatnot batch flow -->
+	{#if onStartWhatnot}
+		<div class="whatnot-section">
+			<button class="sell-cta whatnot-cta" onclick={onStartWhatnot}>
+				<span class="sell-cta-icon">📦</span>
+				<div class="sell-cta-text">
+					<span class="sell-cta-label">Whatnot Batch</span>
+					<span class="sell-cta-hint">Scan cards → CSV export</span>
+				</div>
+			</button>
+		</div>
+	{/if}
+
 	{#if !ebayConnected && ebayChecked && ebayConfigured}
 		<p class="sell-connect-hint">Connect your eBay account below to enable listing</p>
 	{/if}
