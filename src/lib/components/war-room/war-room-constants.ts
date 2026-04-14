@@ -5,6 +5,7 @@ export interface HeroCard {
 	w: string;
 	pwr: number;
 	s: string;
+	ath: string;
 	mid: number;
 	bn: number;
 	ls: number;

@@ -111,6 +111,7 @@
 
 	$effect(() => {
 		void heroCardIds;
+		void playEntries;
 		void data.deck.format_id;
 
 		if (!cardDbLoaded) return;
@@ -119,7 +120,7 @@
 		_validateTimer = setTimeout(() => {
 			validating = true;
 			try {
-				validationResult = validateDeck(heroCards, data.deck.format_id);
+				validationResult = validateDeck(heroCards, data.deck.format_id, [], [], playEntries);
 			} catch {
 				// validation failed silently
 			}

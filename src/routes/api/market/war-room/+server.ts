@@ -97,6 +97,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 				w: card.weapon_type || '',
 				pwr,
 				s: card.set_code || '',
+				ath: card.athlete_name || '',
 				mid,
 				bn,
 				ls,

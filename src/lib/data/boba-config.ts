@@ -61,6 +61,25 @@ export const BOBA_RATE_LIMITS = {
  * AND the actual DB set_code values (AE, GE, AU) stored on cards.
  * buildSetMatchers() uses this to cross-reference all forms.
  */
+/**
+ * Set codes that qualify for each card pool restriction.
+ * Used by the deck validator to enforce format-specific card legality.
+ *
+ * 'all_in_rotation' and 'modern' are not listed — they allow everything.
+ * Weapon/parallel-based pools (brawl_weapons_only, etc.) are handled
+ * by the allowedWeapons and allowedParallels format properties.
+ */
+export const CARD_POOL_SETS: Record<string, Set<string>> = {
+	alpha_trilogy: new Set([
+		'Alpha Edition', 'Griffey Edition', 'Alpha Update', 'Alpha Blast',
+		'Black Label Collection', 'National 2024', 'World Champions', 'Sandstorm Superfan Series',
+		'AE', 'GE', 'AU', 'AB', 'BLC', 'N24', 'WC', 'SS',
+		'A', 'G', 'U', 'HTD'
+	]),
+	tecmo_only: new Set(['Tecmo Bowl', 'T']),
+	blast_only: new Set(['Alpha Blast', 'AB', 'HTD']),
+};
+
 export const RELEASE_TO_SET_NAME: Record<string, string> = {
 	A: 'Alpha Edition',
 	AE: 'Alpha Edition',

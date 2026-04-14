@@ -64,7 +64,7 @@
 		<a
 			class="card-row"
 			class:even={i % 2 === 0}
-			href={buildEbaySearchUrl({ hero_name: h.hero, card_number: h.num, parallel: h.p, weapon_type: h.w })}
+			href={buildEbaySearchUrl({ hero_name: h.hero, card_number: h.num, parallel: h.p, weapon_type: h.w, athlete_name: h.ath })}
 			target="_blank"
 			rel="noopener noreferrer"
 		>
