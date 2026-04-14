@@ -4,7 +4,7 @@ import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth'
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
-import { getSellerPolicies, ensureInventoryLocation, publishOffer, EBAY_INVENTORY_URL } from '$lib/server/ebay-policies';
+import { getSellerPolicies, ensureInventoryLocation, publishOffer, optInToBusinessPolicies, EBAY_INVENTORY_URL } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
 
 export const config = { maxDuration: 60 };
@@ -269,7 +269,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// Step 3: Try to fetch policies and create a full offer.
 		// Some eBay accounts (Managed Payments) can't access the Business Policy API,
 		// so if this fails we still return success with the inventory item created.
-		const policies = await getSellerPolicies(token);
+		let policies = await getSellerPolicies(token);
+
+		// If policies failed, try auto-enrolling in Business Policies and retry once
+		if (!policies) {
+			const enrolled = await optInToBusinessPolicies(token);
+			if (enrolled) {
+				console.log('[ebay-policies] Retrying policy fetch after Business Policy enrollment...');
+				policies = await getSellerPolicies(token);
+			}
+		}
 
 		if (!hasLocation || !policies) {
 			// Policies unavailable — inventory item is created, user finishes in Seller Hub
