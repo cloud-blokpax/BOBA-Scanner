@@ -3,11 +3,10 @@ import { requireAuth, requireSupabase, parseJsonBody, requireString } from '$lib
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
-const TIERS: Record<string, { amount: number; label: string }> = {
-	legendary: { amount: 25, label: 'Unbelievable and worth every penny' },
-	epic:      { amount: 15, label: 'Must have for this price' },
-	standard:  { amount: 5,  label: 'This app is ok — I will give' },
-	custom:    { amount: 0,  label: 'I must ponder the value' }
+const TIERS: Record<string, { amount: number; days: number; label: string }> = {
+	monthly:  { amount: 9,  days: 30,  label: '30 Days' },
+	quarterly:{ amount: 24, days: 90,  label: '90 Days' },
+	annual:   { amount: 60, days: 365, label: '365 Days' },
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -40,7 +39,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			p_user_id: user.id,
 			p_tier_key: tierKey,
 			p_tier_amount: tier.amount,
-			p_payment_method: paymentMethod
+			p_payment_method: paymentMethod,
+			p_days: tier.days
 		});
 
 		if (rpcError) {

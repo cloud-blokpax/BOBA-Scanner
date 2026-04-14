@@ -64,6 +64,47 @@ export interface CreateDeckParams {
 	combined_power_cap: number | null;
 }
 
+// ── Deck creation limit ────────────────────────────────────
+
+const MAX_DECKS_FREE = 3;
+
+export async function canCreateDeck(): Promise<{ allowed: boolean; current: number; limit: number | null }> {
+	const table = userDecksTable();
+	if (!table) return { allowed: true, current: 0, limit: null };
+
+	const client = getSupabase()!;
+	const { data: { user } } = await client.auth.getUser();
+	if (!user) return { allowed: false, current: 0, limit: null };
+
+	// Check pro status
+	const { data: profile } = await client
+		.from('users')
+		.select('is_pro, is_admin')
+		.eq('auth_user_id', user.id)
+		.single();
+
+	if (profile?.is_pro || profile?.is_admin) {
+		return { allowed: true, current: 0, limit: null };
+	}
+
+	// Count existing decks
+	const { count, error: countErr } = await table
+		.select('id', { count: 'exact', head: true })
+		.eq('user_id', user.id);
+
+	if (countErr) {
+		console.error('[deck-service] Count check failed:', countErr.message);
+		return { allowed: true, current: 0, limit: MAX_DECKS_FREE }; // fail open
+	}
+
+	const current = count ?? 0;
+	return {
+		allowed: current < MAX_DECKS_FREE,
+		current,
+		limit: MAX_DECKS_FREE
+	};
+}
+
 // ── Fetch all decks for the current user ────────────────────
 
 export async function fetchUserDecks(

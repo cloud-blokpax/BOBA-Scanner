@@ -204,6 +204,17 @@ export async function uploadScanImageForListing(cardId: string, imageSource: str
 	const { data: { user } } = await client.auth.getUser();
 	if (!user) return null;
 
+	// Pro gate — image URL generation is a premium feature
+	const { data: profile } = await client
+		.from('users')
+		.select('is_pro, is_admin')
+		.eq('auth_user_id', user.id)
+		.single();
+	if (!profile?.is_pro && !profile?.is_admin) {
+		console.debug('[uploadScanImage] Skipping — Pro feature');
+		return null;
+	}
+
 	let blob: Blob;
 	try {
 		const response = await fetch(imageSource);

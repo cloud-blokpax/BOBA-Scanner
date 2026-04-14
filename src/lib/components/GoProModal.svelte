@@ -20,10 +20,9 @@
 	}
 
 	const tiers: Tier[] = [
-		{ key: 'legendary', label: 'LEGENDARY', description: 'Unbelievable and worth every penny', amount: 25, icon: '⭐' },
-		{ key: 'epic', label: 'EPIC', description: 'Must have for this price', amount: 15, icon: '★', popular: true },
-		{ key: 'standard', label: 'STANDARD', description: 'This app is ok — I will give', amount: 5, icon: '' },
-		{ key: 'custom', label: 'CUSTOM', description: 'I must ponder the value', amount: null, icon: '' }
+		{ key: 'annual', label: '365 DAYS', description: 'Best value — save 44%', amount: 60, icon: '⭐', popular: true },
+		{ key: 'quarterly', label: '90 DAYS', description: 'Great value — save 11%', amount: 24, icon: '★' },
+		{ key: 'monthly', label: '30 DAYS', description: 'Try it out', amount: 9, icon: '' },
 	];
 
 	let processing = $state(false);
@@ -97,7 +96,7 @@
 		{:else}
 			<div class="modal-header">
 				<h2>Go Pro</h2>
-				<p class="modal-subtitle">Choose the tier that matches your feeling on the app. Each choice provides Pro access for 30 days.</p>
+				<p class="modal-subtitle">Unlock unlimited listings, Whatnot export, price history, batch scanning, and more.</p>
 			</div>
 
 			<div class="tier-list">
@@ -110,10 +109,19 @@
 								{#if tier.popular}<span class="popular-badge">Most Popular</span>{/if}
 							</div>
 							<div class="tier-price">
-								{#if tier.amount}${tier.amount}{:else}$???{/if}
+								${tier.amount}
 							</div>
 						</div>
-						<p class="tier-desc">{tier.description}</p>
+						<p class="tier-desc">
+							{tier.description}
+							{#if tier.key === 'annual'}
+								<span class="per-day">(~$0.16/day)</span>
+							{:else if tier.key === 'quarterly'}
+								<span class="per-day">(~$0.27/day)</span>
+							{:else}
+								<span class="per-day">(~$0.30/day)</span>
+							{/if}
+						</p>
 						<div class="tier-buttons">
 							<button
 								class="pay-btn pay-venmo"
@@ -253,6 +261,10 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		margin-bottom: 0.75rem;
+	}
+	.per-day {
+		color: var(--text-tertiary);
+		font-size: 0.7rem;
 	}
 	.tier-buttons {
 		display: flex;

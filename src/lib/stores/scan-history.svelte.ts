@@ -6,10 +6,12 @@
 
 import { browser } from '$app/environment';
 import { idb } from '$lib/services/idb';
+import { isPro } from '$lib/stores/pro.svelte';
 
 const IDB_KEY = 'scanHistory';
 const LS_BACKUP_KEY = 'scanHistory_backup';
-const MAX_ENTRIES = 100;
+const MAX_ENTRIES_FREE = 30;
+const MAX_ENTRIES_PRO = 500;
 
 export interface ScanHistoryEntry {
 	id: string;
@@ -116,7 +118,13 @@ export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp
 		id: crypto.randomUUID(),
 		timestamp: Date.now()
 	};
-	const updated = [newEntry, ..._scanHistory].slice(0, MAX_ENTRIES);
+	let maxEntries = MAX_ENTRIES_FREE;
+	try { maxEntries = isPro() ? MAX_ENTRIES_PRO : MAX_ENTRIES_FREE; } catch { /* page store unavailable in tests */ }
+	const updated = [newEntry, ..._scanHistory].slice(0, maxEntries);
 	saveToIdb(updated);
 	_scanHistory = updated;
+}
+
+export function scanHistoryAtLimit(): boolean {
+	try { return !isPro() && _scanHistory.length >= MAX_ENTRIES_FREE; } catch { return false; }
 }

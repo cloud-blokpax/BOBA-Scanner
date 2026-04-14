@@ -1105,6 +1105,7 @@ export interface Database {
 					p_tier_key: string;
 					p_tier_amount: number;
 					p_payment_method: string;
+					p_days?: number;
 				};
 				Returns: {
 					pro_until: string;
@@ -1135,6 +1136,10 @@ export interface Database {
 			cleanup_old_records: {
 				Args: Record<string, never>;
 				Returns: void;
+			};
+			get_weekly_listing_count: {
+				Args: { p_user_id: string };
+				Returns: number;
 			};
 		};
 		Enums: Record<string, never>;

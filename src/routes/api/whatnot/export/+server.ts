@@ -14,6 +14,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!user) throw error(401, 'Sign in to export');
 	if (!locals.supabase) throw error(503, 'Database not available');
 
+	// Pro gate — Whatnot export is a premium feature
+	const { data: profile, error: profileErr } = await locals.supabase
+		.from('users')
+		.select('is_pro, is_admin')
+		.eq('auth_user_id', user.id)
+		.single();
+	if (profileErr) {
+		console.error('[whatnot/export] Profile lookup failed:', profileErr.message);
+		throw error(500, 'Failed to verify account status');
+	}
+	if (!profile?.is_pro && !profile?.is_admin) {
+		throw error(403, 'Whatnot export is a Pro feature. Upgrade to export your cards.');
+	}
+
 	const body = await request.json();
 	const { cardIds, options } = body as {
 		cardIds: string[];
