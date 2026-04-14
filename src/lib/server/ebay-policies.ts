@@ -211,6 +211,42 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
 	}
 }
 
+// ── Business Policy Enrollment ─────────────────────────────────
+
+/**
+ * Opt the seller into eBay's Business Policy program.
+ * Must be called once per seller account before policies can be created.
+ * Safe to call multiple times — 409 means already enrolled.
+ *
+ * Returns true if enrolled (or already was), false if failed.
+ */
+export async function optInToBusinessPolicies(token: string): Promise<boolean> {
+	try {
+		const res = await fetch(`${EBAY_ACCOUNT_URL}/program/opt_in`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'application/json',
+				'Accept-Language': 'en-US',
+				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+			},
+			body: JSON.stringify({ programType: 'SELLING_POLICY_MANAGEMENT' })
+		});
+
+		if (res.ok || res.status === 204 || res.status === 409) {
+			console.log('[ebay-policies] Business Policy opt-in:', res.status === 409 ? 'already enrolled' : 'success');
+			return true;
+		}
+
+		const body = await res.text().catch(() => '');
+		console.error('[ebay-policies] Business Policy opt-in failed:', res.status, body);
+		return false;
+	} catch (err) {
+		console.error('[ebay-policies] Business Policy opt-in error:', err);
+		return false;
+	}
+}
+
 // ── Inventory Location ──────────────────────────────────────────
 
 /**

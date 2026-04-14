@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { exchangeCode } from '$lib/server/ebay-seller-auth';
+import { exchangeCode, getSellerToken } from '$lib/server/ebay-seller-auth';
+import { optInToBusinessPolicies } from '$lib/server/ebay-policies';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, locals, cookies }) => {
@@ -50,6 +51,18 @@ export const GET: RequestHandler = async ({ url, locals, cookies }) => {
 
 	try {
 		await exchangeCode(code, userId);
+
+		// Auto-enroll in Business Policies so listing flow works immediately.
+		// Non-blocking — if this fails, the defensive retry in getSellerPolicies handles it.
+		try {
+			const token = await getSellerToken(userId);
+			if (token) {
+				await optInToBusinessPolicies(token);
+			}
+		} catch (optInErr) {
+			console.warn('[ebay-callback] Business Policy opt-in failed (non-blocking):', optInErr instanceof Error ? optInErr.message : optInErr);
+		}
+
 		throw redirect(303, '/settings?ebay=connected');
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status >= 300 && (err as { status: number }).status < 400) throw err;
