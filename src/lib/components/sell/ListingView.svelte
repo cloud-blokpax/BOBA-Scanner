@@ -5,7 +5,7 @@
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
-	import { generateWhatnotCSV, downloadWhatnotCSV, type WhatnotExportCard } from '$lib/services/whatnot-export';
+	// Whatnot single-card export removed — batch flow lives in WhatnotPendingView
 	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
 	import { user } from '$lib/stores/auth.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
@@ -58,6 +58,7 @@
 	let error = $state<string | null>(null);
 	let showAdvanced = $state(false);
 	let showListingOptions = $state(false);
+	let showEditDetails = $state(false);
 
 	// ── Weekly listing limit ─────────────────────────────────
 	let weeklyCount = $state(0);
@@ -226,51 +227,6 @@
 		name: heroName || null
 	}));
 
-	let whatnotExporting = $state(false);
-
-	async function handleExportWhatnot() {
-		if (!card) return;
-		whatnotExporting = true;
-
-		// Upload blob image to Supabase to get a public URL (same as eBay flow)
-		let publicImageUrl: string | null = null;
-		if (imageUrl && card.id) {
-			try {
-				publicImageUrl = await uploadScanImageForListing(card.id, imageUrl);
-			} catch {
-				// Continue without image — CSV will have empty image column
-			}
-		}
-
-		const exportCard: WhatnotExportCard = {
-			id: card.id,
-			hero_name: card.hero_name,
-			name: card.name,
-			athlete_name: card.athlete_name,
-			card_number: card.card_number,
-			set_code: card.set_code,
-			parallel: card.parallel,
-			weapon_type: card.weapon_type,
-			power: card.power,
-			rarity: card.rarity,
-			price_mid: price ? parseFloat(price) : null,
-			quantity: quantity,
-			condition: condition,
-			image_url: publicImageUrl
-		};
-
-		const csv = generateWhatnotCSV([exportCard], {
-			listingType: 'Buy It Now',
-			priceMultiplier: 1.0,
-			shippingProfile: '0-1 oz',
-			offerable: true
-		});
-
-		const heroSlug = (card.hero_name || card.name || 'card').replace(/\s+/g, '-').toLowerCase();
-		downloadWhatnotCSV(csv, `whatnot-${heroSlug}.csv`);
-		triggerHaptic('success');
-		whatnotExporting = false;
-	}
 
 	async function createEbayDraft() {
 		const numPrice = parseFloat(price);
@@ -375,17 +331,21 @@
 		<h1 class="stl-title">List on eBay</h1>
 	</div>
 
-	<!-- Card preview -->
-	<div class="stl-card-info">
+	<!-- Card preview — prominent, confidence-building -->
+	<div class="stl-card-hero">
 		{#if imageUrl}
-			<img src={imageUrl} alt={heroName || 'Card'} class="stl-card-image" />
+			<img src={imageUrl} alt={heroName || 'Card'} class="stl-card-hero-img" />
 		{:else}
-			<div class="stl-card-placeholder">🎴</div>
+			<div class="stl-card-hero-placeholder">🎴</div>
 		{/if}
-		<div class="stl-card-details">
-			<span class="stl-card-name">{heroName || 'Unknown'}</span>
-			<span class="stl-card-meta">{cardNumber || ''}</span>
-			<span class="stl-card-meta">{setCode || ''}{parallel ? ` · ${parallel}` : ''}</span>
+		<div class="stl-card-hero-details">
+			<span class="stl-card-hero-name">{heroName || 'Unknown'}</span>
+			<span class="stl-card-hero-meta">
+				{cardNumber || ''}{setCode ? ` · ${setCode}` : ''}{parallel ? ` · ${parallel}` : ''}
+			</span>
+			{#if weaponType}
+				<span class="stl-card-hero-weapon">{weaponType}{power ? ` · ${power} Power` : ''}</span>
+			{/if}
 		</div>
 	</div>
 
@@ -473,6 +433,34 @@
 				min="1" max="99" inputmode="numeric" />
 		</div>
 	</div>
+
+	<!-- ── PRIMARY ACTION (visible without scrolling) ── -->
+	{#if !created}
+		{#if !ebayConnected}
+			<a href="/settings?ebay=setup" class="stl-btn stl-btn-connect">Connect eBay to List</a>
+		{:else if atWeeklyLimit}
+			<div class="stl-limit-block">
+				<span class="stl-limit-text">Weekly listing limit reached (3/3)</span>
+				<button class="stl-btn stl-btn-upgrade" onclick={() => setShowGoProModal(true)}>Go Pro for Unlimited</button>
+			</div>
+		{:else}
+			<button
+				class="stl-btn stl-btn-create stl-btn-primary"
+				onclick={createEbayDraft}
+				disabled={creating || !price}
+			>
+				{creating ? 'Creating...' : `List for $${price || '0.00'} on eBay`}
+			</button>
+		{/if}
+	{/if}
+
+	<!-- ── EDIT DETAILS (collapsible — for power sellers) ── -->
+	<button class="stl-toggle-advanced stl-toggle-edit" onclick={() => showEditDetails = !showEditDetails}>
+		{showEditDetails ? '▾' : '▸'} Edit Listing Details
+	</button>
+
+	{#if showEditDetails}
+	<div class="stl-edit-panel">
 
 	<!-- Admin-only: Scraping Test detail panel -->
 	{#if isAdmin && stData}
@@ -598,6 +586,10 @@
 			rows="4" oninput={() => { descManuallyEdited = true; }}></textarea>
 	</div>
 
+	</div>
+	{/if}
+	<!-- end of .stl-edit-panel / showEditDetails -->
+
 	<!-- ── LISTING OPTIONS (expandable) ── -->
 	<button class="stl-toggle-advanced stl-toggle-options" onclick={() => showListingOptions = !showListingOptions}>
 		{showListingOptions ? '▾' : '▸'} Listing Options
@@ -680,9 +672,9 @@
 		</div>
 	{/if}
 
-	<!-- ── ADVANCED / SYSTEM FIELDS (collapsible) ── -->
+	<!-- ── ADVANCED DETAILS (collapsible — for power sellers) ── -->
 	<button class="stl-toggle-advanced" onclick={() => showAdvanced = !showAdvanced}>
-		{showAdvanced ? '▾' : '▸'} System Fields
+		{showAdvanced ? '▾' : '▸'} Advanced Details
 	</button>
 
 	{#if showAdvanced}
@@ -693,7 +685,7 @@
 			</div>
 			<div class="stl-system-row">
 				<span class="stl-system-label">Category</span>
-				<span class="stl-system-value">Trading Cards (261328)</span>
+				<span class="stl-system-value">Trading Card Singles (183454)</span>
 			</div>
 			<div class="stl-system-row">
 				<span class="stl-system-label">Marketplace</span>
@@ -750,72 +742,48 @@
 		</div>
 	{/if}
 
-	<!-- Actions -->
+	<!-- Success / Action States -->
 	{#if created && listingUrl}
-		<div class="stl-success">
-			<span class="stl-success-icon">✓</span>
-			<span>Listed on eBay!</span>
+		<div class="stl-success-card">
+			<div class="stl-success-check">✓</div>
+			<div class="stl-success-title">Listed on eBay!</div>
+			<div class="stl-success-subtitle">{heroName} · ${price}</div>
+			<a href={listingUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create stl-btn-primary">
+				View Listing ↗
+			</a>
+			<button class="stl-btn stl-btn-scan-next" onclick={onScanNext}>
+				Scan Next Card →
+			</button>
 		</div>
-		<a href={listingUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create">
-			View Listing on eBay ↗
-		</a>
 	{:else if created && sellerHubUrl}
-		<div class="stl-success">
-			<span class="stl-success-icon">✓</span>
-			<span>Card added to eBay inventory</span>
+		<div class="stl-success-card">
+			<div class="stl-success-check">✓</div>
+			<div class="stl-success-title">Added to eBay Inventory</div>
+			<div class="stl-success-subtitle">Complete listing in Seller Hub</div>
+			<a href={sellerHubUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create stl-btn-primary">
+				Open Seller Hub ↗
+			</a>
+			<button class="stl-btn stl-btn-scan-next" onclick={onScanNext}>
+				Scan Next Card →
+			</button>
 		</div>
-		<a href={sellerHubUrl} target="_blank" rel="noopener" class="stl-btn stl-btn-create">
-			Finish in Seller Hub ↗
-		</a>
-		<button class="stl-text-btn stl-view-listings" onclick={onDone}>View My Listings</button>
 	{:else if created}
-		<div class="stl-success">
-			<span class="stl-success-icon">✓</span>
-			<span>Draft created — opening scanner...</span>
+		<div class="stl-success-card">
+			<div class="stl-success-check">✓</div>
+			<div class="stl-success-title">Draft Created</div>
+			<button class="stl-btn stl-btn-scan-next" onclick={onScanNext}>
+				Scan Next Card →
+			</button>
 		</div>
 	{:else if !ebayConnected}
-		<a href="/settings?ebay=setup" class="stl-btn stl-btn-connect">Connect eBay Account</a>
+		<!-- handled by primary action button above -->
 	{:else}
-		<button
-			class="stl-btn stl-btn-create"
-			onclick={createEbayDraft}
-			disabled={creating || !price}
-		>
-			{creating ? 'Creating Draft...' : 'Create eBay Draft'}
-		</button>
+		<!-- handled by primary action button above -->
 	{/if}
 
-	<!-- Weekly Listing Limit Banner -->
-	{#if !isPro() && weeklyLimit !== null && !limitLoading}
-		<div class="weekly-limit-banner" class:at-limit={atWeeklyLimit}>
-			{#if atWeeklyLimit}
-				<span class="limit-text">Weekly listing limit reached (3/3)</span>
-				<button class="limit-upgrade" onclick={() => setShowGoProModal(true)}>Go Pro for Unlimited</button>
-			{:else}
-				<span class="limit-text">{weeklyRemaining} of {weeklyLimit} free listings remaining this week</span>
-			{/if}
-		</div>
-	{/if}
+	<!-- Weekly limit now shown inline above the primary action button -->
 
-	<!-- Whatnot Export -->
-	{#if isPro()}
-		<button
-			class="stl-btn stl-btn-whatnot"
-			onclick={handleExportWhatnot}
-			disabled={whatnotExporting}
-			title="Download CSV for Whatnot bulk import"
-		>
-			{whatnotExporting ? 'Exporting...' : 'Export to Whatnot'}
-		</button>
-	{:else}
-		<button
-			class="stl-btn stl-btn-whatnot stl-btn-locked"
-			onclick={() => setShowGoProModal(true)}
-			title="Pro feature — export cards to Whatnot"
-		>
-			Export to Whatnot 🔒
-		</button>
-	{/if}
+	<!-- Single-card Whatnot export removed — use the dedicated Whatnot batch flow in the sell tab -->
 
 	{#if error}
 		<p class="stl-error">{error}</p>
@@ -857,7 +825,8 @@
 		font-weight: 700;
 	}
 
-	.stl-card-info {
+	/* Hero card preview — larger, more confident */
+	.stl-card-hero {
 		display: flex;
 		gap: 1rem;
 		padding: 1rem;
@@ -867,27 +836,27 @@
 		margin-bottom: 1.25rem;
 	}
 
-	.stl-card-image {
-		width: 64px;
-		height: 88px;
+	.stl-card-hero-img {
+		width: 80px;
+		height: 112px;
 		object-fit: cover;
 		border-radius: 8px;
 		flex-shrink: 0;
 	}
 
-	.stl-card-placeholder {
-		width: 64px;
-		height: 88px;
+	.stl-card-hero-placeholder {
+		width: 80px;
+		height: 112px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 2rem;
+		font-size: 2.5rem;
 		background: var(--bg-surface, #0d1524);
 		border-radius: 8px;
 		flex-shrink: 0;
 	}
 
-	.stl-card-details {
+	.stl-card-hero-details {
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
@@ -895,17 +864,22 @@
 		min-width: 0;
 	}
 
-	.stl-card-name {
-		font-size: 1rem;
+	.stl-card-hero-name {
+		font-size: 1.15rem;
 		font-weight: 700;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.stl-card-meta {
+	.stl-card-hero-meta {
 		font-size: 0.8rem;
 		color: var(--text-secondary, #94a3b8);
+	}
+
+	.stl-card-hero-weapon {
+		font-size: 0.75rem;
+		color: var(--text-muted, #475569);
 	}
 
 	/* Section labels */
@@ -1101,47 +1075,59 @@
 		cursor: not-allowed;
 	}
 
-	.stl-btn-whatnot {
-		background: #7c3aed;
+	/* Primary action button — prominent, above the fold */
+	.stl-btn-primary {
+		width: 100%;
+		padding: 1rem;
+		font-size: 1rem;
+		font-weight: 700;
+		border-radius: 12px;
+		background: var(--accent-primary, #3b82f6);
 		color: white;
-		margin-top: 8px;
-	}
-	.stl-btn-whatnot:active {
-		background: #6d28d9;
-		transform: scale(0.98);
-	}
-	.stl-btn-locked {
-		opacity: 0.6;
-		border-style: dashed !important;
+		margin-bottom: 1rem;
 	}
 
-	.weekly-limit-banner {
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: rgba(59, 130, 246, 0.08);
-		border: 1px solid rgba(59, 130, 246, 0.2);
+	.stl-btn-primary:hover:not(:disabled) {
+		opacity: 0.9;
+	}
+
+	.stl-limit-block {
 		text-align: center;
-		margin: 0.5rem 0;
+		padding: 0.75rem;
+		border-radius: 12px;
+		background: rgba(245, 158, 11, 0.08);
+		border: 1px solid rgba(245, 158, 11, 0.2);
+		margin-bottom: 1rem;
 	}
-	.weekly-limit-banner.at-limit {
-		background: rgba(245, 158, 11, 0.1);
-		border-color: rgba(245, 158, 11, 0.3);
-	}
-	.limit-text {
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-	}
-	.limit-upgrade {
+
+	.stl-limit-text {
 		display: block;
-		margin: 0.375rem auto 0;
-		padding: 0.375rem 1rem;
-		border-radius: 6px;
-		border: 1px solid var(--gold);
-		background: transparent;
-		color: var(--gold);
-		font-size: 0.75rem;
-		font-weight: 600;
+		font-size: 0.85rem;
+		color: var(--warning, #f59e0b);
+		margin-bottom: 0.5rem;
+	}
+
+	.stl-btn-upgrade {
+		padding: 0.5rem 1.25rem;
+		border-radius: 8px;
+		background: var(--gold, #f59e0b);
+		color: #000;
+		border: none;
+		font-size: 0.85rem;
+		font-weight: 700;
 		cursor: pointer;
+	}
+
+	/* Edit Details toggle */
+	.stl-toggle-edit {
+		margin-bottom: 0.5rem;
+		color: var(--text-secondary, #94a3b8);
+	}
+
+	.stl-edit-panel {
+		border-left: 2px solid var(--border, rgba(148,163,184,0.10));
+		padding-left: 0.75rem;
+		margin-bottom: 1rem;
 	}
 
 	.stl-btn-connect {
@@ -1150,20 +1136,60 @@
 		border: 1px solid var(--accent-primary, #3b82f6);
 	}
 
-	.stl-success {
+	.stl-success-card {
+		text-align: center;
+		padding: 2rem 1.5rem;
+		border-radius: 16px;
+		background: rgba(16, 185, 129, 0.06);
+		border: 1px solid rgba(16, 185, 129, 0.15);
+		margin: 1rem 0;
+	}
+
+	.stl-success-check {
+		width: 48px;
+		height: 48px;
+		border-radius: 50%;
+		background: var(--success, #10b981);
+		color: white;
+		font-size: 1.5rem;
+		font-weight: 700;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
-		padding: 0.875rem;
-		border-radius: 10px;
-		background: rgba(34, 197, 94, 0.1);
-		border: 1px solid rgba(34, 197, 94, 0.2);
-		color: var(--success, #22c55e);
-		font-weight: 600;
+		margin: 0 auto 0.75rem;
 	}
 
-	.stl-success-icon { font-size: 1.25rem; }
+	.stl-success-title {
+		font-size: 1.15rem;
+		font-weight: 700;
+		color: var(--success, #10b981);
+		margin-bottom: 0.25rem;
+	}
+
+	.stl-success-subtitle {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #94a3b8);
+		margin-bottom: 1rem;
+	}
+
+	.stl-btn-scan-next {
+		display: block;
+		width: 100%;
+		padding: 0.75rem;
+		margin-top: 0.5rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-strong, rgba(148,163,184,0.2));
+		background: transparent;
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.stl-btn-scan-next:hover {
+		border-color: var(--gold, #f59e0b);
+		color: var(--gold, #f59e0b);
+	}
 
 	.stl-error {
 		margin-top: 0.5rem;
@@ -1191,15 +1217,6 @@
 	}
 
 	.stl-text-btn:hover { color: var(--text-secondary, #94a3b8); }
-
-	.stl-view-listings {
-		display: block;
-		width: 100%;
-		text-align: center;
-		margin-top: 0.5rem;
-		color: var(--accent-primary, #3b82f6) !important;
-		font-weight: 600;
-	}
 
 	/* ── Price + Quantity side-by-side row ── */
 	.stl-field-row {
