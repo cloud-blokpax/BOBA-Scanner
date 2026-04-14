@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { collectionItems, collectionLoading, loadCollection } from '$lib/stores/collection.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { getCachedPriceMid } from '$lib/stores/prices.svelte';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import ListingHistory from '$lib/components/sell/ListingHistory.svelte';
@@ -26,6 +28,7 @@
 
 	let ebayDisconnecting = $state(false);
 	let ebayValidating = $state(false);
+	let ebayExpanded = $state(false);
 	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
 
 	async function disconnectEbay() {
@@ -62,9 +65,24 @@
 		ebayValidating = false;
 	}
 
-	const items = $derived(collectionItems());
+	const rawItems = $derived(collectionItems());
 	const loading = $derived(collectionLoading());
 	let selectedItem = $state<(typeof items)[number] | null>(null);
+	let sortBy = $state<'price' | 'recent'>('price');
+
+	// Sort items: by price (highest first) or by most recently added
+	const items = $derived.by(() => {
+		const list = [...rawItems];
+		if (sortBy === 'price') {
+			list.sort((a, b) => {
+				const priceA = a.card ? (getCachedPriceMid(a.card.id) ?? -1) : -1;
+				const priceB = b.card ? (getCachedPriceMid(b.card.id) ?? -1) : -1;
+				return priceB - priceA; // highest price first
+			});
+		}
+		// 'recent' = default Supabase order (added_at DESC), no re-sort needed
+		return list;
+	});
 
 	onMount(() => { loadCollection(); });
 
@@ -116,34 +134,42 @@
 		<p class="subtitle">Export and price your collection</p>
 	</header>
 
-	<!-- Quick Export strip -->
-	<div class="quick-export">
-		<h2 class="section-heading">Quick Export</h2>
-		<div class="export-strip">
-			<button class="export-card scan-list-card" onclick={onStartScan} disabled={!ebayConnected && ebayChecked}>
-				<span class="export-card-icon">📷</span>
-				<span class="export-card-name">Scan & List</span>
+	<!-- Primary Actions — scan/upload to start listing flow -->
+	<div class="sell-actions">
+		<button class="sell-cta" onclick={onStartScan} disabled={!ebayConnected && ebayChecked}>
+			<span class="sell-cta-icon">📷</span>
+			<div class="sell-cta-text">
+				<span class="sell-cta-label">Scan to List</span>
+				<span class="sell-cta-hint">Camera → eBay</span>
+			</div>
+		</button>
+		<button class="sell-cta" onclick={onStartUpload} disabled={!ebayConnected && ebayChecked}>
+			<span class="sell-cta-icon">📤</span>
+			<div class="sell-cta-text">
+				<span class="sell-cta-label">Upload to List</span>
+				<span class="sell-cta-hint">Photo → eBay</span>
+			</div>
+		</button>
+	</div>
+
+	{#if !ebayConnected && ebayChecked && ebayConfigured}
+		<p class="sell-connect-hint">Connect your eBay account below to enable listing</p>
+	{/if}
+
+	<!-- Export Options — secondary, for bulk operations -->
+	<div class="export-section">
+		<h2 class="section-heading">Export</h2>
+		<div class="export-row">
+			<button class="export-btn" onclick={() => quickExport('__builtin_general')}>
+				📄 Collection CSV
 			</button>
-			<button class="export-card scan-list-card" onclick={onStartUpload} disabled={!ebayConnected && ebayChecked}>
-				<span class="export-card-icon">📤</span>
-				<span class="export-card-name">Upload & List</span>
+			<button class="export-btn" onclick={() => quickExport('__builtin_ebay')}>
+				🛒 eBay CSV
 			</button>
-			<button class="export-card" onclick={() => quickExport('__builtin_general')}>
-				<span class="export-card-icon">📄</span>
-				<span class="export-card-name">Export CSV</span>
-			</button>
-			<button class="export-card" onclick={() => quickExport('__builtin_ebay')}>
-				<span class="export-card-icon">🛒</span>
-				<span class="export-card-name">eBay CSV</span>
-			</button>
-			{#if onStartWhatnot}
-				<button class="export-card whatnot-card" onclick={onStartWhatnot}>
-					<span class="export-card-icon">📦</span>
-					<span class="export-card-name">Whatnot Export</span>
-				</button>
-			{/if}
+			<a href="/export" class="export-btn export-btn-link">
+				⚙ Custom
+			</a>
 		</div>
-		<a href="/export" class="custom-export-link">Custom Export Options &rarr;</a>
 	</div>
 
 	<!-- eBay Seller Connection -->
@@ -152,10 +178,17 @@
 			<h2 class="section-heading">eBay Seller</h2>
 			{#if ebayConnected}
 				<div class="ebay-seller-card">
-					<div class="ebay-seller-header">
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="ebay-seller-header" onclick={() => ebayExpanded = !ebayExpanded}>
 						<span class="ebay-status-dot"></span>
-						<span class="ebay-seller-connected-label">Connected</span>
-						<div class="ebay-seller-actions">
+						<span class="ebay-seller-connected-label">
+							Connected{ebaySellerUsername ? ` as ${ebaySellerUsername}` : ''}
+						</span>
+						<span class="ebay-chevron">{ebayExpanded ? '▾' : '▸'}</span>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="ebay-seller-actions" onclick={(e) => e.stopPropagation()}>
 							<button class="ebay-action-btn ebay-action-test" onclick={validateEbay} disabled={ebayValidating}>
 								{ebayValidating ? '...' : 'Test'}
 							</button>
@@ -165,6 +198,7 @@
 						</div>
 					</div>
 
+					{#if ebayExpanded}
 					<div class="ebay-seller-details">
 						{#if ebaySellerUsername}
 							<div class="ebay-detail-row">
@@ -197,6 +231,7 @@
 							</div>
 						{/if}
 					</div>
+					{/if}
 
 					{#if ebayValidation}
 						<div class="ebay-validation-banner" class:valid={ebayValidation.valid} class:invalid={!ebayValidation.valid}>
@@ -237,7 +272,13 @@
 
 	<!-- Scanned Cards -->
 	<div class="scanned-cards">
-		<h2 class="section-heading">Scanned Cards ({items.length})</h2>
+		<div class="cards-header">
+			<h2 class="section-heading">Scanned Cards ({items.length})</h2>
+			<div class="sort-toggle">
+				<button class="sort-btn" class:active={sortBy === 'price'} onclick={() => sortBy = 'price'}>Value</button>
+				<button class="sort-btn" class:active={sortBy === 'recent'} onclick={() => sortBy = 'recent'}>Recent</button>
+			</div>
+		</div>
 		{#if loading}
 			<div class="empty-state">
 				<p>Loading your collection...</p>
@@ -251,7 +292,7 @@
 			<div class="cards-list">
 				{#each items as item (item.id)}
 					{@const card = item.card}
-					{@const ebayQuery = encodeURIComponent(`BoBA ${card?.hero_name || card?.name || ''} ${card?.card_number || ''}`)}
+					{@const priceMid = card ? getCachedPriceMid(card.id) : null}
 					<div class="card-row">
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -271,9 +312,13 @@
 							</div>
 						</div>
 						<div class="card-row-actions">
-							<span class="card-row-condition">{item.condition || 'NM'}</span>
+							{#if priceMid != null}
+								<span class="card-row-price">${priceMid.toFixed(2)}</span>
+							{:else}
+								<span class="card-row-price card-row-price-na">—</span>
+							{/if}
 							<a
-								href="https://www.ebay.com/sch/i.html?_nkw={ebayQuery}&_sacat=0"
+								href={card ? buildEbaySearchUrl(card) : '#'}
 								target="_blank"
 								rel="noopener noreferrer"
 								class="card-row-ebay-link"
@@ -315,51 +360,74 @@
 		margin-bottom: 0.75rem;
 	}
 
-	/* Quick Export */
-	.quick-export { margin-bottom: 2rem; }
-
-	.export-strip {
-		display: flex;
+	/* Primary sell CTAs */
+	.sell-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
 		gap: 0.75rem;
-		overflow-x: auto;
-		-webkit-overflow-scrolling: touch;
-		padding-bottom: 0.25rem;
+		margin-bottom: 1rem;
 	}
 
-	.export-card {
-		flex-shrink: 0;
+	.sell-cta {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 0.375rem;
-		padding: 1rem 1.25rem;
-		border-radius: 10px;
+		gap: 0.75rem;
+		padding: 1rem;
+		border-radius: 12px;
 		background: var(--bg-elevated, #121d34);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		border: 2px solid var(--accent-primary, #3b82f6);
 		color: var(--text-primary, #e2e8f0);
-		font-size: 0.85rem;
-		font-weight: 600;
 		cursor: pointer;
-		transition: border-color 0.15s, transform 0.15s;
-		min-width: 110px;
+		transition: transform 0.15s, box-shadow 0.15s;
 	}
 
-	.export-card:hover {
-		border-color: var(--gold, #f59e0b);
+	.sell-cta:hover:not(:disabled) {
 		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 	}
 
-	.export-card-icon { font-size: 1.5rem; }
-	.export-card-name { font-size: 0.75rem; color: var(--text-secondary, #94a3b8); }
+	.sell-cta:disabled {
+		border-color: var(--border, rgba(148,163,184,0.10));
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
 
-	.custom-export-link {
-		display: inline-block;
-		margin-top: 0.75rem;
+	.sell-cta-icon { font-size: 1.5rem; flex-shrink: 0; }
+	.sell-cta-text { display: flex; flex-direction: column; gap: 0.125rem; text-align: left; }
+	.sell-cta-label { font-size: 0.9rem; font-weight: 700; }
+	.sell-cta-hint { font-size: 0.7rem; color: var(--text-muted, #475569); }
+
+	.sell-connect-hint {
 		font-size: 0.8rem;
 		color: var(--text-muted, #475569);
-		text-decoration: none;
+		text-align: center;
+		margin: -0.25rem 0 1rem;
 	}
-	.custom-export-link:hover { color: var(--text-secondary, #94a3b8); }
+
+	/* Export section */
+	.export-section { margin-bottom: 1.5rem; }
+
+	.export-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.export-btn {
+		flex: 1;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-align: center;
+		text-decoration: none;
+		display: inline-block;
+	}
+
+	.export-btn:hover { border-color: var(--border-strong, rgba(148,163,184,0.25)); color: var(--text-primary, #e2e8f0); }
 
 	/* eBay connection */
 	.ebay-connect-section { margin-bottom: 2rem; }
@@ -376,6 +444,13 @@
 		align-items: center;
 		gap: 0.5rem;
 		margin-bottom: 0.75rem;
+		cursor: pointer;
+	}
+
+	.ebay-chevron {
+		font-size: 0.75rem;
+		color: var(--text-tertiary, #334155);
+		margin-right: auto;
 	}
 
 	.ebay-status-dot {
@@ -593,14 +668,6 @@
 		gap: 0.25rem;
 	}
 
-	.card-row-condition {
-		font-size: 0.75rem;
-		padding: 0.125rem 0.5rem;
-		border-radius: 4px;
-		background: var(--bg-surface, #0d1524);
-		color: var(--text-secondary, #94a3b8);
-	}
-
 	.card-row-ebay-link {
 		font-size: 0.7rem;
 		font-weight: 600;
@@ -629,19 +696,52 @@
 		opacity: 0.85;
 	}
 
-	.scan-list-card {
-		border-color: var(--accent-primary, #3b82f6) !important;
+	/* Price display in card rows */
+	.card-row-price {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--gold, #f59e0b);
+		white-space: nowrap;
 	}
 
-	.scan-list-card:disabled {
-		border-color: var(--border, rgba(148,163,184,0.10)) !important;
-		opacity: 0.5;
+	.card-row-price-na {
+		color: var(--text-tertiary, #334155);
+		font-weight: 400;
 	}
 
-	.whatnot-card {
-		border-color: #7c3aed !important;
+	/* Cards header with sort toggle */
+	.cards-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
 	}
-	.whatnot-card:hover {
-		border-color: #7c3aed !important;
+
+	.cards-header .section-heading {
+		margin-bottom: 0;
+	}
+
+	.sort-toggle {
+		display: flex;
+		gap: 2px;
+		background: var(--bg-elevated, #121d34);
+		border-radius: 6px;
+		padding: 2px;
+	}
+
+	.sort-btn {
+		padding: 0.25rem 0.625rem;
+		border-radius: 5px;
+		border: none;
+		background: transparent;
+		color: var(--text-tertiary, #334155);
+		font-size: 0.7rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.sort-btn.active {
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-primary, #e2e8f0);
 	}
 </style>

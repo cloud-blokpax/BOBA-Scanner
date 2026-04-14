@@ -14,6 +14,12 @@ let _priceCache = $state<Map<string, PriceData>>(new Map());
 
 export function priceCache(): Map<string, PriceData> { return _priceCache; }
 
+/** Return cached price_mid for a card ID, or null if not yet fetched. No API call triggered. */
+export function getCachedPriceMid(cardId: string): number | null {
+	const entry = _priceCache.get(cardId);
+	return entry?.price_mid ?? null;
+}
+
 const inflightRequests = new Map<string, Promise<PriceResult>>();
 
 export async function getPrice(cardId: string): Promise<PriceData | null> {
