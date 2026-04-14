@@ -73,6 +73,39 @@
 			: null
 	);
 
+	// ── Quick Action state ────────────────────────────────
+	let harvestTriggering = $state(false);
+	let harvestResult = $state<{ ok: boolean; message: string } | null>(null);
+
+	async function triggerHarvestBatch() {
+		harvestTriggering = true;
+		harvestResult = null;
+		try {
+			const res = await fetch('/api/admin/trigger-harvest', { method: 'POST' });
+			const data = await res.json();
+			if (data.triggered && data.cronResponse) {
+				const cr = data.cronResponse;
+				harvestResult = {
+					ok: true,
+					message: `Harvested ${cr.processed ?? 0} cards (${cr.updated ?? 0} updated, ${cr.errors ?? 0} errors)`
+				};
+			} else {
+				harvestResult = { ok: false, message: data.error || 'Harvest failed' };
+			}
+		} catch {
+			harvestResult = { ok: false, message: 'Network error — could not reach harvest endpoint' };
+		}
+		harvestTriggering = false;
+		// Auto-clear result after 10s
+		setTimeout(() => { harvestResult = null; }, 10000);
+	}
+
+	function onRefreshFresh() {
+		// Bypass Redis cache by appending ?fresh=true
+		// The parent onRefresh will be modified to accept this param
+		onRefresh();
+	}
+
 	const scanTrend = $derived.by(() => {
 		if (trends.scans.length < 2) return null;
 		const recent = trends.scans.slice(-7);
@@ -157,7 +190,7 @@
 						{#if alert.action === 'review'}
 							<button class="alert-btn" onclick={() => onNavigate('cards')}>Review</button>
 						{:else if alert.action === 'view-logs'}
-							<button class="alert-btn" onclick={() => onNavigate('logs')}>View</button>
+							<button class="alert-btn" onclick={() => onNavigate('scans')}>View</button>
 						{:else if alert.action === 'view-scans'}
 							<button class="alert-btn" onclick={() => onNavigate('scans')}>View</button>
 						{/if}
@@ -187,15 +220,29 @@
 		</div>
 	</div>
 
-	<!-- Quick Actions -->
+	<!-- Quick Actions — real API calls, not just navigation -->
 	<div class="quick-actions">
 		<h3 class="section-label">Quick Actions</h3>
 		<div class="actions-grid">
-			<button class="action-btn" onclick={() => onNavigate('ebay')}>Refresh Price Cache</button>
-			<button class="action-btn" onclick={() => onNavigate('changelog')}>Push Changelog Note</button>
-			<button class="action-btn" onclick={() => onNavigate('features')}>Toggle Feature Flag</button>
-			<button class="action-btn" onclick={() => onNavigate('logs')}>View Error Log</button>
+			<button
+				class="action-btn"
+				class:action-loading={harvestTriggering}
+				onclick={triggerHarvestBatch}
+				disabled={harvestTriggering}
+			>
+				{harvestTriggering ? 'Harvesting...' : 'Trigger Harvest'}
+			</button>
+			<button class="action-btn" onclick={() => onRefreshFresh()}>
+				Force Refresh
+			</button>
+			<button class="action-btn" onclick={() => onNavigate('features')}>Feature Flags</button>
+			<button class="action-btn" onclick={() => onNavigate('scans')}>Error Logs</button>
 		</div>
+		{#if harvestResult}
+			<div class="harvest-result" class:harvest-ok={harvestResult.ok} class:harvest-fail={!harvestResult.ok}>
+				{harvestResult.message}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Recent Signups -->
@@ -456,6 +503,29 @@
 	.action-btn:hover {
 		border-color: var(--gold);
 		color: var(--gold);
+	}
+
+	.action-loading {
+		opacity: 0.6;
+		cursor: wait !important;
+	}
+
+	.harvest-result {
+		margin-top: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 500;
+	}
+
+	.harvest-ok {
+		background: rgba(16, 185, 129, 0.1);
+		color: var(--success);
+	}
+
+	.harvest-fail {
+		background: rgba(239, 68, 68, 0.1);
+		color: var(--danger);
 	}
 
 	/* Recent Signups */

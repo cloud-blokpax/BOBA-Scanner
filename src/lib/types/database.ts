@@ -1141,6 +1141,10 @@ export interface Database {
 				Args: { p_user_id: string };
 				Returns: number;
 			};
+			get_daily_trends: {
+				Args: { p_days?: number };
+				Returns: Array<{ trend_date: string; scan_count: number; signup_count: number; error_count: number }>;
+			};
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
