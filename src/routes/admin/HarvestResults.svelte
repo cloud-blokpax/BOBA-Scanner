@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast.svelte';
-	import { buildEbaySearchQuery } from '$lib/utils/ebay-title';
 
 	interface HarvestSummary {
 		total: number;
@@ -181,12 +180,7 @@
 	];
 
 	function ebaySearchUrl(row: HarvestRow): string {
-		const query = buildEbaySearchQuery({
-			hero_name: row.hero_name,
-			name: row.card_name,
-			card_number: row.card_number
-		});
-		return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
+		return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(row.search_query)}`;
 	}
 </script>
 
