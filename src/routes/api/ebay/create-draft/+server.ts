@@ -208,6 +208,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					'Card Name': [heroName || 'Unknown'],
 					'Set': [body.setCode || 'BoBA'],
 					'Sport': ['Multi-Sport'],
+					'Game': ['Bo Jackson Battle Arena'],
 					'Card Manufacturer': ['Bo Jackson Battle Arena'],
 					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
 					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
