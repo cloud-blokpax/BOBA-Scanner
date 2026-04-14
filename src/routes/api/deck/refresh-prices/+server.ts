@@ -13,6 +13,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
+import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 
 export const config = { maxDuration: 60 };
 import { checkEbayDailyLimit } from '$lib/server/redis';
@@ -25,6 +26,12 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to refresh prices');
+
+	const rateLimit = await checkHeavyMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many refresh requests — try again in a minute' }, { status: 429 });
+	}
+
 	if (!locals.supabase) throw error(503, 'Database not available');
 	if (!isEbayConfigured()) throw error(503, 'eBay API not configured');
 

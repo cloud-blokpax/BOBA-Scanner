@@ -4,6 +4,7 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import { getUserProfile, ensureProfileLoaded } from '$lib/stores/feature-flags.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
@@ -209,7 +210,9 @@
 		ebayValidating = false;
 	}
 
-	const isAdmin = $derived($page.data?.session?.user?.app_metadata?.is_admin === true);
+	$effect(() => { ensureProfileLoaded(); });
+
+	const isAdmin = $derived(getUserProfile()?.is_admin === true);
 </script>
 
 <svelte:head>
