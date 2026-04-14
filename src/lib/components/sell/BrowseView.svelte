@@ -69,10 +69,21 @@
 	const loading = $derived(collectionLoading());
 	let selectedItem = $state<(typeof items)[number] | null>(null);
 	let sortBy = $state<'price' | 'recent'>('price');
+	let scannedCollapsed = $state(false);
+	let scannedFilter = $state<'all' | 'priced' | 'unpriced'>('all');
 
 	// Sort items: by price (highest first) or by most recently added
 	const items = $derived.by(() => {
-		const list = [...rawItems];
+		let list = [...rawItems];
+
+		// Filter
+		if (scannedFilter === 'priced') {
+			list = list.filter(item => item.card && getCachedPriceMid(item.card.id) != null);
+		} else if (scannedFilter === 'unpriced') {
+			list = list.filter(item => !item.card || getCachedPriceMid(item.card.id) == null);
+		}
+
+		// Sort
 		if (sortBy === 'price') {
 			list.sort((a, b) => {
 				const priceA = a.card ? (getCachedPriceMid(a.card.id) ?? -1) : -1;
@@ -154,6 +165,19 @@
 
 	{#if !ebayConnected && ebayChecked && ebayConfigured}
 		<p class="sell-connect-hint">Connect your eBay account below to enable listing</p>
+	{/if}
+
+	<!-- Whatnot batch export -->
+	{#if onStartWhatnot}
+		<div class="whatnot-section">
+			<button class="sell-cta whatnot-cta" onclick={onStartWhatnot}>
+				<span class="sell-cta-icon">📦</span>
+				<div class="sell-cta-text">
+					<span class="sell-cta-label">Whatnot CSV</span>
+					<span class="sell-cta-hint">Batch scan → CSV import</span>
+				</div>
+			</button>
+		</div>
 	{/if}
 
 	<!-- Export Options — secondary, for bulk operations -->
@@ -272,64 +296,82 @@
 
 	<!-- Scanned Cards -->
 	<div class="scanned-cards">
-		<div class="cards-header">
-			<h2 class="section-heading">Scanned Cards ({items.length})</h2>
-			<div class="sort-toggle">
-				<button class="sort-btn" class:active={sortBy === 'price'} onclick={() => sortBy = 'price'}>Value</button>
-				<button class="sort-btn" class:active={sortBy === 'recent'} onclick={() => sortBy = 'recent'}>Recent</button>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="cards-header" onclick={() => scannedCollapsed = !scannedCollapsed}>
+			<div class="cards-header-left">
+				<span class="collapse-chevron">{scannedCollapsed ? '▸' : '▾'}</span>
+				<h2 class="section-heading">Scanned Cards ({items.length})</h2>
 			</div>
+			{#if !scannedCollapsed}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="sort-toggle" onclick={(e) => e.stopPropagation()}>
+					<button class="sort-btn" class:active={sortBy === 'price'} onclick={() => sortBy = 'price'}>Value</button>
+					<button class="sort-btn" class:active={sortBy === 'recent'} onclick={() => sortBy = 'recent'}>Recent</button>
+				</div>
+			{/if}
 		</div>
-		{#if loading}
-			<div class="empty-state">
-				<p>Loading your collection...</p>
+		{#if !scannedCollapsed}
+			<div class="scanned-filter-row">
+				<button class="scanned-filter-btn" class:active={scannedFilter === 'all'} onclick={() => scannedFilter = 'all'}>All {rawItems.length}</button>
+				<button class="scanned-filter-btn" class:active={scannedFilter === 'priced'} onclick={() => scannedFilter = 'priced'}>Priced</button>
+				<button class="scanned-filter-btn" class:active={scannedFilter === 'unpriced'} onclick={() => scannedFilter = 'unpriced'}>Unpriced</button>
 			</div>
-		{:else if items.length === 0}
-			<div class="empty-state">
-				<p>No cards in your collection yet.</p>
-				<a href="/scan" class="btn-scan-link">Scan your first card</a>
-			</div>
-		{:else}
-			<div class="cards-list">
-				{#each items as item (item.id)}
-					{@const card = item.card}
-					{@const priceMid = card ? getCachedPriceMid(card.id) : null}
-					<div class="card-row">
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="card-row-tappable" onclick={() => { selectedItem = item; }}>
-							<div class="card-row-thumb">
-								{#if item.scan_image_url}
-									<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="card-row-img" />
-								{:else if card?.image_url}
-									<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
+		{/if}
+		{#if !scannedCollapsed}
+			{#if loading}
+				<div class="empty-state">
+					<p>Loading your collection...</p>
+				</div>
+			{:else if items.length === 0}
+				<div class="empty-state">
+					<p>No cards in your collection yet.</p>
+					<a href="/scan" class="btn-scan-link">Scan your first card</a>
+				</div>
+			{:else}
+				<div class="cards-list">
+					{#each items as item (item.id)}
+						{@const card = item.card}
+						{@const priceMid = card ? getCachedPriceMid(card.id) : null}
+						<div class="card-row">
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="card-row-tappable" onclick={() => { selectedItem = item; }}>
+								<div class="card-row-thumb">
+									{#if item.scan_image_url}
+										<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="card-row-img" />
+									{:else if card?.image_url}
+										<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
+									{:else}
+										<span class="card-row-placeholder">🎴</span>
+									{/if}
+								</div>
+								<div class="card-row-info">
+									<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
+									<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
+								</div>
+							</div>
+							<div class="card-row-actions">
+								{#if priceMid != null}
+									<span class="card-row-price">${priceMid.toFixed(2)}</span>
 								{:else}
-									<span class="card-row-placeholder">🎴</span>
+									<span class="card-row-price card-row-price-na">—</span>
 								{/if}
-							</div>
-							<div class="card-row-info">
-								<span class="card-row-name">{card?.hero_name || card?.name || 'Unknown'}</span>
-								<span class="card-row-meta">{card?.card_number || ''} {card?.set_code ? `· ${card.set_code}` : ''}</span>
+								<a
+									href={card ? buildEbaySearchUrl(card) : '#'}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="card-row-ebay-link"
+									title="Search eBay for comps"
+								>
+									eBay ↗
+								</a>
 							</div>
 						</div>
-						<div class="card-row-actions">
-							{#if priceMid != null}
-								<span class="card-row-price">${priceMid.toFixed(2)}</span>
-							{:else}
-								<span class="card-row-price card-row-price-na">—</span>
-							{/if}
-							<a
-								href={card ? buildEbaySearchUrl(card) : '#'}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="card-row-ebay-link"
-								title="Search eBay for comps"
-							>
-								eBay ↗
-							</a>
-						</div>
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 
@@ -396,6 +438,16 @@
 	.sell-cta-text { display: flex; flex-direction: column; gap: 0.125rem; text-align: left; }
 	.sell-cta-label { font-size: 0.9rem; font-weight: 700; }
 	.sell-cta-hint { font-size: 0.7rem; color: var(--text-muted, #475569); }
+
+	/* Whatnot CTA */
+	.whatnot-section { margin-bottom: 1rem; }
+	.whatnot-cta {
+		width: 100%;
+		border-color: #7c3aed;
+	}
+	.whatnot-cta:hover:not(:disabled) {
+		box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+	}
 
 	.sell-connect-hint {
 		font-size: 0.8rem;
@@ -587,6 +639,31 @@
 		font-weight: 600;
 	}
 	.btn-ebay-connect:hover { opacity: 0.9; }
+
+	.cards-header { cursor: pointer; }
+	.cards-header-left { display: flex; align-items: center; gap: 0.5rem; }
+	.collapse-chevron { font-size: 0.75rem; color: var(--text-tertiary, #334155); }
+
+	.scanned-filter-row {
+		display: flex;
+		gap: 0.375rem;
+		margin-bottom: 0.625rem;
+	}
+	.scanned-filter-btn {
+		padding: 0.25rem 0.625rem;
+		border-radius: 20px;
+		border: 1px solid var(--border, rgba(148,163,184,0.10));
+		background: transparent;
+		color: var(--text-tertiary, #334155);
+		font-size: 0.7rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.scanned-filter-btn.active {
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		border-color: var(--accent-primary, #3b82f6);
+	}
 
 	/* Cards list */
 	.empty-state {

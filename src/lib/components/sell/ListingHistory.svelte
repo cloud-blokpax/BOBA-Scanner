@@ -48,20 +48,29 @@
 	let syncing = $state(false);
 	let activeFilter = $state<string>('all');
 	let expandedId = $state<string | null>(null);
+	let sortListingsBy = $state<'recent' | 'price-high' | 'price-low'>('recent');
 
-	const filters = ['all', 'active', 'sold', 'drafts'] as const;
+	const filters = ['all', 'active', 'ended', 'sold', 'drafts'] as const;
 
-	let filteredListings = $derived(
-		activeFilter === 'all'
-			? listings
-			: activeFilter === 'active'
-				? listings.filter(l => l.status === 'published' || l.status === 'draft')
-				: activeFilter === 'sold'
-					? listings.filter(l => l.status === 'sold')
-					: activeFilter === 'drafts'
-						? listings.filter(l => l.status === 'draft' || l.status === 'pending')
-						: listings
-	);
+	let filteredListings = $derived.by(() => {
+		let result: ListingItem[];
+		switch (activeFilter) {
+			case 'active': result = listings.filter(l => l.status === 'published'); break;
+			case 'ended': result = listings.filter(l => l.status === 'ended'); break;
+			case 'sold': result = listings.filter(l => l.status === 'sold'); break;
+			case 'drafts': result = listings.filter(l => l.status === 'draft' || l.status === 'pending'); break;
+			default: result = [...listings];
+		}
+		if (sortListingsBy === 'price-high') {
+			result = [...result].sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+		} else if (sortListingsBy === 'price-low') {
+			result = [...result].sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+		}
+		// 'recent' = default API order (created_at DESC), no re-sort
+		return result;
+	});
+
+	const endedCount = $derived(listings.filter(l => l.status === 'ended').length);
 
 	onMount(() => {
 		if (ebayConnected) loadListings();
@@ -203,12 +212,12 @@
 			<!-- Summary strip -->
 			<div class="lh-summary">
 				<div class="lh-stat">
-					<span class="lh-stat-value">{summary.total}</span>
-					<span class="lh-stat-label">Listed</span>
-				</div>
-				<div class="lh-stat">
 					<span class="lh-stat-value">{summary.active}</span>
 					<span class="lh-stat-label">Active</span>
+				</div>
+				<div class="lh-stat">
+					<span class="lh-stat-value">{endedCount}</span>
+					<span class="lh-stat-label">Ended</span>
 				</div>
 				<div class="lh-stat">
 					<span class="lh-stat-value lh-sold-value">{summary.sold}</span>
@@ -228,11 +237,13 @@
 						class:active={activeFilter === f}
 						onclick={() => { activeFilter = f; }}
 					>
-						{f === 'all' ? 'All' : f === 'active' ? 'Active' : f === 'sold' ? 'Sold' : 'Drafts'}
+						{f === 'all' ? 'All' : f === 'active' ? 'Active' : f === 'ended' ? 'Ended' : f === 'sold' ? 'Sold' : 'Drafts'}
 						{#if f === 'all'}
 							<span class="lh-filter-count">{listings.length}</span>
 						{:else if f === 'active'}
 							<span class="lh-filter-count">{summary.active}</span>
+						{:else if f === 'ended'}
+							<span class="lh-filter-count">{endedCount}</span>
 						{:else if f === 'sold'}
 							<span class="lh-filter-count">{summary.sold}</span>
 						{:else}
@@ -240,6 +251,16 @@
 						{/if}
 					</button>
 				{/each}
+			</div>
+
+			<!-- Sort control -->
+			<div class="lh-sort-row">
+				<span class="lh-sort-label">Sort:</span>
+				<div class="lh-sort-toggle">
+					<button class="lh-sort-btn" class:active={sortListingsBy === 'recent'} onclick={() => sortListingsBy = 'recent'}>Recent</button>
+					<button class="lh-sort-btn" class:active={sortListingsBy === 'price-high'} onclick={() => sortListingsBy = 'price-high'}>Price ↓</button>
+					<button class="lh-sort-btn" class:active={sortListingsBy === 'price-low'} onclick={() => sortListingsBy = 'price-low'}>Price ↑</button>
+				</div>
 			</div>
 
 			<!-- Listing rows -->
@@ -560,6 +581,39 @@
 		border-color: var(--accent-primary, #3b82f6);
 		background: rgba(59, 130, 246, 0.1);
 		color: var(--accent-primary, #3b82f6);
+	}
+
+	.lh-sort-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.625rem;
+	}
+	.lh-sort-label {
+		font-size: 0.7rem;
+		color: var(--text-muted, #475569);
+		font-weight: 500;
+	}
+	.lh-sort-toggle {
+		display: flex;
+		gap: 2px;
+		background: var(--bg-elevated, #121d34);
+		border-radius: 6px;
+		padding: 2px;
+	}
+	.lh-sort-btn {
+		padding: 0.2rem 0.5rem;
+		border-radius: 5px;
+		border: none;
+		background: transparent;
+		color: var(--text-tertiary, #334155);
+		font-size: 0.65rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.lh-sort-btn.active {
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-primary, #e2e8f0);
 	}
 
 	.lh-filter-count {
