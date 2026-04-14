@@ -9,7 +9,7 @@ export const config = { maxDuration: 60 };
 
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
 const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
-const EBAY_CATEGORY_TRADING_CARDS = '261328';
+const EBAY_CATEGORY_TRADING_CARDS = '183454';
 
 interface DraftRequest {
 	cardId: string;

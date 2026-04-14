@@ -19,9 +19,10 @@
 		onStartScan: () => void;
 		onStartUpload: () => void;
 		onEbayDisconnected: () => void;
+		onStartWhatnot?: () => void;
 	}
 
-	let { ebayConfigured, ebayConnected, ebayChecked, ebaySellerUsername, ebaySellerEmail, ebayConnectedSince, ebayTokenHealth, onStartScan, onStartUpload, onEbayDisconnected }: Props = $props();
+	let { ebayConfigured, ebayConnected, ebayChecked, ebaySellerUsername, ebaySellerEmail, ebayConnectedSince, ebayTokenHealth, onStartScan, onStartUpload, onEbayDisconnected, onStartWhatnot }: Props = $props();
 
 	let ebayDisconnecting = $state(false);
 	let ebayValidating = $state(false);
@@ -135,6 +136,12 @@
 				<span class="export-card-icon">🛒</span>
 				<span class="export-card-name">eBay CSV</span>
 			</button>
+			{#if onStartWhatnot}
+				<button class="export-card whatnot-card" onclick={onStartWhatnot}>
+					<span class="export-card-icon">📦</span>
+					<span class="export-card-name">Whatnot Export</span>
+				</button>
+			{/if}
 		</div>
 		<a href="/export" class="custom-export-link">Custom Export Options &rarr;</a>
 	</div>
@@ -629,5 +636,12 @@
 	.scan-list-card:disabled {
 		border-color: var(--border, rgba(148,163,184,0.10)) !important;
 		opacity: 0.5;
+	}
+
+	.whatnot-card {
+		border-color: #7c3aed !important;
+	}
+	.whatnot-card:hover {
+		border-color: #7c3aed !important;
 	}
 </style>

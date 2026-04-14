@@ -14,6 +14,9 @@ import { getAnthropicClient } from '$lib/server/anthropic';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import type { RequestHandler } from './$types';
 
+// Claude Haiku vision call + sharp CDR + rate limiting = 5-12s typical
+export const config = { maxDuration: 60 };
+
 const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: ALLOWED_TYPES } = BOBA_SCAN_CONFIG;
 
 // ── Structured output tool definition ──────────────────────────

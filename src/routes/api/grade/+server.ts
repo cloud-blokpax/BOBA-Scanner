@@ -14,6 +14,9 @@ import { parseJsonBody } from '$lib/server/validate';
 import { buildGradePrompt } from '$lib/server/grading-prompts';
 import type { RequestHandler } from './$types';
 
+// Claude Sonnet vision call with dual images = 8-20s typical
+export const config = { maxDuration: 60 };
+
 // ── Structured output tool definition ──────────────────────────
 const GRADE_TOOL: Anthropic.Messages.Tool = {
 	name: 'grade_card',

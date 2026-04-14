@@ -32,15 +32,16 @@ export const GET: RequestHandler = async ({ locals }) => {
 		throw error(500, `Database operation failed: ${dbError.message}`);
 	}
 
-	// Resolve user emails
+	// Resolve user emails — user_feature_overrides.user_id stores auth_user_id,
+	// so we look up by auth_user_id to find the corresponding email.
 	const userIds = [...new Set((data || []).map((d: { user_id: string }) => d.user_id))];
 	let emailMap = new Map<string, string>();
 	if (userIds.length > 0) {
 		const { data: userRows } = await admin
 			.from('users')
-			.select('id, email')
-			.in('id', userIds);
-		emailMap = new Map((userRows || []).map((u: { id: string; email: string }) => [u.id, u.email]));
+			.select('auth_user_id, email')
+			.in('auth_user_id', userIds);
+		emailMap = new Map((userRows || []).map((u: { auth_user_id: string | null; email: string }) => [u.auth_user_id ?? '', u.email]));
 	}
 
 	const overrides = (data || []).map((d: { user_id: string; feature_key: string; enabled: boolean }) => ({
@@ -69,15 +70,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!userId || !featureKey) throw error(400, 'user_id and feature_key required');
 
-	// Resolve email to UUID if needed
+	// Resolve email to auth_user_id (the UUID from auth.users).
+	// Client-side reads use auth.getUser().id which is auth.users.id,
+	// NOT the public users table's own id column. These are different UUIDs.
 	if (!userId.match(/^[0-9a-f-]{36}$/i)) {
 		const { data: userRow } = await admin
 			.from('users')
-			.select('id')
+			.select('auth_user_id')
 			.eq('email', userId)
 			.maybeSingle();
-		if (!userRow) throw error(404, 'User not found');
-		userId = userRow.id;
+		if (!userRow?.auth_user_id) throw error(404, 'User not found');
+		userId = userRow.auth_user_id;
 	}
 
 	const { error: dbError } = await admin.from('user_feature_overrides').upsert(
