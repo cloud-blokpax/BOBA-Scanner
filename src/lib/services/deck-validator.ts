@@ -12,6 +12,7 @@
 import { getFormat } from '$lib/data/tournament-formats';
 import { getParallel } from '$lib/data/boba-parallels';
 import { calculateTotalDbs } from '$lib/data/boba-dbs-scores';
+import { CARD_POOL_SETS } from '$lib/data/boba-config';
 import type { Card } from '$lib/types';
 
 export interface DeckValidationResult {
@@ -65,7 +66,8 @@ export function validateDeck(
 	heroCards: Card[],
 	formatId: string,
 	playCards: Card[] = [],
-	hotDogCards: Card[] = []
+	hotDogCards: Card[] = [],
+	playEntries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }> = []
 ): DeckValidationResult {
 	const format = getFormat(formatId);
 	if (!format) {
@@ -243,6 +245,26 @@ export function validateDeck(
 		}
 	}
 
+	// ── Rule 2e: Card Pool restriction ────────────────────────
+	const legalSets = CARD_POOL_SETS[format.cardPool];
+	if (legalSets) {
+		const illegalCards = heroCards.filter(c => {
+			const setCode = (c.set_code || '').trim();
+			return setCode && !legalSets.has(setCode);
+		});
+		if (illegalCards.length > 0) {
+			const poolName = format.cardPool.replace(/_/g, ' ');
+			for (const c of illegalCards) {
+				violations.push({
+					rule: 'card_pool',
+					message: `"${c.hero_name || c.name}" (${c.set_code}) is not legal in ${format.name} — ${poolName} card pool only`,
+					severity: 'error',
+					cardIds: [c.id]
+				});
+			}
+		}
+	}
+
 	// ── Rule 3: Combined Power cap ─────────────────────────
 	if (format.combinedPowerCap !== null && totalPower > format.combinedPowerCap) {
 		violations.push({
@@ -415,11 +437,12 @@ export function validateDeck(
 
 	// ── Rule 9: Playbook DBS cap ───────────────────────────
 	let dbsTotal: number | null = null;
-	if (format.dbsCap !== null && playCards.length > 0) {
-		const playEntries = playCards
-			.filter(c => c.card_number)
-			.map(c => ({ cardNumber: c.card_number!, setCode: c.set_code || undefined }));
-		const dbsResult = calculateTotalDbs(playEntries);
+	// Accept play data from either Card[] (legacy) or PlayEntry[] (deck builder)
+	const effectivePlayEntries = playEntries.length > 0
+		? playEntries.map(p => ({ cardNumber: p.cardNumber, setCode: p.setCode || undefined }))
+		: playCards.filter(c => c.card_number).map(c => ({ cardNumber: c.card_number!, setCode: c.set_code || undefined }));
+	if (format.dbsCap !== null && effectivePlayEntries.length > 0) {
+		const dbsResult = calculateTotalDbs(effectivePlayEntries);
 		if (dbsResult) {
 			dbsTotal = dbsResult.total;
 			if (dbsResult.total > format.dbsCap) {

@@ -14,6 +14,11 @@ vi.mock('$lib/data/boba-dbs-scores', () => ({
 	calculateTotalDbs: () => null
 }));
 
+vi.mock('$lib/data/boba-config', async () => {
+	const actual = await vi.importActual<typeof import('../src/lib/data/boba-config')>('../src/lib/data/boba-config');
+	return actual;
+});
+
 import { validateDeck } from '../src/lib/services/deck-validator';
 import type { Card } from '../src/lib/types';
 
@@ -157,5 +162,32 @@ describe('validateDeck', () => {
 		expect(result.stats.minPower).toBe(100);
 		expect(result.stats.weaponCounts['Fire']).toBe(2);
 		expect(result.stats.weaponCounts['Ice']).toBe(1);
+	});
+
+	it('flags cards outside AlphaTrilogy card pool', () => {
+		const heroes = makeHeroDeck(60, { set_code: 'AE' });
+		heroes[0] = makeCard({ set_code: 'Tecmo Bowl', hero_name: 'Illegal Hero' });
+		const result = validateDeck(heroes, 'alpha_trilogy_playmaker');
+		expect(result.violations.some(v => v.rule === 'card_pool')).toBe(true);
+	});
+
+	it('allows Alpha Edition cards in AlphaTrilogy', () => {
+		const heroes = makeHeroDeck(60, { set_code: 'AE' });
+		const hotDogs = makeHotDogDeck(10);
+		const result = validateDeck(heroes, 'alpha_trilogy_playmaker', [], hotDogs);
+		expect(result.violations.some(v => v.rule === 'card_pool')).toBe(false);
+	});
+
+	it('skips card pool validation for all_in_rotation formats', () => {
+		const heroes = makeHeroDeck(60, { set_code: 'Tecmo Bowl' });
+		const hotDogs = makeHotDogDeck(10);
+		const result = validateDeck(heroes, 'spec_playmaker', [], hotDogs);
+		expect(result.violations.some(v => v.rule === 'card_pool')).toBe(false);
+	});
+
+	it('passes cards with empty set_code through card pool check', () => {
+		const heroes = makeHeroDeck(60, { set_code: '' });
+		const result = validateDeck(heroes, 'alpha_trilogy_playmaker');
+		expect(result.violations.some(v => v.rule === 'card_pool')).toBe(false);
 	});
 });
