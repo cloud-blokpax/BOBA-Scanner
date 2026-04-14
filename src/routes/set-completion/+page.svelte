@@ -11,7 +11,7 @@
 		owned: number;
 		total: number;
 		percent: number;
-		missing: { card_number: string; hero_name: string | null }[];
+		missing: { card_number: string; hero_name: string | null; parallel: string | null; weapon_type: string | null; athlete_name: string | null }[];
 	}
 
 	let sets = $state<SetProgress[]>([]);
@@ -50,7 +50,13 @@
 
 				const missing = setCards
 					.filter((c) => c.card_number && !ownedCards.has(c.card_number.toUpperCase()))
-					.map((c) => ({ card_number: c.card_number!, hero_name: c.hero_name ?? null }));
+					.map((c) => ({
+						card_number: c.card_number!,
+						hero_name: c.hero_name ?? null,
+						parallel: c.parallel ?? null,
+						weapon_type: c.weapon_type ?? null,
+						athlete_name: c.athlete_name ?? null
+					}));
 
 				results.push({
 					setKey,
@@ -138,7 +144,7 @@
 								{#each set.missing as card}
 									<div class="missing-card-group">
 										<a
-											href={buildEbaySoldUrl({ card_number: card.card_number, hero_name: card.hero_name })}
+											href={buildEbaySoldUrl({ card_number: card.card_number, hero_name: card.hero_name, parallel: card.parallel, weapon_type: card.weapon_type, athlete_name: card.athlete_name })}
 											target="_blank"
 											rel="noopener noreferrer"
 											class="missing-card"

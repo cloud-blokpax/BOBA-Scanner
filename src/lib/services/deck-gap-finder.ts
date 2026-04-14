@@ -14,6 +14,7 @@ import { getFormat } from '$lib/data/tournament-formats';
 import { getWeaponRank } from '$lib/data/boba-weapons';
 import { getParallelRarity } from '$lib/services/parallel-config';
 import type { Card, CardRarity } from '$lib/types';
+import { buildEbaySearchUrl } from '$lib/services/ebay';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -270,17 +271,5 @@ export function selectCardsForPriceRefresh(
 
 // ── Helper: build eBay URL ──────────────────────────────────
 function buildEbayUrlForCard(card: Card): string {
-	const parts = ['BoBA', 'Battle Arena'];
-	if (card.hero_name) parts.push(card.hero_name);
-	if (card.card_number) parts.push(card.card_number);
-	const query = parts.join(' ');
-	const params = new URLSearchParams({
-		_nkw: query,
-		mkevt: '1',
-		mkcid: '1',
-		mkrid: '711-53200-19255-0',
-		campid: '5339108029',
-		toolid: '10001'
-	});
-	return `https://www.ebay.com/sch/i.html?${params.toString()}`;
+	return buildEbaySearchUrl(card);
 }
