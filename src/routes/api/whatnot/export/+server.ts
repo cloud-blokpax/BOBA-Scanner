@@ -7,6 +7,7 @@
 
 import { json, error } from '@sveltejs/kit';
 import { generateWhatnotCSV, type WhatnotExportCard, type WhatnotExportOptions } from '$lib/services/whatnot-export';
+import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
 
 // Fetches up to 500 cards + prices + collection + images = multi-query chain
@@ -15,6 +16,12 @@ export const config = { maxDuration: 60 };
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to export');
+
+	const rateLimit = await checkMutationRateLimit(user.id);
+	if (!rateLimit.success) {
+		return json({ error: 'Too many export requests' }, { status: 429 });
+	}
+
 	if (!locals.supabase) throw error(503, 'Database not available');
 
 	// Pro gate — Whatnot export is a premium feature
