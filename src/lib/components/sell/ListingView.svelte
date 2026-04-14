@@ -9,6 +9,7 @@
 	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
 	import { user } from '$lib/stores/auth.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import { uiPref } from '$lib/stores/ui-prefs.svelte';
 	import { getUserProfile } from '$lib/stores/feature-flags.svelte';
 
 	interface Props {
@@ -59,7 +60,8 @@
 	let error = $state<string | null>(null);
 	let showAdvanced = $state(false);
 	let showListingOptions = $state(false);
-	let showEditDetails = $state(false);
+	const editDetailsPref = uiPref('listing-edit-details', true);
+	let showEditDetails = $derived(editDetailsPref.value);
 
 	// ── Weekly listing limit ─────────────────────────────────
 	let weeklyCount = $state(0);
@@ -407,7 +409,7 @@
 			{/if}
 
 			<!-- Admin-only: ST price comparison (never rendered for non-admin) -->
-			{#if isAdmin && (stData || stLoading)}
+			{#if isAdmin}
 				<div class="stl-st-price-row">
 					{#if stLoading}
 						<span class="stl-st-label">ST</span>
@@ -456,18 +458,30 @@
 	{/if}
 
 	<!-- ── EDIT DETAILS (collapsible — for power sellers) ── -->
-	<button class="stl-toggle-advanced stl-toggle-edit" onclick={() => showEditDetails = !showEditDetails}>
-		{showEditDetails ? '▾' : '▸'} Edit Listing Details
+	<button class="stl-toggle-advanced stl-toggle-edit" onclick={() => editDetailsPref.value = !editDetailsPref.value}>
+		{editDetailsPref.value ? '▾' : '▸'} Edit Listing Details
 	</button>
 
-	{#if showEditDetails}
+	{#if editDetailsPref.value}
 	<div class="stl-edit-panel">
 
 	<!-- Admin-only: Scraping Test detail panel -->
-	{#if isAdmin && stData}
+	{#if isAdmin}
 		<details class="stl-st-details" bind:open={stExpanded}>
 			<summary class="stl-section-label stl-summary">Scraping Test</summary>
 			<div class="stl-st-grid">
+				{#if stLoading}
+					<div class="stl-st-row">
+						<span class="stl-st-key">Status</span>
+						<span class="stl-st-val stl-st-loading">Loading...</span>
+					</div>
+				{:else if !stData}
+					<div class="stl-st-row">
+						<span class="stl-st-key">Status</span>
+						<span class="stl-st-val stl-st-na">No scrape data for this card</span>
+					</div>
+				{/if}
+				{#if stData}
 				<div class="stl-st-row">
 					<span class="stl-st-key">ST Price</span>
 					<span class="stl-st-val">{stData.st_price != null ? `$${stData.st_price.toFixed(2)}` : '—'}</span>
@@ -511,6 +525,7 @@
 						<summary class="stl-st-raw-summary">Raw Data</summary>
 						<pre class="stl-st-raw-pre">{JSON.stringify(stData.st_raw_data, null, 2)}</pre>
 					</details>
+				{/if}
 				{/if}
 			</div>
 		</details>
