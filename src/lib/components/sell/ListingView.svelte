@@ -4,6 +4,8 @@
 	import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
+	import { triggerHaptic } from '$lib/utils/haptics';
+	import { generateWhatnotCSV, downloadWhatnotCSV, type WhatnotExportCard } from '$lib/services/whatnot-export';
 	import type { Card, PriceData } from '$lib/types';
 
 	interface Props {
@@ -167,6 +169,52 @@
 		weapon_type: weaponType || null,
 		name: heroName || null
 	}));
+
+	let whatnotExporting = $state(false);
+
+	async function handleExportWhatnot() {
+		if (!card) return;
+		whatnotExporting = true;
+
+		// Upload blob image to Supabase to get a public URL (same as eBay flow)
+		let publicImageUrl: string | null = null;
+		if (imageUrl && card.id) {
+			try {
+				publicImageUrl = await uploadScanImageForListing(card.id, imageUrl);
+			} catch {
+				// Continue without image — CSV will have empty image column
+			}
+		}
+
+		const exportCard: WhatnotExportCard = {
+			id: card.id,
+			hero_name: card.hero_name,
+			name: card.name,
+			athlete_name: card.athlete_name,
+			card_number: card.card_number,
+			set_code: card.set_code,
+			parallel: card.parallel,
+			weapon_type: card.weapon_type,
+			power: card.power,
+			rarity: card.rarity,
+			price_mid: price ? parseFloat(price) : null,
+			quantity: quantity,
+			condition: condition,
+			image_url: publicImageUrl
+		};
+
+		const csv = generateWhatnotCSV([exportCard], {
+			listingType: 'Buy It Now',
+			priceMultiplier: 1.0,
+			shippingProfile: '0-1 oz',
+			offerable: true
+		});
+
+		const heroSlug = (card.hero_name || card.name || 'card').replace(/\s+/g, '-').toLowerCase();
+		downloadWhatnotCSV(csv, `whatnot-${heroSlug}.csv`);
+		triggerHaptic('success');
+		whatnotExporting = false;
+	}
 
 	async function createEbayDraft() {
 		const numPrice = parseFloat(price);
@@ -606,6 +654,16 @@
 		</button>
 	{/if}
 
+	<!-- Whatnot Export -->
+	<button
+		class="stl-btn stl-btn-whatnot"
+		onclick={handleExportWhatnot}
+		disabled={whatnotExporting}
+		title="Download CSV for Whatnot bulk import"
+	>
+		{whatnotExporting ? 'Exporting...' : 'Export to Whatnot'}
+	</button>
+
 	{#if error}
 		<p class="stl-error">{error}</p>
 	{/if}
@@ -888,6 +946,16 @@
 	.stl-btn-create:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.stl-btn-whatnot {
+		background: #7c3aed;
+		color: white;
+		margin-top: 8px;
+	}
+	.stl-btn-whatnot:active {
+		background: #6d28d9;
+		transform: scale(0.98);
 	}
 
 	.stl-btn-connect {
