@@ -112,13 +112,38 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}, { status: 503 });
 	}
 
-	// Batch fetch all card metadata in a single query instead of one per card
+	// Batch fetch card metadata — heroes first, then play cards for any IDs not found
 	const { data: cardsData } = await supabase
 		.from('cards')
 		.select('id, hero_name, athlete_name, card_number, set_code, parallel, weapon_type')
 		.in('id', cardIds);
 
 	const cardMap = new Map((cardsData || []).map(c => [c.id, c]));
+
+	// Find card IDs not in the hero table — these might be play cards
+	const missingIds = cardIds.filter(id => !cardMap.has(id));
+	const playCardIds = new Set<string>();
+
+	if (missingIds.length > 0) {
+		const { data: playCardsData } = await supabase
+			.from('play_cards')
+			.select('id, name, card_number, release')
+			.in('id', missingIds);
+
+		for (const pc of playCardsData || []) {
+			// Adapt play card shape to match hero card shape for buildEbaySearchQuery
+			cardMap.set(pc.id, {
+				id: pc.id,
+				hero_name: null,
+				athlete_name: null,
+				card_number: pc.card_number,
+				set_code: pc.release || '',
+				parallel: null,
+				weapon_type: null
+			});
+			playCardIds.add(pc.id);
+		}
+	}
 
 	// Parallelize eBay API calls (up to 10 concurrent)
 	const pricePromises = cardIds.map(async (cardId) => {
@@ -160,10 +185,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				fetched_at: new Date().toISOString()
 			};
 
+			// Route to correct cache table: play cards → play_price_cache (TEXT key),
+			// hero cards → price_cache (UUID key)
+			const cacheTable = playCardIds.has(cardId) ? 'play_price_cache' : 'price_cache';
 			const cacheClient = getAdminClient() || supabase;
-			const { error: cacheError } = await cacheClient.from('price_cache').upsert(priceData, { onConflict: 'card_id,source' });
+			const { error: cacheError } = await cacheClient.from(cacheTable).upsert(priceData, { onConflict: 'card_id,source' });
 			if (cacheError) {
-				console.error(`[deck/refresh-prices] price_cache upsert FAILED for ${cardId}:`, cacheError.message);
+				console.error(`[deck/refresh-prices] ${cacheTable} upsert FAILED for ${cardId}:`, cacheError.message);
 			}
 
 			return {

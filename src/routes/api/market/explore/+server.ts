@@ -234,12 +234,12 @@ async function handlePlayCards(
 	admin: ReturnType<typeof getAdminClient> & object,
 	opts: { priceMin: number; priceMax: number; sort: string; limit: number; offset: number; pricedOnly: boolean }
 ) {
-	// PostgREST can't join play_cards → price_cache (no FK relationship),
-	// so we use a two-query approach: fetch prices, fetch play card details, merge.
+	// Play card prices live in play_price_cache (TEXT card_id), not price_cache (UUID).
+	// Two-query approach: fetch prices from play_price_cache, fetch card details, merge.
 
-	// Step 1: Get all play card prices from price_cache
+	// Step 1: Get all play card prices from play_price_cache
 	let priceQuery = admin
-		.from('price_cache')
+		.from('play_price_cache')
 		.select('card_id, price_low, price_mid, price_high, buy_now_low, buy_now_mid, buy_now_count, listings_count, filtered_count, confidence_score, fetched_at')
 		.eq('source', 'ebay')
 		.not('price_mid', 'is', null);
