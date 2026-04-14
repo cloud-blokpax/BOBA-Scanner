@@ -4,10 +4,10 @@
  * Every server-side path that searches eBay for card prices MUST use this.
  *
  * Search priority (highest → lowest):
- *   1. Card Number — exact match (strongest unique identifier)
- *   2. Hero Name + Parallel + Weapon — exact match
- *   3. Athlete Name + Parallel + Weapon — exact match
- *   4. Fuzzy — hero or athlete name substring match
+ *   1. Hero Name + Parallel (most common path)
+ *   2. Athlete Name + Parallel
+ *   3. Card Number prefix (inherently parallel-specific)
+ *   4. Broad hero/athlete match with parallel gate
  */
 
 import { buildEbayApiQuery } from '$lib/utils/ebay-title';
@@ -17,7 +17,7 @@ export type { EbayCardInfo as EbayQueryCard };
 
 /**
  * Build the eBay Browse API search query for a card.
- * Includes hero, game name, athlete, and card number for broad API results.
+ * Includes hero, game name, parallel, and athlete for targeted API results.
  * Filtering is done post-fetch by filterRelevantListings().
  */
 export function buildEbaySearchQuery(card: EbayCardInfo): string {
@@ -27,33 +27,31 @@ export function buildEbaySearchQuery(card: EbayCardInfo): string {
 /**
  * Filter eBay item summaries to those matching a specific card.
  *
- * Uses a tiered priority system:
- *   Tier 1: Card number exact match (strongest signal)
- *   Tier 2: Hero name + parallel + weapon exact match
- *   Tier 3: Athlete name + parallel + weapon exact match
- *   Tier 4: Fuzzy — hero OR athlete name appears in title
+ * KEY PRINCIPLE: When the card has a known parallel (non-paper/base),
+ * every tier enforces parallel matching. This prevents mixing a $3
+ * Orange Battlefoil with a $200 Gum Battlefoil.
  *
- * All tiers require the listing to reference BoBA ("BATTLE ARENA" or "BOBA")
- * to eliminate non-game listings.
+ * Tier priority (returns first tier with results):
+ *   Tier 1: Hero name + parallel match (most common successful path)
+ *   Tier 2: Athlete name + parallel match
+ *   Tier 3: Card number prefix match (parallel inherently encoded in prefix)
+ *   Tier 4: Hero OR athlete name — STILL requires parallel when known
  *
- * Returns items from the HIGHEST matching tier. If Tier 1 has matches,
- * only Tier 1 results are returned (most precise). Falls through to
- * lower tiers only if no matches found at the current tier.
+ * All tiers require the listing to reference BoBA ("BATTLE ARENA" or "BOBA").
+ * Weapon is never required — it's too inconsistent in seller listings.
  */
 export function filterRelevantListings<T extends { title?: string }>(
 	items: T[],
 	card: EbayCardInfo
 ): T[] {
-	const cardNum = (card.card_number || '').toUpperCase();
-	const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 	const heroStr = (card.hero_name || card.name || '').toUpperCase().trim();
 	const athleteStr = (card.athlete_name || '').toUpperCase().trim();
 	const parallelStr = (card.parallel || '').toUpperCase().trim();
-	const weaponStr = (card.weapon_type || '').toUpperCase().trim();
+	const cardNum = (card.card_number || '').toUpperCase();
+	const normalizedCardNum = cardNum.replace(/[-\s]/g, '');
 
 	// Skip base/paper parallels for matching purposes
 	const hasParallel = parallelStr && parallelStr !== 'PAPER' && parallelStr !== 'BASE';
-	const hasWeapon = !!weaponStr;
 
 	// Pre-filter: must reference BoBA
 	const bobaItems = items.filter(item => {
@@ -64,42 +62,50 @@ export function filterRelevantListings<T extends { title?: string }>(
 
 	if (bobaItems.length === 0) return [];
 
-	// ── Tier 1: Card Number exact match ──────────────────────
-	if (normalizedCardNum) {
+	// Helper: check if listing matches the parallel
+	const matchesParallel = (title: string): boolean => {
+		if (!hasParallel) return true; // No parallel to check = everything passes
+		return title.includes(parallelStr);
+	};
+
+	// ── Tier 1: Hero Name + Parallel ─────────────────────────
+	// Most common path. Sellers almost always include hero name + parallel.
+	if (heroStr && heroStr.length > 2) {
 		const tier1 = bobaItems.filter(item => {
-			const normalizedTitle = item.title!.toUpperCase().replace(/[-\s]/g, '');
-			return normalizedTitle.includes(normalizedCardNum);
+			const t = item.title!.toUpperCase();
+			return includesAllWords(t, heroStr) && matchesParallel(t);
 		});
 		if (tier1.length > 0) return tier1;
 	}
 
-	// ── Tier 2: Hero Name + Parallel + Weapon exact match ────
-	if (heroStr && heroStr.length > 2) {
+	// ── Tier 2: Athlete Name + Parallel ──────────────────────
+	// Some sellers use athlete name instead of hero name.
+	if (athleteStr && athleteStr.length > 2) {
 		const tier2 = bobaItems.filter(item => {
 			const t = item.title!.toUpperCase();
-			if (!includesAllWords(t, heroStr)) return false;
-			if (hasParallel && !t.includes(parallelStr)) return false;
-			if (hasWeapon && !t.includes(weaponStr)) return false;
-			return true;
+			return includesAllWords(t, athleteStr) && matchesParallel(t);
 		});
 		if (tier2.length > 0) return tier2;
 	}
 
-	// ── Tier 3: Athlete Name + Parallel + Weapon exact match ─
-	if (athleteStr && athleteStr.length > 2) {
+	// ── Tier 3: Card Number prefix match ─────────────────────
+	// Card number includes the parallel prefix (e.g., OBF-20 = Orange Battlefoil).
+	// So a card number match is inherently parallel-specific.
+	if (normalizedCardNum && normalizedCardNum.length > 2) {
 		const tier3 = bobaItems.filter(item => {
-			const t = item.title!.toUpperCase();
-			if (!includesAllWords(t, athleteStr)) return false;
-			if (hasParallel && !t.includes(parallelStr)) return false;
-			if (hasWeapon && !t.includes(weaponStr)) return false;
-			return true;
+			const normalizedTitle = item.title!.toUpperCase().replace(/[-\s]/g, '');
+			return normalizedTitle.includes(normalizedCardNum);
 		});
 		if (tier3.length > 0) return tier3;
 	}
 
-	// ── Tier 4: Fuzzy — hero OR athlete name substring ───────
+	// ── Tier 4: Broad hero/athlete match WITH parallel gate ──
+	// Fallback, but STILL requires parallel match when parallel is known.
+	// This is the critical difference from the old code, which had NO
+	// parallel check here and let all parallels through.
 	const tier4 = bobaItems.filter(item => {
 		const t = item.title!.toUpperCase();
+		if (!matchesParallel(t)) return false; // Enforce parallel even in fallback
 		if (heroStr && heroStr.length > 2 && includesAllWords(t, heroStr)) return true;
 		if (athleteStr && athleteStr.length > 2 && includesAllWords(t, athleteStr)) return true;
 		return false;

@@ -9,10 +9,10 @@
  * fields are omitted.
  *
  * Search query tiers (see ebay-query.ts for server-side usage):
- *   1. Card Number (exact)
- *   2. Hero Name + Parallel + Weapon (exact)
- *   3. Athlete Name + Parallel + Weapon (exact)
- *   4. Fuzzy / broad
+ *   1. Hero Name + Parallel (most common path)
+ *   2. Athlete Name + Parallel
+ *   3. Card Number prefix (inherently parallel-specific)
+ *   4. Broad hero/athlete match with parallel gate
  */
 
 const GAME_NAME = 'Bo Jackson Battle Arena';
@@ -123,21 +123,31 @@ export function buildEbaySearchQuery(card: EbayCardInfo): string {
 
 /**
  * Build a concise eBay API query for Browse API searches.
- * Includes hero + game + athlete + card number (drops parallel/weapon for breadth).
+ *
+ * Priority: Hero Name → Game Name → Parallel → Athlete Name
+ *
+ * Card number is deliberately EXCLUDED — sellers rarely include it in
+ * listing titles (fails 95%+ of the time) and its presence over-constrains
+ * the search. Parallel is INCLUDED because it's the primary differentiator
+ * between card variants at wildly different price points.
  */
 export function buildEbayApiQuery(card: EbayCardInfo): string {
 	const parts: string[] = [];
 
+	// 1. Hero Name — strongest identifier
 	const heroName = (card.hero_name || card.name || '').trim();
 	if (heroName) parts.push(heroName);
 
+	// 2. Game Name — required for BoBA context
 	parts.push(GAME_NAME);
 
+	// 3. Parallel — critical price differentiator (skip paper/base)
+	const parallel = cleanParallel(card.parallel);
+	if (parallel) parts.push(parallel);
+
+	// 4. Athlete Name — additional context
 	const athlete = (card.athlete_name || '').trim();
 	if (athlete) parts.push(athlete);
-
-	const cardNum = (card.card_number || '').trim();
-	if (cardNum) parts.push(cardNum);
 
 	return parts.join(SEPARATOR);
 }
