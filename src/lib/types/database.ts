@@ -1119,6 +1119,39 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['play_price_history']['Insert']>;
 				Relationships: [];
 			};
+			scraping_test: {
+				Row: {
+					card_id: string;
+					st_price: number | null;
+					st_low: number | null;
+					st_high: number | null;
+					st_source_id: string | null;
+					st_card_name: string | null;
+					st_set_name: string | null;
+					st_variant: string | null;
+					st_rarity: string | null;
+					st_image_url: string | null;
+					st_raw_data: Record<string, unknown> | null;
+					st_updated: string | null;
+					created_at: string;
+				};
+				Insert: {
+					card_id: string;
+					st_price?: number | null;
+					st_low?: number | null;
+					st_high?: number | null;
+					st_source_id?: string | null;
+					st_card_name?: string | null;
+					st_set_name?: string | null;
+					st_variant?: string | null;
+					st_rarity?: string | null;
+					st_image_url?: string | null;
+					st_raw_data?: Record<string, unknown> | null;
+					st_updated?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['scraping_test']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
