@@ -6,8 +6,6 @@
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import ListingHistory from '$lib/components/sell/ListingHistory.svelte';
-	import { getBuiltInTemplate, generateCSV, downloadFile } from '$lib/services/export-templates';
-	import { getAllTags } from '$lib/stores/tags.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -96,47 +94,6 @@
 	});
 
 	onMount(() => { loadCollection(); });
-
-	function buildExportRows(): Record<string, unknown>[] {
-		return items.map((item) => {
-			const card = item.card;
-			const tags = card ? getAllTags() : {};
-			const cardTags = card ? (tags[card.id] || []) : [];
-			return {
-				cardId: card?.id || '',
-				hero: card?.hero_name || '',
-				athlete: card?.athlete_name || '',
-				year: '',
-				set: card?.set_code || '',
-				cardNumber: card?.card_number || '',
-				weapon: card?.weapon_type || '',
-				power: card?.power ?? '',
-				condition: item.condition || '',
-				notes: item.notes || '',
-				tags: cardTags.join('; '),
-				rarity: card?.rarity || '',
-				ebayAvgPrice: '',
-				ebayLowPrice: '',
-				ebayBuyNowPrice: '',
-				listingPrice: '',
-				ebaySearchUrl: ''
-			};
-		});
-	}
-
-	function quickExport(templateId: string) {
-		const tpl = getBuiltInTemplate(templateId);
-		if (!tpl) return;
-		const rows = buildExportRows();
-		if (rows.length === 0) {
-			showToast('No cards to export', 'x');
-			return;
-		}
-		const csv = generateCSV(rows, tpl.fields);
-		const date = new Date().toISOString().split('T')[0];
-		downloadFile(csv, `boba-${tpl.name.toLowerCase().replace(/\s+/g, '-')}-${date}.csv`);
-		showToast(`Exported ${rows.length} cards`, 'check');
-	}
 </script>
 
 <div class="sell-page">
@@ -166,35 +123,6 @@
 	{#if !ebayConnected && ebayChecked && ebayConfigured}
 		<p class="sell-connect-hint">Connect your eBay account below to enable listing</p>
 	{/if}
-
-	<!-- Whatnot batch export -->
-	{#if onStartWhatnot}
-		<div class="whatnot-section">
-			<button class="sell-cta whatnot-cta" onclick={onStartWhatnot}>
-				<span class="sell-cta-icon">📦</span>
-				<div class="sell-cta-text">
-					<span class="sell-cta-label">Whatnot CSV</span>
-					<span class="sell-cta-hint">Batch scan → CSV import</span>
-				</div>
-			</button>
-		</div>
-	{/if}
-
-	<!-- Export Options — secondary, for bulk operations -->
-	<div class="export-section">
-		<h2 class="section-heading">Export</h2>
-		<div class="export-row">
-			<button class="export-btn" onclick={() => quickExport('__builtin_general')}>
-				📄 Collection CSV
-			</button>
-			<button class="export-btn" onclick={() => quickExport('__builtin_ebay')}>
-				🛒 eBay CSV
-			</button>
-			<a href="/export" class="export-btn export-btn-link">
-				⚙ Custom
-			</a>
-		</div>
-	</div>
 
 	<!-- eBay Seller Connection -->
 	{#if ebayChecked}
@@ -455,31 +383,6 @@
 		text-align: center;
 		margin: -0.25rem 0 1rem;
 	}
-
-	/* Export section */
-	.export-section { margin-bottom: 1.5rem; }
-
-	.export-row {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.export-btn {
-		flex: 1;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: var(--bg-elevated, #121d34);
-		border: 1px solid var(--border, rgba(148,163,184,0.10));
-		color: var(--text-secondary, #94a3b8);
-		font-size: 0.8rem;
-		font-weight: 500;
-		cursor: pointer;
-		text-align: center;
-		text-decoration: none;
-		display: inline-block;
-	}
-
-	.export-btn:hover { border-color: var(--border-strong, rgba(148,163,184,0.25)); color: var(--text-primary, #e2e8f0); }
 
 	/* eBay connection */
 	.ebay-connect-section { margin-bottom: 2rem; }
