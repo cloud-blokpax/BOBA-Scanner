@@ -25,6 +25,13 @@ function triggerPush(): void {
 let _items = $state<CollectionItem[]>([]);
 let _loading = $state(false);
 
+/**
+ * Game filter for the collection view.
+ * 'all' = show cards from all games (unified view, default).
+ * 'boba' / 'wonders' = show only that game's cards.
+ */
+let _gameFilter = $state<'all' | string>('all');
+
 // Track when items were last locally modified for sync conflict resolution
 const _localModifiedAt = new Map<string, number>();
 
@@ -41,7 +48,16 @@ export function clearLocalModifications(): void {
 }
 
 // ── Public reactive accessors ──────────────────────────────────
-export function collectionItems(): CollectionItem[] { return _items; }
+export function gameFilter(): 'all' | string { return _gameFilter; }
+export function setGameFilter(filter: 'all' | string): void { _gameFilter = filter; }
+
+/** Returns items filtered by the current game filter. */
+export function collectionItems(): CollectionItem[] {
+	if (_gameFilter === 'all') return _items;
+	return _items.filter(item => (item.card?.game_id || 'boba') === _gameFilter);
+}
+/** Returns all items regardless of game filter (used by sync, counts, etc.) */
+export function allCollectionItems(): CollectionItem[] { return _items; }
 export function collectionLoading(): boolean { return _loading; }
 export function collectionCount(): number {
 	return _items.reduce((sum, item) => sum + (item.quantity || 1), 0);
@@ -105,7 +121,8 @@ export async function addToCollection(
 	cardId: string,
 	condition = 'near_mint',
 	notes: string | null = null,
-	scanImageBlob?: Blob | null
+	scanImageBlob?: Blob | null,
+	gameId: string = 'boba'
 ): Promise<void> {
 	const lockKey = `${cardId}:${condition}`;
 
@@ -115,7 +132,7 @@ export async function addToCollection(
 	}
 
 	const promise = (async () => {
-		const item = await upsertCollectionItem(cardId, condition, notes);
+		const item = await upsertCollectionItem(cardId, condition, notes, gameId);
 		markLocallyModified(cardId);
 
 		// Upload scan image to Supabase Storage if provided (non-blocking)

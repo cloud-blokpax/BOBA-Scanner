@@ -13,15 +13,13 @@ import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-lim
 import { getAnthropicClient } from '$lib/server/anthropic';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import { BOBA_CARD_ID_TOOL, BOBA_SYSTEM_PROMPT, BOBA_USER_PROMPT } from '$lib/games/boba/prompt';
+import { resolveGameConfig, isValidGameId } from '$lib/games/resolver';
 import type { RequestHandler } from './$types';
 
 // Claude Haiku vision call + sharp CDR + rate limiting = 5-12s typical
 export const config = { maxDuration: 60 };
 
 const { maxFileSize: MAX_FILE_SIZE, maxPixels: MAX_PIXELS, allowedImageTypes: ALLOWED_TYPES } = BOBA_SCAN_CONFIG;
-
-// Tool + prompt definitions imported from $lib/games/boba/prompt
-const CARD_ID_TOOL = BOBA_CARD_ID_TOOL;
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	// ── Auth check (optional — anonymous users get stricter rate limits) ──
@@ -71,6 +69,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	// ── Parse form data ─────────────────────────────────────
 	const formData = await request.formData();
 	const imageFile = formData.get('image');
+	const gameIdParam = formData.get('game_id') as string | null;
 
 	if (!imageFile || !(imageFile instanceof File)) {
 		throw error(400, 'Image file required');
@@ -110,14 +109,30 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	const base64 = cleanBuffer.toString('base64');
 
+	// ── Load game-specific prompt and tool ──────────────────
+	let systemPrompt = BOBA_SYSTEM_PROMPT;
+	let userPrompt = BOBA_USER_PROMPT;
+	let cardIdTool: Anthropic.Messages.Tool = BOBA_CARD_ID_TOOL;
+
+	if (gameIdParam && isValidGameId(gameIdParam)) {
+		try {
+			const gameConfig = await resolveGameConfig(gameIdParam);
+			systemPrompt = gameConfig.claudeSystemPrompt;
+			userPrompt = gameConfig.claudeUserPrompt;
+			cardIdTool = gameConfig.cardIdTool;
+		} catch {
+			// Fall back to BoBA defaults if game config resolution fails
+		}
+	}
+
 	// ── Claude API call with structured output ──────────────
-	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user?.id ?? 'anonymous'}`);
+	console.log(`[api/scan] Sending to Claude: image ${(cleanBuffer.length / 1024).toFixed(1)}KB, user=${user?.id ?? 'anonymous'}, game=${gameIdParam || 'boba'}`);
 	try {
 		const response = await getAnthropicClient().messages.create({
 			model: 'claude-haiku-4-5-20251001',
 			max_tokens: 512,
-			system: BOBA_SYSTEM_PROMPT,
-			tools: [CARD_ID_TOOL],
+			system: systemPrompt,
+			tools: [cardIdTool],
 			tool_choice: { type: 'tool' as const, name: 'identify_card' },
 			messages: [{
 				role: 'user',
@@ -128,7 +143,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 					},
 					{
 						type: 'text',
-						text: BOBA_USER_PROMPT
+						text: userPrompt
 					}
 				]
 			}]

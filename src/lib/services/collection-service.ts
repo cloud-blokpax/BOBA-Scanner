@@ -14,8 +14,10 @@ import type { CollectionItem } from '$lib/types';
 /**
  * Fetch collection from Supabase with card data join.
  * Falls back to IndexedDB cache if Supabase is unconfigured or offline.
+ *
+ * @param gameId - Optional game filter. If omitted, returns all games (unified view).
  */
-export async function fetchCollection(): Promise<CollectionItem[]> {
+export async function fetchCollection(gameId?: string): Promise<CollectionItem[]> {
 	const supabase = getSupabase();
 
 	if (supabase) {
@@ -26,7 +28,7 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 			let offset = 0;
 			let done = false;
 			while (!done) {
-				const { data, error } = await supabase
+				let query = supabase
 					.from('collections')
 					.select(`
 						*,
@@ -34,6 +36,12 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 					`)
 					.order('added_at', { ascending: false })
 					.range(offset, offset + CHUNK - 1);
+
+				if (gameId) {
+					query = query.eq('game_id', gameId);
+				}
+
+				const { data, error } = await query;
 
 				if (error) throw error;
 				if (!data || data.length === 0) { done = true; }
@@ -90,7 +98,8 @@ export async function fetchCollection(): Promise<CollectionItem[]> {
 export async function upsertCollectionItem(
 	cardId: string,
 	condition = 'near_mint',
-	notes: string | null = null
+	notes: string | null = null,
+	gameId: string = 'boba'
 ): Promise<CollectionItem> {
 	const supabase = getSupabase();
 	if (!supabase) throw new Error('Supabase is not configured');
@@ -132,7 +141,8 @@ export async function upsertCollectionItem(
 			card_id: cardId,
 			condition,
 			notes,
-			quantity: 1
+			quantity: 1,
+			game_id: gameId
 		})
 		.select(`*, card:cards(*)`)
 		.single();
