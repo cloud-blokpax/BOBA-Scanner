@@ -48,6 +48,8 @@ export interface WhatnotExportOptions {
 	category?: string;
 	/** Sub Category — default empty (coach fills in Whatnot) */
 	subCategory?: string;
+	/** Whether user is Pro — controls image URL inclusion in CSV */
+	isPro?: boolean;
 }
 
 // ── CSV Column Headers ──────────────────────────────────────
@@ -178,8 +180,8 @@ export function generateWhatnotCSV(
 		const description = buildWhatnotDescription(card, condition);
 		const sku = buildWhatnotSku(card);
 
-		// Validate image URL — must be https://, NOT blob:
-		const imageUrl = card.image_url && card.image_url.startsWith('https://')
+		// Image URL in CSV is Pro-only — free users get blank column
+		const imageUrl = options.isPro && card.image_url && card.image_url.startsWith('https://')
 			? card.image_url
 			: '';
 

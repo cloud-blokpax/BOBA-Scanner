@@ -131,7 +131,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		};
 	});
 
-	const csv = generateWhatnotCSV(exportCards, options);
+	const csv = generateWhatnotCSV(exportCards, {
+		...options,
+		isPro: profile?.is_pro || profile?.is_admin || false
+	});
 
 	return new Response(csv, {
 		status: 200,

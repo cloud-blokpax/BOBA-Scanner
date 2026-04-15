@@ -203,7 +203,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			product: {
 				title: listingTitle,
 				description: htmlDescription,
-				...(body.scanImageUrl && body.scanImageUrl.startsWith('https://') ? { imageUrls: [body.scanImageUrl] } : {}),
+				imageUrls: body.scanImageUrl && body.scanImageUrl.startsWith('https://')
+					? [body.scanImageUrl]
+					: ['https://boba.cards/icon-512.png'],
 				aspects: {
 					'Card Name': [heroName || 'Unknown'],
 					'Set': [body.setCode || 'BoBA'],
