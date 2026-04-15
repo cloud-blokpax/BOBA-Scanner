@@ -1,15 +1,15 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-interface SharedDeck {
+interface DeckView {
 	id: string;
 	user_id: string;
 	name: string;
 	format_id: string;
 	hero_card_ids: string[];
 	play_entries: Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>;
+	is_shared: boolean;
 	created_at: string;
-	view_count: number;
 }
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -33,21 +33,15 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.eq('id', id)
 		.maybeSingle();
 
-	let typedDeck: SharedDeck | null = deck as SharedDeck | null;
+	let typedDeck: DeckView | null = deck as DeckView | null;
 
 	// Only expose user_decks to the owner or if explicitly shared
-	if (typedDeck && typedDeck.user_id !== user?.id && !(typedDeck as SharedDeck & { is_shared?: boolean }).is_shared) {
+	if (typedDeck && typedDeck.user_id !== user?.id && !typedDeck.is_shared) {
 		typedDeck = null;
 	}
 
 	if (!typedDeck) {
-		const { data: shared } = await locals.supabase
-			.from('shared_decks')
-			.select('*')
-			.eq('id', id)
-			.single();
-		if (!shared) throw error(404, 'Deck not found');
-		typedDeck = shared as SharedDeck;
+		throw error(404, 'Deck not found');
 	}
 
 	// Increment view count atomically (non-blocking)

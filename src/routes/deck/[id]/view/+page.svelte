@@ -37,9 +37,6 @@
 		<div class="stat">{heroCount} Heroes</div>
 		<div class="stat">{playCount} Plays</div>
 		<div class="stat">DBS {totalDbs}/1,000</div>
-		{#if data.deck.view_count}
-			<div class="stat views">{data.deck.view_count} views</div>
-		{/if}
 	</div>
 
 	{#if data.deck.hero_card_ids?.length}
@@ -112,8 +109,6 @@
 		color: var(--text-secondary, #94a3b8);
 		font-size: 0.85rem;
 	}
-
-	.views { color: var(--text-tertiary, #64748b); }
 
 	h2 {
 		font-size: 1rem;
