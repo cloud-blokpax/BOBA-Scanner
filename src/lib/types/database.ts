@@ -311,40 +311,22 @@ export interface Database {
 					}
 				];
 			};
-			themes: {
-				Row: {
-					id: string;
-					name: string;
-					description: string | null;
-					config: Record<string, unknown>;
-					is_public: boolean;
-					created_by: string | null;
-					created_at: string;
-				};
-				Insert: {
-					name: string;
-					config: Record<string, unknown>;
-					description?: string | null;
-					is_public?: boolean;
-					created_by?: string | null;
-				};
-				Update: Partial<Database['public']['Tables']['themes']['Insert']>;
-				Relationships: [];
-			};
 			scan_metrics: {
 				Row: {
 					id: string;
 					scan_method: string;
-					processing_ms: number;
+					processing_time_ms: number | null;
 					confidence: number | null;
 					cache_hit: boolean;
+					cache_layer: string | null;
 					created_at: string;
 				};
 				Insert: {
 					scan_method: string;
-					processing_ms: number;
+					processing_time_ms?: number | null;
 					confidence?: number | null;
 					cache_hit?: boolean;
+					cache_layer?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['scan_metrics']['Insert']>;
 				Relationships: [];
@@ -601,29 +583,6 @@ export interface Database {
 					contributed_by?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['card_reference_images']['Insert']>;
-				Relationships: [];
-			};
-			shared_decks: {
-				Row: {
-					id: string;
-					user_id: string;
-					name: string;
-					format_id: string;
-					hero_card_ids: string[];
-					play_entries: unknown[];
-					view_count: number;
-					created_at: string;
-				};
-				Insert: {
-					id?: string;
-					user_id: string;
-					name: string;
-					format_id: string;
-					hero_card_ids?: string[];
-					play_entries?: unknown[];
-					view_count?: number;
-				};
-				Update: Partial<Database['public']['Tables']['shared_decks']['Insert']>;
 				Relationships: [];
 			};
 			deck_submissions: {
