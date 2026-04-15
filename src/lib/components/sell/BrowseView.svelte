@@ -6,6 +6,7 @@
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import ListingHistory from '$lib/components/sell/ListingHistory.svelte';
+	import EbaySetupGuide from './EbaySetupGuide.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -220,6 +221,7 @@
 			{:else if ebayConfigured}
 				<div class="ebay-connect-card">
 					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
+					<EbaySetupGuide />
 					<a href="/auth/ebay" class="btn-ebay-connect" data-sveltekit-reload>Connect eBay Account</a>
 				</div>
 			{:else}
