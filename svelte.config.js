@@ -29,7 +29,8 @@ const config = {
 			$stores: 'src/lib/stores',
 			$workers: 'src/lib/workers',
 			$types: 'src/lib/types',
-			$server: 'src/lib/server'
+			$server: 'src/lib/server',
+			$games: 'src/lib/games'
 		}
 	}
 };
