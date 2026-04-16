@@ -11,8 +11,11 @@
 	import InfoStep from '$lib/components/tournament-entry/InfoStep.svelte';
 	import ConfirmStep from '$lib/components/tournament-entry/ConfirmStep.svelte';
 	import DoneStep from '$lib/components/tournament-entry/DoneStep.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import type { TournamentInfo, HeroCardEntry, PlayCardEntry, PlayerInfo, DeckData, SubmissionResult } from '$lib/components/tournament-entry/types';
 	import type { Card } from '$lib/types';
+
+	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	// ── Wizard state ────────────────────────────────────────
 	let step = $state<'code' | 'info' | 'deck' | 'confirm' | 'done'>('code');
@@ -283,6 +286,11 @@
 </svelte:head>
 
 <div class="enter-page">
+	{#if multiGameEnabled()}
+		<div class="game-scope-note">
+			<span>🏈 Tournaments are currently BoBA-only. Wonders tournament support is coming soon.</span>
+		</div>
+	{/if}
 	{#if loading}
 		<div class="loading">Loading tournament...</div>
 	{:else if fetchError}
@@ -550,6 +558,15 @@
 		max-width: 600px;
 		margin: 0 auto;
 		padding: 1rem;
+	}
+	.game-scope-note {
+		padding: 0.6rem 0.85rem;
+		margin: 0 0 1rem;
+		background: rgba(251, 191, 36, 0.08);
+		border: 1px solid rgba(251, 191, 36, 0.25);
+		border-radius: 10px;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
 	}
 	.loading, .error-state {
 		text-align: center;
