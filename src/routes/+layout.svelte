@@ -14,6 +14,7 @@
 	} from '$lib/stores/pro.svelte';
 	import { scannerActive } from '$lib/stores/scanner.svelte';
 	import { loadNavConfig, clearNavConfig, visibleNavItems } from '$lib/stores/nav-config.svelte';
+	import { loadFeatureFlags } from '$lib/stores/feature-flags.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -58,6 +59,11 @@
 	});
 
 	onMount(() => {
+		// Bootstrap feature flags once per session so gated UI
+		// (multi-game hub, Pro features, etc.) resolves correctly
+		// on every route. Dedupes internally; safe to call anywhere.
+		void loadFeatureFlags();
+
 		// Verify IndexedDB health (fire-and-forget, non-blocking)
 		import('$lib/services/idb').then(({ verifyIdbHealth }) =>
 			verifyIdbHealth().then((status) => {
