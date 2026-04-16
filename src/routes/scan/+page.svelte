@@ -8,8 +8,12 @@
 	import CloseButton from '$lib/components/CloseButton.svelte';
 	import { initScanner, setScannerActive } from '$lib/stores/scanner.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
+	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
 	import type { ScanResult } from '$lib/types';
+
+	// Modes that require Pro (match the gated mode in CameraRollImport)
+	const PRO_MODES = new Set(['batch', 'binder', 'roll']);
 
 	let scanResult = $state<ScanResult | null>(null);
 	let capturedImageUrl = $state<string | null>(null);
@@ -79,6 +83,11 @@
 	}
 
 	function handleModeChange(mode: 'single' | 'batch' | 'binder' | 'roll') {
+		// Gate Pro-only modes — free users get the Go Pro modal instead
+		if (PRO_MODES.has(mode) && !isPro()) {
+			setShowGoProModal(true);
+			return;
+		}
 		scanMode = mode;
 	}
 
@@ -101,16 +110,22 @@
 		{#if !scanResult}
 			<div class="mode-bar">
 				{#each [
-					{ id: 'single', label: 'Single' },
-					{ id: 'batch', label: 'Batch' },
-					{ id: 'binder', label: 'Binder' },
-					{ id: 'roll', label: 'Roll' },
+					{ id: 'single', label: 'Single', pro: false },
+					{ id: 'batch', label: 'Batch', pro: true },
+					{ id: 'binder', label: 'Binder', pro: true },
+					{ id: 'roll', label: 'Roll', pro: true },
 				] as mode}
 					<button
 						class="mode-pill"
 						class:mode-active={scanMode === mode.id}
 						onclick={() => handleModeChange(mode.id as 'single' | 'batch' | 'binder' | 'roll')}
-					>{mode.label}</button>
+						aria-label={mode.pro && !isPro() ? `${mode.label} (Pro)` : mode.label}
+					>
+						{mode.label}
+						{#if mode.pro && !isPro()}
+							<span class="mode-pro-badge" aria-hidden="true">PRO</span>
+						{/if}
+					</button>
 				{/each}
 			</div>
 
@@ -161,6 +176,23 @@
 
 		{#if scanMode === 'single'}
 			<Scanner onResult={handleResult} {isAuthenticated} paused={!!scanResult} {scanMode} {gameHint} />
+		{:else if PRO_MODES.has(scanMode) && !isPro()}
+			<!-- Safety net — user shouldn't reach here (handleModeChange blocks) but URL ?mode=batch could bypass -->
+			<div class="scan-pro-gate">
+				<div class="scan-pro-gate-icon">⭐</div>
+				<h3>Pro feature</h3>
+				<p>
+					{#if scanMode === 'batch'}
+						Batch scanning lets you upload and process multiple card photos at once.
+					{:else if scanMode === 'binder'}
+						Binder scanning reads every card on a binder page in one shot.
+					{:else}
+						Camera Roll import scans up to 50 photos from your phone library.
+					{/if}
+				</p>
+				<button class="scan-pro-btn" onclick={() => setShowGoProModal(true)}>Go Pro</button>
+				<button class="scan-pro-cancel" onclick={() => { scanMode = 'single'; }}>Back to Single</button>
+			</div>
 		{:else if scanMode === 'batch'}
 			{#await import('$lib/components/BatchScanner.svelte') then { default: BatchScanner }}
 				<BatchScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
@@ -323,4 +355,49 @@
 	}
 
 	.game-option-icon { font-size: 1rem; line-height: 1; }
+
+	.mode-pro-badge {
+		display: inline-block;
+		margin-left: 0.25rem;
+		padding: 1px 5px;
+		font-size: 0.55rem;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		border-radius: 3px;
+		background: linear-gradient(135deg, #fbbf24, #f59e0b);
+		color: #1f2937;
+		vertical-align: middle;
+	}
+	.scan-pro-gate {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		padding: 2rem 1.5rem;
+		text-align: center;
+		min-height: 60vh;
+	}
+	.scan-pro-gate-icon { font-size: 3rem; }
+	.scan-pro-gate h3 { font-size: 1.25rem; font-weight: 700; margin: 0; }
+	.scan-pro-gate p { color: var(--text-secondary); max-width: 320px; margin: 0; line-height: 1.5; }
+	.scan-pro-btn {
+		margin-top: 0.75rem;
+		padding: 0.875rem 1.75rem;
+		border-radius: 12px;
+		border: none;
+		background: linear-gradient(135deg, #fbbf24, #f59e0b);
+		color: #1f2937;
+		font-size: 1rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.scan-pro-cancel {
+		background: transparent;
+		border: none;
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		cursor: pointer;
+		padding: 0.5rem;
+	}
 </style>

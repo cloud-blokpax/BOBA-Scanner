@@ -34,6 +34,10 @@
 		onSelectCard: (card: SimulatedCard) => void;
 	} = $props();
 
+	const boxTotal = $derived(
+		boxResults.reduce((sum, pack) => sum + (pack.totalValue ?? 0), 0)
+	);
+
 	function rarityColor(weapon: string): string {
 		return getWeapon(weapon)?.color || '#9CA3AF';
 	}
@@ -45,6 +49,17 @@
 
 <div class="box-summary">
 	<h2>Box Results &mdash; {boxResults.length} Packs</h2>
+
+	{#if boxTotal > 0}
+		<div class="box-ev-card">
+			<div class="box-ev-label">Simulated Box Value</div>
+			<div class="box-ev-value">${boxTotal.toFixed(2)}</div>
+			<div class="box-ev-disclaimer">
+				Hypothetical simulation only — not a prediction of real box value.
+				Sums current eBay market prices for the specific cards pulled across {boxResults.length} simulated packs.
+			</div>
+		</div>
+	{/if}
 	{#each boxResults as pack, packIdx}
 		<details class="pack-detail">
 			<summary>Pack {packIdx + 1}{pack.bestCard ? ` — Best: ${pack.bestCard.heroName} (${pack.bestCard.weaponType})` : ''}</summary>
@@ -111,5 +126,34 @@
 	@keyframes floatIn {
 		from { opacity: 0; transform: translateY(20px); }
 		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.box-ev-card {
+		background: linear-gradient(135deg, var(--bg-elevated), var(--bg-base));
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1rem;
+		margin-bottom: 0.75rem;
+		text-align: center;
+	}
+	.box-ev-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.box-ev-value {
+		font-size: 1.75rem;
+		font-weight: 800;
+		color: var(--text-primary);
+		margin: 0.25rem 0 0.5rem;
+	}
+	.box-ev-disclaimer {
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		font-style: italic;
+		line-height: 1.4;
+		opacity: 0.85;
 	}
 </style>

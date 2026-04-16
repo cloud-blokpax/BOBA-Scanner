@@ -5,6 +5,7 @@
 	import { fetchUserDecks, deleteDeck, computeDeckStats, createDeck, updateDeckContents, getFormatDefaults, type UserDeck } from '$lib/services/deck-service';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { setShowGoProModal } from '$lib/stores/pro.svelte';
 
 	const formatOptions = getFormatOptions();
 	const isAuthenticated = $derived(!!$page.data.user);
@@ -62,13 +63,13 @@
 		if (!legacyDeck) return;
 		const formatId = (legacyDeck.formatId as string) || 'spec_playmaker';
 		const defaults = getFormatDefaults(formatId);
-		const deckId = await createDeck({
+		const result = await createDeck({
 			...defaults,
 			name: (legacyDeck.name as string) || 'Imported Deck',
 		});
 
-		if (deckId) {
-			await updateDeckContents(deckId, {
+		if (result.ok) {
+			await updateDeckContents(result.deckId, {
 				hero_card_ids: (legacyDeck.heroCardIds as string[]) || [],
 				play_entries: (legacyDeck.playEntries as Array<{ cardNumber: string; setCode: string; name: string; dbs: number }>) || [],
 				hot_dog_count: (legacyDeck.hotDogCount as number) ?? 10
@@ -77,6 +78,14 @@
 			showLegacyImportPrompt = false;
 			await loadDecks();
 			showToast('Deck imported successfully!', 'check');
+		} else if (result.reason === 'limit_reached') {
+			showToast(
+				`Can't import: free accounts are limited to ${result.limit} decks. Upgrade to Pro to import and keep unlimited decks.`,
+				'x'
+			);
+			setShowGoProModal(true);
+		} else {
+			showToast('Failed to import deck', 'x');
 		}
 	}
 
