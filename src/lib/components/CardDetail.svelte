@@ -9,6 +9,8 @@
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import VariantBadge from '$lib/components/VariantBadge.svelte';
 	import DragonPointsCard from '$lib/components/DragonPointsCard.svelte';
+	import WondersVariantPricePanel from '$lib/components/WondersVariantPricePanel.svelte';
+	import type { VariantCode } from '$lib/data/variants';
 	import type { CollectionItem } from '$lib/types';
 	import type { ActionReturn } from 'svelte/action';
 
@@ -38,6 +40,19 @@
 		ebayConnected?: boolean;
 		onClose: () => void;
 	} = $props();
+
+	// ── Phase 3: variant preview state for Wonders ───────────────
+	// Defaults to the owned variant; user can preview pricing for other variants
+	// via the WondersVariantPricePanel without changing what's in their collection.
+	let viewedVariant = $state<VariantCode>('paper');
+	let lastItemIdForVariant = '';
+	$effect(() => {
+		const id = item?.id || '';
+		if (id !== lastItemIdForVariant) {
+			lastItemIdForVariant = id;
+			viewedVariant = ((item?.variant || 'paper') as VariantCode);
+		}
+	});
 
 	// ── Quantity ────────────────────────────────────
 	let updating = $state(false);
@@ -236,9 +251,18 @@
 							</div>
 						{/if}
 
-						<!-- Dragon Points (Phase 3, Step 3.2) — gated on multi_game_ui + Wonders -->
+						<!-- Variant price panel (Phase 3, Step 3.5) — switch to preview other variant prices -->
 						{#if multiGameEnabled() && card}
-							<DragonPointsCard {card} variant={item?.variant || 'paper'} />
+							<WondersVariantPricePanel
+								{card}
+								currentVariant={viewedVariant}
+								onVariantChange={(v) => (viewedVariant = v)}
+							/>
+						{/if}
+
+						<!-- Dragon Points (Phase 3, Step 3.2) — reacts to the currently viewed variant -->
+						{#if multiGameEnabled() && card}
+							<DragonPointsCard {card} variant={viewedVariant} />
 						{/if}
 					{/if}
 
