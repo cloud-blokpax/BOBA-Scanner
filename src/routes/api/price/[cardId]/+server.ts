@@ -18,13 +18,21 @@ export const config = { maxDuration: 60 };
 import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async ({ params, locals, getClientAddress }) => {
+export const GET: RequestHandler = async ({ params, url, locals, getClientAddress }) => {
 	const { cardId } = params;
 
 	// Validate cardId format (UUID or alphanumeric identifier)
 	if (!cardId || !/^[\w-]{1,64}$/.test(cardId)) {
 		throw error(400, 'Invalid card ID');
 	}
+
+	// Phase 2.5: price is keyed by (card_id, source, variant). Default to
+	// 'paper' for backward compat — existing callers that don't pass a
+	// variant get the Paper price (which is the only variant we have today
+	// for all existing rows).
+	const ALLOWED_VARIANTS = new Set(['paper', 'cf', 'ff', 'ocm', 'sf']);
+	const rawVariant = (url.searchParams.get('variant') || 'paper').toLowerCase();
+	const variant = ALLOWED_VARIANTS.has(rawVariant) ? rawVariant : 'paper';
 
 	// Play cards use TEXT IDs (e.g., A---PL-1); hero cards use UUIDs.
 	// Detect early so we route to the correct cache table before the card lookup.
@@ -61,14 +69,20 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 
 	// Check price cache (4-hour freshness) — use service role to bypass RLS.
 	// Play cards use play_price_cache (TEXT key); heroes use price_cache (UUID key).
+	// Phase 2.5: price_cache is keyed by (card_id, source, variant).
 	const cacheTable = isPlayCard ? 'play_price_cache' : 'price_cache';
 	const cacheClient = getAdminClient() || locals.supabase;
-	const { data: cachedRaw } = await cacheClient
+	let cacheQuery = cacheClient
 		.from(cacheTable)
 		.select('*')
 		.eq('card_id', cardId)
-		.eq('source', 'ebay')
-		.single();
+		.eq('source', 'ebay');
+	// play_price_cache doesn't have a variant column (play cards are always 'paper');
+	// only filter by variant on the hero cards table.
+	if (!isPlayCard) {
+		cacheQuery = (cacheQuery as unknown as { eq: (c: string, v: string) => typeof cacheQuery }).eq('variant', variant);
+	}
+	const { data: cachedRaw } = await cacheQuery.single();
 
 	const cached = cachedRaw as { card_id: string; source: string; price_low: number | null; price_mid: number | null; price_high: number | null; listings_count: number | null; fetched_at: string } | null;
 
@@ -163,7 +177,9 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
-		const priceData = {
+		// Phase 2.5: include variant on hero price_cache rows. Play cards are
+		// always paper — their cache table doesn't have a variant column.
+		const priceData: Record<string, unknown> = {
 			card_id: cardId,
 			source: 'ebay',
 			price_low: allStats?.low ?? null,
@@ -177,15 +193,19 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 			confidence_score: allStats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
+		if (!isPlayCard) priceData.variant = variant;
 
 		// Update cache — use service role to bypass RLS.
 		// Play cards → play_price_cache (TEXT key), heroes → price_cache (UUID key).
+		// Hero price_cache PK is now (card_id, source, variant).
 		try {
 			const adminClient = getAdminClient();
 			if (!adminClient) throw new Error('Admin client unavailable for cache write');
-			const { error: cacheError } = await adminClient.from(cacheTable).upsert(priceData, {
-				onConflict: 'card_id,source'
-			});
+			const onConflictKey = isPlayCard ? 'card_id,source' : 'card_id,source,variant';
+			// Cast through unknown: generated types are stale (no `variant` column yet).
+			const { error: cacheError } = await (adminClient.from(cacheTable) as unknown as {
+				upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
+			}).upsert(priceData, { onConflict: onConflictKey });
 			if (cacheError) {
 				console.error('[api/price] price_cache upsert FAILED:', cacheError.message);
 			}
@@ -207,9 +227,11 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 				.limit(1)
 				.maybeSingle();
 
-			const priceChanged = !lastEntry || lastEntry.price_mid !== priceData.price_mid;
+			const priceChanged = !lastEntry || lastEntry.price_mid !== (priceData.price_mid as number | null);
 			if (priceChanged) {
-				const { error: historyError } = await historyClient.from(historyTable).insert({
+				// Cast through unknown for the insert — priceData is Record<string, unknown>
+				// to carry variant, and the generated Supabase types don't know about it yet.
+				const historyRow: Record<string, unknown> = {
 					card_id: cardId,
 					source: 'ebay',
 					price_low: priceData.price_low,
@@ -217,7 +239,11 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 					price_high: priceData.price_high,
 					listings_count: priceData.listings_count,
 					recorded_at: new Date().toISOString()
-				});
+				};
+				if (!isPlayCard) historyRow.variant = variant;
+				const { error: historyError } = await (historyClient.from(historyTable) as unknown as {
+					insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+				}).insert(historyRow);
 				if (historyError) {
 					console.error('[api/price] price_history insert FAILED:', historyError.message);
 				}

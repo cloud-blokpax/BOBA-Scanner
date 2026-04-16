@@ -16,6 +16,8 @@
  */
 
 const GAME_NAME = 'Bo Jackson Battle Arena';
+const WONDERS_GAME_NAME = 'Wonders of The First';
+const WONDERS_GAME_SHORT = 'WoTF';
 const SEPARATOR = ' - ';
 
 export interface EbayCardInfo {
@@ -25,9 +27,42 @@ export interface EbayCardInfo {
 	parallel?: string | null;
 	weapon_type?: string | null;
 	card_number?: string | null;
+	/** Phase 2.5: routes title/query builders to the right game format. */
+	game_id?: string | null;
+	/** Phase 2.5: physical variant (paper/cf/ff/ocm/sf). Omitted/paper stays silent. */
+	variant?: string | null;
+	/** Phase 2.5: Wonders-only, for title context. Falls back silently if missing. */
+	metadata?: Record<string, unknown> | null;
 }
 
 const SKIP_PARALLELS = new Set(['paper', 'base']);
+
+// ── Wonders variant name mapping (Phase 2.5) ──────────────────
+// Long-form names win searches — buyers type "Orbital Color Match", not "ocm".
+const WONDERS_VARIANT_TITLE: Record<string, string> = {
+	paper: '',             // omit entirely — base printings don't need a modifier
+	cf: 'Classic Foil',
+	ff: 'Formless Foil',
+	ocm: 'Orbital Color Match',
+	sf: 'Stone Foil',
+};
+
+function wondersVariantTitle(variant: string | null | undefined): string {
+	if (!variant) return '';
+	return WONDERS_VARIANT_TITLE[variant.toLowerCase()] ?? '';
+}
+
+function wondersSetDisplay(metadata: Record<string, unknown> | null | undefined): string {
+	if (!metadata) return '';
+	const raw = metadata.set_name_display ?? metadata.set_name;
+	return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function wondersCardName(card: EbayCardInfo): string {
+	// For Wonders, card.name is the card name. hero_name may be aliased via the
+	// scan endpoint but name is canonical for Wonders printings.
+	return (card.name || card.hero_name || '').trim();
+}
 
 function cleanParallel(parallel: string | null | undefined): string {
 	const p = (parallel || '').trim();
@@ -69,10 +104,17 @@ function buildTitleParts(card: EbayCardInfo): string[] {
  * Build an eBay listing title (max 80 chars).
  *
  * Drops fields from the end (lowest priority) until the joined string fits.
- * Keeps at least Hero + "Bo Jackson Battle Arena".
- * Never truncates mid-field.
+ * Dispatches on card.game_id — Wonders uses a different format and truncation
+ * priority from BoBA.
  */
 export function buildEbayListingTitle(card: EbayCardInfo): string {
+	if ((card.game_id || 'boba') === 'wonders') {
+		return buildWondersListingTitle(card);
+	}
+	return buildBobaListingTitle(card);
+}
+
+function buildBobaListingTitle(card: EbayCardInfo): string {
 	const MAX_LENGTH = 80;
 	const parts = buildTitleParts(card);
 
@@ -95,10 +137,85 @@ export function buildEbayListingTitle(card: EbayCardInfo): string {
 }
 
 /**
+ * Wonders listing title format:
+ *   {Card Name} - Wonders of The First - {Set Display} - {Variant} - {Collector Number}
+ *
+ * Example:
+ *   "Riley Stormrider - Wonders of The First - Call of the Stones - Orbital Color Match - A1-205/402"
+ *
+ * Truncation priority (drop in this order when title exceeds 80 chars):
+ *   1. Set display name — recoverable from the collector number prefix (e.g. CLA-)
+ *   2. Variant full name — painful to drop, try hard to keep
+ *   3. "Wonders of The First" becomes "WoTF" as a last resort
+ * Never drop the card name or collector number.
+ *
+ * Paper variant is omitted from the title by design — buyers searching for the
+ * base printing typically do NOT type "Paper", so including it harms matching.
+ */
+function buildWondersListingTitle(card: EbayCardInfo): string {
+	const MAX_LENGTH = 80;
+	const cardName = wondersCardName(card);
+	const setDisplay = wondersSetDisplay(card.metadata);
+	const variantName = wondersVariantTitle(card.variant);
+	const cardNumber = (card.card_number || '').trim();
+
+	const assemble = (
+		name: string,
+		gameName: string,
+		set: string,
+		variant: string,
+		number: string,
+	): string => {
+		const out: string[] = [];
+		if (name) out.push(name);
+		if (gameName) out.push(gameName);
+		if (set) out.push(set);
+		if (variant) out.push(variant);
+		if (number) out.push(number);
+		return out.join(SEPARATOR);
+	};
+
+	// Full form first
+	let title = assemble(cardName, WONDERS_GAME_NAME, setDisplay, variantName, cardNumber);
+	if (title.length <= MAX_LENGTH) return title;
+
+	// Step 1: drop set display name
+	title = assemble(cardName, WONDERS_GAME_NAME, '', variantName, cardNumber);
+	if (title.length <= MAX_LENGTH) return title;
+
+	// Step 2: drop variant (most painful — only if still over limit)
+	title = assemble(cardName, WONDERS_GAME_NAME, '', '', cardNumber);
+	if (title.length <= MAX_LENGTH) return title;
+
+	// Step 3: shorten "Wonders of The First" → "WoTF"
+	title = assemble(cardName, WONDERS_GAME_SHORT, '', '', cardNumber);
+	if (title.length <= MAX_LENGTH) return title;
+
+	// Final safety: hard truncate (should almost never happen — card name + "WoTF" +
+	// collector number fits in 80 chars for every real Wonders printing).
+	return title.substring(0, MAX_LENGTH);
+}
+
+/**
  * Build a full eBay search query (no character limit).
- * Includes card number, hero, game name, athlete, parallel, weapon.
+ * Dispatches on game_id. BoBA includes hero/athlete/weapon/parallel/card_number;
+ * Wonders includes card name / game name / variant / collector number.
  */
 export function buildEbaySearchQuery(card: EbayCardInfo): string {
+	if ((card.game_id || 'boba') === 'wonders') {
+		const parts: string[] = [];
+		const name = wondersCardName(card);
+		if (name) parts.push(name);
+		parts.push(WONDERS_GAME_NAME);
+		const setDisplay = wondersSetDisplay(card.metadata);
+		if (setDisplay) parts.push(setDisplay);
+		const variantName = wondersVariantTitle(card.variant);
+		if (variantName) parts.push(variantName);
+		const cardNum = (card.card_number || '').trim();
+		if (cardNum) parts.push(cardNum);
+		return parts.join(SEPARATOR);
+	}
+
 	const parts: string[] = [];
 
 	const heroName = (card.hero_name || card.name || '').trim();
@@ -124,13 +241,23 @@ export function buildEbaySearchQuery(card: EbayCardInfo): string {
 /**
  * Build a concise eBay API query for Browse API searches.
  *
- * Query: Hero Name - "Bo Jackson Battle Arena" - [Parallel] - [Weapon]
+ * BoBA: Hero Name - "Bo Jackson Battle Arena" - [Parallel] - [Weapon]
+ * Wonders: Card Name - "Wonders of The First" - [Variant Long Name]
  *
- * Keeps the search broad enough for eBay to return results.
- * Athlete name and card number are intentionally excluded —
- * filterRelevantListings checks those on the way back for precision.
+ * Card number is intentionally excluded so the search stays broad — the
+ * server-side filterRelevantListings checks collector number post-fetch.
  */
 export function buildEbayApiQuery(card: EbayCardInfo): string {
+	if ((card.game_id || 'boba') === 'wonders') {
+		const parts: string[] = [];
+		const name = wondersCardName(card);
+		if (name) parts.push(name);
+		parts.push(WONDERS_GAME_NAME);
+		const variantName = wondersVariantTitle(card.variant);
+		if (variantName) parts.push(variantName);
+		return parts.join(SEPARATOR);
+	}
+
 	const parts: string[] = [];
 
 	// 1. Hero Name — strongest identifier

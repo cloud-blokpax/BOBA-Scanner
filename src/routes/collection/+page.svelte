@@ -37,19 +37,20 @@
 
 	onMount(() => { loadCollection(); });
 
-	// Batch-fetch prices
+	// Batch-fetch prices (Phase 2.5: fetch the user's actual variant per item
+	// so foil Wonders cards surface their foil price rather than defaulting to paper).
 	let pricesFetchStarted = $state(false);
 	$effect(() => {
 		if (items.length === 0 || pricesFetchStarted) return;
 		pricesFetchStarted = true;
-		const ids = items.map(i => i.card_id);
+		const pairs = items.map(i => ({ cardId: i.card_id, variant: (i.variant || 'paper').toLowerCase() }));
 		let active = 0;
 		let idx = 0;
 		function next() {
-			while (active < 3 && idx < ids.length) {
-				const cardId = ids[idx++];
+			while (active < 3 && idx < pairs.length) {
+				const { cardId, variant } = pairs[idx++];
 				active++;
-				getPrice(cardId).finally(() => { active--; next(); });
+				getPrice(cardId, variant).finally(() => { active--; next(); });
 			}
 		}
 		next();
@@ -59,8 +60,15 @@
 	const prices = $derived(priceCache());
 
 	function cardValue(item: CollectionItem): number {
-		const p = prices.get(item.card_id);
-		return p?.price_mid ?? 0;
+		// Phase 2.5: price map is keyed by `${card_id}:${variant}`.
+		const variant = (item.variant || 'paper').toLowerCase();
+		const p = prices.get(`${item.card_id}:${variant}`);
+		if (p?.price_mid != null) return p.price_mid;
+		// Fallback to the Paper price if variant-specific data hasn't been
+		// harvested yet — keeps totals non-zero for foil collections until
+		// the variant-aware harvester catches up.
+		const paper = prices.get(`${item.card_id}:paper`);
+		return paper?.price_mid ?? 0;
 	}
 
 	const totalValue = $derived(items.reduce((s, i) => s + cardValue(i) * (i.quantity || 1), 0));

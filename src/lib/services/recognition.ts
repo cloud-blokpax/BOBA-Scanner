@@ -177,7 +177,15 @@ export async function recognizeCard(
 			confidence: Math.round(final.confidence * 100),
 			ms: final.processing_ms,
 			cardNumber: final.card?.card_number ?? null,
-			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false
+			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false,
+			// Phase 2.5: variant diagnostics so we can audit misidentifications.
+			// `user_confirmed_variant` is recorded separately at collection-add time
+			// (see addToCollection) because that's where the user's final choice lives.
+			game_id: final.game_id ?? null,
+			detected_variant: final.variant ?? null,
+			variant_confidence: final.variant_confidence ?? null,
+			collector_number_confidence: final.collector_number_confidence ?? null,
+			first_edition_stamp_detected: final.first_edition_stamp_detected ?? false
 		});
 
 		// Auto-tag card with its parallel name

@@ -54,10 +54,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const supabase = locals.supabase;
 
-	// Fetch cards
+	// Fetch cards (include game_id + metadata for Phase 2.5 Wonders support).
+	// Cast through `unknown` because the generated Supabase types predate these
+	// columns being added — the runtime data is correct.
 	const { data: cards, error: cardsErr } = await supabase
 		.from('cards')
-		.select('id, hero_name, name, athlete_name, card_number, set_code, parallel, weapon_type, power, rarity')
+		.select('id, hero_name, name, athlete_name, card_number, set_code, parallel, weapon_type, power, rarity, game_id, metadata' as '*')
 		.in('id', cardIds);
 
 	if (cardsErr) {
@@ -69,25 +71,44 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(404, 'No cards found');
 	}
 
-	// Fetch prices
+	type CardRow = {
+		id: string;
+		hero_name: string | null;
+		name: string | null;
+		athlete_name: string | null;
+		card_number: string | null;
+		set_code: string | null;
+		parallel: string | null;
+		weapon_type: string | null;
+		power: number | null;
+		rarity: string | null;
+		game_id?: string | null;
+		metadata?: Record<string, unknown> | null;
+	};
+	const cardRows = cards as unknown as CardRow[];
+
+	// Fetch prices — include variant to disambiguate Paper vs Foil prices.
 	const { data: prices } = await supabase
 		.from('price_cache')
-		.select('card_id, price_mid')
+		.select('card_id, price_mid, variant' as '*')
 		.in('card_id', cardIds);
 
-	const priceMap = new Map(
-		(prices || []).map((p: { card_id: string; price_mid: number | null }) => [p.card_id, p.price_mid])
-	);
+	type PriceRow = { card_id: string; price_mid: number | null; variant: string | null };
+	const priceMap = new Map<string, number | null>();
+	for (const p of (prices || []) as unknown as PriceRow[]) {
+		priceMap.set(`${p.card_id}:${p.variant || 'paper'}`, p.price_mid);
+	}
 
-	// Fetch collection data (quantity, condition)
+	// Fetch collection data (quantity, condition, variant)
 	const { data: collection } = await supabase
 		.from('collections')
-		.select('card_id, quantity, condition')
+		.select('card_id, quantity, condition, variant' as '*')
 		.eq('user_id', user.id)
 		.in('card_id', cardIds);
 
+	type CollectionRow = { card_id: string; quantity: number; condition: string; variant?: string | null };
 	const collectionMap = new Map(
-		(collection || []).map((c: { card_id: string; quantity: number; condition: string }) => [c.card_id, c])
+		((collection || []) as unknown as CollectionRow[]).map((c) => [c.card_id, c])
 	);
 
 	// Fetch reference images for public URLs
@@ -109,25 +130,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// Assemble export data
-	const exportCards: WhatnotExportCard[] = cards.map((card: {
-		id: string;
-		hero_name: string | null;
-		name: string | null;
-		athlete_name: string | null;
-		card_number: string | null;
-		set_code: string | null;
-		parallel: string | null;
-		weapon_type: string | null;
-		power: number | null;
-		rarity: string | null;
-	}) => {
+	const exportCards: WhatnotExportCard[] = cardRows.map((card) => {
 		const col = collectionMap.get(card.id);
+		const variant = col?.variant || 'paper';
+		// Price lookup: match the user's owned variant (fallback to paper if
+		// no variant-specific row exists yet — harvester hasn't caught up).
+		const variantPrice = priceMap.get(`${card.id}:${variant}`);
+		const paperPrice = priceMap.get(`${card.id}:paper`);
 		return {
 			...card,
-			price_mid: priceMap.get(card.id) || null,
+			price_mid: variantPrice ?? paperPrice ?? null,
 			quantity: col?.quantity || 1,
 			condition: col?.condition || 'near_mint',
-			image_url: imageMap.get(card.id) || null
+			image_url: imageMap.get(card.id) || null,
+			variant,
 		};
 	});
 

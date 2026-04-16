@@ -103,7 +103,9 @@ export async function lookupOverlayPrice(hash: string): Promise<OverlayData | nu
 		priceFetchedAt = (localPrice.fetched_at as string) ?? null;
 	}
 
-	// Supabase price_cache if local miss and online
+	// Supabase price_cache if local miss and online.
+	// Overlay preview runs during scanning, before the variant is known — default
+	// to the Paper price. Variant-specific prices surface on the confirmation UI.
 	if (price === null && navigator.onLine) {
 		try {
 			const { getSupabase } = await import('$lib/services/supabase');
@@ -114,6 +116,7 @@ export async function lookupOverlayPrice(hash: string): Promise<OverlayData | nu
 					.select('price_low, price_mid, price_high, fetched_at, listings_count')
 					.eq('card_id', cardId)
 					.eq('source', 'ebay')
+					.eq('variant', 'paper')
 					.maybeSingle();
 
 				if (cachedPrice) {

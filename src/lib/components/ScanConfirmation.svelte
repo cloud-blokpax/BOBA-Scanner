@@ -6,6 +6,7 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import { tryAwardBadge } from '$lib/services/badges';
+	import { trackScanMetric } from '$lib/services/error-tracking';
 	import type { ScanResult, Card } from '$lib/types';
 	import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
 	import { normalizeVariant, isFoilVariant, type VariantCode } from '$lib/data/variants';
@@ -220,7 +221,7 @@
 		listingInProgress = true;
 		listingError = null;
 		try {
-			const template = generateListingTemplate(card, priceData);
+			const template = generateListingTemplate(card, priceData, 'Near Mint', userVariant);
 			const listingPrice = template.suggested_price || priceData.price_mid;
 			if (!listingPrice || listingPrice <= 0) {
 				listingError = 'No market data available — set a price in the Sell tab before listing.';
@@ -274,6 +275,18 @@
 				gameId,
 				userVariant
 			);
+			// Phase 2.5: log the user's final variant choice alongside the detected one
+			// so we can audit misidentifications (user_confirmed_variant !== detected_variant).
+			trackScanMetric({
+				event: 'variant_confirmed',
+				card_id: card.id,
+				game_id: gameId,
+				detected_variant: detectedVariant,
+				user_confirmed_variant: userVariant,
+				variant_confidence: variantConfidence,
+				needed_confirmation: needsVariantConfirmation,
+				tier: activeResult.scan_method,
+			});
 			addSuccess = true;
 			triggerHaptic('successAdd');
 			showConfetti = true;
