@@ -118,8 +118,16 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// (offset tracking removed — candidate selection uses price_harvest_log
 	// to skip already-processed cards, so no offset needed)
 
-	// ── Fetch prioritized card list ─────────────────────
-	const candidates = await getNextCandidates(admin, callBudget, today);
+	// ── Fetch prioritized card list (multi-game) ────────────
+	// Budget split: 75% BoBA, 25% Wonders until Wonders coverage catches up.
+	// The RPC defaults game_id to 'boba' so the BoBA call matches historical behavior.
+	const wondersBudget = Math.max(1, Math.floor(callBudget * 0.25));
+	const bobaBudget = Math.max(1, callBudget - wondersBudget);
+	const [bobaCandidates, wondersCandidates] = await Promise.all([
+		getNextCandidates(admin, bobaBudget, today, 'boba'),
+		getNextCandidates(admin, wondersBudget, today, 'wonders'),
+	]);
+	const candidates = [...bobaCandidates, ...wondersCandidates];
 	if (candidates.length === 0) {
 		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
@@ -367,21 +375,28 @@ interface CardCandidate {
 async function getNextCandidates(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	limit: number,
-	today: string
+	today: string,
+	gameId: 'boba' | 'wonders' = 'boba'
 ): Promise<CardCandidate[]> {
-	const { data, error: rpcError } = await admin.rpc('get_harvest_candidates', {
+	// Supabase types don't include p_game_id yet — cast through unknown so the
+	// optional parameter typechecks. The RPC defaults game_id to 'boba'.
+	const rpcArgs = {
 		p_run_id: today,
-		p_limit: limit
-	});
+		p_limit: limit,
+		p_game_id: gameId,
+	} as unknown as { p_run_id: string; p_limit: number };
+
+	const { data, error: rpcError } = await admin.rpc('get_harvest_candidates', rpcArgs);
 
 	if (rpcError) {
-		console.error('[harvest] get_harvest_candidates RPC failed:', rpcError);
+		console.error(`[harvest] get_harvest_candidates RPC failed (game=${gameId}):`, rpcError);
 		return [];
 	}
 
-	// Normalize: default variant to 'paper' when the RPC hasn't been updated yet.
+	// Normalize: default variant to 'paper' and tag game_id on each candidate
+	// so downstream refreshCardPrice() routes to the right query builder.
 	const raw = (data as unknown as CardCandidate[]) || [];
-	return raw.map((r) => ({ ...r, variant: r.variant || 'paper' }));
+	return raw.map((r) => ({ ...r, variant: r.variant || 'paper', game_id: r.game_id || gameId }));
 }
 
 /**
