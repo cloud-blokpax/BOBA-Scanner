@@ -40,9 +40,9 @@
 	async function loadOwnedPlays() {
 		loading = true;
 		try {
-			// Load play cards from the static JSON database
-			const mod = await import('$lib/data/play-cards.json');
-			ownedPlays = mod.default as PlayCard[];
+			// Load play cards from the static JSON database (with type/number derived)
+			const mod = await import('$lib/data/play-cards');
+			ownedPlays = mod.getPlayCards();
 		} catch {
 			showToast('Failed to load play cards', 'error');
 		}

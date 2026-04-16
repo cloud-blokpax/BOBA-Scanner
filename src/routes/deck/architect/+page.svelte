@@ -25,7 +25,7 @@
 	} from '$lib/stores/playbook-architect.svelte';
 	import type { PlayCard } from '$lib/services/playbook-engine';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
-	import playCardsData from '$lib/data/play-cards.json';
+	import { getPlayCards } from '$lib/data/play-cards';
 
 	import DBSBudgetCard from '$lib/components/architect/DBSBudgetCard.svelte';
 	import HDFlowCard from '$lib/components/architect/HDFlowCard.svelte';
@@ -35,7 +35,7 @@
 	import PlayBrowser from '$lib/components/architect/PlayBrowser.svelte';
 
 	const formatOptions = getFormatOptions();
-	const allPlays = (playCardsData as PlayCard[]).filter(
+	const allPlays = getPlayCards().filter(
 		(p) => p.type === 'PL' || p.type === 'BPL'
 	);
 
