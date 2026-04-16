@@ -169,6 +169,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		// Game-scoped protected routes
 		'/boba/collection', '/boba/set-completion', '/boba/market',
 		'/wonders/collection', '/wonders/set-completion', '/wonders/market',
+		'/wonders/dragon-points',
 	];
 	const isProtected = protectedRoutes.some((route) => event.url.pathname.startsWith(route));
 

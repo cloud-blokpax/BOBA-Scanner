@@ -238,7 +238,7 @@
 </script>
 
 <svelte:head>
-	<title>Export - BOBA Scanner</title>
+	<title>Export - Card Scanner</title>
 </svelte:head>
 
 <div class="export-page">

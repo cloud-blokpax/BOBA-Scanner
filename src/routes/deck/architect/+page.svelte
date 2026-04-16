@@ -94,7 +94,7 @@
 </script>
 
 <svelte:head>
-	<title>Playbook Architect | BOBA Scanner</title>
+	<title>Playbook Architect | Card Scanner</title>
 </svelte:head>
 
 <div class="architect-page">

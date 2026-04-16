@@ -274,7 +274,7 @@
 </script>
 
 <svelte:head>
-	<title>Settings - BOBA Scanner</title>
+	<title>Settings - Card Scanner</title>
 </svelte:head>
 
 <div class="settings-page">

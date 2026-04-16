@@ -62,11 +62,11 @@
 		{#if activeStep === 2}
 			<div class="step-content">
 				<p>
-					Review the permissions eBay shows you. BOBA Scanner needs access to view and manage your
+					Review the permissions eBay shows you. Card Scanner needs access to view and manage your
 					inventory so it can create listings on your behalf. Tap <strong>Agree and Continue</strong>.
 				</p>
 				<p class="step-note">
-					This is eBay's official authorization page — your login credentials are never shared with BOBA Scanner.
+					This is eBay's official authorization page — your login credentials are never shared with Card Scanner.
 				</p>
 				<img
 					src="/guide/ebay-step2-authorize.png"

@@ -99,7 +99,7 @@
 </script>
 
 <svelte:head>
-	<title>Card Grader - BOBA Scanner</title>
+	<title>Card Grader - Card Scanner</title>
 </svelte:head>
 
 {#if hasGrader()}

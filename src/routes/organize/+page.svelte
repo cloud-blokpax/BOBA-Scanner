@@ -107,7 +107,7 @@
 </script>
 
 <svelte:head>
-	<title>Organize Tournaments - BOBA Scanner</title>
+	<title>Organize Tournaments - Card Scanner</title>
 </svelte:head>
 
 <div class="organize-page">

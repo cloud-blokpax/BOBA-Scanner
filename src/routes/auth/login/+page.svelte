@@ -12,14 +12,14 @@
 </script>
 
 <svelte:head>
-	<title>Sign In | BOBA Scanner</title>
+	<title>Sign In | Card Scanner</title>
 </svelte:head>
 
 <div class="login-page">
 	<div class="login-card">
 		<div class="login-header">
 			<span class="login-icon">🎴</span>
-			<h1>Welcome to BOBA Scanner</h1>
+			<h1>Welcome to Card Scanner</h1>
 			<p>Sign in to scan, collect, and build decks</p>
 		</div>
 

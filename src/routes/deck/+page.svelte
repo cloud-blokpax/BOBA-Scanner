@@ -149,7 +149,7 @@
 </script>
 
 <svelte:head>
-	<title>Decks | BOBA Scanner</title>
+	<title>Decks | Card Scanner</title>
 </svelte:head>
 
 <div class="decks-page">

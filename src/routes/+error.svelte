@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-	<title>{$page.status} — BOBA Scanner</title>
+	<title>{$page.status} — Card Scanner</title>
 </svelte:head>
 
 <div class="error-page">

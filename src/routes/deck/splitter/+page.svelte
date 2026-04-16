@@ -101,7 +101,7 @@
 </script>
 
 <svelte:head>
-	<title>Deck Splitter | BOBA Scanner</title>
+	<title>Deck Splitter | Card Scanner</title>
 </svelte:head>
 
 <div class="splitter-page">

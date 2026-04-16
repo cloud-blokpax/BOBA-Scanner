@@ -27,8 +27,13 @@ export const wondersNavItems: readonly GameNavItem[] = [
 		label: 'Market',
 		matchPaths: ['/wonders/market']
 	},
-	// Phase 3:
-	// { id: 'wonders-dragon-points', path: '/wonders/dragon-points', icon: '🔥', label: 'Dragon Points' },
+	{
+		id: 'wonders-dragon-points',
+		path: '/wonders/dragon-points',
+		icon: '\u{1F409}', // 🐉
+		label: 'Dragon Points',
+		matchPaths: ['/wonders/dragon-points']
+	},
 ];
 
 /** Routes that require authentication for Wonders features. */
@@ -36,4 +41,5 @@ export const wondersProtectedRoutes: readonly string[] = [
 	'/wonders/collection',
 	'/wonders/set-completion',
 	'/wonders/market',
+	'/wonders/dragon-points',
 ];

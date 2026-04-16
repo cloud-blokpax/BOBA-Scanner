@@ -138,7 +138,7 @@
 </script>
 
 <svelte:head>
-	<title>My Collection | BOBA Scanner</title>
+	<title>My Collection | Card Scanner</title>
 </svelte:head>
 
 <div class="collection-page">

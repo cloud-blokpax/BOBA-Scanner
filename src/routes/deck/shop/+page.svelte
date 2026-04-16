@@ -165,7 +165,7 @@
 </script>
 
 <svelte:head>
-	<title>Deck Shop — BOBA Scanner</title>
+	<title>Deck Shop — Card Scanner</title>
 </svelte:head>
 
 <div class="shop-page">

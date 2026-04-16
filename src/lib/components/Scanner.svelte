@@ -446,7 +446,7 @@
 						</svg>
 					</div>
 					<h3 class="permission-title">Camera Access Needed</h3>
-					<p class="permission-desc">BOBA Scanner uses your camera to identify cards instantly. We never store photos without your permission.</p>
+					<p class="permission-desc">Card Scanner uses your camera to identify cards instantly. We never store photos without your permission.</p>
 					<button class="permission-continue" onclick={() => { if (videoEl) camera.acceptExplainer(videoEl, onCameraReady).catch(() => { phase = 'error'; }); }}>
 						Continue to Scan
 					</button>

@@ -1,17 +1,17 @@
 <svelte:head>
-	<title>Privacy Policy — BOBA Scanner</title>
+	<title>Privacy Policy — Card Scanner</title>
 </svelte:head>
 
 <div class="legal-page">
 	<h1>Privacy Policy</h1>
 	<p class="last-updated">Effective date: March 29, 2026. Last updated: March 29, 2026.</p>
 
-	<p>BOBA Scanner ("we," "us," or "the app") is operated by James Poto ("James Poto"). This policy explains what personal data we collect, why, how we process it, who we share it with, and your rights.</p>
-	<p>By using BOBA Scanner, you agree to the collection and use of information as described in this policy. If you do not agree, please do not use the app.</p>
+	<p>Card Scanner ("we," "us," or "the app") is operated by James Poto ("James Poto"). This policy explains what personal data we collect, why, how we process it, who we share it with, and your rights.</p>
+	<p>By using Card Scanner, you agree to the collection and use of information as described in this policy. If you do not agree, please do not use the app.</p>
 
 	<section>
 		<h2>1. Age Restriction</h2>
-		<p>BOBA Scanner is intended for users who are at least eighteen (18) years of age. We do not knowingly collect personal information from anyone under 18. If we learn that we have collected data from a user under 18, we will promptly deactivate their account and delete associated personal data. If you believe a minor has provided us with personal information, please contact us at the address below.</p>
+		<p>Card Scanner is intended for users who are at least eighteen (18) years of age. We do not knowingly collect personal information from anyone under 18. If we learn that we have collected data from a user under 18, we will promptly deactivate their account and delete associated personal data. If you believe a minor has provided us with personal information, please contact us at the address below.</p>
 	</section>
 
 	<section>
@@ -41,7 +41,7 @@
 
 	<section>
 		<h2>4. AI Processing Disclosure</h2>
-		<p>BOBA Scanner uses artificial intelligence to identify trading cards from images. This section explains exactly how AI processes your data.</p>
+		<p>Card Scanner uses artificial intelligence to identify trading cards from images. This section explains exactly how AI processes your data.</p>
 		<p><strong>Client-side processing (no data leaves your device):</strong> Tesseract.js OCR runs entirely in your browser's Web Worker. Perceptual hash computation and image quality analysis also run locally. Most card identifications complete without any data being sent to external services.</p>
 		<p><strong>Cloud AI processing (Anthropic Claude API):</strong> When client-side methods cannot identify a card, the image is sent to our server, sanitized (metadata stripped, re-encoded), and forwarded to Anthropic's Claude API (currently Claude Haiku) for identification. For AI card grading, images are sent to Claude Sonnet. In both cases:</p>
 		<ul>
@@ -68,9 +68,9 @@
 
 	<section>
 		<h2 id="6-ebay-affiliate-links">6. eBay Affiliate Links</h2>
-		<p>BOBA Scanner participates in the <strong>eBay Partner Network</strong> affiliate program. When you click a link to view a card on eBay, the link includes an affiliate tracking identifier. If you make a purchase on eBay after clicking one of these links, we may earn a commission at no additional cost to you.</p>
+		<p>Card Scanner participates in the <strong>eBay Partner Network</strong> affiliate program. When you click a link to view a card on eBay, the link includes an affiliate tracking identifier. If you make a purchase on eBay after clicking one of these links, we may earn a commission at no additional cost to you.</p>
 		<p>Affiliate links are present on card detail views, price displays, and the deck shop page. Each affiliate link is marked with a disclosure notice. eBay may place cookies on your device when you click these links, subject to eBay's own Privacy Policy and cookie settings.</p>
-		<p>We do not share your BOBA Scanner account data with eBay through affiliate links. The only data transmitted is the click itself and standard HTTP request information (IP address, user agent, referrer).</p>
+		<p>We do not share your Card Scanner account data with eBay through affiliate links. The only data transmitted is the click itself and standard HTTP request information (IP address, user agent, referrer).</p>
 	</section>
 
 	<section>
@@ -85,7 +85,7 @@
 
 	<section>
 		<h2>8. Browser Storage (Cookies, IndexedDB, and Service Workers)</h2>
-		<p>BOBA Scanner uses browser storage technologies to provide core functionality. We categorize our storage use as follows:</p>
+		<p>Card Scanner uses browser storage technologies to provide core functionality. We categorize our storage use as follows:</p>
 		<p><strong>Essential (required for the app to function):</strong></p>
 		<ul>
 			<li><strong>Authentication cookies</strong> — Supabase session tokens for login persistence</li>

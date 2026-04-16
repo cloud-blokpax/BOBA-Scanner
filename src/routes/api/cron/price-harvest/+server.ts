@@ -23,6 +23,11 @@ import type { Database } from '$lib/types/database';
 import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
 import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
+import {
+	buildWondersEbayQuery,
+	filterRelevantWondersListings,
+	scoreWondersListingMatch,
+} from '$lib/server/ebay-query-wonders';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby supports up to 60s
@@ -351,8 +356,12 @@ interface CardCandidate {
 	parallel: string | null;
 	weapon_type: string | null;
 	priority: number;
-	/** Phase 2.5: variant to harvest. 'paper' until the RPC is updated. */
+	/** Phase 2.5: variant to harvest. 'paper' default for backward compat. */
 	variant?: string | null;
+	/** Phase 3: game_id routes to the right query builder (BoBA vs Wonders). */
+	game_id?: string | null;
+	/** Phase 3: metadata used by the Wonders query builder for set display name. */
+	metadata?: Record<string, unknown> | null;
 }
 
 async function getNextCandidates(
@@ -410,11 +419,23 @@ async function refreshCardPrice(
 	chainDepth: number,
 	confidenceThreshold: number
 ): Promise<RefreshResult> {
-	// Phase 2.5: the harvester now operates on (card_id, variant) pairs.
-	// Variant defaults to 'paper' when the RPC hasn't been updated yet — see
-	// the comment on get_harvest_candidates above.
+	// Phase 2.5 / 3: the harvester operates on (card_id, variant) pairs and
+	// dispatches query/filter builders by game_id. BoBA uses ebay-query.ts;
+	// Wonders uses ebay-query-wonders.ts (quoted phrases + variant keywords
+	// + cross-game contamination rejection).
 	const variant = card.variant || 'paper';
-	const query = buildEbaySearchQuery(card);
+	const gameId = (card.game_id || 'boba').toLowerCase();
+	const isWonders = gameId === 'wonders';
+	// Build the EbayCardInfo shape the Wonders query builder expects.
+	const wondersCardInfo = {
+		hero_name: card.hero_name,
+		name: card.name,
+		card_number: card.card_number,
+		variant,
+		game_id: 'wonders' as const,
+		metadata: card.metadata ?? null,
+	};
+	const query = isWonders ? buildWondersEbayQuery(wondersCardInfo) : buildEbaySearchQuery(card);
 	const callStart = Date.now();
 
 	// Increment Redis counter BEFORE the call
@@ -475,8 +496,10 @@ async function refreshCardPrice(
 
 		const ebayResultsRaw = rawItems.length;
 
-		// Filter to listings that actually match this card
-		const items = filterRelevantListings(rawItems, card);
+		// Filter to listings that actually match this card (game-aware)
+		const items = isWonders
+			? filterRelevantWondersListings(rawItems, wondersCardInfo)
+			: filterRelevantListings(rawItems, card);
 
 		// Separate by buying option
 		const fixedPriceItems = items.filter(item =>
@@ -497,6 +520,21 @@ async function refreshCardPrice(
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
+		// Phase 3: for Wonders, refine confidence using the listing title scorer
+		// so we don't accept loose name-only matches. Average across items.
+		let adjustedConfidence = allStats?.confidenceScore ?? 0;
+		if (isWonders && items.length > 0) {
+			const titleScores = items.map((it) => scoreWondersListingMatch(it.title || '', wondersCardInfo));
+			const avgTitleScore = titleScores.reduce((a, b) => a + b, 0) / titleScores.length;
+			// Blend: 60% existing signal (price stability / listing count), 40% title match
+			adjustedConfidence = adjustedConfidence * 0.6 + avgTitleScore * 0.4;
+		}
+
+		// Cold-start: new (card_id, variant) pairs are provisional for their first
+		// few harvests. The UI shows provisional prices with an asterisk + tooltip.
+		// Uses isNewPrice (no prior price_cache row) as the signal.
+		const coldStart = isWonders && isNewPrice;
+
 		const priceData: Record<string, unknown> = {
 			card_id: card.id,
 			source: 'ebay',
@@ -509,12 +547,13 @@ async function refreshCardPrice(
 			buy_now_mid: fixedStats?.median ?? null,
 			buy_now_count: fixedPrices.length,
 			filtered_count: allStats?.filteredCount ?? 0,
-			confidence_score: allStats?.confidenceScore ?? 0,
+			confidence_score: adjustedConfidence,
+			confidence_cold_start: coldStart,
 			fetched_at: new Date().toISOString()
 		};
 
 		// Check confidence threshold before accepting price
-		const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
+		const meetsThreshold = adjustedConfidence >= confidenceThreshold;
 
 		// Always upsert price_cache so the card is marked as "searched".
 		// Cards below threshold get cached with null prices (searched, no price)
@@ -581,6 +620,9 @@ async function refreshCardPrice(
 				hero_name: card.hero_name,
 				card_name: card.name,
 				card_number: card.card_number,
+				// Phase 3: tag the harvest log row with game + variant.
+				game_id: card.game_id || 'boba',
+				variant,
 				search_query: query,
 				ebay_results_raw: ebayResultsRaw,
 				auction_count: auctionItems.length,
@@ -797,6 +839,10 @@ function buildLogEntry(
 		hero_name: card.hero_name,
 		card_name: card.name,
 		card_number: card.card_number,
+		// Phase 3: tag the harvest log row with game + variant so admin dashboards
+		// can distinguish BoBA harvests from Wonders harvests.
+		game_id: card.game_id || 'boba',
+		variant: card.variant || 'paper',
 		search_query: query,
 		ebay_results_raw: 0,
 		auction_count: 0,

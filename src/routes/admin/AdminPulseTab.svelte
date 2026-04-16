@@ -122,7 +122,7 @@
 	<div class="pulse-header">
 		<div class="pulse-status">
 			<span class="status-dot {statusDot}"></span>
-			<span class="status-label">BOBA Scanner Admin</span>
+			<span class="status-label">Card Scanner Admin</span>
 		</div>
 		<button class="refresh-btn" onclick={onRefresh}>Refresh</button>
 	</div>

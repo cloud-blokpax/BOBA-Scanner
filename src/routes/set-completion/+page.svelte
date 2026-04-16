@@ -98,7 +98,7 @@
 </script>
 
 <svelte:head>
-	<title>Set Completion - BOBA Scanner</title>
+	<title>Set Completion - Card Scanner</title>
 </svelte:head>
 
 <div class="set-page">
