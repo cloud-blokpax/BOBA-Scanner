@@ -130,17 +130,56 @@
 	let power = $state(_init.power);
 
 	// ── Generated title & description (editable) ────────────
+	// game_id determines how the title and description get assembled.
+	// Wonders cards use their own field set (card name, variant, collector number)
+	// instead of BoBA's hero/athlete/weapon fields.
+	const cardGameId = $derived(card.game_id || 'boba');
+	const isWondersListing = $derived(cardGameId === 'wonders');
+
+	// Variant isn't a field on Card — it's on CollectionItem and ScanResult.
+	// The caller may attach it informally; read defensively and default to 'paper'.
+	const cardVariant = $derived(
+		(card as Card & { variant?: string | null }).variant || 'paper'
+	);
+
 	function generateTitle(): string {
 		return buildEbayListingTitle({
 			hero_name: heroName,
+			name: heroName,
 			athlete_name: athleteName,
 			parallel: parallel || null,
 			weapon_type: weaponType || null,
-			card_number: cardNumber || null
+			card_number: cardNumber || null,
+			game_id: cardGameId,
+			variant: cardVariant,
+			metadata: card.metadata ?? null,
 		});
 	}
 
 	function generateDescription(): string {
+		if (isWondersListing) {
+			const meta = (card.metadata ?? {}) as Record<string, unknown>;
+			const setDisplay = (typeof meta.set_name_display === 'string' && meta.set_name_display)
+				|| (typeof meta.set_name === 'string' && meta.set_name)
+				|| setCode;
+			const typeLine = typeof meta.type_line === 'string' ? meta.type_line : '';
+			const variantName = cardVariant !== 'paper' ? cardVariant.toUpperCase() : '';
+			const lines = [
+				`Wonders of The First - ${heroName || 'Card'}`,
+				'',
+			];
+			if (cardNumber) lines.push(`Collector Number: ${cardNumber}`);
+			if (setDisplay) lines.push(`Set: ${setDisplay}`);
+			if (typeLine) lines.push(`Type: ${typeLine}`);
+			if (variantName) lines.push(`Variant: ${variantName}`);
+			if (power) lines.push(`Power: ${power}`);
+			lines.push(`Condition: ${condition}`);
+			if (notes) lines.push(`Notes: ${notes}`);
+			lines.push('');
+			lines.push('Listed with Card Scanner - boba.cards');
+			return lines.filter(l => l !== undefined).join('\n');
+		}
+
 		const lines = [
 			`Bo Jackson Battle Arena - ${heroName || 'Hero Card'}`,
 			'',
@@ -582,14 +621,16 @@
 			</div>
 
 			<!-- Read-only system fields -->
-			<div class="stl-spec-field stl-spec-readonly">
-				<span class="stl-spec-label">Sport</span>
-				<span class="stl-spec-value">Multi-Sport</span>
-			</div>
+			{#if !isWondersListing}
+				<div class="stl-spec-field stl-spec-readonly">
+					<span class="stl-spec-label">Sport</span>
+					<span class="stl-spec-value">Multi-Sport</span>
+				</div>
+			{/if}
 
 			<div class="stl-spec-field stl-spec-readonly">
 				<span class="stl-spec-label">Card Manufacturer</span>
-				<span class="stl-spec-value">Bo Jackson Battle Arena</span>
+				<span class="stl-spec-value">{isWondersListing ? 'Wonders of The First' : 'Bo Jackson Battle Arena'}</span>
 			</div>
 		</div>
 	</div>
