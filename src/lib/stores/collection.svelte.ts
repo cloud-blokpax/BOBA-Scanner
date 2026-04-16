@@ -122,9 +122,12 @@ export async function addToCollection(
 	condition = 'near_mint',
 	notes: string | null = null,
 	scanImageBlob?: Blob | null,
-	gameId: string = 'boba'
+	gameId: string = 'boba',
+	variant: string = 'paper'
 ): Promise<void> {
-	const lockKey = `${cardId}:${condition}`;
+	// Lock key includes variant — a Paper and CF add of the same card_id+condition
+	// must be allowed to proceed in parallel because they produce different rows.
+	const lockKey = `${cardId}:${condition}:${variant}`;
 
 	const existing = _addLocks.get(lockKey);
 	if (existing) {
@@ -132,7 +135,7 @@ export async function addToCollection(
 	}
 
 	const promise = (async () => {
-		const item = await upsertCollectionItem(cardId, condition, notes, gameId);
+		const item = await upsertCollectionItem(cardId, condition, notes, gameId, variant);
 		markLocallyModified(cardId);
 
 		// Upload scan image to Supabase Storage if provided (non-blocking)
@@ -142,8 +145,9 @@ export async function addToCollection(
 			});
 		}
 
+		// Match by (card_id, condition, variant) — variant makes Paper vs CF distinct.
 		const idx = _items.findIndex(
-			(i) => i.card_id === cardId && i.condition === condition
+			(i) => i.card_id === cardId && i.condition === condition && (i.variant || 'paper') === variant
 		);
 		if (idx >= 0) {
 			const next = [..._items];

@@ -76,5 +76,36 @@ export function extractWondersCardNumber(text: string): string | null {
 	if (numTotalMatch) return `${numTotalMatch[1]}/${numTotalMatch[2]}`;
 
 	// Pattern 7 (plain numeric): intentionally omitted — collides with BoBA.
+
+	// Fallback: stamp-robust prefix search. OCR may have captured the 1st
+	// edition stamp as leading characters that don't match any known prefix
+	// pattern (common Tesseract misreads: "I", "1", "(1)", "O"). Scan the
+	// cleaned text for a known prefix anchor and re-extract from there.
+	for (const prefix of WONDERS_PREFIXES) {
+		// Try the prefix-with-total pattern first (OCM format)
+		const prefixRegex = new RegExp(`\\b${prefix}-(\\d{1,3})(?:/(\\d{3,4}))?\\b`);
+		const match = cleaned.match(prefixRegex);
+		if (match) {
+			if (prefix === 'P' || prefix === 'T') {
+				// Promos/tokens always pad to 3 digits, no /TOTAL suffix
+				return `${prefix}-${match[1].padStart(3, '0')}`;
+			}
+			if (prefix === 'A1' && match[2]) {
+				return `A1-${match[1].padStart(3, '0')}/${match[2]}`;
+			}
+			if (match[2]) {
+				return `${prefix}-${match[1]}/${match[2]}`;
+			}
+			return `${prefix}-${match[1]}`;
+		}
+
+		// Also try story token pattern: SET-T<number>
+		if (prefix !== 'P' && prefix !== 'T' && prefix !== 'A1') {
+			const tokenRegex = new RegExp(`\\b${prefix}-T(\\d{1,2})\\b`);
+			const tokenMatch = cleaned.match(tokenRegex);
+			if (tokenMatch) return `${prefix}-T${tokenMatch[1]}`;
+		}
+	}
+
 	return null;
 }

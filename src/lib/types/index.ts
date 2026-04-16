@@ -53,6 +53,11 @@ export interface CollectionItem {
 	notes: string | null;
 	added_at: string;
 	scan_image_url?: string | null;
+	/** Physical variant for this copy. Part of the collection identity
+	 *  triple (user_id, card_id, variant). Defaults to 'paper'. */
+	variant?: string;
+	/** Game this collection entry belongs to ('boba', 'wonders'). */
+	game_id?: string;
 	card?: Card;
 }
 
@@ -70,6 +75,15 @@ export interface ScanResult {
 	confidence: number;
 	processing_ms: number;
 	variant?: string | null;
+	/** Confidence in variant detection (0.0-1.0). null when variant wasn't detected
+	 *  (e.g., Tier 2 OCR matches). Values below 0.75 trigger the foil multi-scan flow. */
+	variant_confidence?: number | null;
+	/** True when a 1st edition stamp is visible at the bottom-left of the card,
+	 *  distinct from the collector number. Paper cards never have this stamp. */
+	first_edition_stamp_detected?: boolean;
+	/** Confidence specifically in the collector_number reading (0.0-1.0). Glare
+	 *  on foil cards can reduce this independently of overall scan confidence. */
+	collector_number_confidence?: number | null;
 	/** Which game this scan identified (null if auto-detect failed or scan failed) */
 	game_id?: string | null;
 	/** Human-readable reason when scan fails to identify a card */

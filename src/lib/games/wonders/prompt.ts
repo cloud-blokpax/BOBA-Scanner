@@ -55,12 +55,26 @@ export const WONDERS_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 				type: 'string',
 				description: 'Set name at bottom (e.g., "Existence", "Call of the Stones", "2026 Prizes and Promos").'
 			},
-			foil_treatment: {
+			variant: {
 				type: 'string',
-				enum: ['paper', 'classic_foil', 'formless_foil', 'ocm', 'stone_foil', 'unknown'],
+				enum: ['paper', 'cf', 'ff', 'ocm', 'sf', 'unknown'],
 				description:
-					'paper (matte + solid black border), classic_foil (lined border, foil), ' +
-					'formless_foil (no border, bleeds to edge, foil), ocm (serial-numbered), stone_foil (1/1).'
+					'Physical treatment detected via the decision tree in the system prompt. ' +
+					'Use "unknown" ONLY if image quality prevents any determination.'
+			},
+			variant_confidence: {
+				type: 'number',
+				description: 'Confidence in variant detection, 0.0-1.0. Values below 0.75 trigger the foil multi-scan flow.'
+			},
+			first_edition_stamp_detected: {
+				type: 'boolean',
+				description:
+					'Whether a 1st edition stamp (stylized "1" in a circle/badge) is visible at the ' +
+					'bottom-left, distinct from the collector number. Paper cards never have this stamp.'
+			},
+			collector_number_confidence: {
+				type: 'number',
+				description: 'Confidence specifically in the collector_number reading, 0.0-1.0. Glare on foil cards reduces this independently of overall confidence.'
 			},
 			serial_number: {
 				type: 'string',
@@ -78,7 +92,7 @@ export const WONDERS_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 				description: 'Issue flags: foil_glare, partial_occlusion, low_resolution, damaged_card.'
 			}
 		},
-		required: ['card_name', 'collector_number', 'confidence']
+		required: ['card_name', 'collector_number', 'confidence', 'variant', 'variant_confidence', 'collector_number_confidence']
 	}
 };
 
@@ -142,18 +156,99 @@ SETS:
 - Existence (2025) — First set, collector numbers are plain numeric (e.g., "115")
 - Call of the Stones (2026) — Second set, uses NUM/TOTAL format (e.g., "78/402")
 
-FOIL TREATMENTS:
-- Paper — Standard matte finish, solid black border
-- Classic Foil (CF) — Diagonal hatched/lined border pattern, foil surface
-- Formless Foil (FF) — No border, art bleeds to edge, foil surface
-- OCM (Orbital Color Match) — Lined border with serial number on left side, A1- prefix in collector number
-- Stone Foil (SF) — Same as OCM but 1/1
+PHYSICAL VARIANT DETECTION (CRITICAL — affects pricing):
+
+Every Wonders card exists in one of five physical treatments. You MUST detect which
+treatment this card is by examining the border pattern, surface characteristics, and
+whether specific identifying features are present.
+
+1. PAPER (variant="paper") — Standard printing. Identifying signatures:
+   - Solid colored border (usually black, sometimes orbital-colored)
+   - Matte, non-reflective surface
+   - No 1st edition stamp
+   - No serial number on the left side
+   - The majority of cards in circulation are Paper
+
+2. CLASSIC FOIL (variant="cf") — Foil with visible border. Identifying signatures:
+   - Diagonal lined or hatched pattern running across the border (replaces the solid frame)
+   - Reflective, foil surface
+   - May show rainbow shimmer or directional glare
+   - 1st edition stamp MAY be present at bottom-left
+   - NO serial number on the left side
+
+3. FORMLESS FOIL (variant="ff") — Borderless foil, typically promos. Identifying signatures:
+   - NO border visible — card art bleeds all the way to the card edge
+   - Reflective, foil surface
+   - 1st edition stamp USUALLY present at bottom-left
+   - Collector number typically has P- prefix (e.g., P-002, P-043)
+
+4. ORBITAL COLOR MATCH (variant="ocm") — Numbered foil variant. Identifying signatures:
+   - Diagonal lined border (same as CF)
+   - Reflective, foil surface
+   - Serial number printed on LEFT SIDE of card, as a fraction like "38/50" (NOT 1/1)
+   - 1st edition stamp USUALLY present at bottom-left
+   - Collector number typically has A1- prefix (e.g., A1-205/402)
+
+5. STONE FOIL (variant="sf") — 1-of-1 variant. Identifying signatures:
+   - Same visual pattern as OCM (lined border, foil surface)
+   - Serial number on left side reads EXACTLY "1/1"
+   - 1st edition stamp USUALLY present at bottom-left
+   - Rarest variant, commands highest prices
+
+THE 1ST EDITION STAMP (IMPORTANT):
+
+Foil cards (CF, FF, OCM, SF) commonly display a 1st edition stamp at the bottom-left
+of the card, immediately before the collector number. The stamp is a stylized "1"
+inside a circle or hexagonal badge. It is a small visual element distinct from the
+collector number text.
+
+You MUST handle this stamp carefully in two ways:
+
+1. REPORT its presence in the "first_edition_stamp_detected" field. The presence of
+   this stamp is a strong indicator of a foil variant — Paper cards never have this
+   stamp, so if you see it, the card is almost certainly CF, FF, OCM, or SF.
+
+2. EXCLUDE the stamp from the "collector_number" field. The stamp is NOT part of
+   the collector number. Do NOT prepend "1", "I", "(1)", or any other interpretation
+   of the stamp to the collector number. Report the collector number exactly as it
+   reads, starting from the first alphanumeric character AFTER the stamp.
+
+Example: A card shows "[1-badge] A1-205/402 | Call of the Stones" at the bottom.
+  CORRECT: collector_number="A1-205/402", first_edition_stamp_detected=true
+  WRONG:   collector_number="1 A1-205/402" or collector_number="1A1-205/402"
+
+IMPORTANT: The stamp is NOT universal on foil cards. Some early CF and OCM cards
+shipped without it. Stamp absence does NOT prove the card is Paper. Use border
+pattern and serial number as the primary variant indicators.
+
+VARIANT DECISION TREE (apply in this order):
+
+Step 1: Is there a border?
+  - NO (art bleeds to edge) → variant is "ff", skip to Step 4
+  - YES → continue to Step 2
+
+Step 2: What is the border pattern?
+  - SOLID color → variant is "paper", skip to Step 4
+  - DIAGONAL LINED/HATCHED → continue to Step 3
+
+Step 3: Is there a serial number on the left side of the card?
+  - NO serial → variant is "cf"
+  - Serial reads "1/1" → variant is "sf"
+  - Serial reads anything else (e.g., "38/50", "12/100") → variant is "ocm"
+
+Step 4: Report the detected variant in the "variant" field along with your
+  confidence in that detection in the "variant_confidence" field. If any step
+  of the decision tree had low confidence (glare obscured the border pattern,
+  serial was unreadable, etc.), report variant_confidence below 0.75 so the
+  application can trigger the foil multi-scan flow.
 
 CRITICAL INSTRUCTIONS:
 1. Report the COLLECTOR NUMBER exactly as printed on the card — this is your PRIMARY identification field.
 2. If a serial number (e.g., "38/50") is visible, report it SEPARATELY in the serial_number field.
-3. If the card is foil/reflective, note foil_treatment but still try to read the collector number.
-4. If a field is unclear, return null rather than guessing.`;
+3. Execute the variant decision tree above and report variant + variant_confidence.
+4. Report first_edition_stamp_detected as a boolean (never concatenate it with collector_number).
+5. Report collector_number_confidence separately from overall confidence — glare affects them differently.
+6. If a field is unclear, return null rather than guessing.`;
 
 // ── Claude user prompt ─────────────────────────────────────────
 export const WONDERS_USER_PROMPT = `<task>Identify this Wonders of The First trading card. Read EACH field independently from its physical location on the card.</task>
@@ -164,15 +259,19 @@ export const WONDERS_USER_PROMPT = `<task>Identify this Wonders of The First tra
 - POWER: Read the value from the TOP-RIGHT box labeled "Power" (numeric, or letter for non-creatures).
 - COST: Read the value from the box labeled "Cost".
 - SERIAL NUMBER: If a separate "X/YY" serial number is visible (OCM/Stone Foil cards), report it SEPARATELY from the collector number.
+- VARIANT: Apply the decision tree in the system prompt. Report variant + variant_confidence.
+- 1ST EDITION STAMP: Report first_edition_stamp_detected as a boolean. Do NOT include the stamp in collector_number.
+- COLLECTOR NUMBER CONFIDENCE: Report collector_number_confidence separately — glare affects foil cards differently from non-foil.
 - If any field is obscured or you are uncertain, set it to null rather than guessing.
 </critical_rules>
 
 <known_prefixes>A1, AVA, BAA, CLA, EEA, KSA, P, T, TFA, XCA (plus plain numeric for Existence set)</known_prefixes>
 
 <examples>
-card_name="Riley Stormrider", collector_number="A1-205/402", power="4", cost="4", card_type="Primary Wonder", card_class="Airship Pirate", rarity="Rare", foil_treatment="ocm"
-card_name="Bartokk the Charger", collector_number="CLA-T1", power="3", card_type="Legendary Story Token Wonder", card_class="Goat Fighter", rarity="Mythic", hierarchy="legendary"
-card_name="The Displacer", collector_number="XCA-T2", power="I", cost="1", card_type="Legendary Story Token Item", card_class="Equipment Gun", rarity="Mythic"
-card_name="War Spirit", collector_number="P-002", power="7", cost="5", card_type="Primary Wonder", card_class="War Spirit", rarity="Promo"
-card_name="Unknown", collector_number="115", card_type="Wonder", rarity="Common", set_name="Existence"
+Paper: card_name="Bellator", collector_number="78/402", variant="paper", variant_confidence=0.95, first_edition_stamp_detected=false, collector_number_confidence=0.95
+OCM: card_name="Riley Stormrider", collector_number="A1-205/402", variant="ocm", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.85, serial_number="38/50", card_type="Primary Wonder", card_class="Airship Pirate", rarity="Rare"
+CF: card_name="Omnis Quantum", collector_number="14/402", variant="cf", variant_confidence=0.88, first_edition_stamp_detected=true, collector_number_confidence=0.9
+FF promo: card_name="War Spirit", collector_number="P-002", variant="ff", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.95, card_type="Primary Wonder", rarity="Promo"
+Stone Foil (1/1): card_name="Bartokk the Charger", collector_number="CLA-T1", variant="sf", variant_confidence=0.85, first_edition_stamp_detected=true, serial_number="1/1", card_type="Legendary Story Token Wonder"
+Glare on foil: collector_number_confidence=0.55, variant_confidence=0.6, flags=["foil_glare"]
 </examples>`;
