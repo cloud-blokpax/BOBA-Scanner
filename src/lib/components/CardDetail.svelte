@@ -8,6 +8,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import VariantBadge from '$lib/components/VariantBadge.svelte';
+	import DragonPointsCard from '$lib/components/DragonPointsCard.svelte';
 	import type { CollectionItem } from '$lib/types';
 	import type { ActionReturn } from 'svelte/action';
 
@@ -233,6 +234,11 @@
 								{#if meta.ability_text_1}<p>{meta.ability_text_1}</p>{/if}
 								{#if meta.ability_text_2}<p>{meta.ability_text_2}</p>{/if}
 							</div>
+						{/if}
+
+						<!-- Dragon Points (Phase 3, Step 3.2) — gated on multi_game_ui + Wonders -->
+						{#if multiGameEnabled() && card}
+							<DragonPointsCard {card} variant={item?.variant || 'paper'} />
 						{/if}
 					{/if}
 

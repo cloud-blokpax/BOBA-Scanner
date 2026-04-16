@@ -99,6 +99,51 @@ const _ownedCounts = $derived.by(() => {
 	return map;
 });
 export function ownedCardCounts(): Map<string, number> { return _ownedCounts; }
+
+// ── Wonders Dragon Points total (Phase 3, Step 3.2) ──────────
+// Derived per-card breakdown + collection total. Cached in a $derived so
+// it only recomputes when _items changes.
+import { calculateDragonPoints, type DragonPointsResult } from '$lib/games/wonders/dragon-points';
+
+interface DragonPointsEntry {
+	item: CollectionItem;
+	result: DragonPointsResult;
+	/** Points × quantity so duplicate copies count. */
+	totalForItem: number;
+}
+
+const _dragonPointsEntries = $derived.by<DragonPointsEntry[]>(() => {
+	const out: DragonPointsEntry[] = [];
+	for (const item of _items) {
+		if ((item.card?.game_id || 'boba') !== 'wonders') continue;
+		const card = item.card;
+		if (!card) continue;
+		const meta = (card.metadata ?? {}) as Record<string, unknown>;
+		const cardClass = typeof meta.card_class === 'string' ? meta.card_class : null;
+		const result = calculateDragonPoints({
+			rarity: card.rarity ?? null,
+			variant: item.variant || 'paper',
+			year: card.year ?? null,
+			card_class: cardClass,
+		});
+		out.push({
+			item,
+			result,
+			totalForItem: result.points * (item.quantity || 1),
+		});
+	}
+	return out;
+});
+
+const _dragonPointsTotal = $derived<number>(
+	_dragonPointsEntries.reduce((sum, e) => sum + e.totalForItem, 0)
+);
+
+/** Total Dragon Points across the user's Wonders collection (quantity-weighted). */
+export function dragonPointsTotal(): number { return _dragonPointsTotal; }
+
+/** Per-item Dragon Points entries with breakdown. Used by /wonders/dragon-points. */
+export function dragonPointsEntries(): DragonPointsEntry[] { return _dragonPointsEntries; }
 export function collectionSets(): string[] {
 	const sets = new Set<string>();
 	for (const item of _items) {
