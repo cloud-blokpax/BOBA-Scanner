@@ -1,4 +1,4 @@
-import playCardsData from '$lib/data/play-cards.json';
+import { getPlayCards } from '$lib/data/play-cards';
 import { getDbsScoresMap, type PlayCardData } from '$lib/data/boba-dbs-scores';
 import { TOURNAMENT_FORMATS } from '$lib/data/tournament-formats';
 import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	// Load play card data (same as current deck builder)
 	const playCardsBySet: Record<string, PlayCardData[]> = {};
-	for (const card of playCardsData as PlayCardData[]) {
+	for (const card of getPlayCards()) {
 		const setCode = RELEASE_TO_SET_NAME[card.release] || card.release;
 		if (!playCardsBySet[setCode]) playCardsBySet[setCode] = [];
 		playCardsBySet[setCode].push(card);

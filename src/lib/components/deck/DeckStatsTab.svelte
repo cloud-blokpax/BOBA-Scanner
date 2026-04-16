@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Card } from '$lib/types';
 	import type { DeckValidationResult } from '$lib/services/deck-validator';
-	import playCardsData from '$lib/data/play-cards.json';
+	import { getPlayCards } from '$lib/data/play-cards';
 	import { analyzeDeadCards, type DeadCardReport } from '$lib/services/dead-card-detector';
 	import type { PlayCard } from '$lib/services/playbook-engine';
 	import DeadCardAlert from '$lib/components/architect/DeadCardAlert.svelte';
@@ -47,9 +47,7 @@
 	const uniqueWeapons = $derived(weaponCounts.length);
 
 	// Build name→PlayCard lookup from JSON seed for dead card analysis
-	const playLookup = new Map(
-		(playCardsData as PlayCard[]).map(p => [p.name, p])
-	);
+	const playLookup = new Map(getPlayCards().map(p => [p.name, p]));
 
 	const deadCardReport = $derived.by((): DeadCardReport | null => {
 		if (playEntries.length === 0 || heroCards.length === 0) return null;

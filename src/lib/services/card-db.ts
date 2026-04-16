@@ -13,7 +13,7 @@ import { idb } from './idb';
 import { loadParallelConfig, getParallelRarity } from './parallel-config';
 import { invalidateFeaturedCache } from './pack-simulator';
 import type { Card } from '$lib/types';
-import localPlayCards from '$lib/data/play-cards.json';
+import { getPlayCards, deriveBasePlayName } from '$lib/data/play-cards';
 import { heroMatches, findSimilarCardNumbers } from './card-db-search';
 
 // Re-export search functions for backward compatibility
@@ -24,12 +24,9 @@ interface PlayCardRaw {
 	card_number: string;
 	name: string;
 	release: string;
-	type?: string;
-	number?: number;
 	hot_dog_cost?: number;
 	dbs?: number;
 	ability?: string;
-	base_play_name?: string;
 }
 
 /**
@@ -63,7 +60,7 @@ function playCardToCard(p: PlayCardRaw): Card {
 		image_url: null,
 		created_at: '',
 		game_id: 'boba',
-		base_play_name: p.base_play_name,
+		base_play_name: deriveBasePlayName(p.name),
 	};
 }
 
@@ -73,9 +70,10 @@ function playCardToCard(p: PlayCardRaw): Card {
  */
 async function loadPlayCards(): Promise<Card[]> {
 	// Build a lookup from bundled local JSON for name fallback
+	const localPlayCards = getPlayCards();
 	const localByCardNumber = new Map<string, PlayCardRaw>();
-	const localCount = (localPlayCards as PlayCardRaw[]).length;
-	for (const p of localPlayCards as PlayCardRaw[]) {
+	const localCount = localPlayCards.length;
+	for (const p of localPlayCards) {
 		localByCardNumber.set(p.card_number, p);
 	}
 
@@ -105,7 +103,6 @@ async function loadPlayCards(): Promise<Card[]> {
 						dbs: (row.dbs as number) ?? localFallback?.dbs ?? 0,
 						hot_dog_cost: (row.hot_dog_cost as number) ?? localFallback?.hot_dog_cost ?? 0,
 						ability: localFallback?.ability,
-						base_play_name: localFallback?.base_play_name,
 					});
 				});
 			} else {
@@ -119,7 +116,7 @@ async function loadPlayCards(): Promise<Card[]> {
 	// Fallback: bundled local JSON
 	console.debug(`[card-db] Using bundled play-cards.json (${localCount} cards)`);
 	try {
-		const result = (localPlayCards as PlayCardRaw[]).map(playCardToCard);
+		const result = localPlayCards.map(playCardToCard);
 		if (result.length === 0) {
 			console.error('[card-db] CRITICAL: Bundled play-cards.json produced 0 cards');
 		}
