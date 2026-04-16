@@ -58,7 +58,8 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 			card_number: result.card?.card_number ?? null,
 			scan_method: result.scan_method ?? 'unknown',
 			confidence: result.confidence ?? null,
-			processing_ms: result.processing_ms ?? null
+			processing_ms: result.processing_ms ?? null,
+			game_id: result.game_id || 'boba'
 		});
 		if (scanError) {
 			console.error('[scan] Supabase scan log FAILED:', scanError.message);
@@ -76,7 +77,7 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
 	onTierChange?: (tier: 1 | 2 | 3) => void,
-	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean; cropRegion?: { x: number; y: number; width: number; height: number } | null }
+	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean; cropRegion?: { x: number; y: number; width: number; height: number } | null; gameHint?: string | null }
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
@@ -99,7 +100,8 @@ export async function recognizeCard(
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null };
+	const gameHint = options?.gameHint ?? 'boba';
+	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
 
 	// Convert to ImageBitmap for worker transfer
 	const ownsBitmap = !(imageSource instanceof ImageBitmap);
@@ -128,7 +130,7 @@ export async function recognizeCard(
 
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
-		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId };
+		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId, game_id: result.card ? (result.card.game_id || gameHint) : null };
 		const thumbnail = bitmap instanceof ImageBitmap ? createThumbnailDataUrl(bitmap) : null;
 
 		// Create a listing-quality image blob for Supabase Storage upload.
@@ -234,7 +236,7 @@ export async function recognizeCard(
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}`);
 				const hash = await getImageWorker().computeDHash(bitmap);
-				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap);
+				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, gameHint);
 				return finalize(tier2Result);
 			}
 			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
@@ -254,7 +256,7 @@ export async function recognizeCard(
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}`);
 		const hash = await getImageWorker().computeDHash(bitmap);
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap);
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, gameHint);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
@@ -276,7 +278,8 @@ async function writeHashToAllLayers(
 	hash: string,
 	cardId: string,
 	confidence: number,
-	bitmap?: ImageBitmap
+	bitmap?: ImageBitmap,
+	gameId: string = 'boba'
 ): Promise<void> {
 	// Compute pHash if bitmap is available (for enhanced matching)
 	let phash256: string | null = null;
@@ -290,7 +293,7 @@ async function writeHashToAllLayers(
 
 	// Layer 1: IndexedDB
 	try {
-		await idb.setHash({ phash: hash, card_id: cardId, confidence, ...(phash256 ? { phash_256: phash256 } : {}) });
+		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, ...(phash256 ? { phash_256: phash256 } : {}) });
 	} catch (err) {
 		console.debug('[scan] IDB hash write failed:', err);
 	}
@@ -300,10 +303,11 @@ async function writeHashToAllLayers(
 		try {
 			const client = getSupabase();
 			if (client) {
-				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string } = {
+				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string } = {
 					p_phash: hash,
 					p_card_id: cardId,
-					p_confidence: confidence
+					p_confidence: confidence,
+					p_game_id: gameId
 				};
 				if (phash256) rpcArgs.p_phash_256 = phash256;
 				const { error: rpcErr } = await client.rpc('upsert_hash_cache', rpcArgs);

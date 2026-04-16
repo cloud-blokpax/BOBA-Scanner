@@ -25,6 +25,8 @@ export interface Card {
 	battle_zone: string | null;
 	image_url: string | null;
 	created_at: string;
+	/** Which game this card belongs to ('boba', 'wonders', etc.) */
+	game_id?: string;
 	/** Release year: 2025 for Alpha Edition / Alpha Update, 2026 for Griffey Edition */
 	year?: number | null;
 	/** Base play name for variant deduplication (e.g. "Blitz" for "Blitz Alpha", "Blitz Blast") */
@@ -65,6 +67,8 @@ export interface ScanResult {
 	confidence: number;
 	processing_ms: number;
 	variant?: string | null;
+	/** Which game this scan identified (null if auto-detect failed or scan failed) */
+	game_id?: string | null;
 	/** Human-readable reason when scan fails to identify a card */
 	failReason?: string | null;
 	/** Trace ID for correlating logs across tiers */

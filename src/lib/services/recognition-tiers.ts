@@ -17,6 +17,8 @@ import { recognizeText } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { checkCorrection } from '$lib/services/scan-learning';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
+import { resolveGameConfig } from '$lib/games/resolver';
+import type { OcrRegion } from '$lib/games/types';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
 // ── Shared types ────────────────────────────────────────────
@@ -26,6 +28,8 @@ export interface ScanContext {
 	lastOcrReading: string | null;
 	lastTier3FailReason: string | null;
 	cropRegion?: { x: number; y: number; width: number; height: number } | null;
+	/** Game hint for scoping hash lookups, OCR extraction, and Claude prompts. Defaults to 'boba'. */
+	gameHint: string;
 }
 
 // ── Mutable state ───────────────────────────────────────────
@@ -61,7 +65,7 @@ async function fetchCardById(cardId: string): Promise<Card | null> {
 export async function runTier1(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap) => Promise<void>
+	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string) => Promise<void>
 ): Promise<ScanResult | null> {
 	const worker = getImageWorker();
 	const hash = await worker.computeDHash(bitmap);
@@ -105,7 +109,7 @@ export async function runTier1(
 	if (client && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
 		try {
 			const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
-				query_hash: hash, max_distance: 5
+				query_hash: hash, max_distance: 5, p_game_id: ctx.gameHint || null
 			});
 			if (fuzzyErr) {
 				console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash lookup RPC error:`, fuzzyErr.message);
@@ -133,7 +137,7 @@ export async function runTier1(
 					const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
 					if (card) {
 						const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
-						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap);
+						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap, ctx.gameHint);
 						console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
 						return { card_id: card.id, card, scan_method: 'hash_cache' as const, confidence: adjustedConfidence, processing_ms: 0 };
 					}
@@ -153,7 +157,18 @@ export async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 	const TIER2_BUDGET_MS = 12000;
 	const tier2Start = performance.now();
 
-	for (const region of BOBA_OCR_REGIONS) {
+	// Load game-specific OCR regions and card number extractor
+	let ocrRegions: readonly OcrRegion[] = BOBA_OCR_REGIONS;
+	let gameExtractCardNumber: (text: string) => string | null = extractCardNumber;
+	try {
+		const gameConfig = await resolveGameConfig(ctx.gameHint);
+		ocrRegions = gameConfig.ocrRegions;
+		gameExtractCardNumber = gameConfig.extractCardNumber;
+	} catch {
+		// Fall back to BoBA defaults if game config resolution fails
+	}
+
+	for (const region of ocrRegions) {
 		const elapsed = performance.now() - tier2Start;
 		const remaining = TIER2_BUDGET_MS - elapsed;
 		if (remaining <= 1000) {
@@ -173,7 +188,7 @@ export async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 			);
 			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
-			const resolvedNumber = extractCardNumber(ocrResult.text);
+			const resolvedNumber = gameExtractCardNumber(ocrResult.text);
 			if (!resolvedNumber) continue;
 
 			ctx.lastOcrReading = resolvedNumber;
@@ -219,6 +234,9 @@ export async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 		console.debug(`[scan:${ctx.traceId}:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
 		const formData = new FormData();
 		formData.append('image', imageBlob, 'scan.jpg');
+		if (ctx.gameHint) {
+			formData.append('game_id', ctx.gameHint);
+		}
 		response = await fetch('/api/scan', { method: 'POST', body: formData });
 	} catch (err) {
 		console.error(`[scan:${ctx.traceId}:tier3] Network error calling /api/scan:`, err);

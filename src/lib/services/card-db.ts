@@ -62,6 +62,7 @@ function playCardToCard(p: PlayCardRaw): Card {
 		battle_zone: null,
 		image_url: null,
 		created_at: '',
+		game_id: 'boba',
 		base_play_name: p.base_play_name,
 	};
 }
@@ -139,13 +140,19 @@ let searchIndex: Array<{ card: Card; searchText: string }> = [];
 let isLoaded = false;
 let _loadPromise: Promise<Card[]> | null = null;
 
+/** Current game filter for card loading. Defaults to 'boba'. */
+let _activeGameId = 'boba';
+
 
 /**
  * Load the card database. Guarantees a usable card index is available.
  * Never throws — returns an empty array if all sources fail.
  * Uses a shared promise to prevent concurrent duplicate loads.
+ *
+ * @param gameId - Which game's cards to load. Defaults to 'boba'.
  */
-export async function loadCardDatabase(): Promise<Card[]> {
+export async function loadCardDatabase(gameId: string = 'boba'): Promise<Card[]> {
+	_activeGameId = gameId;
 	if (isLoaded && cards.length > 0) return cards;
 
 	if (_loadPromise) return _loadPromise;
@@ -243,6 +250,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				const { data, error } = await client
 					.from('cards')
 					.select('*')
+					.eq('game_id', _activeGameId)
 					.range(offset, offset + BATCH_SIZE - 1)
 					.order('id');
 
@@ -252,14 +260,14 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				} else {
 					allCards = allCards.concat(data as Card[]);
 					offset += BATCH_SIZE;
-	
+
 					if (data.length < BATCH_SIZE) hasMore = false;
 				}
 			}
 
 			if (allCards.length > 0) {
-				// Merge play cards
-				const playCards = await loadPlayCards();
+				// Merge play cards (BoBA-only — play cards are a BoBA concept)
+				const playCards = _activeGameId === 'boba' ? await loadPlayCards() : [];
 				if (playCards.length > 0) {
 					allCards = allCards.concat(playCards);
 				}
@@ -331,6 +339,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 					const { data, error: err } = await supabase
 						.from('cards')
 						.select('*')
+						.eq('game_id', _activeGameId)
 						.gt('updated_at', lastSyncTime)
 						.range(offset, offset + CHUNK - 1);
 					if (err) { incrError = err as unknown as Error; done = true; }
@@ -354,7 +363,8 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 				// No new cards — but check if any cards were deleted
 				const { count: remoteCount } = await supabase
 					.from('cards')
-					.select('*', { count: 'exact', head: true });
+					.select('*', { count: 'exact', head: true })
+					.eq('game_id', _activeGameId);
 
 				// cards array includes play cards (~409) which aren't in the hero 'cards' table,
 			// so exclude them from the comparison to avoid false full-refresh triggers
@@ -383,6 +393,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 				const { data, error } = await supabase
 					.from('cards')
 					.select('*')
+					.eq('game_id', _activeGameId)
 					.range(offset, offset + BATCH_SIZE - 1)
 					.order('id');
 
@@ -400,12 +411,12 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 			cards = allCards;
 		}
 
-		// Re-merge play cards on refresh.
+		// Re-merge play cards on refresh (BoBA-only — play cards are a BoBA concept).
 		// Preserve existing play cards if loadPlayCards() fails — on full refresh
 		// (non-incremental), cards was replaced with hero-only data, so we must
 		// capture existing play cards BEFORE filtering.
 		const existingPlayCards = cards.filter(c => c.hero_name === null && c.power === null && c.weapon_type === null);
-		const playCards = await loadPlayCards();
+		const playCards = _activeGameId === 'boba' ? await loadPlayCards() : [];
 		// Strip any existing play cards before re-adding
 		cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
 		if (playCards.length > 0) {
@@ -504,10 +515,15 @@ export function normalizeCardNum(val: string): string {
 
 /**
  * Find a card by card number with optional hero name verification.
+ *
+ * @param cardNumber - Card number to search for
+ * @param heroName - Optional hero name for disambiguation
+ * @param _gameId - Reserved for future multi-game filtering (currently unused — indexes are per-load)
  */
 export function findCard(
 	cardNumber: string,
-	heroName: string | null = null
+	heroName: string | null = null,
+	_gameId: string = 'boba'
 ): Card | null {
 	if (!isLoaded || !cardNumber) return null;
 

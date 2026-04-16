@@ -169,13 +169,14 @@ export const idb = {
 	async getHash(phash: string) {
 		return get(STORES.hashCache, phash);
 	},
-	async setHash(entry: { phash: string; card_id: string; confidence: number; phash_256?: string }) {
+	async setHash(entry: { phash: string; card_id: string; confidence: number; phash_256?: string; game_id?: string }) {
 		// Read existing entry to increment scan_count
 		const existing = await get<{ scan_count?: number }>(STORES.hashCache, entry.phash);
 		const prevCount = existing?.scan_count || 0;
 
 		await put(STORES.hashCache, {
 			...entry,
+			game_id: entry.game_id || 'boba',
 			scan_count: prevCount + 1,
 			last_seen: new Date().toISOString()
 		});
