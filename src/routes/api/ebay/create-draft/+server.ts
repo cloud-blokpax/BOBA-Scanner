@@ -6,6 +6,7 @@ import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { getSellerPolicies, ensureInventoryLocation, publishOffer, optInToBusinessPolicies, EBAY_INVENTORY_URL } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
+import { incrementPersona } from '$lib/services/persona';
 
 export const config = { maxDuration: 60 };
 
@@ -184,6 +185,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 			if (insertErr) {
 				console.error('[ebay/create-draft] Template save FAILED:', insertErr.message, insertErr.details, insertErr.hint);
+			} else {
+				// Phase 5A: passive persona tracking. Fire-and-forget.
+				// Use the user-scoped client (locals.supabase), NOT adminClient,
+				// so the RPC's auth.uid() resolves to the real user.
+				incrementPersona(locals.supabase, 'seller');
 			}
 		} catch (err) {
 			console.error('[ebay/create-draft] Template save FAILED:', err);

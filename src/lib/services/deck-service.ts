@@ -8,6 +8,7 @@
 
 import { getSupabase } from '$lib/services/supabase';
 import { getFormat } from '$lib/data/tournament-formats';
+import { incrementPersona } from './persona';
 
 // ── Supabase helper for user_decks table ────────────────────
 function userDecksTable() {
@@ -210,6 +211,8 @@ export async function createDeck(params: CreateDeckParams): Promise<CreateDeckRe
 		return { ok: false, reason: 'error' };
 	}
 	if (!data?.id) return { ok: false, reason: 'error' };
+	// Phase 5A: passive persona tracking. Fire-and-forget.
+	incrementPersona(client, 'deck_builder');
 	return { ok: true, deckId: data.id };
 }
 
