@@ -7,10 +7,12 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+	import VariantBadge from '$lib/components/VariantBadge.svelte';
 	import type { CollectionItem } from '$lib/types';
 	import type { ActionReturn } from 'svelte/action';
 
 	const hasPriceHistory = featureEnabled('price_history');
+	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	let tiltAction: ((node: HTMLElement, params?: Record<string, unknown>) => ActionReturn) | null = null;
 	import('$lib/actions/tilt').then(m => { tiltAction = m.tilt; });
@@ -183,6 +185,10 @@
 						{/if}
 						{#if card?.set_code}
 							<span class="meta-tag">{card.set_code}</span>
+						{/if}
+						<!-- Wonders variant badge (Phase 2.5, multi-game flag) -->
+						{#if isWonders && multiGameEnabled() && item?.variant}
+							<VariantBadge variant={item.variant} size="sm" showName />
 						{/if}
 						{#if card?.parallel}
 							<span class="meta-tag parallel">{card.parallel}</span>

@@ -32,6 +32,17 @@ let _loading = $state(false);
  */
 let _gameFilter = $state<'all' | string>('all');
 
+/**
+ * Variant filter for the collection view (Phase 2.5).
+ *   'all'   = all variants (default)
+ *   'paper' = paper only
+ *   'foils' = all foil variants grouped (cf + ff + ocm + sf)
+ *   'cf' | 'ff' | 'ocm' | 'sf' = specific foil type
+ * Only meaningful when gameFilter is 'all' or 'wonders' — BoBA
+ * collections are all 'paper' so the filter is hidden for BoBA.
+ */
+let _variantFilter = $state<'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'>('all');
+
 // Track when items were last locally modified for sync conflict resolution
 const _localModifiedAt = new Map<string, number>();
 
@@ -50,13 +61,30 @@ export function clearLocalModifications(): void {
 // ── Public reactive accessors ──────────────────────────────────
 export function gameFilter(): 'all' | string { return _gameFilter; }
 export function setGameFilter(filter: 'all' | string): void { _gameFilter = filter; }
-
-/** Returns items filtered by the current game filter. */
-export function collectionItems(): CollectionItem[] {
-	if (_gameFilter === 'all') return _items;
-	return _items.filter(item => (item.card?.game_id || 'boba') === _gameFilter);
+export function variantFilter(): 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf' { return _variantFilter; }
+export function setVariantFilter(filter: 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'): void {
+	_variantFilter = filter;
 }
-/** Returns all items regardless of game filter (used by sync, counts, etc.) */
+
+const FOIL_SET: ReadonlySet<string> = new Set(['cf', 'ff', 'ocm', 'sf']);
+
+/** Returns items filtered by the current game AND variant filters. */
+export function collectionItems(): CollectionItem[] {
+	let out = _items;
+	if (_gameFilter !== 'all') {
+		out = out.filter(item => (item.card?.game_id || 'boba') === _gameFilter);
+	}
+	if (_variantFilter !== 'all') {
+		out = out.filter(item => {
+			const v = (item.variant || 'paper').toLowerCase();
+			if (_variantFilter === 'paper') return v === 'paper';
+			if (_variantFilter === 'foils') return FOIL_SET.has(v);
+			return v === _variantFilter;
+		});
+	}
+	return out;
+}
+/** Returns all items regardless of game/variant filter (used by sync, counts, etc.) */
 export function allCollectionItems(): CollectionItem[] { return _items; }
 export function collectionLoading(): boolean { return _loading; }
 export function collectionCount(): number {
