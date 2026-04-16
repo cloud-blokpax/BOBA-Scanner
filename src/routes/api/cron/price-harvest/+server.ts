@@ -309,6 +309,38 @@ export const GET: RequestHandler = async ({ request, url }) => {
 // Single Postgres function replaces four in-memory priority passes.
 // Avoids the Supabase JS client's 1,000-row default limit that
 // caused the harvester to stall after ~1,000 cards.
+//
+// Phase 2.5 note: the RPC should be updated in Supabase to return
+// `(id, variant, ...)` pairs drawn from the union of variants seen in
+// active `collections` and `listing_templates` rows for each card, plus
+// `'paper'` as a baseline. Until the SQL update is applied, the RPC
+// returns cards without a variant column — we default to 'paper' below
+// so existing behavior is preserved. Adding the column to the RPC is
+// backward-compatible: TypeScript reads `row.variant ?? 'paper'`.
+//
+// Proposed SQL (run once in Supabase SQL Editor):
+//
+//   CREATE OR REPLACE FUNCTION get_harvest_candidates(
+//     p_run_id text, p_limit int, p_game_id text DEFAULT 'boba'
+//   ) RETURNS TABLE (
+//     id text, variant text, hero_name text, name text, card_number text,
+//     athlete_name text, parallel text, weapon_type text, priority int
+//   ) LANGUAGE sql AS $$
+//     WITH active_variants AS (
+//       SELECT c.card_id, c.variant FROM collections c
+//         JOIN cards ON c.card_id = cards.id WHERE cards.game_id = p_game_id
+//       UNION
+//       SELECT lt.card_id, lt.variant FROM listing_templates lt
+//         JOIN cards ON lt.card_id = cards.id WHERE cards.game_id = p_game_id
+//       UNION
+//       SELECT cards.id, 'paper' FROM cards WHERE cards.game_id = p_game_id
+//     )
+//     SELECT cards.id::text, av.variant, cards.hero_name, cards.name, ...
+//     FROM active_variants av JOIN cards ON av.card_id = cards.id
+//     LEFT JOIN price_cache pc ON pc.card_id = cards.id AND pc.variant = av.variant
+//     WHERE ... (priority logic by staleness, same as before)
+//     LIMIT p_limit;
+//   $$;
 
 interface CardCandidate {
 	id: string;
@@ -319,6 +351,8 @@ interface CardCandidate {
 	parallel: string | null;
 	weapon_type: string | null;
 	priority: number;
+	/** Phase 2.5: variant to harvest. 'paper' until the RPC is updated. */
+	variant?: string | null;
 }
 
 async function getNextCandidates(
@@ -336,7 +370,9 @@ async function getNextCandidates(
 		return [];
 	}
 
-	return (data as unknown as CardCandidate[]) || [];
+	// Normalize: default variant to 'paper' when the RPC hasn't been updated yet.
+	const raw = (data as unknown as CardCandidate[]) || [];
+	return raw.map((r) => ({ ...r, variant: r.variant || 'paper' }));
 }
 
 /**
@@ -374,6 +410,10 @@ async function refreshCardPrice(
 	chainDepth: number,
 	confidenceThreshold: number
 ): Promise<RefreshResult> {
+	// Phase 2.5: the harvester now operates on (card_id, variant) pairs.
+	// Variant defaults to 'paper' when the RPC hasn't been updated yet — see
+	// the comment on get_harvest_candidates above.
+	const variant = card.variant || 'paper';
 	const query = buildEbaySearchQuery(card);
 	const callStart = Date.now();
 
@@ -384,7 +424,7 @@ async function refreshCardPrice(
 		if (count === 1) await redis.expire(key, 86400);
 	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
 
-	// Fetch previous price for delta tracking
+	// Fetch previous price for delta tracking (variant-scoped)
 	let previousMid: number | null = null;
 	let isNewPrice = false;
 	try {
@@ -393,6 +433,7 @@ async function refreshCardPrice(
 			.select('price_mid')
 			.eq('card_id', card.id)
 			.eq('source', 'ebay')
+			.eq('variant', variant)
 			.maybeSingle();
 
 		if (cached) {
@@ -456,9 +497,10 @@ async function refreshCardPrice(
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
-		const priceData = {
+		const priceData: Record<string, unknown> = {
 			card_id: card.id,
 			source: 'ebay',
+			variant,
 			price_low: allStats?.low ?? null,
 			price_mid: allStats?.median ?? null,
 			price_high: allStats?.high ?? null,
@@ -477,7 +519,7 @@ async function refreshCardPrice(
 		// Always upsert price_cache so the card is marked as "searched".
 		// Cards below threshold get cached with null prices (searched, no price)
 		// so they drop to stale priority instead of being re-searched as "unpriced".
-		const cachePayload = meetsThreshold
+		const cachePayload: Record<string, unknown> = meetsThreshold
 			? priceData
 			: {
 				...priceData,
@@ -488,7 +530,10 @@ async function refreshCardPrice(
 				buy_now_low: null,
 				buy_now_mid: null,
 			};
-		const { error: cacheError } = await admin.from('price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
+		// Upsert key is (card_id, source, variant) — cast because generated types are stale.
+		const { error: cacheError } = await (admin.from('price_cache') as unknown as {
+			upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
+		}).upsert(cachePayload, { onConflict: 'card_id,source,variant' });
 		if (cacheError) {
 			console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
 		}
@@ -498,15 +543,19 @@ async function refreshCardPrice(
 		const priceChanged = previousMid !== newMid;
 
 		if (meetsThreshold && (!previousMid || priceChanged)) {
-			const { error: historyError } = await admin.from('price_history').insert({
+			const historyRow: Record<string, unknown> = {
 				card_id: card.id,
 				source: 'ebay',
+				variant,
 				price_low: priceData.price_low,
 				price_mid: priceData.price_mid,
 				price_high: priceData.price_high,
 				listings_count: priceData.listings_count,
 				recorded_at: new Date().toISOString()
-			});
+			};
+			const { error: historyError } = await (admin.from('price_history') as unknown as {
+				insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+			}).insert(historyRow);
 			if (historyError) {
 				console.error(`[harvest] price_history insert FAILED for ${card.id}:`, historyError.message);
 			}

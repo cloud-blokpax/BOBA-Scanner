@@ -6,8 +6,11 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import { tryAwardBadge } from '$lib/services/badges';
+	import { trackScanMetric } from '$lib/services/error-tracking';
 	import type { ScanResult, Card } from '$lib/types';
 	import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
+	import { normalizeVariant, isFoilVariant, type VariantCode } from '$lib/data/variants';
+	import VariantSelector from '$lib/components/VariantSelector.svelte';
 
 	import ScanCardImage from './scan-confirmation/ScanCardImage.svelte';
 	import ScanCardHeader from './scan-confirmation/ScanCardHeader.svelte';
@@ -20,6 +23,7 @@
 
 	const hasPriceHistory = featureEnabled('price_history');
 	const hasScanToList = featureEnabled('scan_to_list');
+	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	let {
 		result,
@@ -150,11 +154,64 @@
 		return () => controller.abort();
 	});
 
+	// ── Variant state (Phase 2.5) ──────────────────────────
+	// For Wonders cards, variant is part of collection identity. When variant
+	// confidence is low or null, the UI presents a selector and defers auto-add
+	// until the user confirms their variant choice.
+	const VARIANT_CONFIDENCE_THRESHOLD = 0.75;
+	const gameId = $derived(card?.game_id || activeResult.game_id || 'boba');
+	const isWondersCard = $derived(gameId === 'wonders');
+	const detectedVariant = $derived(normalizeVariant(activeResult.variant));
+	const variantConfidence = $derived(activeResult.variant_confidence ?? null);
+
+	// Needs explicit user confirmation when:
+	//   - Wonders card
+	//   - multi_game_ui flag on
+	//   - confidence is null (Tier 2 silent-miss protection) OR below threshold
+	const needsVariantConfirmation = $derived(
+		isWondersCard &&
+		multiGameEnabled() &&
+		(variantConfidence === null || variantConfidence < VARIANT_CONFIDENCE_THRESHOLD)
+	);
+
+	// User's current variant choice (starts at the detected value).
+	let userVariant = $state<VariantCode>('paper');
+	let variantAcknowledged = $state(false);
+	let variantSyncedForCardId: string | null = null;
+	$effect(() => {
+		if (!card?.id) return;
+		if (card.id === variantSyncedForCardId) return;
+		variantSyncedForCardId = card.id;
+		userVariant = detectedVariant;
+		// Auto-acknowledge if we don't need confirmation (high-confidence, BoBA, flag off)
+		variantAcknowledged = !needsVariantConfirmation;
+	});
+
+	function handleVariantSelect(v: VariantCode) {
+		userVariant = v;
+		variantAcknowledged = true;
+	}
+
+	// Foil multi-scan soft prompt: fires only when the detected variant is a
+	// foil AND either variant_confidence or collector_number_confidence is low.
+	const collectorNumberConfidence = $derived(activeResult.collector_number_confidence ?? null);
+	const showFoilRescanPrompt = $derived(
+		isWondersCard &&
+		multiGameEnabled() &&
+		isFoilVariant(detectedVariant) &&
+		(
+			(variantConfidence !== null && variantConfidence < VARIANT_CONFIDENCE_THRESHOLD) ||
+			(collectorNumberConfidence !== null && collectorNumberConfidence < VARIANT_CONFIDENCE_THRESHOLD)
+		)
+	);
+
 	// Auto-add card to collection after successful scan
 	$effect(() => {
 		if (autoAddAttempted || adding || addSuccess) return;
 		if (!card?.id || !isAuthenticated) return;
 		if (activeResult.confidence < 0.7) return;
+		// Block auto-add when the user still needs to confirm variant (Wonders only).
+		if (needsVariantConfirmation && !variantAcknowledged) return;
 		autoAddAttempted = true;
 		handleAdd();
 	});
@@ -164,7 +221,7 @@
 		listingInProgress = true;
 		listingError = null;
 		try {
-			const template = generateListingTemplate(card, priceData);
+			const template = generateListingTemplate(card, priceData, 'Near Mint', userVariant);
 			const listingPrice = template.suggested_price || priceData.price_mid;
 			if (!listingPrice || listingPrice <= 0) {
 				listingError = 'No market data available — set a price in the Sell tab before listing.';
@@ -197,6 +254,10 @@
 
 	async function handleAdd() {
 		if (!card) return;
+		// Safety: don't persist a collection row until the user has confirmed
+		// variant (when confirmation is required). Auto-add effect already
+		// gates this, but a manual "Add" button click should also respect it.
+		if (needsVariantConfirmation && !variantAcknowledged) return;
 		adding = true;
 		addError = null;
 		addSuccess = false;
@@ -206,7 +267,26 @@
 			if (result?._listingImagePromise) {
 				try { scanBlob = await result._listingImagePromise; } catch { /* non-critical */ }
 			}
-			await addToCollection(card.id, undefined, undefined, scanBlob);
+			await addToCollection(
+				card.id,
+				undefined,
+				undefined,
+				scanBlob,
+				gameId,
+				userVariant
+			);
+			// Phase 2.5: log the user's final variant choice alongside the detected one
+			// so we can audit misidentifications (user_confirmed_variant !== detected_variant).
+			trackScanMetric({
+				event: 'variant_confirmed',
+				card_id: card.id,
+				game_id: gameId,
+				detected_variant: detectedVariant,
+				user_confirmed_variant: userVariant,
+				variant_confidence: variantConfidence,
+				needed_confirmation: needsVariantConfirmation,
+				tier: activeResult.scan_method,
+			});
 			addSuccess = true;
 			triggerHaptic('successAdd');
 			showConfetti = true;
@@ -261,6 +341,48 @@
 					showPriceHistory={hasPriceHistory()}
 					{card}
 				/>
+
+				<!-- ── Variant confirmation (Wonders + low-confidence) ────────── -->
+				{#if needsVariantConfirmation}
+					<div class="variant-confirm-section">
+						<div class="variant-confirm-header">
+							<span class="variant-confirm-title">Confirm Variant</span>
+							{#if variantAcknowledged}
+								<span class="variant-confirm-check" aria-label="Confirmed">✓</span>
+							{/if}
+						</div>
+						<VariantSelector
+							value={userVariant}
+							onSelect={handleVariantSelect}
+							size="sm"
+						/>
+					</div>
+				{/if}
+
+				<!-- ── Foil multi-scan soft prompt ─────────────────────────────── -->
+				{#if showFoilRescanPrompt}
+					<div class="foil-rescan-prompt">
+						<div class="foil-rescan-header">
+							<span class="foil-rescan-icon" aria-hidden="true">✨</span>
+							<span class="foil-rescan-title">Foil detected — low read confidence</span>
+						</div>
+						<p class="foil-rescan-body">
+							We detected a foil card but the collector number was hard to read.
+							Rescan at multiple angles for better accuracy, or confirm this match is correct.
+						</p>
+						<button
+							type="button"
+							class="foil-rescan-button"
+							onclick={() => {
+								// Return to scanner in foil multi-scan mode. The existing scanner
+								// supports foil mode via a URL parameter; this triggers it.
+								window.location.assign('/scan?mode=foil');
+							}}
+						>
+							Rescan at multiple angles
+						</button>
+					</div>
+				{/if}
 
 				<!-- Actions first — always visible without scrolling -->
 				<ScanActions
@@ -518,4 +640,73 @@
 	.detail-rarity.rarity-rare { color: #3B82F6; }
 	.detail-rarity.rarity-ultra_rare { color: #A855F7; }
 	.detail-rarity.rarity-legendary { color: #F59E0B; }
+
+	/* ── Variant confirmation (Phase 2.5) ──────────────────── */
+	.variant-confirm-section {
+		margin: 0.75rem 1rem;
+		padding: 0.75rem;
+		border: 1px solid rgba(59, 130, 246, 0.3);
+		border-radius: 10px;
+		background: rgba(59, 130, 246, 0.06);
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.variant-confirm-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.variant-confirm-title {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--text-primary, #e2e8f0);
+	}
+	.variant-confirm-check {
+		font-size: 1rem;
+		color: #22c55e;
+		font-weight: 700;
+	}
+
+	/* ── Foil multi-scan soft prompt (Phase 2.5) ──────────── */
+	.foil-rescan-prompt {
+		margin: 0.75rem 1rem;
+		padding: 0.75rem;
+		border: 1px solid rgba(212, 175, 55, 0.35);
+		border-radius: 10px;
+		background: rgba(212, 175, 55, 0.08);
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.foil-rescan-header {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.foil-rescan-icon { font-size: 1rem; }
+	.foil-rescan-title {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: #D4AF37;
+	}
+	.foil-rescan-body {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--text-secondary, #94a3b8);
+		line-height: 1.4;
+	}
+	.foil-rescan-button {
+		align-self: flex-start;
+		padding: 0.45rem 0.9rem;
+		border: none;
+		border-radius: 6px;
+		background: #D4AF37;
+		color: #0A1628;
+		font-size: 0.8rem;
+		font-weight: 700;
+		cursor: pointer;
+		font-family: var(--font-sans);
+	}
+	.foil-rescan-button:active { transform: scale(0.97); }
 </style>

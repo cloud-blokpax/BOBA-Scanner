@@ -177,7 +177,15 @@ export async function recognizeCard(
 			confidence: Math.round(final.confidence * 100),
 			ms: final.processing_ms,
 			cardNumber: final.card?.card_number ?? null,
-			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false
+			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false,
+			// Phase 2.5: variant diagnostics so we can audit misidentifications.
+			// `user_confirmed_variant` is recorded separately at collection-add time
+			// (see addToCollection) because that's where the user's final choice lives.
+			game_id: final.game_id ?? null,
+			detected_variant: final.variant ?? null,
+			variant_confidence: final.variant_confidence ?? null,
+			collector_number_confidence: final.collector_number_confidence ?? null,
+			first_edition_stamp_detected: final.first_edition_stamp_detected ?? false
 		});
 
 		// Auto-tag card with its parallel name
@@ -253,7 +261,12 @@ export async function recognizeCard(
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
 				const hash = await getImageWorker().computeDHash(bitmap);
 				const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
-				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId);
+				// Tier 2 can't detect variant visually. Default to 'paper' in the hash
+				// cache — the Tier 2 confirmation UI forces the user to choose variant
+				// before the collection entry is created, so the collection row records
+				// the truth regardless of what the hash cache says.
+				const hashVariant = tier2Result.variant || 'paper';
+				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId, hashVariant);
 				return finalize(tier2Result);
 			}
 			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
@@ -271,10 +284,13 @@ export async function recognizeCard(
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
 	const tier3Result = await runTier3(bitmap, ctx);
 	if (tier3Result) {
-		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}`);
+		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
 		const hash = await getImageWorker().computeDHash(bitmap);
 		const hashGameId = tier3Result.card?.game_id || tier3Result.game_id || gameHint || 'boba';
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, hashGameId);
+		// Tier 3 variant comes from Claude's decision-tree output. Default to
+		// 'paper' only if null (e.g., BoBA cards where variant is baked into card_number).
+		const hashVariant = tier3Result.variant || 'paper';
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, hashGameId, hashVariant);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
@@ -297,7 +313,8 @@ async function writeHashToAllLayers(
 	cardId: string,
 	confidence: number,
 	bitmap?: ImageBitmap,
-	gameId: string = 'boba'
+	gameId: string = 'boba',
+	variant: string = 'paper'
 ): Promise<void> {
 	// Compute pHash if bitmap is available (for enhanced matching)
 	let phash256: string | null = null;
@@ -311,7 +328,7 @@ async function writeHashToAllLayers(
 
 	// Layer 1: IndexedDB
 	try {
-		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, ...(phash256 ? { phash_256: phash256 } : {}) });
+		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, variant, ...(phash256 ? { phash_256: phash256 } : {}) });
 	} catch (err) {
 		console.debug('[scan] IDB hash write failed:', err);
 	}
@@ -321,11 +338,12 @@ async function writeHashToAllLayers(
 		try {
 			const client = getSupabase();
 			if (client) {
-				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string } = {
+				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string; p_variant: string } = {
 					p_phash: hash,
 					p_card_id: cardId,
 					p_confidence: confidence,
-					p_game_id: gameId
+					p_game_id: gameId,
+					p_variant: variant,
 				};
 				if (phash256) rpcArgs.p_phash_256 = phash256;
 				const { error: rpcErr } = await client.rpc('upsert_hash_cache', rpcArgs);

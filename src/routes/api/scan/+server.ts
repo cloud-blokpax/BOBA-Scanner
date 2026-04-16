@@ -203,9 +203,22 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 				// Non-numeric power (S/I/L) — clear so Tier 3 treats as null
 				cardData.power = null;
 			}
-			// Variant for Wonders maps from foil_treatment
+			// Legacy variant alias: older tool versions returned foil_treatment.
 			if (!cardData.variant && cardData.foil_treatment) {
 				cardData.variant = cardData.foil_treatment;
+			}
+			// Normalize long-form variant enum values (Phase 2) to short-form (Phase 2.5).
+			// Paper/ocm/unknown are unchanged. classic_foil→cf, formless_foil→ff, stone_foil→sf.
+			if (typeof cardData.variant === 'string') {
+				const variantMap: Record<string, string> = {
+					classic_foil: 'cf',
+					formless_foil: 'ff',
+					stone_foil: 'sf',
+				};
+				const lower = cardData.variant.toLowerCase();
+				if (variantMap[lower]) {
+					cardData.variant = variantMap[lower];
+				}
 			}
 		}
 
@@ -226,6 +239,10 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		// numbers that can collide with power values (e.g., collector "115" with
 		// power 5 — no false positive — but a hypothetical "115" with power "115"
 		// is just a coincidence, not a bug).
+		//
+		// This guard runs BEFORE BoBA variant normalization so the original
+		// Claude-reported variant (e.g., 'battlefoil', 'base') still drives the
+		// decision. Post-normalization BoBA variants are all 'paper'.
 		if (detectedGameId === 'boba') {
 			const rawCardNumber = String(cardData.card_number || '').trim();
 			const parsedAsNumber = parseInt(rawCardNumber, 10);
@@ -242,6 +259,17 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 				);
 				cardData.card_number = null;
 				cardData.confidence = Math.min((cardData.confidence as number) || 0.5, 0.6);
+			}
+		}
+
+		// ── BoBA variant normalization (AFTER the power-as-card-number guard) ──
+		// BoBA encodes variant in card_number — always record as 'paper' for the
+		// variant column. The legacy variant value (paper/battlefoil/rad/...) is
+		// preserved in `parallel` so downstream UI still shows the parallel name.
+		if (detectedGameId === 'boba') {
+			if (typeof cardData.variant === 'string' && cardData.variant !== 'paper') {
+				if (!cardData.parallel) cardData.parallel = cardData.variant;
+				cardData.variant = 'paper';
 			}
 		}
 

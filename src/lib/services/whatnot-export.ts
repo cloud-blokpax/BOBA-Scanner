@@ -6,6 +6,7 @@
  */
 
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
+import { VARIANT_FULL_NAME, normalizeVariant } from '$lib/data/variants';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -31,6 +32,11 @@ export interface WhatnotExportCard {
 
 	// Image (Supabase public URL — NOT a blob URL)
 	image_url?: string | null;
+
+	// Phase 2.5: game and variant for cross-game listings
+	game_id?: string | null;
+	variant?: string | null;
+	metadata?: Record<string, unknown> | null;
 }
 
 export interface WhatnotExportOptions {
@@ -115,13 +121,24 @@ function buildWhatnotTitle(card: WhatnotExportCard): string {
 		athlete_name: card.athlete_name,
 		parallel: card.parallel,
 		weapon_type: card.weapon_type,
-		card_number: card.card_number
+		card_number: card.card_number,
+		game_id: card.game_id ?? null,
+		variant: card.variant ?? null,
+		metadata: card.metadata ?? null,
 	});
 }
 
 // ── Description Builder ─────────────────────────────────────
 
 function buildWhatnotDescription(card: WhatnotExportCard, condition: string): string {
+	const gameId = card.game_id || 'boba';
+	if (gameId === 'wonders') {
+		return buildWondersWhatnotDescription(card, condition);
+	}
+	return buildBobaWhatnotDescription(card, condition);
+}
+
+function buildBobaWhatnotDescription(card: WhatnotExportCard, condition: string): string {
 	const heroName = card.hero_name || card.name || 'Unknown';
 	const parts = [
 		`${heroName} - Bo Jackson Battle Arena Trading Card`,
@@ -136,10 +153,34 @@ function buildWhatnotDescription(card: WhatnotExportCard, condition: string): st
 	return parts.filter(Boolean).join(' | ');
 }
 
+function buildWondersWhatnotDescription(card: WhatnotExportCard, condition: string): string {
+	const meta = (card.metadata ?? {}) as Record<string, unknown>;
+	const setDisplay = (meta.set_name_display ?? meta.set_name ?? card.set_code ?? 'Wonders of The First') as string;
+	const variantName = VARIANT_FULL_NAME[normalizeVariant(card.variant)];
+	const cardClass = typeof meta.card_class === 'string' ? meta.card_class : null;
+	const rarityText = card.rarity ? String(card.rarity).replace('_', ' ') : null;
+
+	const parts = [
+		`${card.name || 'Unknown'} - Wonders of The First`,
+		`Wonders of The First — ${setDisplay}`,
+		`Variant: ${variantName}`,
+		card.card_number ? `Collector Number: ${card.card_number}` : null,
+		rarityText ? `Rarity: ${rarityText}` : null,
+		cardClass ? `Class: ${cardClass}` : null,
+		`Condition: ${condition}`,
+		'Ships in penny sleeve + top loader.'
+	];
+	return parts.filter(Boolean).join(' | ');
+}
+
 // ── SKU Builder ─────────────────────────────────────────────
 
 function buildWhatnotSku(card: WhatnotExportCard): string {
-	return `BOBA-${card.id.substring(0, 8)}`;
+	const gameId = card.game_id || 'boba';
+	const prefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
+	const variant = normalizeVariant(card.variant);
+	const variantSuffix = variant === 'paper' ? '' : `-${variant.toUpperCase()}`;
+	return `${prefix}-${card.id.substring(0, 8)}${variantSuffix}`;
 }
 
 // ── CSV Escaping ────────────────────────────────────────────

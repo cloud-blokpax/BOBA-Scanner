@@ -3,8 +3,21 @@
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { CollectionItem, CardRarity } from '$lib/types';
 	import { collectionSets,collectionRarities,collectionWeaponTypes } from '$lib/stores/collection.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { getCardImageUrl } from '$lib/utils/image-url';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import VariantBadge from '$lib/components/VariantBadge.svelte';
+
+	const multiGameEnabled = featureEnabled('multi_game_ui');
+
+	/** Show a variant badge on the thumbnail for Wonders cards when the
+	 *  multi-game flag is on and the variant is something other than paper. */
+	function showVariantBadge(item: CollectionItem): boolean {
+		if (!multiGameEnabled()) return false;
+		if (item.card?.game_id !== 'wonders') return false;
+		const v = (item.variant || 'paper').toLowerCase();
+		return v !== 'paper'; // Paper thumbnails stay clean; only foils get a badge.
+	}
 
 	let {
 		items = [],
@@ -254,6 +267,11 @@
 									{:else}
 										<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
 									{/if}
+									{#if showVariantBadge(item)}
+										<div class="card-variant-overlay">
+											<VariantBadge variant={item.variant} size="sm" />
+										</div>
+									{/if}
 									<div class="card-info">
 										<span class="card-name">{item.card?.name || 'Unknown'}</span>
 										<span class="card-number">{item.card?.card_number || ''}</span>
@@ -278,6 +296,11 @@
 						<img src={imgUrl} alt={item.card?.name ?? 'Card'} class="card-image" loading="lazy" />
 					{:else}
 						<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
+					{/if}
+					{#if showVariantBadge(item)}
+						<div class="card-variant-overlay">
+							<VariantBadge variant={item.variant} size="sm" />
+						</div>
 					{/if}
 					<div class="card-info">
 						<span class="card-name">{item.card?.name || 'Unknown'}</span>
@@ -576,4 +599,14 @@
 			grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
 		}
 	}
+
+	/* ── Variant badge overlay (Phase 2.5, Wonders + multi-game flag) ── */
+	.card-variant-overlay {
+		position: absolute;
+		top: 4px;
+		left: 4px;
+		z-index: 2;
+		pointer-events: none;
+	}
+	.card-tile { position: relative; }
 </style>

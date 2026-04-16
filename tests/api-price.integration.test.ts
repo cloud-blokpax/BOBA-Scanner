@@ -48,7 +48,10 @@ function makeLocals() {
 function makeEvent(cardId: string, locals?: ReturnType<typeof makeLocals>) {
 	return {
 		params: { cardId },
-		locals: locals || makeLocals()
+		// Phase 2.5: handler reads variant from url.searchParams (default 'paper')
+		url: new URL(`https://example.test/api/price/${encodeURIComponent(cardId)}`),
+		locals: locals || makeLocals(),
+		getClientAddress: () => '127.0.0.1'
 	};
 }
 

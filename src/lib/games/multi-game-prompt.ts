@@ -65,11 +65,6 @@ export const MULTI_GAME_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 			cost: { type: 'string', description: 'Wonders only — energy cost value.' },
 			card_class: { type: 'string', description: 'Wonders only — subtype after card_type (e.g., "Airship Pirate").' },
 			set_name: { type: 'string', description: 'Wonders only — set name (e.g., "Existence", "Call of the Stones").' },
-			foil_treatment: {
-				type: 'string',
-				enum: ['paper', 'classic_foil', 'formless_foil', 'ocm', 'stone_foil', 'unknown'],
-				description: 'Wonders only — foil finish detection.'
-			},
 			hierarchy: {
 				type: 'string',
 				enum: ['legendary', 'primary', 'secondary', 'token'],
@@ -85,15 +80,36 @@ export const MULTI_GAME_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 			},
 			variant: {
 				type: 'string',
+				enum: ['paper', 'cf', 'ff', 'ocm', 'sf', 'unknown'],
 				description:
-					'BoBA parallel name (battlefoil, rad, blizzard, paper, etc.). ' +
-					'For Wonders, leave unset — use foil_treatment instead.'
+					'For Wonders cards, the detected physical treatment via the variant decision tree ' +
+					'(paper=solid border, cf=lined border no serial, ff=no border, ocm=lined border with X/YY serial, sf=lined border with 1/1 serial). ' +
+					'For BoBA cards, return "paper" — BoBA encodes variant in card_number, not as a separate attribute.'
+			},
+			variant_confidence: {
+				type: 'number',
+				description:
+					'Wonders only — confidence in variant detection, 0.0-1.0. Values below 0.75 trigger the foil multi-scan flow. ' +
+					'For BoBA, return 1.0.'
+			},
+			first_edition_stamp_detected: {
+				type: 'boolean',
+				description:
+					'Wonders only — whether a 1st edition stamp (stylized "1" in a circle/badge) is visible ' +
+					'at the bottom-left, distinct from the collector number. Paper cards never have this stamp. ' +
+					'For BoBA, return false.'
+			},
+			collector_number_confidence: {
+				type: 'number',
+				description:
+					'Confidence specifically in the card_number / collector_number reading, 0.0-1.0. ' +
+					'Glare on foil cards can reduce this independently of overall scan confidence.'
 			},
 			parallel: { type: 'string', description: 'BoBA only — specific parallel name if identifiable.' },
 			confidence: { type: 'number', description: '0.0–1.0' },
 			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection, damaged_card, partial_occlusion, low_resolution.' }
 		},
-		required: ['game', 'card_name', 'card_number', 'confidence']
+		required: ['game', 'card_name', 'card_number', 'confidence', 'variant', 'variant_confidence', 'collector_number_confidence']
 	}
 };
 
@@ -136,9 +152,53 @@ Wonders card details:
 - card_type = "Wonder", "Item", "Spell", "Land", etc.
 - card_class = class/subtype after the card_type (e.g., "Airship Pirate")
 - rarity = Common/Uncommon/Rare/Epic/Mythic/Promo/Token
-- foil_treatment = paper/classic_foil/formless_foil/ocm/stone_foil/unknown
+- variant = paper/cf/ff/ocm/sf/unknown (see VARIANT DECISION TREE below)
 - hierarchy = legendary/primary/secondary/token (from type line)
 - set_name = "Existence" / "Call of the Stones" / "2026 Prizes and Promos"
+
+BoBA variant handling:
+- For BoBA cards, always return variant="paper" and variant_confidence=1.0. BoBA's variant
+  is encoded in the card_number itself via prefixes (BF-, RAD-, etc.) — there is no
+  separate visual variant to detect. Return first_edition_stamp_detected=false.
+
+WONDERS VARIANT DECISION TREE (apply in this order when game=wonders):
+
+Step 1: Is there a border?
+  - NO (art bleeds to edge) → variant="ff", skip to Step 4
+  - YES → continue to Step 2
+
+Step 2: What is the border pattern?
+  - SOLID color → variant="paper", skip to Step 4
+  - DIAGONAL LINED/HATCHED → continue to Step 3
+
+Step 3: Is there a serial number on the left side of the card?
+  - NO serial → variant="cf"
+  - Serial reads "1/1" → variant="sf"
+  - Serial reads anything else (e.g., "38/50", "12/100") → variant="ocm"
+
+Step 4: Report the detected variant in the "variant" field along with your
+  confidence in "variant_confidence". If any step of the decision tree was
+  uncertain (glare obscured the border, serial unreadable, etc.), return
+  variant_confidence below 0.75 so the app can trigger a foil multi-scan.
+
+THE 1ST EDITION STAMP (WONDERS ONLY):
+
+Foil Wonders cards (cf, ff, ocm, sf) commonly display a 1st edition stamp at the
+bottom-left — a stylized "1" inside a circle or hexagonal badge, distinct from the
+collector number. You MUST:
+
+1. REPORT its presence via first_edition_stamp_detected=true. Paper cards never
+   have this stamp, so its presence means the card is almost certainly foil.
+2. EXCLUDE the stamp from the card_number / collector_number field. Do NOT
+   prepend "1", "I", or "(1)" to the collector number. Report the collector
+   number starting from the first alphanumeric character AFTER the stamp.
+
+Example: "[1-badge] A1-205/402" → card_number="A1-205/402", first_edition_stamp_detected=true
+  NEVER: card_number="1 A1-205/402" or "1A1-205/402"
+
+The stamp is NOT universal on foil cards — some early CF/OCM cards shipped without it.
+Absence of the stamp does NOT prove Paper. Use border pattern and serial number
+as the primary variant indicators.
 
 If any field is unclear, return null rather than guessing. Report the CARD NUMBER exactly as printed — never fabricate a prefix.`;
 
@@ -158,10 +218,12 @@ export const MULTI_GAME_USER_PROMPT = `<task>Identify this trading card. First d
 <wonders_prefixes>A1, AVA, BAA, CLA, EEA, KSA, P, T, TFA, XCA (plus plain numeric for Existence set)</wonders_prefixes>
 
 <examples>
-BoBA hero (paper): game="boba", card_name="Dart-Board", card_number="130", hero_name="Dart-Board", power="130", weapon_type="Steel", variant="paper"
-BoBA hero (battlefoil): game="boba", card_name="BoJax", card_number="BF-108", hero_name="BoJax", power="200", weapon_type="Super", variant="battlefoil"
-BoBA play: game="boba", card_name="Front Run", card_number="PL-46", hero_name="", power=null
-Wonders OCM: game="wonders", card_name="Riley Stormrider", card_number="A1-205/402", power="4", cost="4", card_type="Primary Wonder", card_class="Airship Pirate", rarity="Rare", foil_treatment="ocm"
-Wonders promo: game="wonders", card_name="War Spirit", card_number="P-002", power="7", cost="5", card_type="Primary Wonder", rarity="Promo"
-Wonders Existence: game="wonders", card_name="(name from card)", card_number="115", card_type="Wonder", rarity="Common", set_name="Existence"
+BoBA hero (paper): game="boba", card_name="Dart-Board", card_number="130", hero_name="Dart-Board", power="130", weapon_type="Steel", variant="paper", variant_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.95
+BoBA hero (battlefoil): game="boba", card_name="BoJax", card_number="BF-108", hero_name="BoJax", power="200", weapon_type="Super", variant="paper", parallel="battlefoil", variant_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.9
+Wonders Paper: game="wonders", card_name="Bellator", card_number="78/402", variant="paper", variant_confidence=0.95, first_edition_stamp_detected=false, collector_number_confidence=0.95
+Wonders OCM: game="wonders", card_name="Riley Stormrider", card_number="A1-205/402", power="4", cost="4", variant="ocm", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.85, serial_number="38/50", card_type="Primary Wonder", rarity="Rare"
+Wonders CF: game="wonders", card_name="Omnis Quantum", card_number="14/402", variant="cf", variant_confidence=0.88, first_edition_stamp_detected=true, collector_number_confidence=0.9
+Wonders FF promo: game="wonders", card_name="War Spirit", card_number="P-002", variant="ff", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.95, rarity="Promo"
+Wonders Stone Foil (1/1): game="wonders", card_name="Bartokk the Charger", card_number="CLA-T1", variant="sf", variant_confidence=0.85, first_edition_stamp_detected=true, serial_number="1/1"
+Wonders Existence: game="wonders", card_name="(from card)", card_number="115", variant="paper", variant_confidence=0.9, first_edition_stamp_detected=false, collector_number_confidence=0.9, rarity="Common", set_name="Existence"
 </examples>`;

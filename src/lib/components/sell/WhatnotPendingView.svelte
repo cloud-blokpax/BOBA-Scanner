@@ -40,10 +40,12 @@
 
 		exporting = true;
 		try {
-			// Build export cards with prices
+			// Build export cards with prices. Whatnot pending items are currently
+			// BoBA-only (variant='paper'); the composite key lookup handles both.
 			const exportCards: WhatnotExportCard[] = [];
 			for (const p of pending) {
-				const priceData = prices.get(p.cardId);
+				const variant = ((p as { variant?: string | null }).variant || 'paper').toLowerCase();
+				const priceData = prices.get(`${p.cardId}:${variant}`) ?? prices.get(`${p.cardId}:paper`);
 				exportCards.push({
 					id: p.cardId,
 					hero_name: p.card.hero_name,
@@ -58,7 +60,10 @@
 					price_mid: p.priceOverride ?? priceData?.price_mid ?? null,
 					quantity: 1,
 					condition: p.condition,
-					image_url: p.imageUrl?.startsWith('https://') ? p.imageUrl : null
+					image_url: p.imageUrl?.startsWith('https://') ? p.imageUrl : null,
+					game_id: (p.card as { game_id?: string | null }).game_id ?? null,
+					variant,
+					metadata: (p.card as { metadata?: Record<string, unknown> | null }).metadata ?? null,
 				});
 			}
 

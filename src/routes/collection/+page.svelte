@@ -12,8 +12,11 @@
 		uniqueCardCount,
 		loadCollection,
 		gameFilter,
-		setGameFilter
+		setGameFilter,
+		variantFilter,
+		setVariantFilter
 	} from '$lib/stores/collection.svelte';
+	import { VARIANT_ABBREV, VARIANT_COLOR, FOIL_VARIANTS } from '$lib/data/variants';
 	import { priceCache, getPrice } from '$lib/stores/prices.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
@@ -34,19 +37,20 @@
 
 	onMount(() => { loadCollection(); });
 
-	// Batch-fetch prices
+	// Batch-fetch prices (Phase 2.5: fetch the user's actual variant per item
+	// so foil Wonders cards surface their foil price rather than defaulting to paper).
 	let pricesFetchStarted = $state(false);
 	$effect(() => {
 		if (items.length === 0 || pricesFetchStarted) return;
 		pricesFetchStarted = true;
-		const ids = items.map(i => i.card_id);
+		const pairs = items.map(i => ({ cardId: i.card_id, variant: (i.variant || 'paper').toLowerCase() }));
 		let active = 0;
 		let idx = 0;
 		function next() {
-			while (active < 3 && idx < ids.length) {
-				const cardId = ids[idx++];
+			while (active < 3 && idx < pairs.length) {
+				const { cardId, variant } = pairs[idx++];
 				active++;
-				getPrice(cardId).finally(() => { active--; next(); });
+				getPrice(cardId, variant).finally(() => { active--; next(); });
 			}
 		}
 		next();
@@ -56,8 +60,15 @@
 	const prices = $derived(priceCache());
 
 	function cardValue(item: CollectionItem): number {
-		const p = prices.get(item.card_id);
-		return p?.price_mid ?? 0;
+		// Phase 2.5: price map is keyed by `${card_id}:${variant}`.
+		const variant = (item.variant || 'paper').toLowerCase();
+		const p = prices.get(`${item.card_id}:${variant}`);
+		if (p?.price_mid != null) return p.price_mid;
+		// Fallback to the Paper price if variant-specific data hasn't been
+		// harvested yet — keeps totals non-zero for foil collections until
+		// the variant-aware harvester catches up.
+		const paper = prices.get(`${item.card_id}:paper`);
+		return paper?.price_mid ?? 0;
 	}
 
 	const totalValue = $derived(items.reduce((s, i) => s + cardValue(i) * (i.quantity || 1), 0));
@@ -184,6 +195,65 @@
 					</button>
 				{/each}
 			</div>
+
+			<!-- Variant filter (hidden when game filter is BoBA — BoBA is all paper) -->
+			{#if gameFilter() !== 'boba'}
+				{@const wondersPool = gameFilter() === 'wonders'
+					? allItems.filter((i) => (i.card?.game_id || 'boba') === 'wonders')
+					: allItems}
+				{@const paperCount = wondersPool.filter((i) => (i.variant || 'paper').toLowerCase() === 'paper').length}
+				{@const foilCount = wondersPool.filter((i) => (FOIL_VARIANTS as readonly string[]).includes((i.variant || 'paper').toLowerCase())).length}
+				<div class="variant-filter-bar" role="tablist" aria-label="Filter by variant">
+					<button
+						class="variant-filter-pill"
+						class:variant-filter-active={variantFilter() === 'all'}
+						onclick={() => setVariantFilter('all')}
+						role="tab"
+						aria-selected={variantFilter() === 'all'}
+					>
+						All Variants <span class="variant-filter-count">{wondersPool.length}</span>
+					</button>
+					<button
+						class="variant-filter-pill"
+						class:variant-filter-active={variantFilter() === 'paper'}
+						class:variant-filter-empty={paperCount === 0}
+						data-variant="paper"
+						onclick={() => setVariantFilter('paper')}
+						role="tab"
+						aria-selected={variantFilter() === 'paper'}
+					>
+						Paper <span class="variant-filter-count">{paperCount}</span>
+					</button>
+					<button
+						class="variant-filter-pill"
+						class:variant-filter-active={variantFilter() === 'foils'}
+						class:variant-filter-empty={foilCount === 0}
+						data-variant="foils"
+						onclick={() => setVariantFilter('foils')}
+						role="tab"
+						aria-selected={variantFilter() === 'foils'}
+					>
+						Foils <span class="variant-filter-count">{foilCount}</span>
+					</button>
+					{#each FOIL_VARIANTS as code}
+						{@const count = wondersPool.filter((i) => (i.variant || 'paper').toLowerCase() === code).length}
+						{#if variantFilter() === code || variantFilter() === 'foils' || count > 0}
+							<button
+								class="variant-filter-pill variant-filter-pill-specific"
+								class:variant-filter-active={variantFilter() === code}
+								class:variant-filter-empty={count === 0}
+								data-variant={code}
+								style={`--variant-color: ${VARIANT_COLOR[code]}`}
+								onclick={() => setVariantFilter(code)}
+								role="tab"
+								aria-selected={variantFilter() === code}
+							>
+								{VARIANT_ABBREV[code]} <span class="variant-filter-count">{count}</span>
+							</button>
+						{/if}
+					{/each}
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Tabs -->
@@ -397,4 +467,43 @@
 
 	.game-filter-icon { font-size: 0.9rem; line-height: 1; }
 	.game-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
+
+	/* ── Variant filter bar (Phase 2.5, flag-gated, non-BoBA only) ── */
+	.variant-filter-bar {
+		display: flex;
+		gap: 5px;
+		padding: 0.25rem 1rem 0.5rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.variant-filter-bar::-webkit-scrollbar { display: none; }
+
+	.variant-filter-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 5px 10px;
+		border: 1px solid var(--border, rgba(148,163,184,0.12));
+		border-radius: 16px;
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.72rem;
+		font-weight: 600;
+		font-family: var(--font-sans);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+	.variant-filter-pill:hover { background: var(--bg-hover, #182540); }
+	.variant-filter-active {
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		border-color: var(--border-strong, rgba(148,163,184,0.3));
+	}
+	.variant-filter-pill-specific.variant-filter-active {
+		border-color: var(--variant-color);
+		color: var(--variant-color);
+	}
+	.variant-filter-empty { opacity: 0.5; }
+	.variant-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.66rem; }
 </style>

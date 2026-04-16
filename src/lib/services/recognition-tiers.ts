@@ -71,7 +71,8 @@ export async function runTier1(
 	const hash = await worker.computeDHash(bitmap);
 
 	// Layer 1: IndexedDB exact match (instant, free)
-	const idbEntry = await idb.getHash(hash) as Pick<HashCacheEntry, 'card_id' | 'confidence'> | undefined;
+	type CachedHashEntry = Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null };
+	const idbEntry = await idb.getHash(hash) as CachedHashEntry | undefined;
 	if (idbEntry) {
 		// Detect negative cache entries (card recognized but not in database)
 		if (idbEntry.card_id.startsWith('__unrecognized:')) {
@@ -84,24 +85,47 @@ export async function runTier1(
 		}
 		const card = getCardById(idbEntry.card_id) || await fetchCardById(idbEntry.card_id);
 		if (card) {
-			return { card_id: card.id, card, scan_method: 'hash_cache', confidence: idbEntry.confidence, processing_ms: 0 };
+			return {
+				card_id: card.id,
+				card,
+				scan_method: 'hash_cache',
+				confidence: idbEntry.confidence,
+				processing_ms: 0,
+				// Variant from the hash cache entry — the pipeline already recorded this
+				// variant the first time the card was scanned. Defaults to 'paper'.
+				variant: idbEntry.variant ?? 'paper',
+				variant_confidence: idbEntry.variant ? 1.0 : null,
+			};
 		}
 	}
 
 	// Layer 2: Supabase exact match (origin, <100ms)
 	const client = getSupabase();
-	let supaEntry: Pick<HashCacheEntry, 'card_id' | 'confidence'> | null = null;
+	let supaEntry: (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null }) | null = null;
 	if (client) {
 		const { data } = await client
-			.from('hash_cache').select('card_id, confidence').eq('phash', hash).maybeSingle();
-		supaEntry = data as Pick<HashCacheEntry, 'card_id' | 'confidence'> | null;
+			.from('hash_cache').select('card_id, confidence, variant').eq('phash', hash).maybeSingle();
+		supaEntry = data as (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null }) | null;
 	}
 
 	if (supaEntry) {
 		const card = getCardById(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
 		if (card) {
-			await idb.setHash({ phash: hash, card_id: supaEntry.card_id, confidence: supaEntry.confidence });
-			return { card_id: card.id, card, scan_method: 'hash_cache' as const, confidence: supaEntry.confidence, processing_ms: 0 };
+			await idb.setHash({
+				phash: hash,
+				card_id: supaEntry.card_id,
+				confidence: supaEntry.confidence,
+				variant: supaEntry.variant ?? 'paper',
+			});
+			return {
+				card_id: card.id,
+				card,
+				scan_method: 'hash_cache' as const,
+				confidence: supaEntry.confidence,
+				processing_ms: 0,
+				variant: supaEntry.variant ?? 'paper',
+				variant_confidence: supaEntry.variant ? 1.0 : null,
+			};
 		}
 	}
 
@@ -137,9 +161,19 @@ export async function runTier1(
 					const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
 					if (card) {
 						const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
+						// Preserve variant from the existing hash_cache row on fuzzy match.
+						const matchVariant = (match as { variant?: string | null }).variant ?? 'paper';
 						await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap, ctx.gameHint);
-						console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}`);
-						return { card_id: card.id, card, scan_method: 'hash_cache' as const, confidence: adjustedConfidence, processing_ms: 0 };
+						console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}, variant=${matchVariant}`);
+						return {
+							card_id: card.id,
+							card,
+							scan_method: 'hash_cache' as const,
+							confidence: adjustedConfidence,
+							processing_ms: 0,
+							variant: matchVariant,
+							variant_confidence: matchVariant !== 'paper' ? 1.0 : null,
+						};
 					}
 				}
 			}
@@ -256,13 +290,21 @@ export async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 					const cardWithGame: Card = gameId
 						? { ...card, game_id: card.game_id || gameId }
 						: card;
+					// Tier 2 cannot visually detect variant. For Wonders, leave variant null
+					// so the confirmation UI forces the user to choose (silent-miss protection).
+					// For BoBA, variant is baked into card_number → default to 'paper'.
+					const resolvedGameId = cardWithGame.game_id || gameId || 'boba';
+					const tier2Variant = resolvedGameId === 'boba' ? 'paper' : null;
 					return {
 						card_id: card.id,
 						card: cardWithGame,
 						scan_method: 'tesseract' as ScanMethod,
 						confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100,
 						processing_ms: 0,
-						game_id: cardWithGame.game_id ?? null
+						game_id: cardWithGame.game_id ?? null,
+						variant: tier2Variant,
+						variant_confidence: null, // null forces variant selector on Wonders
+						collector_number_confidence: ocrResult.confidence / 100,
 					};
 				}
 			}
@@ -344,7 +386,28 @@ export async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 		ctx.gameHint ||
 		'boba';
 
-	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}`);
+	// ── Variant detection fields (Phase 2.5) ──────────────────
+	// Wonders: variant comes from the decision-tree field (paper|cf|ff|ocm|sf).
+	// BoBA: variant is baked into card_number via prefixes, so always 'paper'.
+	const claudeVariant: string | null =
+		(typeof result.card.variant === 'string' && result.card.variant.length > 0)
+			? result.card.variant
+			: null;
+	const variantConfidence: number | null =
+		typeof result.card.variant_confidence === 'number' ? result.card.variant_confidence : null;
+	const firstEditionStampDetected: boolean =
+		result.card.first_edition_stamp_detected === true;
+	const collectorNumberConfidence: number | null =
+		typeof result.card.collector_number_confidence === 'number'
+			? result.card.collector_number_confidence
+			: null;
+
+	console.debug(
+		`[scan:${ctx.traceId}:tier3] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", ` +
+		`hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}, ` +
+		`variant=${claudeVariant}, variant_conf=${variantConfidence}, stamp=${firstEditionStampDetected}, ` +
+		`cn_conf=${collectorNumberConfidence}`
+	);
 
 	// Cross-validate against local DB — scoped to the detected game so card
 	// numbers that collide between games (e.g., numeric-only) hit the right index.
@@ -370,11 +433,27 @@ export async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 		if (validated.warnings.length > 0) {
 			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
 		}
+		// Normalize variant: Wonders uses the new enum; BoBA always 'paper'.
+		// The scan endpoint already writes variant on cardData, but we guard
+		// here in case it's null (e.g., older API version or BoBA path).
+		const resolvedVariant =
+			claudeVariant ||
+			(detectedGameId === 'boba' ? 'paper' : null) ||
+			result.card.parallel ||
+			null;
 		return {
-			card_id: mergedCard.id, card: mergedCard, scan_method: 'claude', confidence: validated.confidence,
-			processing_ms: 0, variant: result.card.variant || result.card.parallel || null,
+			card_id: mergedCard.id,
+			card: mergedCard,
+			scan_method: 'claude',
+			confidence: validated.confidence,
+			processing_ms: 0,
+			variant: resolvedVariant,
+			variant_confidence: variantConfidence,
+			first_edition_stamp_detected: firstEditionStampDetected,
+			collector_number_confidence: collectorNumberConfidence,
 			game_id: mergedCard.game_id ?? null,
-			validationMethod: validated.validationMethod, validationWarnings: validated.warnings
+			validationMethod: validated.validationMethod,
+			validationWarnings: validated.warnings,
 		};
 	}
 

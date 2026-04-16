@@ -94,12 +94,17 @@ export async function fetchCollection(gameId?: string): Promise<CollectionItem[]
 /**
  * Upsert a card into the collection via Supabase.
  * Returns the upserted item with joined card data.
+ *
+ * Identity is the triple (user_id, card_id, variant) — a Paper and CF copy
+ * of the same printing are separate collection entries. The backing index
+ * `idx_collections_user_card_variant` supports this lookup pattern.
  */
 export async function upsertCollectionItem(
 	cardId: string,
 	condition = 'near_mint',
 	notes: string | null = null,
-	gameId: string = 'boba'
+	gameId: string = 'boba',
+	variant: string = 'paper'
 ): Promise<CollectionItem> {
 	const supabase = getSupabase();
 	if (!supabase) throw new Error('Supabase is not configured');
@@ -108,13 +113,15 @@ export async function upsertCollectionItem(
 	if (authError || !user) throw new Error('Session expired — please sign in again');
 	const userId = user.id;
 
-	// Check if this card+condition already exists for this user
+	// Check if this (card, condition, variant) already exists for this user.
+	// Variant is part of identity — Paper Bellator and CF Bellator are different entries.
 	const { data: existing, error: lookupError } = await supabase
 		.from('collections')
 		.select('id, quantity')
 		.eq('user_id', userId)
 		.eq('card_id', cardId)
 		.eq('condition', condition)
+		.eq('variant', variant)
 		.maybeSingle();
 
 	if (lookupError) throw new Error('Failed to check collection — please try again');
@@ -142,7 +149,8 @@ export async function upsertCollectionItem(
 			condition,
 			notes,
 			quantity: 1,
-			game_id: gameId
+			game_id: gameId,
+			variant,
 		})
 		.select(`*, card:cards(*)`)
 		.single();
@@ -157,6 +165,7 @@ export async function upsertCollectionItem(
 				.eq('user_id', userId)
 				.eq('card_id', cardId)
 				.eq('condition', condition)
+				.eq('variant', variant)
 				.maybeSingle();
 
 			if (retryExisting) {
