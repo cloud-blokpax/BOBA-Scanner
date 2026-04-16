@@ -2,8 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { getFormat, getFormatOptions } from '$lib/data/tournament-formats';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 
 	const { data } = $props();
+	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	const formatOptions = getFormatOptions();
 
@@ -111,6 +113,11 @@
 </svelte:head>
 
 <div class="organize-page">
+	{#if multiGameEnabled()}
+		<div class="game-scope-note">
+			<span>🏈 Tournament hosting is currently BoBA-only. Wonders tournament formats are coming soon.</span>
+		</div>
+	{/if}
 	<h1>Organize Tournaments</h1>
 
 	<section class="create-section">
@@ -276,6 +283,15 @@
 		max-width: 640px;
 		margin: 0 auto;
 		padding: 1rem;
+	}
+	.game-scope-note {
+		padding: 0.6rem 0.85rem;
+		margin: 0 0 1rem;
+		background: rgba(251, 191, 36, 0.08);
+		border: 1px solid rgba(251, 191, 36, 0.25);
+		border-radius: 10px;
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.85rem;
 	}
 	h1 {
 		font-size: 1.4rem;

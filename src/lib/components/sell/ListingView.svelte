@@ -602,17 +602,19 @@
 					placeholder="None" />
 			</div>
 
-			<div class="stl-spec-field">
-				<label class="stl-spec-label" for="spec-athlete">Player/Athlete</label>
-				<input id="spec-athlete" type="text" class="stl-text-input" bind:value={athleteName}
-					placeholder="None" />
-			</div>
+			{#if !isWondersListing}
+				<div class="stl-spec-field">
+					<label class="stl-spec-label" for="spec-athlete">Player/Athlete</label>
+					<input id="spec-athlete" type="text" class="stl-text-input" bind:value={athleteName}
+						placeholder="None" />
+				</div>
 
-			<div class="stl-spec-field">
-				<label class="stl-spec-label" for="spec-weapon">Weapon Type</label>
-				<input id="spec-weapon" type="text" class="stl-text-input" bind:value={weaponType}
-					placeholder="None" />
-			</div>
+				<div class="stl-spec-field">
+					<label class="stl-spec-label" for="spec-weapon">Weapon Type</label>
+					<input id="spec-weapon" type="text" class="stl-text-input" bind:value={weaponType}
+						placeholder="None" />
+				</div>
+			{/if}
 
 			<div class="stl-spec-field">
 				<label class="stl-spec-label" for="spec-power">Power</label>

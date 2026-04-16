@@ -119,15 +119,16 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// to skip already-processed cards, so no offset needed)
 
 	// ── Fetch prioritized card list (multi-game) ────────────
-	// Budget split: 75% BoBA, 25% Wonders until Wonders coverage catches up.
-	// The RPC defaults game_id to 'boba' so the BoBA call matches historical behavior.
-	const wondersBudget = Math.max(1, Math.floor(callBudget * 0.25));
-	const bobaBudget = Math.max(1, callBudget - wondersBudget);
-	const [bobaCandidates, wondersCandidates] = await Promise.all([
-		getNextCandidates(admin, bobaBudget, today, 'boba'),
-		getNextCandidates(admin, wondersBudget, today, 'wonders'),
-	]);
-	const candidates = [...bobaCandidates, ...wondersCandidates];
+	// Split budget 50/50 and call Wonders first so it consumes its share before
+	// BoBA. If Wonders returns fewer candidates than its budget (once all ~1,000
+	// Wonders cards are priced), the unused remainder flows to BoBA. This is
+	// self-balancing without a hard ratio that has to be hand-tuned.
+	const halfBudget = Math.max(1, Math.floor(callBudget / 2));
+	const wondersCandidates = await getNextCandidates(admin, halfBudget, today, 'wonders');
+	const wondersConsumed = wondersCandidates.length;
+	const bobaBudget = Math.max(1, callBudget - wondersConsumed);
+	const bobaCandidates = await getNextCandidates(admin, bobaBudget, today, 'boba');
+	const candidates = [...wondersCandidates, ...bobaCandidates];
 	if (candidates.length === 0) {
 		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
