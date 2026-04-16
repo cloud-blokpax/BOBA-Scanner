@@ -27,6 +27,9 @@ export interface Card {
 	created_at: string;
 	/** Which game this card belongs to ('boba', 'wonders', etc.) */
 	game_id?: string;
+	/** Game-specific metadata (JSONB). Wonders uses this for cost, type_line,
+	 *  card_class, hierarchy, orbitals, lineage, faction, rules_text, etc. */
+	metadata?: Record<string, unknown> | null;
 	/** Release year: 2025 for Alpha Edition / Alpha Update, 2026 for Griffey Edition */
 	year?: number | null;
 	/** Base play name for variant deduplication (e.g. "Blitz" for "Blitz Alpha", "Blitz Blast") */

@@ -6,14 +6,21 @@
 	import WeaponsTab from '$lib/components/collection/WeaponsTab.svelte';
 	import {
 		collectionItems,
+		allCollectionItems,
 		collectionLoading,
 		collectionCount,
 		uniqueCardCount,
-		loadCollection
+		loadCollection,
+		gameFilter,
+		setGameFilter
 	} from '$lib/stores/collection.svelte';
 	import { priceCache, getPrice } from '$lib/stores/prices.svelte';
+	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
+	import { ALL_GAMES } from '$lib/games/all-games';
 	import { getWeapon, WEAPON_HIERARCHY } from '$lib/data/boba-weapons';
 	import type { CollectionItem } from '$lib/types';
+
+	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	const WEAPON_ICONS: Record<string, string> = {
 		super: '👑', gum: '🫧', hex: '💀', glow: '☢️',
@@ -144,6 +151,40 @@
 				<div class="value-label">Est. Value</div>
 			</div>
 		</div>
+
+		{#if multiGameEnabled()}
+			{@const allItems = allCollectionItems()}
+			{@const allCount = allItems.length}
+			{@const gameCounts = ALL_GAMES.map((g) => ({
+				game: g,
+				count: allItems.filter((i) => (i.card?.game_id || 'boba') === g.id).length,
+			}))}
+			<div class="game-filter-bar" role="tablist" aria-label="Filter by game">
+				<button
+					class="game-filter-pill"
+					class:game-filter-active={gameFilter() === 'all'}
+					onclick={() => setGameFilter('all')}
+					role="tab"
+					aria-selected={gameFilter() === 'all'}
+				>
+					All <span class="game-filter-count">{allCount}</span>
+				</button>
+				{#each gameCounts as { game, count }}
+					<button
+						class="game-filter-pill"
+						class:game-filter-active={gameFilter() === game.id}
+						class:game-filter-empty={count === 0}
+						data-game={game.id}
+						onclick={() => setGameFilter(game.id)}
+						role="tab"
+						aria-selected={gameFilter() === game.id}
+					>
+						<span class="game-filter-icon">{game.icon}</span>
+						{game.shortName} <span class="game-filter-count">{count}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
 
 		<!-- Tabs -->
 		<div class="tabs">
@@ -317,4 +358,43 @@
 	.footer { text-align: center; padding: 0 1rem 1rem; font-size: 0.6875rem; color: #1e293b; }
 	@keyframes countUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 	@keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+	/* ── Game filter bar (feature-flag gated) ─────────────── */
+	.game-filter-bar {
+		display: flex;
+		gap: 6px;
+		padding: 0.5rem 1rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.game-filter-bar::-webkit-scrollbar { display: none; }
+
+	.game-filter-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 12px;
+		border: 1px solid var(--border, rgba(148,163,184,0.15));
+		border-radius: 18px;
+		background: var(--bg-surface, #0d1524);
+		color: var(--text-secondary, #94a3b8);
+		font-size: 0.8rem;
+		font-weight: 600;
+		font-family: var(--font-sans);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+	.game-filter-pill:hover { background: var(--bg-hover, #182540); }
+	.game-filter-active {
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		border-color: var(--border-strong, rgba(148,163,184,0.3));
+	}
+	.game-filter-active[data-game="boba"] { border-color: #f59e0b; color: #f59e0b; }
+	.game-filter-active[data-game="wonders"] { border-color: #3B82F6; color: #60A5FA; }
+	.game-filter-empty { opacity: 0.5; }
+
+	.game-filter-icon { font-size: 0.9rem; line-height: 1; }
+	.game-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
 </style>

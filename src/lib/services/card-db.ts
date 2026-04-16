@@ -140,8 +140,18 @@ let searchIndex: Array<{ card: Card; searchText: string }> = [];
 let isLoaded = false;
 let _loadPromise: Promise<Card[]> | null = null;
 
-/** Current game filter for card loading. Defaults to 'boba'. */
-let _activeGameId = 'boba';
+/**
+ * Current game filter set for card loading.
+ *
+ * Single-value default is `['boba']` so single-game installs behave
+ * identically to before. Multi-game auto-detect mode passes
+ * `['boba', 'wonders']` to merge both games' cards into the indexes.
+ */
+let _activeGameIds: readonly string[] = ['boba'];
+
+function activeGamesKey(): string {
+	return [..._activeGameIds].sort().join(',');
+}
 
 
 /**
@@ -149,10 +159,30 @@ let _activeGameId = 'boba';
  * Never throws — returns an empty array if all sources fail.
  * Uses a shared promise to prevent concurrent duplicate loads.
  *
- * @param gameId - Which game's cards to load. Defaults to 'boba'.
+ * @param gameIdOrIds - Which game(s) to load. String defaults to 'boba'.
+ *   Pass an array (e.g., ['boba', 'wonders']) for multi-game auto-detect.
  */
-export async function loadCardDatabase(gameId: string = 'boba'): Promise<Card[]> {
-	_activeGameId = gameId;
+export async function loadCardDatabase(
+	gameIdOrIds: string | readonly string[] = 'boba'
+): Promise<Card[]> {
+	const requested: readonly string[] = Array.isArray(gameIdOrIds)
+		? (gameIdOrIds as readonly string[])
+		: [gameIdOrIds as string];
+	const requestedKey = [...requested].sort().join(',');
+	const currentKey = activeGamesKey();
+
+	// If the requested game set changed, reset and reload.
+	if (requestedKey !== currentKey) {
+		_activeGameIds = requested;
+		isLoaded = false;
+		cards = [];
+		cardIndex.clear();
+		prefixIndex.clear();
+		idIndex.clear();
+		heroIndex.clear();
+		searchIndex = [];
+	}
+
 	if (isLoaded && cards.length > 0) return cards;
 
 	if (_loadPromise) return _loadPromise;
@@ -250,7 +280,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 				const { data, error } = await client
 					.from('cards')
 					.select('*')
-					.eq('game_id', _activeGameId)
+					.in('game_id', _activeGameIds as string[])
 					.range(offset, offset + BATCH_SIZE - 1)
 					.order('id');
 
@@ -267,7 +297,7 @@ async function _loadCardDatabaseImpl(): Promise<Card[]> {
 
 			if (allCards.length > 0) {
 				// Merge play cards (BoBA-only — play cards are a BoBA concept)
-				const playCards = _activeGameId === 'boba' ? await loadPlayCards() : [];
+				const playCards = _activeGameIds.includes('boba') ? await loadPlayCards() : [];
 				if (playCards.length > 0) {
 					allCards = allCards.concat(playCards);
 				}
@@ -339,7 +369,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 					const { data, error: err } = await supabase
 						.from('cards')
 						.select('*')
-						.eq('game_id', _activeGameId)
+						.in('game_id', _activeGameIds as string[])
 						.gt('updated_at', lastSyncTime)
 						.range(offset, offset + CHUNK - 1);
 					if (err) { incrError = err as unknown as Error; done = true; }
@@ -364,7 +394,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 				const { count: remoteCount } = await supabase
 					.from('cards')
 					.select('*', { count: 'exact', head: true })
-					.eq('game_id', _activeGameId);
+					.in('game_id', _activeGameIds as string[]);
 
 				// cards array includes play cards (~409) which aren't in the hero 'cards' table,
 			// so exclude them from the comparison to avoid false full-refresh triggers
@@ -393,7 +423,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 				const { data, error } = await supabase
 					.from('cards')
 					.select('*')
-					.eq('game_id', _activeGameId)
+					.in('game_id', _activeGameIds as string[])
 					.range(offset, offset + BATCH_SIZE - 1)
 					.order('id');
 
@@ -416,7 +446,7 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		// (non-incremental), cards was replaced with hero-only data, so we must
 		// capture existing play cards BEFORE filtering.
 		const existingPlayCards = cards.filter(c => c.hero_name === null && c.power === null && c.weapon_type === null);
-		const playCards = _activeGameId === 'boba' ? await loadPlayCards() : [];
+		const playCards = _activeGameIds.includes('boba') ? await loadPlayCards() : [];
 		// Strip any existing play cards before re-adding
 		cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
 		if (playCards.length > 0) {
@@ -518,19 +548,25 @@ export function normalizeCardNum(val: string): string {
  *
  * @param cardNumber - Card number to search for
  * @param heroName - Optional hero name for disambiguation
- * @param _gameId - Reserved for future multi-game filtering (currently unused — indexes are per-load)
+ * @param gameId - When provided, only return cards belonging to this game.
+ *   If the active index contains multiple games (auto-detect mode), this is
+ *   critical to disambiguate card numbers that collide across games.
  */
 export function findCard(
 	cardNumber: string,
 	heroName: string | null = null,
-	_gameId: string = 'boba'
+	gameId: string = 'boba'
 ): Card | null {
 	if (!isLoaded || !cardNumber) return null;
 
 	const normalized = normalizeCardNum(cardNumber);
 	const normalizedHero = heroName?.toUpperCase().trim() || null;
 
-	const exactMatches = cardIndex.get(normalized) || [];
+	// Filter candidates by game_id when the active index is multi-game.
+	const rawExactMatches = cardIndex.get(normalized) || [];
+	const exactMatches = _activeGameIds.length > 1
+		? rawExactMatches.filter((c) => (c.game_id || 'boba') === gameId)
+		: rawExactMatches;
 
 	if (exactMatches.length === 1) {
 		const card = exactMatches[0];

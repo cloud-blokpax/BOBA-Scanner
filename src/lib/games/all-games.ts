@@ -15,8 +15,7 @@ export interface GameEntry {
 /** All registered games, ordered by release date. */
 export const ALL_GAMES: readonly GameEntry[] = [
 	{ id: 'boba', name: 'Bo Jackson Battle Arena', shortName: 'BoBA', icon: '🏈' },
-	// Wonders will be added in Phase 2 when the game module is ready:
-	// { id: 'wonders', name: 'Wonders of The First', shortName: 'Wonders', icon: '🐉' },
+	{ id: 'wonders', name: 'Wonders of The First', shortName: 'Wonders', icon: '🐉' },
 ];
 
 /** Quick lookup by game ID. */

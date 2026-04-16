@@ -30,6 +30,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_admin: true
 	},
 	{
+		feature_key: 'multi_game_ui',
+		display_name: 'Multi-Game UI',
+		description: 'Game selector pill, hub home screen, collection game filters, and Wonders-specific UI. Invisible while off — BoBA single-game experience stays unchanged.',
+		icon: '🎮',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
+	},
+	{
 		feature_key: 'price_history',
 		display_name: 'Price History & Alerts',
 		description: '30-day price sparklines, trend badges, and price drop/spike alerts on every card',
