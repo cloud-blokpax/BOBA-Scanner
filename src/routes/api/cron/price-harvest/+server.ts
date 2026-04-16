@@ -1,11 +1,17 @@
 /**
  * GET /api/cron/price-harvest — Self-chaining eBay price harvester
  *
- * Triggered by Vercel Cron at 04:45 UTC (11:45 PM EST). Processes a batch of cards,
- * then fires a fetch() to itself to continue. Repeats until eBay
- * quota is exhausted or the harvest window closes.
+ * Triggered EXCLUSIVELY by QStash (via /api/cron/qstash-harvest which forwards
+ * here server-to-server, bypassing Vercel Deployment Protection). Do NOT
+ * re-enable a Vercel cron for this endpoint — QStash is the single source of
+ * truth to prevent duplicate harvest runs. See vercel.json (no `crons` entry).
  *
- * Auth: CRON_SECRET header (Vercel Cron provides this automatically).
+ * Processes a batch of cards, then fires a fetch() to itself to continue.
+ * Repeats until eBay quota is exhausted or the harvest window closes.
+ *
+ * Auth: CRON_SECRET header. The qstash-harvest endpoint injects this after
+ * verifying the QStash signature. Also usable by the admin trigger-harvest
+ * endpoint for manual runs.
  * Self-chain links forward the same auth header.
  */
 
@@ -26,6 +32,31 @@ const CARDS_PER_RUN = 25;       // Max cards per invocation (time-check is the r
 const CARD_DELAY_MS = 2000;     // 2s between eBay calls — stays under burst limit
 const MAX_CHAIN_DEPTH = 1500;   // Safety cap (~33K cards max across all chains)
 const RESERVE_CALLS = 0;        // Harvester gets 100% of budget
+
+/**
+ * Refund an eBay call counter increment. Call this when an eBay request failed
+ * in a way that didn't consume real quota — namely 429 responses (rate-limited,
+ * no quota consumed) or thrown network errors (request never reached eBay).
+ *
+ * Without this, our self-imposed 4500-call cap trips early as the counter
+ * drifts above actual eBay usage, stalling the harvester before quota is real.
+ */
+async function refundEbayCall(
+	redis: NonNullable<ReturnType<typeof getRedis>>,
+	today: string,
+	reason: string,
+	cardId?: string
+): Promise<void> {
+	try {
+		const key = `ebay-calls:${today}`;
+		const count = await redis.decr(key);
+		// decr can go negative if we over-refund; clamp back to 0.
+		if (count < 0) await redis.set(key, 0, { ex: 86400 });
+		console.debug(`[harvest] Refunded ebay-calls counter (${reason}) card=${cardId ?? 'n/a'} new_count=${Math.max(0, count)}`);
+	} catch (err) {
+		console.debug('[harvest] Counter refund failed:', err instanceof Error ? err.message : err);
+	}
+}
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Auth ─────────────────────────────────────────────
@@ -379,6 +410,11 @@ async function refreshCardPrice(
 
 		const res = await ebayFetch(searchUrl.toString());
 		if (!res.ok) {
+			// 429 = rate limited — no quota was actually consumed, refund the counter
+			// so our self-imposed cap doesn't drift above real eBay usage.
+			if (res.status === 429) {
+				await refundEbayCall(redis, today, '429 response', card.id);
+			}
 			return {
 				success: false,
 				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
@@ -528,6 +564,8 @@ async function refreshCardPrice(
 			}
 		};
 	} catch (err) {
+		// Thrown error = fetch failed before reaching eBay. Refund the counter.
+		await refundEbayCall(redis, today, 'fetch threw', card.id);
 		return {
 			success: false,
 			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
@@ -589,6 +627,10 @@ async function refreshPlayCardPrice(
 
 		const res = await ebayFetch(searchUrl.toString());
 		if (!res.ok) {
+			// 429 = rate limited — no quota was actually consumed, refund the counter.
+			if (res.status === 429) {
+				await refundEbayCall(redis, today, '429 response (play card)', card.id);
+			}
 			return {
 				success: false,
 				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
@@ -674,6 +716,8 @@ async function refreshPlayCardPrice(
 			}
 		};
 	} catch (err) {
+		// Thrown error = fetch failed before reaching eBay. Refund the counter.
+		await refundEbayCall(redis, today, 'fetch threw (play card)', card.id);
 		return {
 			success: false,
 			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
