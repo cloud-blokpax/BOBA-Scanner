@@ -196,11 +196,16 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		timestamp: new Date().toISOString()
 	};
 
-	// Cache the assembled response in Redis (fire-and-forget, non-blocking)
+	// Cache the assembled response in Redis before returning.
+	// Must await on Vercel — fire-and-forget promises get killed when the
+	// function exits, which means the cache never gets populated.
 	const redis = getRedis();
 	if (redis) {
-		redis.set(STATS_CACHE_KEY, JSON.stringify(responseData), { ex: STATS_CACHE_TTL })
-			.catch(err => console.debug('[admin/stats] Redis cache write failed:', err));
+		try {
+			await redis.set(STATS_CACHE_KEY, JSON.stringify(responseData), { ex: STATS_CACHE_TTL });
+		} catch (err) {
+			console.debug('[admin/stats] Redis cache write failed:', err);
+		}
 	}
 
 	return json(responseData);
