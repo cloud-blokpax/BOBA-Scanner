@@ -10,12 +10,15 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import VariantBadge from '$lib/components/VariantBadge.svelte';
 	import { DRAGON_POINTS_CONFIG } from '$lib/games/wonders/dragon-points';
+	import { loadDragonPointsConfig } from '$lib/games/wonders/dragon-points-config';
 	import { FOIL_VARIANTS, VARIANT_ABBREV, VARIANT_COLOR, type VariantCode } from '$lib/data/variants';
 
 	const multiGameEnabled = featureEnabled('multi_game_ui');
 
-	onMount(() => {
-		loadCollection();
+	onMount(async () => {
+		// Load admin overrides before the collection so derived totals reflect them.
+		await loadDragonPointsConfig();
+		await loadCollection();
 	});
 
 	const total = $derived(dragonPointsTotal());
