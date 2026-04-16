@@ -43,14 +43,19 @@ export interface CrossValidationResult {
  */
 export function crossValidateCardResult(
 	ai: CrossValidationInput,
-	traceId: string
+	traceId: string,
+	gameId: string = 'boba'
 ): CrossValidationResult {
 	const warnings: string[] = [];
-	const allCards = getAllCards();
+	// Scope candidate pool to the target game when the in-memory index
+	// holds multiple games. When only one game is loaded, filtering is a no-op.
+	const allCards = getAllCards().filter(
+		(c) => (c.game_id || 'boba') === gameId
+	);
 
 	// ── Step 1: Exact match on card_number ──
 	if (ai.cardNumber) {
-		const exactMatch = findCard(ai.cardNumber);
+		const exactMatch = findCard(ai.cardNumber, null, gameId);
 		if (exactMatch) {
 			// Verify hero name matches
 			const nameScore = ai.heroName

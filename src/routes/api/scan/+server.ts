@@ -13,6 +13,11 @@ import { checkScanRateLimit, checkAnonScanRateLimit } from '$lib/server/rate-lim
 import { getAnthropicClient } from '$lib/server/anthropic';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import { BOBA_CARD_ID_TOOL, BOBA_SYSTEM_PROMPT, BOBA_USER_PROMPT } from '$lib/games/boba/prompt';
+import {
+	MULTI_GAME_CARD_ID_TOOL,
+	MULTI_GAME_SYSTEM_PROMPT,
+	MULTI_GAME_USER_PROMPT
+} from '$lib/games/multi-game-prompt';
 import { resolveGameConfig, isValidGameId } from '$lib/games/resolver';
 import type { RequestHandler } from './$types';
 
@@ -109,20 +114,31 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	const base64 = cleanBuffer.toString('base64');
 
-	// ── Load game-specific prompt and tool ──────────────────
-	let systemPrompt = BOBA_SYSTEM_PROMPT;
-	let userPrompt = BOBA_USER_PROMPT;
-	let cardIdTool: Anthropic.Messages.Tool = BOBA_CARD_ID_TOOL;
+	// ── Load prompt and tool ─────────────────────────────────
+	// - If gameIdParam is provided and valid → use that game's config
+	// - Otherwise → use the multi-game auto-detect prompt, which asks
+	//   Claude to first identify the game, then fill in fields for it.
+	let systemPrompt: string;
+	let userPrompt: string;
+	let cardIdTool: Anthropic.Messages.Tool;
+	const isAutoDetect = !gameIdParam || !isValidGameId(gameIdParam);
 
-	if (gameIdParam && isValidGameId(gameIdParam)) {
+	if (!isAutoDetect) {
 		try {
-			const gameConfig = await resolveGameConfig(gameIdParam);
+			const gameConfig = await resolveGameConfig(gameIdParam as string);
 			systemPrompt = gameConfig.claudeSystemPrompt;
 			userPrompt = gameConfig.claudeUserPrompt;
 			cardIdTool = gameConfig.cardIdTool;
 		} catch {
 			// Fall back to BoBA defaults if game config resolution fails
+			systemPrompt = BOBA_SYSTEM_PROMPT;
+			userPrompt = BOBA_USER_PROMPT;
+			cardIdTool = BOBA_CARD_ID_TOOL;
 		}
+	} else {
+		systemPrompt = MULTI_GAME_SYSTEM_PROMPT;
+		userPrompt = MULTI_GAME_USER_PROMPT;
+		cardIdTool = MULTI_GAME_CARD_ID_TOOL;
 	}
 
 	// ── Claude API call with structured output ──────────────
@@ -158,7 +174,45 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 		const cardData = toolUse.input as Record<string, unknown>;
 
-		// ── Validate card_number isn't actually the power value ──────
+		// ── Determine which game the card belongs to ────────────
+		// Priority: explicit gameIdParam > Claude's `game` field > default 'boba'
+		let detectedGameId: string;
+		if (gameIdParam && isValidGameId(gameIdParam)) {
+			detectedGameId = gameIdParam;
+		} else if (typeof cardData.game === 'string' && isValidGameId(cardData.game)) {
+			detectedGameId = cardData.game;
+		} else {
+			detectedGameId = 'boba';
+		}
+
+		// ── Normalize Wonders field aliases into the common shape ─
+		// Tier 3 validation uses card_number/hero_name; Wonders emits
+		// collector_number/card_name — merge them so downstream is uniform.
+		if (detectedGameId === 'wonders') {
+			if (!cardData.card_number && cardData.collector_number) {
+				cardData.card_number = cardData.collector_number;
+			}
+			if (!cardData.hero_name && cardData.card_name) {
+				cardData.hero_name = cardData.card_name;
+			}
+			// Wonders `power` is a string like "4" or "S" — convert numeric to number
+			// so Tier 3's `Number(power)` stays stable.
+			if (typeof cardData.power === 'string' && /^\d+$/.test(cardData.power)) {
+				cardData.power = parseInt(cardData.power, 10);
+			} else if (typeof cardData.power === 'string' && !/^\d+$/.test(cardData.power)) {
+				// Non-numeric power (S/I/L) — clear so Tier 3 treats as null
+				cardData.power = null;
+			}
+			// Variant for Wonders maps from foil_treatment
+			if (!cardData.variant && cardData.foil_treatment) {
+				cardData.variant = cardData.foil_treatment;
+			}
+		}
+
+		// Annotate game_id on the payload so Tier 3 can route correctly.
+		cardData.game_id = detectedGameId;
+
+		// ── Validate card_number isn't actually the power value (BoBA only) ──
 		// Power values are always multiples of 5 (55, 60, ... 200, 250).
 		// Paper cards have sequential numeric card numbers (1, 2, ... 300+).
 		// When card_number has no prefix, equals power, AND is a multiple of 5
@@ -167,26 +221,33 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		// (e.g. card #130 with 130 power), so we only clear when variant is
 		// NOT explicitly "paper" — if Claude identified it as paper, it likely
 		// read the number correctly from the bottom-left corner.
-		const rawCardNumber = String(cardData.card_number || '').trim();
-		const parsedAsNumber = parseInt(rawCardNumber, 10);
+		//
+		// Wonders is exempt: Existence cards legitimately have numeric collector
+		// numbers that can collide with power values (e.g., collector "115" with
+		// power 5 — no false positive — but a hypothetical "115" with power "115"
+		// is just a coincidence, not a bug).
+		if (detectedGameId === 'boba') {
+			const rawCardNumber = String(cardData.card_number || '').trim();
+			const parsedAsNumber = parseInt(rawCardNumber, 10);
 
-		if (
-			!rawCardNumber.includes('-') &&
-			!isNaN(parsedAsNumber) &&
-			cardData.power === parsedAsNumber &&
-			cardData.variant !== 'paper'
-		) {
-			console.warn(
-				`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
-				`Clearing card_number to force hero-based fallback.`
-			);
-			cardData.card_number = null;
-			cardData.confidence = Math.min((cardData.confidence as number) || 0.5, 0.6);
+			if (
+				!rawCardNumber.includes('-') &&
+				!isNaN(parsedAsNumber) &&
+				cardData.power === parsedAsNumber &&
+				cardData.variant !== 'paper'
+			) {
+				console.warn(
+					`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
+					`Clearing card_number to force hero-based fallback.`
+				);
+				cardData.card_number = null;
+				cardData.confidence = Math.min((cardData.confidence as number) || 0.5, 0.6);
+			}
 		}
 
-		console.log(`[api/scan] Claude identified: card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
+		console.log(`[api/scan] Claude identified: game=${detectedGameId}, card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
 
-		return json({ success: true, card: cardData, method: 'claude' });
+		return json({ success: true, card: cardData, method: 'claude', game_id: detectedGameId });
 	} catch (err) {
 		console.error('[api/scan] Claude API error:', err);
 

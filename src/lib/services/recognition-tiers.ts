@@ -17,8 +17,8 @@ import { recognizeText } from '$lib/services/ocr';
 import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { checkCorrection } from '$lib/services/scan-learning';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
-import { resolveGameConfig } from '$lib/games/resolver';
-import type { OcrRegion } from '$lib/games/types';
+import { resolveGameConfig, getAllGameConfigs } from '$lib/games/resolver';
+import type { GameConfig } from '$lib/games/types';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
 // ── Shared types ────────────────────────────────────────────
@@ -157,18 +157,44 @@ export async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 	const TIER2_BUDGET_MS = 12000;
 	const tier2Start = performance.now();
 
-	// Load game-specific OCR regions and card number extractor
-	let ocrRegions: readonly OcrRegion[] = BOBA_OCR_REGIONS;
-	let gameExtractCardNumber: (text: string) => string | null = extractCardNumber;
+	// Resolve the games we'll try:
+	//   - gameHint set → only that game
+	//   - gameHint null/empty → all registered games (auto-detect)
+	// The first game listed is BoBA (more common), so its regions/extractors
+	// run first and short-circuit on match.
+	let gameConfigs: readonly GameConfig[];
 	try {
-		const gameConfig = await resolveGameConfig(ctx.gameHint);
-		ocrRegions = gameConfig.ocrRegions;
-		gameExtractCardNumber = gameConfig.extractCardNumber;
+		if (ctx.gameHint) {
+			gameConfigs = [await resolveGameConfig(ctx.gameHint)];
+		} else {
+			gameConfigs = await getAllGameConfigs();
+		}
 	} catch {
-		// Fall back to BoBA defaults if game config resolution fails
+		gameConfigs = [];
 	}
 
-	for (const region of ocrRegions) {
+	// Deduplicate OCR regions by label — many games share region definitions,
+	// and running identical regions twice wastes the 12s budget.
+	const seenRegions = new Set<string>();
+	type RegionTask = { region: import('$lib/games/types').OcrRegion; config: GameConfig };
+	const tasks: RegionTask[] = [];
+	for (const config of gameConfigs) {
+		for (const region of config.ocrRegions) {
+			const key = `${region.x}:${region.y}:${region.w}:${region.h}`;
+			if (seenRegions.has(key)) continue;
+			seenRegions.add(key);
+			tasks.push({ region, config });
+		}
+	}
+
+	// Fallback to BoBA defaults if no game configs resolved (unlikely but safe)
+	if (tasks.length === 0) {
+		for (const region of BOBA_OCR_REGIONS) {
+			tasks.push({ region, config: null as unknown as GameConfig });
+		}
+	}
+
+	for (const { region, config } of tasks) {
 		const elapsed = performance.now() - tier2Start;
 		const remaining = TIER2_BUDGET_MS - elapsed;
 		if (remaining <= 1000) {
@@ -188,31 +214,57 @@ export async function runTier2(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 			);
 			if (ocrResult.confidence < BOBA_SCAN_CONFIG.ocrConfidenceThreshold) continue;
 
-			const resolvedNumber = gameExtractCardNumber(ocrResult.text);
-			if (!resolvedNumber) continue;
+			// When in auto-detect mode, try every game's extractor against the same
+			// OCR text. Prefix sets are disjoint (BF vs A1/P/T/...), so at most one
+			// extractor matches. Plain-numeric Wonders cards intentionally fall
+			// through to Tier 3 to avoid false-matching BoBA numbers.
+			const extractorsToTry: Array<(text: string) => string | null> = config
+				? [config.extractCardNumber]
+				: gameConfigs.length > 0
+					? gameConfigs.map((c) => c.extractCardNumber)
+					: [extractCardNumber];
+			const gameIdsForExtractors: Array<string | null> = config
+				? [config.id]
+				: gameConfigs.length > 0
+					? gameConfigs.map((c) => c.id)
+					: [null];
 
-			ctx.lastOcrReading = resolvedNumber;
+			for (let i = 0; i < extractorsToTry.length; i++) {
+				const extractFn = extractorsToTry[i];
+				const gameId = gameIdsForExtractors[i];
+				const resolvedNumber = extractFn(ocrResult.text);
+				if (!resolvedNumber) continue;
 
-			// Check local learned correction first (instant, offline-capable)
-			let correctedNumber = checkCorrection(resolvedNumber);
+				ctx.lastOcrReading = resolvedNumber;
 
-			// If no local correction, check community corrections (requires network)
-			if (!correctedNumber) {
-				try {
-					const { lookupCommunityCorrection } = await import('$lib/services/community-corrections');
-					correctedNumber = await lookupCommunityCorrection(resolvedNumber);
-				} catch (err) {
-					console.debug(`[scan:${ctx.traceId}:tier2] Community correction lookup failed:`, err);
+				// Check local learned correction first (instant, offline-capable)
+				let correctedNumber = checkCorrection(resolvedNumber);
+				if (!correctedNumber) {
+					try {
+						const { lookupCommunityCorrection } = await import('$lib/services/community-corrections');
+						correctedNumber = await lookupCommunityCorrection(resolvedNumber);
+					} catch (err) {
+						console.debug(`[scan:${ctx.traceId}:tier2] Community correction lookup failed:`, err);
+					}
 				}
-			}
 
-			const lookupNumber = correctedNumber || resolvedNumber;
-			const card = findCard(lookupNumber);
-			if (card) {
-				return {
-					card_id: card.id, card, scan_method: 'tesseract' as ScanMethod,
-					confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100, processing_ms: 0
-				};
+				const lookupNumber = correctedNumber || resolvedNumber;
+				const card = findCard(lookupNumber, null, gameId || 'boba');
+				if (card) {
+					// Annotate the card with the game we matched under, so the
+					// hash writeback and downstream UI know which game this is.
+					const cardWithGame: Card = gameId
+						? { ...card, game_id: card.game_id || gameId }
+						: card;
+					return {
+						card_id: card.id,
+						card: cardWithGame,
+						scan_method: 'tesseract' as ScanMethod,
+						confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100,
+						processing_ms: 0,
+						game_id: cardWithGame.game_id ?? null
+					};
+				}
 			}
 		} catch (err) {
 			console.warn('OCR region failed:', err);
@@ -282,30 +334,46 @@ export async function runTier3(bitmap: ImageBitmap, ctx: ScanContext): Promise<S
 	const claudeNumber = result.card.card_number;
 	const claudePower = result.card.power ? Number(result.card.power) : null;
 	const claudeAthlete: string | null = result.card.athlete_name || null;
-	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: card_number="${claudeNumber}", hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}`);
 
-	// Cross-validate against local DB
+	// Detected game: server annotates this based on gameHint or Claude's output.
+	// Top-level `result.game_id` is the canonical source; fall back to the card
+	// object's `game_id`, then the caller's hint, then 'boba'.
+	const detectedGameId: string =
+		result.game_id ||
+		result.card.game_id ||
+		ctx.gameHint ||
+		'boba';
+
+	console.debug(`[scan:${ctx.traceId}:tier3] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}`);
+
+	// Cross-validate against local DB — scoped to the detected game so card
+	// numbers that collide between games (e.g., numeric-only) hit the right index.
 	const validated = crossValidateCardResult(
 		{ cardNumber: claudeNumber, heroName: claudeHero, power: claudePower, confidence: result.card.confidence || 0.9 },
-		ctx.traceId
+		ctx.traceId,
+		detectedGameId
 	);
 
 	if (validated.card) {
 		// Always prefer Claude's athlete_name reading — the vision model is more
 		// reliable than seed data which may have incorrect hero→athlete mappings.
-		const card = claudeAthlete
+		// Also ensure the returned card carries the detected game_id so the
+		// hash writeback lands on the correct game.
+		const mergedCard: Card = claudeAthlete
 			? { ...validated.card, athlete_name: claudeAthlete }
-			: validated.card;
+			: { ...validated.card };
+		if (!mergedCard.game_id) mergedCard.game_id = detectedGameId;
 		console.debug(
-			`[scan:${ctx.traceId}:tier3] Validated: id=${card.id}, number=${card.card_number}, ` +
-			`method=${validated.validationMethod}, confidence=${validated.confidence}`
+			`[scan:${ctx.traceId}:tier3] Validated: id=${mergedCard.id}, number=${mergedCard.card_number}, ` +
+			`game=${mergedCard.game_id}, method=${validated.validationMethod}, confidence=${validated.confidence}`
 		);
 		if (validated.warnings.length > 0) {
 			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
 		}
 		return {
-			card_id: card.id, card, scan_method: 'claude', confidence: validated.confidence,
+			card_id: mergedCard.id, card: mergedCard, scan_method: 'claude', confidence: validated.confidence,
 			processing_ms: 0, variant: result.card.variant || result.card.parallel || null,
+			game_id: mergedCard.game_id ?? null,
 			validationMethod: validated.validationMethod, validationWarnings: validated.warnings
 		};
 	}

@@ -82,7 +82,18 @@ export async function recognizeCard(
 	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
 	await initWorkers();
-	const loadedCards = await loadCardDatabase();
+
+	// Resolve game context:
+	//   - Explicit gameHint ('boba' | 'wonders') → single-game mode (backward compat)
+	//   - null/undefined                        → auto-detect (load all games)
+	const gameHintRaw = options?.gameHint;
+	const isAutoDetect = gameHintRaw === null || gameHintRaw === undefined;
+	const gameHint = isAutoDetect ? '' : (gameHintRaw as string);
+	const gamesToLoad: string | readonly string[] = isAutoDetect
+		? ['boba', 'wonders']
+		: gameHint;
+
+	const loadedCards = await loadCardDatabase(gamesToLoad);
 
 	// Guard: if card database is empty, don't waste API calls on Tier 3
 	if (loadedCards.length === 0) {
@@ -97,10 +108,9 @@ export async function recognizeCard(
 		};
 	}
 
-	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded.`);
+	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded (games=${isAutoDetect ? 'auto' : gameHint}).`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const gameHint = options?.gameHint ?? 'boba';
 	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
 
 	// Convert to ImageBitmap for worker transfer
@@ -130,7 +140,13 @@ export async function recognizeCard(
 
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
-		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId, game_id: result.card ? (result.card.game_id || gameHint) : null };
+		// Prefer the card's own game_id, then the result's tier-set game_id,
+		// then the caller's hint, and finally 'boba' for legacy rows without game_id.
+		const resolvedGameId = result.card?.game_id
+			|| result.game_id
+			|| (gameHint || null)
+			|| 'boba';
+		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId, game_id: result.card ? resolvedGameId : null };
 		const thumbnail = bitmap instanceof ImageBitmap ? createThumbnailDataUrl(bitmap) : null;
 
 		// Create a listing-quality image blob for Supabase Storage upload.
@@ -234,9 +250,10 @@ export async function recognizeCard(
 		try {
 			const tier2Result = await runTier2(bitmap, ctx);
 			if (tier2Result) {
-				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}`);
+				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
 				const hash = await getImageWorker().computeDHash(bitmap);
-				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, gameHint);
+				const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
+				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId);
 				return finalize(tier2Result);
 			}
 			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
@@ -254,9 +271,10 @@ export async function recognizeCard(
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
 	const tier3Result = await runTier3(bitmap, ctx);
 	if (tier3Result) {
-		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}`);
+		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}`);
 		const hash = await getImageWorker().computeDHash(bitmap);
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, gameHint);
+		const hashGameId = tier3Result.card?.game_id || tier3Result.game_id || gameHint || 'boba';
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, hashGameId);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
