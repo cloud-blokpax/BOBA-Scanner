@@ -2,8 +2,10 @@
  * App name helper — reads from system_settings.app_name with a 'Card Scanner'
  * fallback. Admins can revert the rebrand by editing one row:
  *
- *   UPDATE system_settings SET value = '"BOBA Scanner"' WHERE key = 'app_name';
+ *   INSERT INTO system_settings (key, value) VALUES ('app_name', 'BOBA Scanner')
+ *     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
  *
+ * Note: system_settings.value is TEXT, not JSONB. Store raw strings, not JSON.
  * The fallback is intentionally the *new* name so fresh installs show the
  * rebrand immediately even if the system_settings row was never inserted.
  */
@@ -32,7 +34,7 @@ export async function getAppName(): Promise<string> {
 			.select('value')
 			.eq('key', 'app_name')
 			.maybeSingle();
-		// value is JSONB — a string value stored as JSON looks like `"Card Scanner"`.
+		// value is TEXT (not JSONB) — supabase returns it as a plain string.
 		const raw = (data?.value ?? null) as unknown;
 		if (typeof raw === 'string' && raw.length > 0 && raw.length < 64) {
 			_cachedName = raw;

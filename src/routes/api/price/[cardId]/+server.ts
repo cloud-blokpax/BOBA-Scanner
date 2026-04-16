@@ -98,16 +98,18 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 	}
 
 	// Get card details for search query — check hero cards first, fall back to play cards
-	let card: { name: string | null; hero_name: string | null; athlete_name: string | null; card_number: string | null; set_code: string | null; parallel: string | null; weapon_type: string | null } | null = null;
+	let card: { name: string | null; hero_name: string | null; athlete_name: string | null; card_number: string | null; set_code: string | null; parallel: string | null; weapon_type: string | null; game_id: string | null } | null = null;
 
 	const { data: heroCard } = await locals.supabase
 		.from('cards')
-		.select('name, hero_name, athlete_name, card_number, set_code, parallel, weapon_type')
+		.select('name, hero_name, athlete_name, card_number, set_code, parallel, weapon_type, game_id' as '*')
 		.eq('id', cardId)
 		.maybeSingle();
 
 	if (heroCard) {
-		card = heroCard;
+		// Generated Supabase types are stale and don't include game_id on cards;
+		// the runtime row does include it because we explicitly selected it above.
+		card = heroCard as unknown as typeof card;
 	} else {
 		// Fall back to play_cards table (play cards, bonus plays, hot dogs)
 		const { data: playCard } = await locals.supabase
@@ -124,7 +126,8 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 				card_number: playCard.card_number,
 				set_code: playCard.release || null,
 				parallel: null,
-				weapon_type: null
+				weapon_type: null,
+				game_id: 'boba'
 			};
 		}
 	}
@@ -182,6 +185,7 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 		const priceData: Record<string, unknown> = {
 			card_id: cardId,
 			source: 'ebay',
+			game_id: card.game_id || 'boba',
 			price_low: allStats?.low ?? null,
 			price_mid: allStats?.median ?? null,
 			price_high: allStats?.high ?? null,
@@ -240,7 +244,10 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 					listings_count: priceData.listings_count,
 					recorded_at: new Date().toISOString()
 				};
-				if (!isPlayCard) historyRow.variant = variant;
+				if (!isPlayCard) {
+					historyRow.variant = variant;
+					historyRow.game_id = card.game_id || 'boba';
+				}
 				const { error: historyError } = await (historyClient.from(historyTable) as unknown as {
 					insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
 				}).insert(historyRow);
