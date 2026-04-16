@@ -88,7 +88,7 @@
 </script>
 
 <svelte:head>
-	<title>Market Explorer | BOBA Scanner</title>
+	<title>Market Explorer | Card Scanner</title>
 </svelte:head>
 
 <div class="explorer">

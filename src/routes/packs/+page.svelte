@@ -133,7 +133,7 @@
 </script>
 
 <svelte:head>
-	<title>Pack Simulator - BOBA Scanner</title>
+	<title>Pack Simulator - Card Scanner</title>
 </svelte:head>
 
 <div class="packs-page">

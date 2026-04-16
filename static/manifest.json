@@ -1,7 +1,7 @@
 {
-  "name": "BOBA Scanner",
-  "short_name": "BOBA Scan",
-  "description": "AI-powered Bo Jackson trading card scanner with instant identification and pricing",
+  "name": "Card Scanner",
+  "short_name": "Card Scan",
+  "description": "AI-powered card scanner for BoBA and Wonders of The First trading cards",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -11,12 +11,20 @@
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["entertainment", "utilities"],

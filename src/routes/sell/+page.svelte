@@ -188,7 +188,7 @@
 </script>
 
 <svelte:head>
-	<title>Sell - BOBA Scanner</title>
+	<title>Sell - Card Scanner</title>
 </svelte:head>
 
 {#if view === 'scanning'}

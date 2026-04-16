@@ -214,7 +214,7 @@
 </script>
 
 <svelte:head>
-	<title>{tournament ? tournament.name : 'Tournament Detail'} - BOBA Scanner</title>
+	<title>{tournament ? tournament.name : 'Tournament Detail'} - Card Scanner</title>
 </svelte:head>
 
 <div class="detail-page">

@@ -279,7 +279,7 @@
 </script>
 
 <svelte:head>
-	<title>{tournament ? `Enter: ${tournament.name}` : 'Enter Tournament'} - BOBA Scanner</title>
+	<title>{tournament ? `Enter: ${tournament.name}` : 'Enter Tournament'} - Card Scanner</title>
 </svelte:head>
 
 <div class="enter-page">

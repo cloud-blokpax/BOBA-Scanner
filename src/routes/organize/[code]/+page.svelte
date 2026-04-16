@@ -89,7 +89,7 @@
 	});
 
 	const shareUrl = $derived(`${typeof window !== 'undefined' ? window.location.origin : ''}/tournaments/enter?code=${tournament.code}`);
-	const shareText = $derived(`Register your deck for ${tournament.name} at ${shareUrl}. Enter code ${tournament.code} in BOBA Scanner to submit and validate your deck before the event.`);
+	const shareText = $derived(`Register your deck for ${tournament.name} at ${shareUrl}. Enter code ${tournament.code} in Card Scanner to submit and validate your deck before the event.`);
 	const validCount = $derived(submissions.filter((s) => s.is_valid).length);
 	const invalidCount = $derived(submissions.filter((s) => !s.is_valid).length);
 
@@ -215,7 +215,7 @@
 </script>
 
 <svelte:head>
-	<title>Manage: {tournament.name} - BOBA Scanner</title>
+	<title>Manage: {tournament.name} - Card Scanner</title>
 </svelte:head>
 
 <div class="dashboard">

@@ -166,7 +166,7 @@ async function createDefaultPaymentPolicy(headers: Record<string, string>): Prom
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
-				name: 'BOBA Scanner - Managed Payments',
+				name: 'Card Scanner - Managed Payments',
 				marketplaceId: 'EBAY_US',
 				paymentMethods: [{ paymentMethodType: 'PERSONAL_CHECK' }]
 			})
@@ -190,7 +190,7 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
-				name: 'BOBA Scanner - 30 Day Returns',
+				name: 'Card Scanner - 30 Day Returns',
 				marketplaceId: 'EBAY_US',
 				returnsAccepted: true,
 				returnPeriod: { value: 30, unit: 'DAY' },

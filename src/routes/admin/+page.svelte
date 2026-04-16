@@ -152,7 +152,7 @@
 </script>
 
 <svelte:head>
-	<title>Admin Dashboard - BOBA Scanner</title>
+	<title>Admin Dashboard - Card Scanner</title>
 </svelte:head>
 
 <div class="admin-page" class:mobile={isMobile}>

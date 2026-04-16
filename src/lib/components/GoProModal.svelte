@@ -90,7 +90,7 @@
 					<p class="confirmation-text">Thanks for the support! Your Pro time was recently extended — this one's on us.</p>
 				{:else}
 					<h2 class="confirmation-title">You're Pro!</h2>
-					<p class="confirmation-text">Thank you for supporting BOBA Scanner.</p>
+					<p class="confirmation-text">Thank you for supporting Card Scanner.</p>
 				{/if}
 			</div>
 		{:else}

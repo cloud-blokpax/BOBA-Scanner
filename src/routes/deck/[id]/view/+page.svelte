@@ -21,7 +21,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.deck.name} | BOBA Scanner</title>
+	<title>{data.deck.name} | Card Scanner</title>
 	<meta property="og:title" content="{data.deck.name} — {data.deck.format_id} Deck" />
 	<meta property="og:description" content="{heroCount} Heroes • DBS {totalDbs}/1000 • {playCount} Plays" />
 	<meta property="og:url" content="https://boba.cards/deck/{data.deck.id}/view" />

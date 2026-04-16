@@ -89,7 +89,7 @@
 </script>
 
 <svelte:head>
-	<title>Scan | BOBA Scanner</title>
+	<title>Scan | Card Scanner</title>
 </svelte:head>
 
 <div class="scan-page">

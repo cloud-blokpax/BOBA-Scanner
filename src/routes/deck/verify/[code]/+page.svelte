@@ -86,7 +86,7 @@
 </script>
 
 <svelte:head>
-	<title>{submission() ? `${submission()!.player_name}'s Deck` : 'Deck Verification'} | BOBA Scanner</title>
+	<title>{submission() ? `${submission()!.player_name}'s Deck` : 'Deck Verification'} | Card Scanner</title>
 </svelte:head>
 
 <div class="verify-page">
@@ -200,7 +200,7 @@
 				<p>Last updated: {new Date(snap.last_updated_at).toLocaleString()}</p>
 			{/if}
 			<p class="verify-code">Code: {snap.code}</p>
-			<p class="verify-branding">Verified by BOBA Scanner</p>
+			<p class="verify-branding">Verified by Card Scanner</p>
 		</footer>
 	{:else}
 		<div class="verify-not-found">

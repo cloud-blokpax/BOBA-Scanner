@@ -154,7 +154,7 @@
 		lines.push(`Condition: ${condition}`);
 		if (notes) lines.push(`Notes: ${notes}`);
 		lines.push('');
-		lines.push('Listed with BOBA Scanner - boba.cards');
+		lines.push('Listed with Card Scanner - boba.cards');
 		return lines.filter(l => l !== undefined).join('\n');
 	}
 

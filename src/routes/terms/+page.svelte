@@ -1,12 +1,12 @@
 <svelte:head>
-	<title>Terms of Service — BOBA Scanner</title>
+	<title>Terms of Service — Card Scanner</title>
 </svelte:head>
 
 <div class="legal-page">
 	<h1>Terms of Service</h1>
 	<p class="last-updated">Effective date: March 29, 2026. Last updated: March 29, 2026.</p>
 
-	<p>These Terms of Service ("Terms") govern your use of BOBA Scanner ("the app," "the service"), operated by James Poto ("James Poto"). By accessing or using the app, you agree to these Terms. If you do not agree, do not use the app.</p>
+	<p>These Terms of Service ("Terms") govern your use of Card Scanner ("the app," "the service"), operated by James Poto ("James Poto"). By accessing or using the app, you agree to these Terms. If you do not agree, do not use the app.</p>
 
 	<section>
 		<h2>1. Eligibility</h2>
@@ -16,7 +16,7 @@
 
 	<section>
 		<h2>2. Service Description</h2>
-		<p>BOBA Scanner is a tool for identifying, collecting, pricing, and managing Bo Jackson Battle Arena (BoBA) trading cards. The service uses AI-powered image recognition, client-side OCR, perceptual hash matching, and third-party pricing data to provide card identification and market pricing estimates.</p>
+		<p>Card Scanner is a tool for identifying, collecting, pricing, and managing Bo Jackson Battle Arena (BoBA) trading cards. The service uses AI-powered image recognition, client-side OCR, perceptual hash matching, and third-party pricing data to provide card identification and market pricing estimates.</p>
 		<p>The app offers both free and paid tiers. Free users have access to card scanning (with rate limits on AI identification), collection management, and deck building. Pro users have access to additional features including AI condition grading, price history trends, and eBay listing tools.</p>
 	</section>
 
@@ -34,7 +34,7 @@
 
 	<section>
 		<h2>5. AI and Accuracy Disclaimer</h2>
-		<p><strong>Card identification may be incorrect.</strong> BOBA Scanner uses AI (Anthropic Claude) and OCR technology that can misread, misidentify, or fail to identify cards. Recognition accuracy depends on image quality, lighting, card condition, and other factors beyond our control. You should always verify card identifications independently before making any decisions based on them.</p>
+		<p><strong>Card identification may be incorrect.</strong> Card Scanner uses AI (Anthropic Claude) and OCR technology that can misread, misidentify, or fail to identify cards. Recognition accuracy depends on image quality, lighting, card condition, and other factors beyond our control. You should always verify card identifications independently before making any decisions based on them.</p>
 		<p><strong>Price estimates are approximations.</strong> Pricing data is sourced from eBay active listings and reflects approximate current market conditions. Prices are calculated using median values with statistical outlier filtering and may not reflect the actual sale price of any specific card. Price data may be delayed, incomplete, or inaccurate.</p>
 		<p><strong>AI grading is not a substitute for professional grading.</strong> The AI condition grading feature provides an informal estimate only. It is not a PSA, BGS, SGC, or any other professional grading service. AI grades should not be relied upon for purchasing, selling, or insuring cards. Always obtain professional grading from a certified service before making significant financial decisions about card condition.</p>
 		<p><strong>Deck validation is informational.</strong> The deck builder and validator implement tournament rules to the best of our understanding, but rule interpretations may differ from official rulings. Always confirm deck legality with tournament organizers before competing.</p>
@@ -47,7 +47,7 @@
 
 	<section>
 		<h2>7. eBay Integration</h2>
-		<p><strong>Affiliate links.</strong> BOBA Scanner contains affiliate links to eBay through the eBay Partner Network. We may earn a commission on purchases made through these links at no additional cost to you.</p>
+		<p><strong>Affiliate links.</strong> Card Scanner contains affiliate links to eBay through the eBay Partner Network. We may earn a commission on purchases made through these links at no additional cost to you.</p>
 		<p><strong>Seller account linking.</strong> If you connect your eBay seller account, you authorize the app to create and manage listings on your behalf using eBay's Seller API. You are solely responsible for reviewing all listing details (title, description, price, condition, shipping) before any listing is published. We are not responsible for errors in listings, pricing discrepancies, or any consequences of listings created through the app.</p>
 		<p><strong>eBay's terms apply.</strong> Your use of eBay through this app is subject to eBay's User Agreement and policies. We are not a party to any eBay transaction.</p>
 	</section>
@@ -67,7 +67,7 @@
 
 	<section>
 		<h2>9. Intellectual Property</h2>
-		<p>Bo Jackson Battle Arena, BoBA, and related card names, images, and designs are trademarks and copyrights of their respective owners. BOBA Scanner is an independent fan-built tool and is <strong>not affiliated with, endorsed by, or sponsored by</strong> the creators of the BoBA card game, Bo Jackson, or any associated entities.</p>
+		<p>Bo Jackson Battle Arena, BoBA, and related card names, images, and designs are trademarks and copyrights of their respective owners. Card Scanner is an independent fan-built tool and is <strong>not affiliated with, endorsed by, or sponsored by</strong> the creators of the BoBA card game, Bo Jackson, or any associated entities.</p>
 		<p>Card data, pricing information, and reference images displayed in the app are sourced from publicly available information and user contributions. The app's source code, recognition algorithms, and original content are the property of James Poto.</p>
 	</section>
 

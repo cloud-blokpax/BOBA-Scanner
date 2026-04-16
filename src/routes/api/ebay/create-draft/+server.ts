@@ -63,7 +63,7 @@ function buildDescription(req: DraftRequest): string {
 	lines.push(`<li><strong>Condition:</strong> ${req.condition || 'Near Mint'}</li>`);
 	if (req.notes) lines.push(`<li><strong>Notes:</strong> ${req.notes}</li>`);
 	lines.push('</ul>');
-	lines.push('<p>Listed with BOBA Scanner - boba.cards</p>');
+	lines.push('<p>Listed with Card Scanner - boba.cards</p>');
 	return lines.join('\n');
 }
 

@@ -102,7 +102,7 @@
 </script>
 
 <svelte:head>
-	<title>Create Deck | BOBA Scanner</title>
+	<title>Create Deck | Card Scanner</title>
 </svelte:head>
 
 <div class="wizard-page">
