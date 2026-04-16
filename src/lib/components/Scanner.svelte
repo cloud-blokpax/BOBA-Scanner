@@ -18,13 +18,16 @@
 		isAuthenticated = true,
 		paused = false,
 		scanMode = 'single' as const,
-		embedded = false
+		embedded = false,
+		gameHint = null
 	}: {
 		onResult?: (result: ScanResult, capturedImageUrl?: string) => void;
 		isAuthenticated?: boolean;
 		paused?: boolean;
 		scanMode?: 'single' | 'batch' | 'binder' | 'roll';
 		embedded?: boolean;
+		/** 'boba' | 'wonders' for explicit game mode; null for auto-detect */
+		gameHint?: string | null;
 	} = $props();
 
 	// ── Scanner State Machine ───────────────────────────────
@@ -262,7 +265,7 @@
 			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
 			let scanResult;
 			try {
-				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion });
+				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion, gameHint });
 			} finally {
 				bitmap.close();
 			}
@@ -295,7 +298,7 @@
 				foilStep = 0;
 
 				const imageUrl = bitmapToDataUrl(composite);
-				const scanResult = await scanImage(composite, { isAuthenticated, skipBlurCheck: true });
+				const scanResult = await scanImage(composite, { isAuthenticated, skipBlurCheck: true, gameHint });
 				composite.close();
 				if (scanResult) {
 					handleScanResult(scanResult, imageUrl);
@@ -330,7 +333,7 @@
 
 		try {
 			const imageUrl = URL.createObjectURL(file);
-			const result = await scanImage(file, { isAuthenticated });
+			const result = await scanImage(file, { isAuthenticated, gameHint });
 			if (result) {
 				handleScanResult(result, imageUrl);
 			} else {

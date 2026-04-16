@@ -160,7 +160,16 @@ const securityHeaders: Handle = async ({ event, resolve }) => {
  * API routes handle their own auth via getUser() checks.
  */
 const authGuard: Handle = async ({ event, resolve }) => {
-	const protectedRoutes = ['/collection', '/sell', '/admin', '/grader', '/export', '/market', '/set-completion', '/tournaments', '/settings', '/organize', '/war-room'];
+	// Shared-route protections (game-agnostic) plus game-scoped sub-paths
+	// under `/boba/...` and `/wonders/...` that require authentication.
+	const protectedRoutes = [
+		'/collection', '/sell', '/admin', '/grader', '/export',
+		'/market', '/set-completion', '/tournaments', '/settings',
+		'/organize', '/war-room',
+		// Game-scoped protected routes
+		'/boba/collection', '/boba/set-completion', '/boba/market',
+		'/wonders/collection', '/wonders/set-completion', '/wonders/market',
+	];
 	const isProtected = protectedRoutes.some((route) => event.url.pathname.startsWith(route));
 
 	if (isProtected && !event.locals.user) {

@@ -122,6 +122,9 @@
 {#if item}
 	{@const card = item.card}
 	{@const detailImgUrl = card ? getCardImageUrl(card) : null}
+	{@const gameId = card?.game_id || 'boba'}
+	{@const isWonders = gameId === 'wonders'}
+	{@const meta = (card?.metadata ?? {}) as Record<string, unknown>}
 
 	<!-- Hidden file input for retake photo -->
 	<input
@@ -184,7 +187,8 @@
 						{#if card?.parallel}
 							<span class="meta-tag parallel">{card.parallel}</span>
 						{/if}
-						{#if card?.weapon_type}
+						<!-- BoBA-specific: weapon type -->
+						{#if !isWonders && card?.weapon_type}
 							<span class="meta-tag">{card.weapon_type}</span>
 						{/if}
 						{#if card?.power}
@@ -193,7 +197,38 @@
 						{#if card?.rarity}
 							<span class="meta-tag rarity">{card.rarity}</span>
 						{/if}
+						<!-- Wonders-specific: type + class + cost + hierarchy -->
+						{#if isWonders && meta.type_line}
+							<span class="meta-tag wonders-type">{meta.type_line}</span>
+						{/if}
+						{#if isWonders && meta.card_class}
+							<span class="meta-tag wonders-class">{meta.card_class}</span>
+						{/if}
+						{#if isWonders && meta.cost !== undefined && meta.cost !== null}
+							<span class="meta-tag">Cost {meta.cost}</span>
+						{/if}
+						{#if isWonders && meta.hierarchy}
+							<span class="meta-tag wonders-hierarchy">{meta.hierarchy}</span>
+						{/if}
+						{#if isWonders && meta.dbs !== undefined && meta.dbs !== null}
+							<span class="meta-tag">DBS {meta.dbs}</span>
+						{/if}
+						{#if isWonders && meta.orbitals}
+							<span class="meta-tag wonders-orbital">{meta.orbitals}</span>
+						{/if}
 					</div>
+
+					{#if isWonders}
+						{#if meta.rules_text}
+							<div class="wonders-rules-text">{meta.rules_text}</div>
+						{/if}
+						{#if meta.ability_text_1 || meta.ability_text_2}
+							<div class="wonders-abilities">
+								{#if meta.ability_text_1}<p>{meta.ability_text_1}</p>{/if}
+								{#if meta.ability_text_2}<p>{meta.ability_text_2}</p>{/if}
+							</div>
+						{/if}
+					{/if}
 
 					<!-- Quantity + Condition -->
 					<div class="quantity-row">
@@ -541,5 +576,55 @@
 	@media (min-width: 768px) {
 		.card-detail-sheet { border-radius: 16px; margin-bottom: 2rem; padding-bottom: 1.5rem; }
 		.card-detail-overlay { align-items: center; }
+	}
+
+	/* ── Wonders-specific metadata rendering ──────────────── */
+	.meta-tag.wonders-type {
+		background: rgba(59, 130, 246, 0.15);
+		color: #60A5FA;
+		border: 1px solid rgba(59, 130, 246, 0.35);
+	}
+	.meta-tag.wonders-class {
+		background: rgba(212, 175, 55, 0.12);
+		color: #D4AF37;
+		border: 1px solid rgba(212, 175, 55, 0.3);
+	}
+	.meta-tag.wonders-hierarchy {
+		text-transform: capitalize;
+		background: rgba(168, 85, 247, 0.15);
+		color: #C4B5FD;
+		border: 1px solid rgba(168, 85, 247, 0.3);
+	}
+	.meta-tag.wonders-orbital {
+		text-transform: capitalize;
+		font-weight: 700;
+	}
+
+	.wonders-rules-text {
+		margin: 0.75rem 0 0;
+		padding: 0.75rem;
+		border-radius: 8px;
+		background: var(--bg-elevated, #121d34);
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.875rem;
+		line-height: 1.5;
+		white-space: pre-wrap;
+	}
+
+	.wonders-abilities {
+		margin: 0.5rem 0 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.wonders-abilities p {
+		margin: 0;
+		padding: 0.6rem 0.75rem;
+		background: rgba(59, 130, 246, 0.06);
+		border-left: 3px solid #3B82F6;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		line-height: 1.45;
+		color: var(--text-primary, #e2e8f0);
 	}
 </style>
