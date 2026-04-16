@@ -101,7 +101,7 @@
 	</a>
 	<div class="scan-hero-text">
 		<div class="scan-hero-title">Scan a Card</div>
-		<div class="scan-hero-desc">Point your camera at any BoBA card to identify it instantly</div>
+		<div class="scan-hero-desc">Point your camera at any BoBA or Wonders card to identify it instantly</div>
 		<div class="scan-hero-actions">
 			<button class="btn-hero-secondary" onclick={handleUploadClick} disabled={uploading}>
 				Upload Photo
