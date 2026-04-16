@@ -11,6 +11,7 @@ import {
 	EBAY_INVENTORY_URL
 } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
+import { incrementPersona } from '$lib/services/persona';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -107,6 +108,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				weapon_type: weaponType,
 				created_at: new Date().toISOString()
 			});
+			// Phase 5A: passive persona tracking. Fire-and-forget.
+			// Use the user-scoped client (locals.supabase), NOT adminClient,
+			// so the RPC's auth.uid() resolves to the real user.
+			incrementPersona(locals.supabase, 'seller');
 		} catch (err) {
 			console.debug('[ebay/listing] Template save failed:', err);
 		}

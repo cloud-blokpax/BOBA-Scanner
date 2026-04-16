@@ -31,6 +31,7 @@ import {
 	markOcrAvailable
 } from './recognition-workers';
 import { runTier1, runTier2, runTier3, type ScanContext } from './recognition-tiers';
+import { incrementPersona } from './persona';
 
 // Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
@@ -64,6 +65,8 @@ async function logScanToSupabase(result: ScanResult): Promise<void> {
 		if (scanError) {
 			console.error('[scan] Supabase scan log FAILED:', scanError.message);
 		}
+		// Phase 5A: passive persona tracking. Fire-and-forget.
+		incrementPersona(client, 'collector');
 	} catch (err) {
 		console.error('[scan] Supabase scan log exception:', err);
 	}

@@ -3,6 +3,7 @@ import { requireAuth, requireSupabase, parseJsonBody, requireString, requireEmai
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { calculateTotalDbs } from '$lib/data/boba-dbs-scores';
+import { incrementPersona } from '$lib/services/persona';
 
 // Tournament lookup + player count + validation + DBS calc + upsert
 export const config = { maxDuration: 60 };
@@ -280,6 +281,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		verification_code: verificationCode
 	};
 
+	// Detect first-time submission so persona tracking only credits the user
+	// once per tournament — resubmits update the existing row and must not
+	// compound the persona weight.
+	const { data: priorSub } = await adminClient
+		.from('deck_submissions')
+		.select('id')
+		.eq('tournament_id', tournamentId)
+		.eq('user_id', user.id)
+		.maybeSingle();
+	const isFirstSubmission = !priorSub;
+
 	const { data: submission, error: subErr } = await adminClient
 		.from('deck_submissions')
 		.upsert(submissionData, { onConflict: 'tournament_id,user_id' })
@@ -289,6 +301,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (subErr) {
 		console.error('[tournament/submit-deck] Submission failed:', subErr);
 		throw error(500, 'Failed to submit deck');
+	}
+
+	if (isFirstSubmission) {
+		// Phase 5A: passive persona tracking. Fire-and-forget.
+		// Use locals.supabase (user-scoped) so the RPC's auth.uid() resolves.
+		incrementPersona(locals.supabase, 'tournament');
 	}
 
 	return json({
