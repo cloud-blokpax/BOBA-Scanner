@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { createDeck, getFormatDefaults } from '$lib/services/deck-service';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { setShowGoProModal } from '$lib/stores/pro.svelte';
 
 	let { data } = $props();
 
@@ -70,7 +71,7 @@
 		if (!selectedFormatId || !deckName.trim()) return;
 		creating = true;
 
-		const deckId = await createDeck({
+		const result = await createDeck({
 			name: deckName.trim(),
 			format_id: selectedFormatId,
 			is_custom_format: isCustom,
@@ -85,11 +86,21 @@
 			combined_power_cap: combinedPowerCap
 		});
 
-		if (deckId) {
+		if (result.ok) {
 			showToast('Deck created!', 'check');
-			goto(`/deck/${deckId}`);
+			goto(`/deck/${result.deckId}`);
+		} else if (result.reason === 'limit_reached') {
+			showToast(
+				`Free accounts are limited to ${result.limit} decks (you have ${result.current}). Upgrade to Pro for unlimited decks.`,
+				'x'
+			);
+			setShowGoProModal(true);
+			creating = false;
+		} else if (result.reason === 'unauthenticated') {
+			showToast('Please sign in to create a deck', 'x');
+			creating = false;
 		} else {
-			showToast('Failed to create deck', 'error');
+			showToast('Failed to create deck', 'x');
 			creating = false;
 		}
 	}

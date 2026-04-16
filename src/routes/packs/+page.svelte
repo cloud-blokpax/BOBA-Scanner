@@ -218,6 +218,16 @@
 								{/if}
 							</div>
 						{/if}
+						{#if currentPack.totalValue > 0}
+							<div class="pack-ev-card">
+								<div class="pack-ev-label">Simulated Pack Value</div>
+								<div class="pack-ev-value">${currentPack.totalValue.toFixed(2)}</div>
+								<div class="pack-ev-disclaimer">
+									Hypothetical simulation only — not a prediction of real pack value.
+									Based on current eBay market prices for the specific cards pulled in this simulation.
+								</div>
+							</div>
+						{/if}
 						<div class="post-actions">
 							<button class="btn-primary" onclick={openSinglePack}>Open Another Pack 🔥</button>
 							<button class="btn-secondary" onclick={openFullBox}>Open Full Box</button>
@@ -351,4 +361,33 @@
 	@keyframes modalSlideUp { from { opacity: 0; transform: translateY(40px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 	@keyframes floatIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 	@keyframes shake { 0%, 100% { transform: translateX(0) rotate(0deg); } 20% { transform: translateX(-8px) rotate(-2deg); } 40% { transform: translateX(8px) rotate(2deg); } 60% { transform: translateX(-5px) rotate(-1deg); } 80% { transform: translateX(5px) rotate(1deg); } }
+
+	.pack-ev-card {
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 0.875rem 1rem;
+		margin: 0.75rem 0;
+		text-align: center;
+	}
+	.pack-ev-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.pack-ev-value {
+		font-size: 1.5rem;
+		font-weight: 800;
+		color: var(--text-primary);
+		margin: 0.25rem 0 0.5rem;
+	}
+	.pack-ev-disclaimer {
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		font-style: italic;
+		line-height: 1.4;
+		opacity: 0.85;
+	}
 </style>

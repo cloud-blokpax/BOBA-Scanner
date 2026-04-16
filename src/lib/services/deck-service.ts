@@ -154,13 +154,34 @@ export async function fetchDeck(deckId: string): Promise<UserDeck | null> {
 
 // ── Create a new deck ───────────────────────────────────────
 
-export async function createDeck(params: CreateDeckParams): Promise<string | null> {
+/**
+ * Result type for createDeck — discriminated union so callers can distinguish
+ * a limit-reached rejection from a generic failure.
+ */
+export type CreateDeckResult =
+	| { ok: true; deckId: string }
+	| { ok: false; reason: 'limit_reached'; current: number; limit: number }
+	| { ok: false; reason: 'unauthenticated' | 'error' };
+
+export async function createDeck(params: CreateDeckParams): Promise<CreateDeckResult> {
 	const table = userDecksTable();
-	if (!table) return null;
+	if (!table) return { ok: false, reason: 'error' };
 
 	const client = getSupabase()!;
 	const { data: { user } } = await client.auth.getUser();
-	if (!user) return null;
+	if (!user) return { ok: false, reason: 'unauthenticated' };
+
+	// Belt-and-suspenders Pro gate — enforced here so it cannot be bypassed
+	// by any current or future caller that forgets to check canCreateDeck() first.
+	const limitCheck = await canCreateDeck();
+	if (!limitCheck.allowed && limitCheck.limit !== null) {
+		return {
+			ok: false,
+			reason: 'limit_reached',
+			current: limitCheck.current,
+			limit: limitCheck.limit
+		};
+	}
 
 	const { data, error } = await table
 		.insert({
@@ -186,9 +207,10 @@ export async function createDeck(params: CreateDeckParams): Promise<string | nul
 
 	if (error) {
 		console.error('[deck-service] Create deck failed:', error);
-		return null;
+		return { ok: false, reason: 'error' };
 	}
-	return data?.id || null;
+	if (!data?.id) return { ok: false, reason: 'error' };
+	return { ok: true, deckId: data.id };
 }
 
 // ── Update deck contents (auto-save) ────────────────────────

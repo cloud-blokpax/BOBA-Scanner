@@ -21,6 +21,7 @@ import { getAllCards } from '$lib/services/card-db';
 import { getWeapon } from '$lib/data/boba-weapons';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
+import { getCachedPriceMid } from '$lib/stores/prices.svelte';
 import {
 	isPaperCardNumber,
 	isBattlefoilCardNumber,
@@ -417,7 +418,7 @@ export function openPack(
 				slotLabel: slot.label,
 				outcomeType: outcome.type,
 				outcomeValue: outcome.value,
-				price: null,
+				price: card.id ? getCachedPriceMid(card.id) ?? null : null,
 				imageUrl: card.id ? getCardImageUrl({ id: card.id }) : null
 			});
 		} else {
@@ -445,7 +446,7 @@ export function openPack(
 
 	return {
 		cards,
-		totalValue: 0,
+		totalValue: cards.reduce((sum, c) => sum + (c.price ?? 0), 0),
 		bestCard: findBestCard(cards),
 		seed: packSeed
 	};
@@ -560,12 +561,13 @@ function enforceGuarantee(
 			slotLabel: `${guarantee.value} (Guaranteed)`,
 			outcomeType: 'parallel',
 			outcomeValue: guarantee.value,
-			price: null,
+			price: heroCard.id ? getCachedPriceMid(heroCard.id) ?? null : null,
 			imageUrl: heroCard.id ? getCardImageUrl({ id: heroCard.id }) : null
 		};
 
-		// Recalculate best card for this pack
+		// Recalculate best card AND total value for this pack after injection
 		packs[packIdx].bestCard = findBestCard(packs[packIdx].cards);
+		packs[packIdx].totalValue = packs[packIdx].cards.reduce((sum, c) => sum + (c.price ?? 0), 0);
 	}
 }
 
