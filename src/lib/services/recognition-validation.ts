@@ -9,7 +9,7 @@
  */
 
 import type { Card, ValidationMethod } from '$lib/types';
-import { findCard, getAllCards } from './card-db';
+import { findCard, getAllCards, wondersCardNumberAlternates } from './card-db';
 import { findSimilarCardNumbers, searchCards } from './card-db-search';
 import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
 
@@ -54,9 +54,19 @@ export function crossValidateCardResult(
 	);
 
 	// ── Step 1: Exact match on card_number ──
+	// Wonders: try the input as-is first, then format alternates ("130/401"
+	// → ["130/401", "130"]) to bridge the Existence-set format mismatch
+	// (physical cards print N/401, DB stores plain N for ~99% of Existence).
+	// BoBA: single-candidate pass — no alternates apply.
 	if (ai.cardNumber) {
-		const exactMatch = findCard(ai.cardNumber, null, gameId);
-		if (exactMatch) {
+		const numberCandidates = gameId === 'wonders'
+			? wondersCardNumberAlternates(ai.cardNumber)
+			: [ai.cardNumber];
+
+		for (const candidate of numberCandidates) {
+			const exactMatch = findCard(candidate, null, gameId);
+			if (!exactMatch) continue;
+
 			// Verify hero name matches
 			const nameScore = ai.heroName
 				? fuzzyNameMatch(exactMatch.hero_name || exactMatch.name || '', ai.heroName)
@@ -64,28 +74,62 @@ export function crossValidateCardResult(
 
 			if (nameScore > 0.7) {
 				// Card number found and hero name agrees → HIGH CONFIDENCE
+				const usedAlternate = candidate !== ai.cardNumber;
 				return {
 					card: exactMatch,
 					confidence: ai.confidence,
 					validationMethod: 'exact_match',
-					warnings: []
+					warnings: usedAlternate
+						? [`Card number "${ai.cardNumber}" matched DB via format alternate "${candidate}".`]
+						: []
 				};
 			}
 
-			// Card number exists but hero name doesn't match → AI may have misread the number
+			// Candidate exists but hero name doesn't match → AI may have misread
 			warnings.push(
-				`Card number "${ai.cardNumber}" exists as "${exactMatch.hero_name || exactMatch.name}" ` +
+				`Card number "${candidate}" exists as "${exactMatch.hero_name || exactMatch.name}" ` +
 				`but AI read hero as "${ai.heroName}". Possible card number misread.`
 			);
 			console.debug(
 				`[scan:${traceId}:validate] Exact number match rejected: ` +
-				`DB hero="${exactMatch.hero_name}" vs AI hero="${ai.heroName}" (score=${nameScore.toFixed(2)})`
+				`candidate="${candidate}" DB hero="${exactMatch.hero_name}" ` +
+				`vs AI hero="${ai.heroName}" (score=${nameScore.toFixed(2)})`
 			);
-			// Fall through to fuzzy match — don't trust this card number
+			// Continue to next candidate; if all exhausted, fall through to fuzzy
 		}
 
 		// ── Step 2: Fuzzy match on card_number ──
-		const fuzzyResults = findSimilarCardNumbers(ai.cardNumber, 2, gameId);
+		// Wonders: run fuzzy against both the input and its format alternates so
+		// a misread like "150/401" can find "130" (stored plain) at Levenshtein 1
+		// via the "150" alternate, instead of the Levenshtein 4+ that
+		// "150/401" ↔ "130" would produce directly.
+		const fuzzyInputs = gameId === 'wonders'
+			? wondersCardNumberAlternates(ai.cardNumber)
+			: [ai.cardNumber];
+		const fuzzyResultsByCardId = new Map<
+			string,
+			{ card: Card; cardNumber: string; distance: number; score: number }
+		>();
+		for (const input of fuzzyInputs) {
+			for (const r of findSimilarCardNumbers(input, 2, gameId)) {
+				const prev = fuzzyResultsByCardId.get(r.card.id);
+				// Keep min-distance result when the same card is found through
+				// multiple alternate inputs.
+				if (!prev || r.distance < prev.distance) {
+					fuzzyResultsByCardId.set(r.card.id, r);
+				}
+			}
+		}
+		const refLen = ai.cardNumber.length;
+		const fuzzyResults = Array.from(fuzzyResultsByCardId.values())
+			.sort((a, b) => {
+				// Primary: lower distance wins (preserves original behavior)
+				if (a.distance !== b.distance) return a.distance - b.distance;
+				// Secondary: prefer cardNumber lengths close to original input
+				const aLenDiff = Math.abs(a.cardNumber.length - refLen);
+				const bLenDiff = Math.abs(b.cardNumber.length - refLen);
+				return aLenDiff - bLenDiff;
+			});
 
 		// If we have multiple hero-name-verified matches at the same distance,
 		// use power to disambiguate

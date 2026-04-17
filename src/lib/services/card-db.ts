@@ -551,6 +551,51 @@ export function normalizeCardNum(val: string): string {
 }
 
 /**
+ * Wonders-specific card-number format alternates for lookup.
+ *
+ * Background: Existence-set cards are PRINTED as "N/401" but STORED plain
+ * numeric "N" in the DB (401 of 407 cards). Call of the Stones cards are
+ * printed AND stored "N/402". OCM variants are printed AND stored as
+ * "A1-N/401" with the slash preserved.
+ *
+ * This generator yields the normalized input first, then plausible alternates
+ * so exact-match can hit either format. Returns an array (not Set) to preserve
+ * order — callers should try the primary form first and fall back to alternates.
+ *
+ * Scope: caller MUST check gameId === 'wonders' before using. BoBA card numbers
+ * are numeric-only with no /NNN suffix, so the reverse alternate would produce
+ * spurious lookups that don't match anything in the BoBA catalog.
+ *
+ * Examples:
+ *   wondersCardNumberAlternates('130/401') → ['130/401', '130']
+ *   wondersCardNumberAlternates('130')     → ['130', '130/401']
+ *   wondersCardNumberAlternates('A1-028/401') → ['A1-028/401']   (no alternate — OCM stored with slash)
+ *   wondersCardNumberAlternates('P-002')   → ['P-002']           (no alternate — promos unaffected)
+ *   wondersCardNumberAlternates('78/402')  → ['78/402', '78']    (CotS — primary will match, alternate is harmless)
+ */
+export function wondersCardNumberAlternates(cardNumber: string): string[] {
+	const input = normalizeCardNum(cardNumber);
+	const alternates: string[] = [input];
+
+	// "N/NNN" → also try plain "N" (Existence stored plain-numeric in DB)
+	// Must NOT match "A1-N/NNN" — the leading letters anchor the regex.
+	const slashMatch = input.match(/^(\d{1,3})\/(\d{3,4})$/);
+	if (slashMatch) {
+		alternates.push(slashMatch[1]);
+		return alternates;
+	}
+
+	// Plain "N" (1-3 digits) → also try "N/401" (handles any future Existence
+	// reprints stored with the /401 suffix). Harmless if alternate misses.
+	if (/^\d{1,3}$/.test(input)) {
+		alternates.push(`${input}/401`);
+		return alternates;
+	}
+
+	return alternates;
+}
+
+/**
  * Find a card by card number with optional hero name verification.
  *
  * @param cardNumber - Card number to search for
