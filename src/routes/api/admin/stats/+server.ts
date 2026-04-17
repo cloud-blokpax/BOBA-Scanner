@@ -83,8 +83,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		admin.from('api_call_logs').select('id', { count: 'exact', head: true })
 			.gte('created_at', today)
 			.eq('call_type', 'scan'),
-		// Total scans from system_settings
-		admin.from('system_settings').select('value').eq('key', 'total_scans').maybeSingle(),
+		// Total scans (live count)
+		admin.from('scans').select('id', { count: 'exact', head: true }),
 		// API calls today (proxy for AI cost)
 		admin.from('api_call_logs').select('id', { count: 'exact', head: true })
 			.gte('created_at', today),
@@ -92,8 +92,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		admin.from('api_call_logs').select('id', { count: 'exact', head: true })
 			.gte('created_at', today)
 			.eq('success', false),
-		// Total cards in DB
-		admin.from('system_settings').select('value').eq('key', 'total_cards').maybeSingle(),
+		// Total cards in DB (live count)
+		admin.from('cards').select('id', { count: 'exact', head: true }),
 		// Pending scan flags
 		admin.from('scan_flags').select('id', { count: 'exact', head: true })
 			.eq('status', 'pending'),
@@ -161,8 +161,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			usersToday: usersToday.count || 0,
 			activeUsers: usersRecent.count || 0,
 			scansToday: scansCount,
-			totalScans: Number(scansTotalRes.data?.value) || 0,
-			totalCards: Number(cardsTotal.data?.value) || 0,
+			totalScans: scansTotalRes.count || 0,
+			totalCards: cardsTotal.count || 0,
 			apiCallsToday: apiLogsToday.count || 0,
 			errorsToday: apiLogsErrors.count || 0,
 			aiCostToday: Math.round(aiCostToday * 100) / 100,

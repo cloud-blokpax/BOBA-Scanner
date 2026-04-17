@@ -40,7 +40,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 			return rows;
 		})(),
-		// cards — paginated
+		// cards — paginated (War Room is BoBA-only by design)
 		(async () => {
 			const rows: Array<Record<string, unknown>> = [];
 			let offset = 0;
@@ -49,6 +49,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 				const { data } = await admin
 					.from('cards')
 					.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
+					.eq('game_id', 'boba')
 					.range(offset, offset + CHUNK - 1);
 				if (!data || data.length === 0) { done = true; }
 				else { rows.push(...data); offset += CHUNK; if (data.length < CHUNK) done = true; }

@@ -30,13 +30,6 @@
 							<div class="wonders-desc">Your Wonders cards · set progress</div>
 						</div>
 					</a>
-					<a href="/wonders/market" class="wonders-action">
-						<span class="wonders-icon">📈</span>
-						<div class="wonders-text">
-							<div class="wonders-name">Market</div>
-							<div class="wonders-desc">Prices · movers · trends</div>
-						</div>
-					</a>
 					<a href="/wonders/set-completion" class="wonders-action">
 						<span class="wonders-icon">🎯</span>
 						<div class="wonders-text">

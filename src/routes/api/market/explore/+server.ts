@@ -56,6 +56,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		throw error(400, 'Invalid sort parameter');
 	}
 
+	const gameId = url.searchParams.get('game_id') || 'boba';
+	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid game_id');
+
 	// Default priced_only to true — most users want priced cards, and it avoids
 	// the problematic LEFT JOIN + sort on 17K+ rows that can return 0 results.
 	const pricedOnly = url.searchParams.get('priced_only') !== 'false';
@@ -71,7 +74,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// Step 1: Get card metadata, applying card-level filters
 	let cardQuery = admin
 		.from('cards')
-		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name');
+		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
+		.eq('game_id', gameId);
 
 	if (parallel) cardQuery = cardQuery.eq('parallel', parallel);
 	if (weapon) cardQuery = cardQuery.eq('weapon_type', weapon);

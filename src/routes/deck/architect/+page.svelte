@@ -33,6 +33,7 @@
 	import ComboStatusCard from '$lib/components/architect/ComboStatusCard.svelte';
 	import ArchetypeSelector from '$lib/components/architect/ArchetypeSelector.svelte';
 	import PlayBrowser from '$lib/components/architect/PlayBrowser.svelte';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formatOptions = getFormatOptions();
 	const allPlays = getPlayCards().filter(
@@ -98,6 +99,7 @@
 </svelte:head>
 
 <div class="architect-page">
+	<BoBAOnlyBanner message="Playbook Architect is currently BoBA-only. Wonders support coming soon." />
 	<header class="page-header">
 		<div class="header-top">
 			<h1 class="page-title">Playbook Architect</h1>

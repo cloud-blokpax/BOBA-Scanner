@@ -237,7 +237,9 @@
 					description: template.description,
 					price: listingPrice,
 					condition: template.condition,
-					scanImageUrl: getScanImageUrl(card.id)
+					scanImageUrl: getScanImageUrl(card.id),
+					gameId,
+					variant: userVariant
 				})
 			});
 			if (!res.ok) {

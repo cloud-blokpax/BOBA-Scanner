@@ -122,7 +122,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Batch fetch card metadata — heroes first, then play cards for any IDs not found
 	const { data: cardsData } = await supabase
 		.from('cards')
-		.select('id, hero_name, athlete_name, card_number, set_code, parallel, weapon_type')
+		.select('id, hero_name, athlete_name, card_number, set_code, parallel, weapon_type, game_id')
 		.in('id', cardIds);
 
 	const cardMap = new Map((cardsData || []).map(c => [c.id, c]));
@@ -146,7 +146,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				card_number: pc.card_number,
 				set_code: pc.release || '',
 				parallel: null,
-				weapon_type: null
+				weapon_type: null,
+				game_id: 'boba'
 			});
 			playCardIds.add(pc.id);
 		}
@@ -180,25 +181,47 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 			const stats = calculatePriceStats(prices);
 
-			const priceData = {
-				card_id: cardId,
-				source: 'ebay',
-				price_low: stats?.low ?? null,
-				price_mid: stats?.median ?? null,
-				price_high: stats?.high ?? null,
-				listings_count: stats?.count ?? 0,
-				filtered_count: stats?.filteredCount ?? 0,
-				confidence_score: stats?.confidenceScore ?? 0,
-				fetched_at: new Date().toISOString()
-			};
-
-			// Route to correct cache table: play cards → play_price_cache (TEXT key),
-			// hero cards → price_cache (UUID key)
-			const cacheTable = playCardIds.has(cardId) ? 'play_price_cache' : 'price_cache';
+			const isPlay = playCardIds.has(cardId);
 			const cacheClient = getAdminClient() || supabase;
-			const { error: cacheError } = await cacheClient.from(cacheTable).upsert(priceData, { onConflict: 'card_id,source' });
-			if (cacheError) {
-				console.error(`[deck/refresh-prices] ${cacheTable} upsert FAILED for ${cardId}:`, cacheError.message);
+
+			if (isPlay) {
+				const playPriceData = {
+					card_id: cardId,
+					source: 'ebay',
+					price_low: stats?.low ?? null,
+					price_mid: stats?.median ?? null,
+					price_high: stats?.high ?? null,
+					listings_count: stats?.count ?? 0,
+					filtered_count: stats?.filteredCount ?? 0,
+					confidence_score: stats?.confidenceScore ?? 0,
+					fetched_at: new Date().toISOString()
+				};
+				const { error: cacheError } = await cacheClient
+					.from('play_price_cache')
+					.upsert(playPriceData, { onConflict: 'card_id,source' });
+				if (cacheError) {
+					console.error(`[deck/refresh-prices] play_price_cache upsert FAILED for ${cardId}:`, cacheError.message);
+				}
+			} else {
+				const priceData = {
+					card_id: cardId,
+					source: 'ebay',
+					game_id: card.game_id || 'boba',
+					variant: 'paper',
+					price_low: stats?.low ?? null,
+					price_mid: stats?.median ?? null,
+					price_high: stats?.high ?? null,
+					listings_count: stats?.count ?? 0,
+					filtered_count: stats?.filteredCount ?? 0,
+					confidence_score: stats?.confidenceScore ?? 0,
+					fetched_at: new Date().toISOString()
+				};
+				const { error: cacheError } = await cacheClient
+					.from('price_cache')
+					.upsert(priceData, { onConflict: 'card_id,source,variant' });
+				if (cacheError) {
+					console.error(`[deck/refresh-prices] price_cache upsert FAILED for ${cardId}:`, cacheError.message);
+				}
 			}
 
 			return {

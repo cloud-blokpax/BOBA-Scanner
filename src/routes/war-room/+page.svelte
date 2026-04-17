@@ -8,6 +8,7 @@
 	import type { HeroCard, PlayCard } from '$lib/components/war-room/war-room-constants';
 	import { PARALLEL_COLORS } from '$lib/components/war-room/war-room-constants';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	// ── State ────────────────────────────────────────────
 	let pFilter = $state<string | null>(null);
@@ -126,6 +127,7 @@
 </svelte:head>
 
 <div class="war-room">
+	<BoBAOnlyBanner message="War Room analytics are currently BoBA-only. Wonders support coming soon." />
 	{#if loading}
 		<div class="loading-state">
 			<div class="spinner"></div>

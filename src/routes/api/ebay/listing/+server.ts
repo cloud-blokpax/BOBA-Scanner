@@ -82,10 +82,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const parallel = (body.parallel as string) || null;
 	const weaponType = (body.weaponType as string) || null;
 
+	const gameId = (body.gameId as string) || 'boba';
+	const variant = (body.variant as string) || 'paper';
+	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid gameId');
+	if (!['paper', 'cf', 'ff', 'ocm', 'sf'].includes(variant)) throw error(400, 'Invalid variant');
+
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Please reconnect your eBay account.');
 
-	const sku = `boba-${card_id}-${Date.now()}`;
+	const prefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
+	const cardIdShort = card_id.replace(/-/g, '').slice(0, 12);
+	const sku = `${prefix}${cardIdShort}${Date.now()}`;
 	const adminClient = getAdminClient();
 
 	// Save template record (pending state)
@@ -106,6 +113,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				set_code: setCode,
 				parallel,
 				weapon_type: weaponType,
+				game_id: gameId,
+				variant,
 				created_at: new Date().toISOString()
 			});
 			// Phase 5A: passive persona tracking. Fire-and-forget.
