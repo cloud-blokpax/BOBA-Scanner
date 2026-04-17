@@ -145,15 +145,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					imageUrls: scanImageUrl && scanImageUrl.startsWith('https://')
 						? [scanImageUrl]
 						: ['https://boba.cards/icon-512.png'],
-					aspects: {
-						'Card Name': [heroName || 'Unknown'],
-						'Set': [setCode || 'BoBA'],
-						'Sport': ['Multi-Sport'],
-						'Game': ['Bo Jackson Battle Arena'],
-						'Card Manufacturer': ['Bo Jackson Battle Arena'],
-						...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-						...(parallel ? { 'Parallel/Variety': [parallel] } : {})
-					}
+					aspects: gameId === 'wonders'
+						? {
+							'Card Name': [heroName || 'Unknown'],
+							'Set': [setCode || 'Wonders of The First'],
+							'Game': ['Wonders of The First'],
+							'Card Manufacturer': ['Wonders of The First'],
+							...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
+							...(variant !== 'paper' ? { 'Parallel/Variety': [variant.toUpperCase()] } : {})
+						}
+						: {
+							'Card Name': [heroName || 'Unknown'],
+							'Set': [setCode || 'BoBA'],
+							'Sport': ['Multi-Sport'],
+							'Game': ['Bo Jackson Battle Arena'],
+							'Card Manufacturer': ['Bo Jackson Battle Arena'],
+							...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
+							...(parallel ? { 'Parallel/Variety': [parallel] } : {})
+						}
 				},
 				// All ungraded BoBA cards use USED_VERY_GOOD per eBay trading card category rules
 				condition: conditionToEbay(condition),

@@ -8,6 +8,9 @@
 	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import { gameFilter } from '$lib/stores/collection.svelte';
 	import type { Facets, Aggregates, ExploreCard, ExplorePlayCard } from '$lib/components/market/explorer-types';
+	import { gameFilter } from '$lib/stores/collection.svelte';
+
+	const activeGameId = $derived(gameFilter() === 'wonders' ? 'wonders' : 'boba');
 
 	const currentGame = $derived(gameFilter() === 'wonders' ? 'wonders' : 'boba');
 

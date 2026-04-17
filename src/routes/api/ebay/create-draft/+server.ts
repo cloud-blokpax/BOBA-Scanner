@@ -165,6 +165,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
+	const cardForHelpers = draftToCard(body, gameId);
+	const listingTitle = body.title || buildEbayListingTitle({
+		hero_name: heroName,
+		name: heroName,
+		athlete_name: body.athleteName ?? null,
+		parallel: body.parallel ?? null,
+		weapon_type: body.weaponType ?? null,
+		card_number: cardNumber,
+		game_id: gameId,
+		variant,
+		metadata: body.metadata ?? null,
+	});
+
 	// Persist listing template to DB for history tracking
 	if (adminClient) {
 		try {

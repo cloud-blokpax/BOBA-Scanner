@@ -17,6 +17,8 @@
 		gameId?: string;
 	} = $props();
 
+	const isWonders = $derived(gameId === 'wonders');
+
 	const SORT_OPTIONS = [
 		{ value: 'price_asc', label: 'Cheapest First' },
 		{ value: 'price_desc', label: 'Most Expensive' },
