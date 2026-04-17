@@ -5,7 +5,9 @@
 	import { DEFAULT_CONFIGS, getBoxConfig } from '$lib/data/pack-defaults';
 	import { loadCardDatabase } from '$lib/services/card-db';
 	import { getWeapon } from '$lib/data/boba-weapons';
+	import { priceCache } from '$lib/stores/prices.svelte';
 	import type { SlotConfig, SimulatedCard, PackResult, BoxGuarantee } from '$lib/types/pack-simulator';
+	import type { PriceData } from '$lib/types';
 	import PackCardReveal from '$lib/components/packs/PackCardReveal.svelte';
 	import BoxSummary from '$lib/components/packs/BoxSummary.svelte';
 	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
@@ -106,12 +108,50 @@
 		await loadConfig(); loading = false;
 	}
 
+	async function applyBulkPrices(packs: PackResult[]): Promise<void> {
+		const cardIds = Array.from(new Set(
+			packs.flatMap(p => p.cards.map(c => c.cardId).filter(Boolean))
+		));
+		if (cardIds.length === 0) return;
+		try {
+			const resp = await fetch('/api/pack/prices', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cardIds })
+			});
+			if (!resp.ok) return;
+			const { prices } = (await resp.json()) as { prices: Record<string, number> };
+			const cache = priceCache();
+			for (const pack of packs) {
+				for (const card of pack.cards) {
+					if (card.cardId && prices[card.cardId] != null) {
+						card.price = prices[card.cardId];
+						cache.set(`${card.cardId}:paper`, {
+							card_id: card.cardId,
+							source: 'ebay',
+							price_low: null,
+							price_mid: prices[card.cardId],
+							price_high: null,
+							listings_count: null,
+							fetched_at: new Date().toISOString(),
+						} as PriceData);
+					}
+				}
+				pack.totalValue = pack.cards.reduce((s, c) => s + (c.price ?? 0), 0);
+			}
+		} catch (err) {
+			console.debug('[packs] Bulk price prefetch failed:', err);
+		}
+	}
+
 	async function openSinglePack() {
 		if (!dbLoaded) { showToast('Card database still loading...', 'x'); return; }
 		shaking = true;
 		setTimeout(async () => {
 			const { openPack } = await import('$lib/services/pack-simulator');
-			currentPack = openPack(slots, selectedSet);
+			const pack = openPack(slots, selectedSet);
+			await applyBulkPrices([pack]);
+			currentPack = pack;
 			revealedSet = new Set(); autoRevealing = false; showBoxSummary = false; packCount++; shaking = false;
 		}, 500);
 	}
@@ -119,7 +159,9 @@
 	async function openFullBox() {
 		if (!dbLoaded) { showToast('Card database still loading...', 'x'); return; }
 		const { openBox } = await import('$lib/services/pack-simulator');
-		boxResults = openBox(slots, packsPerBox, selectedSet, guarantees);
+		const results = openBox(slots, packsPerBox, selectedSet, guarantees);
+		await applyBulkPrices(results);
+		boxResults = results;
 		showBoxSummary = true; currentPack = null; packCount += packsPerBox;
 	}
 
@@ -144,6 +186,14 @@
 		<h1>Pack Simulator</h1>
 		{#if packCount > 0}<div class="pack-counter">Packs opened: {packCount}</div>{/if}
 	</header>
+
+	<a class="ev-crosslink" href="/packs/ev?set={selectedSet}&box={selectedBox}">
+		<span class="ev-crosslink-icon">📊</span>
+		<span class="ev-crosslink-text">
+			<strong>Is this box worth buying?</strong>
+			<span class="ev-crosslink-sub">See Box EV Calculator →</span>
+		</span>
+	</a>
 
 	<div class="set-selector">
 		<span class="selector-label">Set</span>
@@ -305,6 +355,24 @@
 
 <style>
 	.packs-page { max-width: 440px; margin: 0 auto; padding: 1rem; min-height: 100vh; }
+	.ev-crosslink {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.12));
+		border: 1px solid rgba(96, 165, 250, 0.3);
+		border-radius: 12px;
+		text-decoration: none;
+		color: var(--text-primary);
+		transition: transform 0.15s;
+	}
+	.ev-crosslink:active { transform: scale(0.98); }
+	.ev-crosslink-icon { font-size: 1.5rem; }
+	.ev-crosslink-text { display: flex; flex-direction: column; line-height: 1.3; }
+	.ev-crosslink-text strong { font-size: 0.9rem; font-weight: 700; }
+	.ev-crosslink-sub { font-size: 0.75rem; color: var(--text-secondary); }
 	.loading { text-align: center; padding: 3rem; color: var(--text-tertiary); }
 	.page-header { text-align: center; margin-bottom: 1.25rem; animation: floatIn 0.5s ease-out; }
 	.header-label { font-size: 0.75rem; color: var(--text-tertiary); letter-spacing: 3px; text-transform: uppercase; font-weight: 600; }

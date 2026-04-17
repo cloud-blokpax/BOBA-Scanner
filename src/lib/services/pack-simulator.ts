@@ -17,11 +17,45 @@
  */
 
 import seedrandom from 'seedrandom';
-import { getAllCards } from '$lib/services/card-db';
+import { getAllCards as clientGetAllCards } from '$lib/services/card-db';
 import { getWeapon } from '$lib/data/boba-weapons';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
-import { getCachedPriceMid } from '$lib/stores/prices.svelte';
+import { getCachedPriceMid as clientGetCachedPriceMid } from '$lib/stores/prices.svelte';
+
+/**
+ * Options for overriding the module's default data sources.
+ *
+ * Client callers (existing /packs entertainment flow) pass nothing — defaults
+ * wire to the IDB-backed card DB and the lazy price cache store.
+ *
+ * Server callers (Monte Carlo EV endpoint) pass explicit `allCards` from a
+ * Supabase query and a `priceLookup` sourced from a pre-joined price_cache
+ * Map. This keeps the simulator pure and portable across runtimes.
+ */
+export interface SimulatorSources {
+	/** Complete card pool across all sets. Used to derive featured-hero sets. */
+	allCards?: Array<{
+		id: string;
+		card_number?: string | null;
+		hero_name?: string | null;
+		set_code?: string | null;
+		weapon_type?: string | null;
+		rarity?: string | null;
+		parallel?: string | null;
+		name?: string | null;
+		base_play_name?: string;
+		power?: number | null;
+	}>;
+	/** Returns the paper-variant mid-price for a card id, or null if unpriced. */
+	priceLookup?: (cardId: string) => number | null;
+}
+
+function resolveSources(sources?: SimulatorSources) {
+	const allCards = sources?.allCards ?? clientGetAllCards();
+	const priceLookup = sources?.priceLookup ?? clientGetCachedPriceMid;
+	return { allCards, priceLookup };
+}
 import {
 	isPaperCardNumber,
 	isBattlefoilCardNumber,
@@ -332,11 +366,12 @@ function selectWeightedCard(
 export function openPack(
 	slots: SlotConfig[],
 	setCode: string,
-	seed?: string
+	seed?: string,
+	sources?: SimulatorSources
 ): PackResult {
 	const packSeed = seed || crypto.randomUUID();
 	const rng = seedrandom(packSeed);
-	const allCards = getAllCards();
+	const { allCards, priceLookup } = resolveSources(sources);
 	// Match hero cards whose set_code matches any known form of this set code
 	const matchers = buildSetMatchers(setCode);
 	const setCards = allCards.filter(
@@ -418,7 +453,7 @@ export function openPack(
 				slotLabel: slot.label,
 				outcomeType: outcome.type,
 				outcomeValue: outcome.value,
-				price: card.id ? getCachedPriceMid(card.id) ?? null : null,
+				price: card.id ? priceLookup(card.id) ?? null : null,
 				imageUrl: card.id ? getCardImageUrl({ id: card.id }) : null
 			});
 		} else {
@@ -462,18 +497,19 @@ export function openBox(
 	packsPerBox: number,
 	setCode: string,
 	guarantees: BoxGuarantee[] = [],
-	boxSeed?: string
+	boxSeed?: string,
+	sources?: SimulatorSources
 ): PackResult[] {
 	const seed = boxSeed || crypto.randomUUID();
 	const results: PackResult[] = [];
 
 	for (let i = 0; i < packsPerBox; i++) {
-		results.push(openPack(slots, setCode, `${seed}-pack-${i}`));
+		results.push(openPack(slots, setCode, `${seed}-pack-${i}`, sources));
 	}
 
 	// Enforce box-level guarantees
 	for (const guarantee of guarantees) {
-		enforceGuarantee(results, guarantee, setCode, seed);
+		enforceGuarantee(results, guarantee, setCode, seed, sources);
 	}
 
 	return results;
@@ -487,7 +523,8 @@ function enforceGuarantee(
 	packs: PackResult[],
 	guarantee: BoxGuarantee,
 	setCode: string,
-	boxSeed: string
+	boxSeed: string,
+	sources?: SimulatorSources
 ): void {
 	// Count how many times the guaranteed item already appeared
 	let currentCount = 0;
@@ -505,7 +542,8 @@ function enforceGuarantee(
 	const needed = guarantee.minCount - currentCount;
 	const rng = seedrandom(`${boxSeed}-guarantee-${guarantee.value}`);
 	const matchers = buildSetMatchers(setCode);
-	const allCards = getAllCards().filter(
+	const { allCards: fullPool, priceLookup } = resolveSources(sources);
+	const allCards = fullPool.filter(
 		(c) => matchers.has((c.set_code || '').toUpperCase())
 	);
 
@@ -519,7 +557,7 @@ function enforceGuarantee(
 	if (heroCandidates.length === 0) return;
 
 	// Build featured sets for weighted selection
-	const featuredSets = getFeaturedHeroes(getAllCards());
+	const featuredSets = getFeaturedHeroes(fullPool);
 
 	// Find eligible pack slots to replace
 	const eligibleReplacements: Array<{ packIdx: number; cardIdx: number }> = [];
@@ -561,7 +599,7 @@ function enforceGuarantee(
 			slotLabel: `${guarantee.value} (Guaranteed)`,
 			outcomeType: 'parallel',
 			outcomeValue: guarantee.value,
-			price: heroCard.id ? getCachedPriceMid(heroCard.id) ?? null : null,
+			price: heroCard.id ? priceLookup(heroCard.id) ?? null : null,
 			imageUrl: heroCard.id ? getCardImageUrl({ id: heroCard.id }) : null
 		};
 

@@ -23,6 +23,7 @@ export const MARKET_TABS: CategoryTab[] = [
 	{ label: 'Market Pulse', path: '/market' },
 	{ label: 'Explorer', path: '/market/explore' },
 	{ label: 'Pack Sim', path: '/packs' },
+	{ label: 'Box EV', path: '/packs/ev' },
 ];
 
 export const PLAYBOOK_TABS: CategoryTab[] = [
@@ -56,7 +57,10 @@ export function getCategoryForPath(pathname: string, search: string = ''): {
 	}
 
 	// War Room
-	if (['/market', '/war-room', '/packs'].includes(pathname) || pathname.startsWith('/market/')) {
+	if (
+		['/market', '/war-room', '/packs', '/packs/ev'].includes(pathname) ||
+		pathname.startsWith('/market/')
+	) {
 		return { category: 'War Room', tabs: MARKET_TABS };
 	}
 
