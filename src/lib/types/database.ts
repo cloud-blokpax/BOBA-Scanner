@@ -25,8 +25,6 @@ export interface Database {
 					created_at: string;
 					updated_at: string;
 					search_vector: string | null;
-					game_id: string;
-					metadata: Record<string, unknown> | null;
 				};
 				Insert: {
 					id?: string;
@@ -46,8 +44,6 @@ export interface Database {
 					game_id?: string;
 					metadata?: Record<string, unknown> | null;
 					updated_at?: string;
-					game_id?: string;
-					metadata?: Record<string, unknown> | null;
 				};
 				Update: Partial<Database['public']['Tables']['cards']['Insert']>;
 				Relationships: [];
