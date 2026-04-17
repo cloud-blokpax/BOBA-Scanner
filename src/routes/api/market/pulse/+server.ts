@@ -16,9 +16,14 @@ import type { RequestHandler } from './$types';
 // Paginated queries across price_cache + cards + harvest_log + price_history
 export const config = { maxDuration: 60 };
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in to view market data');
+
+	const gameId = url.searchParams.get('game_id') || 'boba';
+	if (!['boba', 'wonders'].includes(gameId)) {
+		throw error(400, 'Invalid game_id');
+	}
 
 	// Check pro status for response depth
 	let userIsPro = false;
@@ -77,7 +82,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 			const { data, error: cardErr } = await admin
 				.from('cards')
 				.select('id, hero_name, name, card_number, set_code, rarity')
-				.in('id', batch);
+				.in('id', batch)
+				.eq('game_id', gameId);
 			if (cardErr) {
 				console.error('[market/pulse] cards query failed:', cardErr.message);
 				throw error(500, 'Failed to load card metadata');

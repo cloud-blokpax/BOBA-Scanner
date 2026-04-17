@@ -11,9 +11,14 @@ import { json, error } from '@sveltejs/kit';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Sign in required');
+
+	const gameId = url.searchParams.get('game_id') || 'boba';
+	if (!['boba', 'wonders'].includes(gameId)) {
+		throw error(400, 'Invalid game_id');
+	}
 
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');
@@ -31,6 +36,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 				.from('price_cache')
 				.select('card_id')
 				.eq('source', 'ebay')
+				.eq('game_id', gameId)
 				.not('price_mid', 'is', null)
 				.range(offset, offset + CHUNK - 1);
 			if (!data || data.length === 0) { done = true; }
@@ -51,6 +57,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			const { data } = await admin
 				.from('cards')
 				.select('id, parallel, weapon_type, set_code, rarity, hero_name, power')
+				.eq('game_id', gameId)
 				.range(offset, offset + CHUNK - 1);
 			if (!data || data.length === 0) { done = true; }
 			else {

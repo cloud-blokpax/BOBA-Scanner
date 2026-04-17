@@ -52,7 +52,7 @@ export function generateListingTemplate(
 	};
 }
 
-function buildBobaDescription(card: Card, condition: string, heroName: string): string {
+export function buildBobaDescription(card: Card, condition: string, heroName: string): string {
 	return [
 		`${heroName} - Bo Jackson Battle Arena Trading Card`,
 		'',
@@ -71,7 +71,7 @@ function buildBobaDescription(card: Card, condition: string, heroName: string): 
 	].filter(Boolean).join('\n');
 }
 
-function buildWondersDescription(card: Card, condition: string, variant: string): string {
+export function buildWondersDescription(card: Card, condition: string, variant: string): string {
 	const meta = (card.metadata ?? {}) as Record<string, unknown>;
 	const setDisplay = (meta.set_name_display ?? meta.set_name ?? card.set_code ?? 'N/A') as string;
 	const variantName = VARIANT_FULL_NAME[normalizeVariant(variant)] ?? 'Paper';

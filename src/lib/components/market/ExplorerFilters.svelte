@@ -10,10 +10,14 @@
 	let {
 		filters,
 		facets,
+		gameId = 'boba',
 	}: {
 		filters: ExplorerFilters;
 		facets: Facets | null;
+		gameId?: string;
 	} = $props();
+
+	const isWonders = $derived(gameId === 'wonders');
 
 	const SORT_OPTIONS = [
 		{ value: 'price_asc', label: 'Cheapest First' },
@@ -59,7 +63,7 @@
 
 {#if filters.filtersExpanded}
 	<div class="filters-panel">
-		{#if filters.cardType === 'hero'}
+		{#if filters.cardType === 'hero' && !isWonders}
 			<div class="filter-row">
 				<label class="filter-label">
 					Parallel
