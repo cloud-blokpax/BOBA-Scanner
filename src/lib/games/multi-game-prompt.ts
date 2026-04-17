@@ -200,7 +200,14 @@ The stamp is NOT universal on foil cards — some early CF/OCM cards shipped wit
 Absence of the stamp does NOT prove Paper. Use border pattern and serial number
 as the primary variant indicators.
 
-If any field is unclear, return null rather than guessing. Report the CARD NUMBER exactly as printed — never fabricate a prefix.`;
+If any field is unclear, return null rather than guessing. Report the CARD NUMBER exactly as printed — never fabricate a prefix.
+
+WONDERS EXISTENCE DIGIT AMBIGUITY: When reading collector numbers on Wonders
+Existence-set cards (denominator /401), the serif font makes these pairs
+hard to distinguish: 3↔5, 0↔8, 6↔8, 1↔7, 4↔9. If any digit you read falls
+into one of these pairs AND you cannot disambiguate from context, set
+collector_number_confidence to 0.70 or lower. Report your best guess as
+the card_number but let the low confidence signal the application to verify.`;
 
 // ── Multi-game user prompt ─────────────────────────────────────
 export const MULTI_GAME_USER_PROMPT = `<task>Identify this trading card. First determine whether it is a BoBA or Wonders of The First card, then read all fields from their physical positions on the card.</task>

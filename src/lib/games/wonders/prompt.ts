@@ -248,7 +248,30 @@ CRITICAL INSTRUCTIONS:
 3. Execute the variant decision tree above and report variant + variant_confidence.
 4. Report first_edition_stamp_detected as a boolean (never concatenate it with collector_number).
 5. Report collector_number_confidence separately from overall confidence — glare affects them differently.
-6. If a field is unclear, return null rather than guessing.`;
+6. If a field is unclear, return null rather than guessing.
+
+DIGIT AMBIGUITY ON EXISTENCE CARDS (IMPORTANT):
+
+The Existence set uses a serif font where several digit pairs are visually
+similar. When you are reading any digit on an Existence card, if you would
+not bet high confidence on which of these it is, you MUST lower
+collector_number_confidence accordingly:
+
+  - 3 vs 5:  the Existence "3" has a small, subtle top curl that can read
+             like a flat "5" top, especially at low resolution or with glare.
+  - 0 vs 8:  rounded shapes — a faint printed line can make 0 look like 8.
+  - 6 vs 8:  the 6's upper gap can close under glare or print variation.
+  - 1 vs 7:  the 1's serif foot can be read as the 7's horizontal stroke.
+  - 4 vs 9:  the 4's closed top can resemble a 9 with weak contrast.
+
+Rule: if ANY digit in the collector number is ambiguous between two of the
+pairs above AND you cannot disambiguate it from context (e.g., the card's
+total is 401, so the denominator is fixed), set collector_number_confidence
+to 0.70 or lower. Report your BEST GUESS as collector_number, but let the
+low confidence signal the application to verify.
+
+Call of the Stones cards (/402 denominator) use a slightly different font
+and are less prone to this ambiguity — still be cautious on 3/5 and 6/8.`;
 
 // ── Claude user prompt ─────────────────────────────────────────
 export const WONDERS_USER_PROMPT = `<task>Identify this Wonders of The First trading card. Read EACH field independently from its physical location on the card.</task>
