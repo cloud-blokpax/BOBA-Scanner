@@ -393,10 +393,15 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 					.select('*', { count: 'exact', head: true })
 					.in('game_id', _activeGameIds as string[]);
 
-				// cards array includes play cards (~409) which aren't in the hero 'cards' table,
-			// so exclude them from the comparison to avoid false full-refresh triggers
-			const heroCardCount = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null).length;
-			if (remoteCount !== null && heroCardCount > remoteCount + 10) {
+				// cards array includes BoBA play cards (~409) which aren't in the hero
+				// 'cards' table, so exclude them from the comparison. The filter is
+				// scoped to BoBA because Wonders items/spells/lands also have null
+				// hero_name/power/weapon_type and must NOT be treated as play cards.
+				const heroCardCount = cards.filter(c =>
+					(c.game_id || 'boba') !== 'boba' ||
+					c.hero_name !== null || c.power !== null || c.weapon_type !== null
+				).length;
+				if (remoteCount !== null && heroCardCount > remoteCount + 10) {
 					console.debug(`[card-db] Local (${cards.length}) exceeds remote (${remoteCount}) — triggering full refresh for cleanup`);
 					// Fall through to full refresh below
 				} else {
@@ -439,20 +444,25 @@ async function refreshFromSupabaseInBackground(): Promise<void> {
 		}
 
 		// Re-merge play cards on refresh (BoBA-only — play cards are a BoBA concept).
-		// Preserve existing play cards if loadPlayCards() fails — on full refresh
-		// (non-incremental), cards was replaced with hero-only data, so we must
-		// capture existing play cards BEFORE filtering.
-		const existingPlayCards = cards.filter(c => c.hero_name === null && c.power === null && c.weapon_type === null);
+		// CRITICAL: The "play card" signature (null hero_name + null power + null
+		// weapon_type) also matches Wonders items/spells/lands/tokens, which legitimately
+		// have no hero or power. The filter MUST be scoped to game_id='boba' or Wonders
+		// non-creature cards get stripped on every refresh and disappear from local lookup.
+		const isBobaPlayCard = (c: Card) =>
+			(c.game_id || 'boba') === 'boba' &&
+			c.hero_name === null && c.power === null && c.weapon_type === null;
+
+		const existingPlayCards = cards.filter(isBobaPlayCard);
 		const playCards = _activeGameIds.includes('boba') ? await loadPlayCards() : [];
-		// Strip any existing play cards before re-adding
-		cards = cards.filter(c => c.hero_name !== null || c.power !== null || c.weapon_type !== null);
+		// Strip any existing BoBA play cards before re-adding. Wonders cards pass through.
+		cards = cards.filter(c => !isBobaPlayCard(c));
 		if (playCards.length > 0) {
 			cards = cards.concat(playCards);
 		} else if (existingPlayCards.length > 0) {
 			// loadPlayCards() failed — restore previously loaded play cards
 			console.warn('[card-db] Play card reload returned 0 — restoring previous play cards');
 			cards = cards.concat(existingPlayCards);
-		} else {
+		} else if (_activeGameIds.includes('boba')) {
 			console.warn('[card-db] Play card reload returned 0 and no existing play cards to restore');
 		}
 
