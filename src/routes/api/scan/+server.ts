@@ -14,11 +14,16 @@ import { getAnthropicClient } from '$lib/server/anthropic';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import { BOBA_CARD_ID_TOOL, BOBA_SYSTEM_PROMPT, BOBA_USER_PROMPT } from '$lib/games/boba/prompt';
 import {
+	WONDERS_CARD_ID_TOOL,
+	WONDERS_SYSTEM_PROMPT,
+	WONDERS_USER_PROMPT
+} from '$lib/games/wonders/prompt';
+import {
 	MULTI_GAME_CARD_ID_TOOL,
 	MULTI_GAME_SYSTEM_PROMPT,
 	MULTI_GAME_USER_PROMPT
 } from '$lib/games/multi-game-prompt';
-import { resolveGameConfig, isValidGameId, getAllGameConfigs } from '$lib/games/resolver';
+import { isValidGameId, getAllGameConfigs } from '$lib/games/resolver';
 import type { RequestHandler } from './$types';
 
 /**
@@ -143,27 +148,32 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	// - If gameIdParam is provided and valid → use that game's config
 	// - Otherwise → use the multi-game auto-detect prompt, which asks
 	//   Claude to first identify the game, then fill in fields for it.
+	// Prompt dispatch: server-only. Intentionally NOT routed through
+	// resolveGameConfig — prompts don't belong in client-reachable
+	// GameConfig (they'd drag ~14KB of strings into every lazy chunk).
 	let systemPrompt: string;
 	let userPrompt: string;
 	let cardIdTool: Anthropic.Messages.Tool;
 	const isAutoDetect = !gameIdParam || !isValidGameId(gameIdParam);
 
-	if (!isAutoDetect) {
-		try {
-			const gameConfig = await resolveGameConfig(gameIdParam as string);
-			systemPrompt = gameConfig.claudeSystemPrompt;
-			userPrompt = gameConfig.claudeUserPrompt;
-			cardIdTool = gameConfig.cardIdTool;
-		} catch {
-			// Fall back to BoBA defaults if game config resolution fails
-			systemPrompt = BOBA_SYSTEM_PROMPT;
-			userPrompt = BOBA_USER_PROMPT;
-			cardIdTool = BOBA_CARD_ID_TOOL;
-		}
-	} else {
+	if (isAutoDetect) {
 		systemPrompt = MULTI_GAME_SYSTEM_PROMPT;
 		userPrompt = MULTI_GAME_USER_PROMPT;
 		cardIdTool = MULTI_GAME_CARD_ID_TOOL;
+	} else {
+		switch (gameIdParam) {
+			case 'wonders':
+				systemPrompt = WONDERS_SYSTEM_PROMPT;
+				userPrompt = WONDERS_USER_PROMPT;
+				cardIdTool = WONDERS_CARD_ID_TOOL;
+				break;
+			case 'boba':
+			default:
+				systemPrompt = BOBA_SYSTEM_PROMPT;
+				userPrompt = BOBA_USER_PROMPT;
+				cardIdTool = BOBA_CARD_ID_TOOL;
+				break;
+		}
 	}
 
 	// ── Claude API call with structured output ──────────────

@@ -16,7 +16,6 @@
 
 import type { GameConfig, OcrRegion } from '../types';
 import { extractGame3CardNumber, GAME3_PREFIXES } from './extract';
-import { GAME3_CARD_ID_TOOL, GAME3_SYSTEM_PROMPT, GAME3_USER_PROMPT } from './prompt';
 import { game3Theme } from './theme';
 import { game3NavItems, game3ProtectedRoutes } from './nav';
 import { BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
@@ -46,11 +45,6 @@ const game3Config: GameConfig = {
 	// game-agnostic — reuse BoBA values until Game 3 has tuned defaults.
 	scanConfig: BOBA_SCAN_CONFIG,
 	pipelineConfig: BOBA_PIPELINE_CONFIG,
-
-	// ── AI Identification (Tier 3) ─────────────────────────────
-	claudeSystemPrompt: GAME3_SYSTEM_PROMPT,
-	claudeUserPrompt: GAME3_USER_PROMPT,
-	cardIdTool: GAME3_CARD_ID_TOOL,
 
 	// ── eBay Integration ───────────────────────────────────────
 	ebaySearchKeywords: ['Game 3'],

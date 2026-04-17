@@ -78,22 +78,39 @@ describe('Architecture — GameConfig invariants', () => {
 		}
 	});
 
-	it('every registered game has a cardIdTool named "identify_card"', async () => {
-		const configs = await getAllGameConfigs();
-		for (const c of configs) {
-			// This invariant matters: the scan endpoint hardcodes
-			// tool_choice: { name: 'identify_card' }. Diverging here would
-			// cause Claude to reject the request at tool-choice time.
-			expect(c.cardIdTool.name, `${c.id} tool name must be "identify_card"`).toBe('identify_card');
-			expect(c.cardIdTool.input_schema).toBeDefined();
+	// Claude prompts + card-id tool live in server-only lib/games/<game>/prompt.ts
+	// (not on GameConfig — putting them there leaked ~14KB of strings into the
+	// client bundle via the lazy-chunk path). The invariants moved with them.
+	it('every registered game exposes a cardIdTool named "identify_card"', async () => {
+		// This invariant matters: the scan endpoint hardcodes
+		// tool_choice: { name: 'identify_card' }. Diverging here would
+		// cause Claude to reject the request at tool-choice time.
+		const [boba, wonders] = await Promise.all([
+			import('../../src/lib/games/boba/prompt'),
+			import('../../src/lib/games/wonders/prompt'),
+		]);
+		const tools = [
+			{ id: 'boba', tool: boba.BOBA_CARD_ID_TOOL },
+			{ id: 'wonders', tool: wonders.WONDERS_CARD_ID_TOOL },
+		];
+		for (const { id, tool } of tools) {
+			expect(tool.name, `${id} tool name must be "identify_card"`).toBe('identify_card');
+			expect(tool.input_schema).toBeDefined();
 		}
 	});
 
 	it('every registered game has non-empty system + user prompts', async () => {
-		const configs = await getAllGameConfigs();
-		for (const c of configs) {
-			expect(c.claudeSystemPrompt.length, `${c.id} system prompt empty`).toBeGreaterThan(50);
-			expect(c.claudeUserPrompt.length, `${c.id} user prompt empty`).toBeGreaterThan(20);
+		const [boba, wonders] = await Promise.all([
+			import('../../src/lib/games/boba/prompt'),
+			import('../../src/lib/games/wonders/prompt'),
+		]);
+		const prompts = [
+			{ id: 'boba', system: boba.BOBA_SYSTEM_PROMPT, user: boba.BOBA_USER_PROMPT },
+			{ id: 'wonders', system: wonders.WONDERS_SYSTEM_PROMPT, user: wonders.WONDERS_USER_PROMPT },
+		];
+		for (const p of prompts) {
+			expect(p.system.length, `${p.id} system prompt empty`).toBeGreaterThan(50);
+			expect(p.user.length, `${p.id} user prompt empty`).toBeGreaterThan(20);
 		}
 	});
 

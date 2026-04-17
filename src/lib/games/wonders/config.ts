@@ -8,7 +8,6 @@
 
 import type { GameConfig, OcrRegion } from '../types';
 import { extractWondersCardNumber, WONDERS_PREFIXES } from './extract';
-import { WONDERS_CARD_ID_TOOL, WONDERS_SYSTEM_PROMPT, WONDERS_USER_PROMPT } from './prompt';
 import { wondersTheme } from './theme';
 import { wondersNavItems, wondersProtectedRoutes } from './nav';
 import {
@@ -42,11 +41,6 @@ const wondersConfig: GameConfig = {
 	// Scan safety / quality limits are game-agnostic — reuse BoBA values.
 	scanConfig: BOBA_SCAN_CONFIG,
 	pipelineConfig: BOBA_PIPELINE_CONFIG,
-
-	// ── AI Identification (Tier 3) ─────────────────────────────
-	claudeSystemPrompt: WONDERS_SYSTEM_PROMPT,
-	claudeUserPrompt: WONDERS_USER_PROMPT,
-	cardIdTool: WONDERS_CARD_ID_TOOL,
 
 	// ── eBay Integration ───────────────────────────────────────
 	ebaySearchKeywords: ['Wonders of The First', 'WoTF', 'WOTF'],

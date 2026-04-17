@@ -6,8 +6,6 @@
  * (Wonders, future Game 3) implement this interface and register in the resolver.
  */
 
-import type Anthropic from '@anthropic-ai/sdk';
-
 // ── OCR Region ─────────────────────────────────────────────────
 
 /** A rectangular region on the card image where OCR should look for text. */
@@ -123,12 +121,11 @@ export interface GameConfig {
 	pipelineConfig: PipelineConfig;
 
 	// ── AI Identification (Tier 3 — Claude) ────────────────────
-	/** Claude system prompt for card identification */
-	claudeSystemPrompt: string;
-	/** Claude user prompt template. Receives `{base64}` image data. */
-	claudeUserPrompt: string;
-	/** Anthropic tool definition for structured card identification output */
-	cardIdTool: Anthropic.Messages.Tool;
+	// NOTE: Claude prompts and the card-id tool are deliberately NOT on
+	// GameConfig. They're server-only and live in lib/games/<game>/prompt.ts,
+	// imported directly by routes/api/scan/+server.ts. Putting them here
+	// forces the client bundle to drag ~14KB of prompt strings through
+	// the lazy-chunk path even though client code never reads them.
 
 	// ── eBay Integration ───────────────────────────────────────
 	/** Keywords to include in eBay searches for this game's cards */
