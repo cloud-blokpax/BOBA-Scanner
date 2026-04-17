@@ -33,9 +33,9 @@
 	}
 
 	function currentGameLabel(): string {
-		if (!gameHint) return 'Auto';
+		if (!gameHint) return 'Game: Auto';
 		const match = ALL_GAMES.find((g) => g.id === gameHint);
-		return match ? match.shortName : 'Auto';
+		return match ? `Game: ${match.shortName}` : 'Game: Auto';
 	}
 
 	function currentGameIcon(): string {
@@ -203,7 +203,7 @@
 			{/await}
 		{:else if scanMode === 'roll'}
 			{#await import('$lib/components/CameraRollImport.svelte') then { default: CameraRollImport }}
-				<CameraRollImport {isAuthenticated} onClose={() => { scanMode = 'single'; }} />
+				<CameraRollImport {isAuthenticated} {gameHint} onClose={() => { scanMode = 'single'; }} />
 			{/await}
 		{/if}
 		{#if scanResult}

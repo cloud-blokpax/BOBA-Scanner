@@ -67,10 +67,16 @@ export function heroMatches(card: Card, normalizedHero: string): boolean {
 
 /**
  * Fuzzy search using Levenshtein distance.
+ *
+ * When `gameId` is provided, results are restricted to cards matching that
+ * game. Auto-detect scans load multiple games' cards into the shared index,
+ * so cross-game contamination (e.g. a Wonders "78/402" pulling BoBA "78")
+ * would otherwise reject the real match during hero-name verification.
  */
 export function findSimilarCardNumbers(
 	searchNumber: string,
-	maxDistance = 2
+	maxDistance = 2,
+	gameId?: string
 ): Array<{ card: Card; cardNumber: string; distance: number; score: number }> {
 	const normalized = normalizeCardNum(searchNumber);
 	const prefix = normalized.slice(0, 2);
@@ -86,6 +92,7 @@ export function findSimilarCardNumbers(
 	const results: Array<{ card: Card; cardNumber: string; distance: number; score: number }> = [];
 
 	for (const card of candidateSet) {
+		if (gameId && (card.game_id || 'boba') !== gameId) continue;
 		const cardNum = normalizeCardNum(card.card_number || '');
 		const distance = levenshteinDistance(normalized, cardNum);
 		if (distance <= maxDistance) {
@@ -114,8 +121,12 @@ export function findSimilarCardNumbers(
 /**
  * Full-text search across card name, hero name, set code.
  * Callers should debounce this if used on keystroke input.
+ *
+ * When `gameId` is provided, results are restricted to cards matching that
+ * game (important during auto-detect scanning when multiple games' cards
+ * share the search index).
  */
-export function searchCards(query: string, limit = 20): Card[] {
+export function searchCards(query: string, limit = 20, gameId?: string): Card[] {
 	const heroIndex = getHeroIndex();
 	const searchIndex = getSearchIndex();
 
@@ -123,13 +134,17 @@ export function searchCards(query: string, limit = 20): Card[] {
 
 	const heroMatch = heroIndex.get(q);
 	if (heroMatch && heroMatch.length > 0) {
-		return heroMatch.slice(0, limit);
+		const scoped = gameId
+			? heroMatch.filter((c) => (c.game_id || 'boba') === gameId)
+			: heroMatch;
+		if (scoped.length > 0) return scoped.slice(0, limit);
 	}
 
 	// Use pre-computed lowercased search text for faster filtering
 	const lq = query.toLowerCase();
 	const results: Card[] = [];
 	for (const entry of searchIndex) {
+		if (gameId && (entry.card.game_id || 'boba') !== gameId) continue;
 		if (entry.searchText.includes(lq)) {
 			results.push(entry.card);
 			if (results.length >= limit) break;

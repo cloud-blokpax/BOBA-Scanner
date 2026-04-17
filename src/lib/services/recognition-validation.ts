@@ -85,7 +85,7 @@ export function crossValidateCardResult(
 		}
 
 		// ── Step 2: Fuzzy match on card_number ──
-		const fuzzyResults = findSimilarCardNumbers(ai.cardNumber, 2);
+		const fuzzyResults = findSimilarCardNumbers(ai.cardNumber, 2, gameId);
 
 		// If we have multiple hero-name-verified matches at the same distance,
 		// use power to disambiguate
@@ -173,7 +173,7 @@ export function crossValidateCardResult(
 
 	// ── Step 3: Fallback — search by hero name (+ power to disambiguate) ──
 	if (ai.heroName) {
-		const heroSearchResults = searchCards(ai.heroName, 10);
+		const heroSearchResults = searchCards(ai.heroName, 10, gameId);
 
 		if (heroSearchResults.length > 0) {
 			// If we have power info, use it to disambiguate among hero matches
