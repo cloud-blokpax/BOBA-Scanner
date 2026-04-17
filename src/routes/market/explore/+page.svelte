@@ -7,6 +7,9 @@
 	import ExplorerResults from '$lib/components/market/ExplorerResults.svelte';
 	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import type { Facets, Aggregates, ExploreCard, ExplorePlayCard } from '$lib/components/market/explorer-types';
+	import { gameFilter } from '$lib/stores/collection.svelte';
+
+	const activeGameId = $derived(gameFilter() === 'wonders' ? 'wonders' : 'boba');
 
 	// ── Data state ───────────────────────────────────
 	let facets = $state<Facets | null>(null);
@@ -24,7 +27,7 @@
 	// ── Data fetching ────────────────────────────────
 	async function loadFacets() {
 		try {
-			const res = await fetch('/api/market/facets');
+			const res = await fetch(`/api/market/facets?game_id=${activeGameId}`);
 			if (!res.ok) return;
 			const data = await res.json();
 			facets = data.facets || {};
@@ -47,6 +50,7 @@
 			const params = filters.buildSearchParams();
 			params.set('limit', '50');
 			params.set('offset', String(currentOffset));
+			params.set('game_id', activeGameId);
 
 			const res = await fetch(`/api/market/explore?${params}`);
 			if (!res.ok) {
@@ -119,7 +123,7 @@
 		{/if}
 	</header>
 
-	<ExplorerFilters {filters} {facets} />
+	<ExplorerFilters {filters} {facets} gameId={activeGameId} />
 
 	<ExplorerResults
 		{cards}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Sparkline from '$lib/components/market/Sparkline.svelte';
+	import { gameFilter } from '$lib/stores/collection.svelte';
 
 	// ── Types ────────────────────────────────────────────
 	interface MoverCard {
@@ -64,7 +65,9 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/market/pulse');
+			const filter = gameFilter();
+			const gameParam = filter === 'wonders' ? 'wonders' : 'boba';
+			const res = await fetch(`/api/market/pulse?game_id=${gameParam}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			summary = data.summary;

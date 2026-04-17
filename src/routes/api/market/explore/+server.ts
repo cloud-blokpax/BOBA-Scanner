@@ -52,6 +52,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '') || 50, 1), 200);
 	const offset = Math.max(parseInt(url.searchParams.get('offset') || '') || 0, 0);
 
+	const gameId = url.searchParams.get('game_id') || 'boba';
+	if (!['boba', 'wonders'].includes(gameId)) {
+		throw error(400, 'Invalid game_id');
+	}
+
 	if (!VALID_SORTS.has(sort) && sort !== 'price_asc') {
 		throw error(400, 'Invalid sort parameter');
 	}
@@ -71,7 +76,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// Step 1: Get card metadata, applying card-level filters
 	let cardQuery = admin
 		.from('cards')
-		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name');
+		.select('id, hero_name, name, card_number, set_code, power, rarity, weapon_type, parallel, athlete_name')
+		.eq('game_id', gameId);
 
 	if (parallel) cardQuery = cardQuery.eq('parallel', parallel);
 	if (weapon) cardQuery = cardQuery.eq('weapon_type', weapon);
