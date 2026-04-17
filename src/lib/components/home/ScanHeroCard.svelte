@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
+	import { ALL_GAMES } from '$lib/games/all-games';
 	import type { ScanResult } from '$lib/types';
 
 	let { gameId = null }: { gameId?: 'boba' | 'wonders' | null } = $props();
@@ -9,6 +10,8 @@
 	let uploadResult = $state<ScanResult | null>(null);
 	let uploadImageUrl = $state<string | null>(null);
 	let uploading = $state(false);
+	let userGameChoice = $state<'boba' | 'wonders' | null>(null);
+	const effectiveGameHint = $derived(gameId ?? userGameChoice);
 
 	// Scanner initializes lazily on first use — no eager worker/OCR loading
 
@@ -42,7 +45,7 @@
 		uploadImageUrl = URL.createObjectURL(file);
 
 		try {
-			const result = await scanImage(file);
+			const result = await scanImage(file, { gameHint: effectiveGameHint });
 			if (result) {
 				uploadResult = result;
 			} else {
@@ -112,6 +115,28 @@
 				Point your camera at any BoBA or Wonders card to identify it instantly
 			{/if}
 		</div>
+		{#if gameId === null}
+			<div class="scan-game-choice">
+				<span class="scan-game-choice-label">Game:</span>
+				<div class="scan-game-choice-buttons">
+					<button
+						class="scan-game-choice-btn"
+						class:active={userGameChoice === null}
+						onclick={() => (userGameChoice = null)}
+						type="button"
+					>✨ Auto</button>
+					{#each ALL_GAMES as game}
+						<button
+							class="scan-game-choice-btn"
+							class:active={userGameChoice === game.id}
+							data-game={game.id}
+							onclick={() => (userGameChoice = game.id as 'boba' | 'wonders')}
+							type="button"
+						>{game.icon} {game.shortName}</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		<div class="scan-hero-actions">
 			<button class="btn-hero-secondary" onclick={handleUploadClick} disabled={uploading}>
 				Upload Photo
@@ -151,6 +176,41 @@
 	.scan-hero-title { font-family: var(--font-display, 'Syne', sans-serif); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.2rem; }
 	.scan-hero-desc { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); line-height: 1.35; margin-bottom: 0.625rem; }
 	.scan-hero-actions { display: flex; gap: 0.5rem; }
+	.scan-game-choice {
+		display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+		padding: 0.5rem 0.75rem;
+		background: var(--bg-elevated, #121d34);
+		border-radius: var(--radius-md, 10px);
+		margin-bottom: 0.5rem;
+	}
+	.scan-game-choice-label {
+		font-size: 0.78rem; font-weight: 600; color: var(--text-secondary, #94a3b8);
+		letter-spacing: 0.04em; text-transform: uppercase;
+	}
+	.scan-game-choice-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+	.scan-game-choice-btn {
+		padding: 0.35rem 0.65rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		background: transparent;
+		border: 1px solid var(--border, rgba(148,163,184,0.2));
+		border-radius: 999px;
+		color: var(--text-primary, #e2e8f0);
+		cursor: pointer;
+		transition: background 0.12s, border-color 0.12s;
+	}
+	.scan-game-choice-btn:hover { background: rgba(148,163,184,0.1); }
+	.scan-game-choice-btn.active {
+		background: var(--text-primary, #e2e8f0);
+		color: var(--bg-surface, #0d1524);
+		border-color: var(--text-primary, #e2e8f0);
+	}
+	.scan-game-choice-btn.active[data-game="boba"] {
+		background: #f59e0b; color: #0d1524; border-color: #f59e0b;
+	}
+	.scan-game-choice-btn.active[data-game="wonders"] {
+		background: #3B82F6; color: #fff; border-color: #3B82F6;
+	}
 	.btn-hero-secondary {
 		padding: 0.375rem 0.75rem; border-radius: var(--radius-md, 8px);
 		background: var(--bg-elevated, #121d34); border: 1px solid var(--border, rgba(148,163,184,0.10));
