@@ -7,8 +7,8 @@
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import type { CollectionItem } from '$lib/types';
 
-	interface Props { userId: string | undefined; }
-	let { userId }: Props = $props();
+	interface Props { userId: string | undefined; gameId?: 'boba' | 'wonders' | null; }
+	let { userId, gameId = null }: Props = $props();
 
 	interface RecentScan {
 		id: string; card_id: string | null; hero_name: string | null; card_number: string | null;
@@ -25,9 +25,11 @@
 		const client = getSupabase();
 		if (!client || !userId) return;
 		try {
-			const { data: rows, error: err } = await client
-				.from('scans').select('id, card_id, hero_name, card_number, scan_method, created_at')
+			let query = client
+				.from('scans').select('id, card_id, hero_name, card_number, scan_method, game_id, created_at')
 				.not('card_id', 'is', null).order('created_at', { ascending: false }).limit(10);
+			if (gameId) query = query.eq('game_id', gameId);
+			const { data: rows, error: err } = await query;
 			if (err) throw err;
 			supabaseScans = (rows || []).map(row => ({
 				...row,
