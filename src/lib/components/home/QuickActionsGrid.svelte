@@ -1,11 +1,13 @@
 <script lang="ts">
-	// Pure presentational — no props needed
+	// gameId prop signals BoBA-only intent; currently identical behavior regardless.
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	let { gameId: _gameId = 'boba' }: { gameId?: 'boba' } = $props();
 </script>
 
 <div class="section-block">
 	<h2 class="section-heading">Quick Actions</h2>
 	<div class="actions-grid">
-		<a href="/collection" class="action-tile">
+		<a href="/boba/collection" class="action-tile">
 			<span class="action-icon">📦</span>
 			<div class="action-text"><span class="action-label">Collection</span><span class="action-sub">Set progress · Grading · Export</span></div>
 		</a>

@@ -3,6 +3,8 @@
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import type { ScanResult } from '$lib/types';
 
+	let { gameId = null }: { gameId?: 'boba' | 'wonders' | null } = $props();
+
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let uploadResult = $state<ScanResult | null>(null);
 	let uploadImageUrl = $state<string | null>(null);
@@ -96,17 +98,25 @@
 {/if}
 
 <div class="scan-hero-card">
-	<a href="/scan" class="scan-hero-btn" aria-label="Scan a card">
+	<a href={gameId ? `/scan?game=${gameId}` : '/scan'} class="scan-hero-btn" aria-label="Scan a card">
 		<span class="scan-hero-icon">📷</span>
 	</a>
 	<div class="scan-hero-text">
 		<div class="scan-hero-title">Scan a Card</div>
-		<div class="scan-hero-desc">Point your camera at any BoBA or Wonders card to identify it instantly</div>
+		<div class="scan-hero-desc">
+			{#if gameId === 'boba'}
+				Point your camera at any BoBA card to identify it instantly
+			{:else if gameId === 'wonders'}
+				Point your camera at any Wonders card to identify it instantly
+			{:else}
+				Point your camera at any BoBA or Wonders card to identify it instantly
+			{/if}
+		</div>
 		<div class="scan-hero-actions">
 			<button class="btn-hero-secondary" onclick={handleUploadClick} disabled={uploading}>
 				Upload Photo
 			</button>
-			<a href="/scan?mode=roll" class="btn-hero-secondary">Camera Roll</a>
+			<a href={gameId ? `/scan?game=${gameId}&mode=roll` : '/scan?mode=roll'} class="btn-hero-secondary">Camera Roll</a>
 		</div>
 	</div>
 	<input

@@ -84,6 +84,7 @@ export interface Database {
 					processing_ms: number | null;
 					hero_name: string | null;
 					card_number: string | null;
+					game_id: string;
 					created_at: string;
 				};
 				Insert: {
@@ -96,6 +97,7 @@ export interface Database {
 					processing_ms?: number | null;
 					hero_name?: string | null;
 					card_number?: string | null;
+					game_id?: string;
 				};
 				Update: Partial<Database['public']['Tables']['scans']['Insert']>;
 				Relationships: [];
