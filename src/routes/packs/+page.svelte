@@ -8,6 +8,7 @@
 	import type { SlotConfig, SimulatedCard, PackResult, BoxGuarantee } from '$lib/types/pack-simulator';
 	import PackCardReveal from '$lib/components/packs/PackCardReveal.svelte';
 	import BoxSummary from '$lib/components/packs/BoxSummary.svelte';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const SET_OPTIONS = [
 		{ key: 'G', label: '2026 Griffey Set' },
@@ -137,6 +138,7 @@
 </svelte:head>
 
 <div class="packs-page">
+	<BoBAOnlyBanner message="Pack Simulator is currently BoBA-only. Wonders support coming soon." />
 	<header class="page-header">
 		<div class="header-label">BoBA Scanner</div>
 		<h1>Pack Simulator</h1>

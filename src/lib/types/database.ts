@@ -20,6 +20,8 @@ export interface Database {
 					image_url: string | null;
 					year: number | null;
 					parallel: string | null;
+					game_id: string;
+					metadata: Record<string, unknown> | null;
 					created_at: string;
 					updated_at: string;
 					search_vector: string | null;
@@ -41,6 +43,8 @@ export interface Database {
 					image_url?: string | null;
 					year?: number | null;
 					parallel?: string | null;
+					game_id?: string;
+					metadata?: Record<string, unknown> | null;
 					updated_at?: string;
 					game_id?: string;
 					metadata?: Record<string, unknown> | null;
@@ -120,6 +124,8 @@ export interface Database {
 					filtered_count: number | null;
 					listings_count: number | null;
 					fetched_at: string;
+					game_id: string;
+					variant: string;
 				};
 				Insert: {
 					card_id: string;
@@ -134,6 +140,8 @@ export interface Database {
 					filtered_count?: number | null;
 					listings_count?: number | null;
 					fetched_at?: string;
+					game_id?: string;
+					variant?: string;
 				};
 				Update: Partial<Database['public']['Tables']['price_cache']['Insert']>;
 				Relationships: [];
@@ -442,6 +450,8 @@ export interface Database {
 					sold_at: string | null;
 					sold_price: number | null;
 					ebay_offer_id: string | null;
+					game_id: string;
+					variant: string;
 					created_at: string;
 					updated_at: string | null;
 				};
@@ -466,6 +476,8 @@ export interface Database {
 					sold_at?: string | null;
 					sold_price?: number | null;
 					ebay_offer_id?: string | null;
+					game_id?: string;
+					variant?: string;
 					updated_at?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['listing_templates']['Insert']>;

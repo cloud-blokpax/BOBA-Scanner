@@ -11,6 +11,7 @@
 		type ContestedPlay
 	} from '$lib/services/playbook-engine';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formatOptions = getFormatOptions();
 	const playmakerFormats = $derived(
@@ -105,6 +106,7 @@
 </svelte:head>
 
 <div class="splitter-page">
+	<BoBAOnlyBanner message="Deck Splitter is currently BoBA-only. Wonders support coming soon." />
 	<div class="page-header">
 		<a href="/deck" class="back-link">&larr; Decks</a>
 		<h1>Multi-Tournament Deck Splitter</h1>

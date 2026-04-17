@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
 	const [cardsRes, pricesRes, stalePricesRes, flagsCountRes, flagsRes] = await Promise.all([
-		admin.from('system_settings').select('value').eq('key', 'total_cards').maybeSingle(),
+		admin.from('cards').select('id', { count: 'exact', head: true }),
 		admin.from('price_cache').select('id', { count: 'exact', head: true }),
 		admin.from('price_cache').select('id', { count: 'exact', head: true })
 			.lt('fetched_at', sevenDaysAgo.toISOString()),
@@ -34,7 +34,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	return json({
 		metrics: {
-			totalCards: Number(cardsRes.data?.value) || 0,
+			totalCards: cardsRes.count || 0,
 			withPrices: pricesRes.count || 0,
 			stalePrices: stalePricesRes.count || 0,
 			pendingFlags: flagsCountRes.count || 0

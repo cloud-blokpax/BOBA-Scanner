@@ -6,11 +6,10 @@
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { setShowGoProModal } from '$lib/stores/pro.svelte';
-	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formatOptions = getFormatOptions();
 	const isAuthenticated = $derived(!!$page.data.user);
-	const multiGameEnabled = featureEnabled('multi_game_ui');
 
 	let decks = $state<UserDeck[]>([]);
 	let loading = $state(true);
@@ -164,12 +163,9 @@
 </svelte:head>
 
 <div class="decks-page">
-	{#if multiGameEnabled()}
-		<div class="game-scope-note">
-			<span class="game-scope-icon">🏈</span>
-			<span>Deck building and tournaments are currently BoBA-only. Wonders support coming soon — <a href="/collection">browse your Wonders cards</a>.</span>
-		</div>
-	{/if}
+	<BoBAOnlyBanner>
+		<span>⚔️ Deck building and tournaments are currently BoBA-only. Wonders support coming soon — <a href="/collection">browse your Wonders cards</a>.</span>
+	</BoBAOnlyBanner>
 
 	<!-- Tab bar -->
 	<div class="tab-bar">
@@ -373,21 +369,6 @@
 		margin: 0 auto;
 		padding: 1rem;
 	}
-
-	.game-scope-note {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.6rem 0.85rem;
-		margin: 0 0 1rem;
-		background: rgba(251, 191, 36, 0.08);
-		border: 1px solid rgba(251, 191, 36, 0.25);
-		border-radius: 10px;
-		color: var(--text-secondary, #94a3b8);
-		font-size: 0.85rem;
-	}
-	.game-scope-note a { color: var(--primary, #3b82f6); text-decoration: underline; }
-	.game-scope-icon { font-size: 1rem; }
 
 	.deck-actions {
 		display: flex;

@@ -21,9 +21,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!user) throw error(401, 'Sign in to view market data');
 
 	const gameId = url.searchParams.get('game_id') || 'boba';
-	if (!['boba', 'wonders'].includes(gameId)) {
-		throw error(400, 'Invalid game_id');
-	}
+	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid game_id');
 
 	// Check pro status for response depth
 	let userIsPro = false;

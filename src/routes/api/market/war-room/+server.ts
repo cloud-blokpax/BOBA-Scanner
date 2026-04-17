@@ -40,7 +40,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 			return rows;
 		})(),
-		// cards — paginated
+		// cards — paginated (War Room is BoBA-only by design)
 		(async () => {
 			const rows: Array<Record<string, unknown>> = [];
 			let offset = 0;

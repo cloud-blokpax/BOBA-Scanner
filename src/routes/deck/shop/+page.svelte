@@ -10,6 +10,7 @@
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { getAllWeaponKeys } from '$lib/data/boba-weapons';
 	import type { Card, CollectionItem } from '$lib/types';
+	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formats = getFormatOptions();
 	const weaponKeys = getAllWeaponKeys();
@@ -169,6 +170,7 @@
 </svelte:head>
 
 <div class="shop-page">
+	<BoBAOnlyBanner message="Deck Shop is currently BoBA-only. Wonders support coming soon." />
 	<header class="shop-header">
 		<h1>Deck Shop</h1>
 		<p class="shop-subtitle">Find cards to fill your deck gaps — sorted by cheapest first</p>

@@ -9,7 +9,7 @@ import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condi
 import { incrementPersona } from '$lib/services/persona';
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 import { buildBobaDescription, buildWondersDescription } from '$lib/services/listing-generator';
-import type { Card, CardRarity } from '$lib/types';
+import type { Card } from '$lib/types';
 
 export const config = { maxDuration: 60 };
 
@@ -35,7 +35,6 @@ interface DraftRequest {
 	gameId?: 'boba' | 'wonders';
 	variant?: 'paper' | 'cf' | 'ff' | 'ocm' | 'sf';
 	metadata?: Record<string, unknown> | null;
-	rarity?: string | null;
 	// Listing options
 	bestOffer?: boolean;
 	autoAcceptPrice?: number | null;
@@ -44,23 +43,21 @@ interface DraftRequest {
 	listingDuration?: string | null;
 }
 
-/** Adapt a DraftRequest body into the Card shape expected by the shared
- * description/title helpers. Most fields are optional on Card, so this is
- * a simple field-copy with sane defaults. */
+/** Adapt a DraftRequest to the Card-like shape the description builders expect. */
 function draftToCard(req: DraftRequest, gameId: string): Card {
 	return {
 		id: req.cardId || '',
 		name: req.heroName || '',
 		hero_name: req.heroName || null,
-		athlete_name: req.athleteName ?? null,
+		athlete_name: req.athleteName || null,
 		set_code: req.setCode || '',
-		card_number: req.cardNumber ?? null,
-		parallel: req.parallel ?? null,
-		power: req.power ?? null,
-		rarity: (req.rarity as CardRarity | null) ?? null,
-		weapon_type: req.weaponType ?? null,
+		card_number: req.cardNumber || null,
+		parallel: req.parallel,
+		power: req.power,
+		rarity: null,
+		weapon_type: req.weaponType,
 		battle_zone: null,
-		image_url: req.scanImageUrl ?? null,
+		image_url: null,
 		created_at: '',
 		game_id: gameId,
 		metadata: req.metadata ?? null,
@@ -137,9 +134,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
 	const adminClient = getAdminClient();
-	const skuPrefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
+	const prefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
 	const cardIdShort = (body.cardId || 'unknown').replace(/-/g, '').slice(0, 12);
-	const sku = `${skuPrefix}${cardIdShort}${Date.now()}`;
+	const sku = `${prefix}${cardIdShort}${Date.now()}`;
 
 	// Check for existing active listings for this card
 	if (adminClient && body.cardId) {
@@ -184,15 +181,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Persist listing template to DB for history tracking
 	if (adminClient) {
 		try {
-			const rawDescription = body.description
-				|| (gameId === 'wonders'
-					? buildWondersDescription(cardForHelpers, body.condition || 'Near Mint', variant)
-					: buildBobaDescription(cardForHelpers, body.condition || 'Near Mint', heroName || 'Unknown'));
+			const cardForTemplate = draftToCard(body, gameId);
+			const titleForTemplate = body.title || buildEbayListingTitle({
+				hero_name: heroName,
+				name: heroName,
+				card_number: cardNumber,
+				parallel: body.parallel,
+				weapon_type: body.weaponType,
+				athlete_name: body.athleteName,
+				game_id: gameId,
+				variant,
+				metadata: body.metadata ?? null,
+			});
+			const descriptionForTemplate = body.description || (gameId === 'wonders'
+				? buildWondersDescription(cardForTemplate, body.condition || 'Near Mint', variant)
+				: buildBobaDescription(cardForTemplate, body.condition || 'Near Mint', heroName || 'Unknown'));
+
 			const { error: insertErr } = await adminClient.from('listing_templates').insert({
 				user_id: user.id,
 				card_id: body.cardId || null,
-				title: listingTitle,
-				description: rawDescription,
+				title: titleForTemplate,
+				description: descriptionForTemplate,
 				price,
 				condition: body.condition || 'Near Mint',
 				sku,
@@ -223,31 +232,43 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 
 		// Use user-provided title/description if available, otherwise generate
+		const cardForListing = draftToCard(body, gameId);
+		const listingTitle = body.title || buildEbayListingTitle({
+			hero_name: heroName,
+			name: heroName,
+			card_number: cardNumber,
+			parallel: body.parallel,
+			weapon_type: body.weaponType,
+			athlete_name: body.athleteName,
+			game_id: gameId,
+			variant,
+			metadata: body.metadata ?? null,
+		});
 		const htmlDescription = body.description
 			? plainTextToHtml(body.description)
-			: plainTextToHtml(gameId === 'wonders'
-				? buildWondersDescription(cardForHelpers, body.condition || 'Near Mint', variant)
-				: buildBobaDescription(cardForHelpers, body.condition || 'Near Mint', heroName || 'Unknown'));
+			: (gameId === 'wonders'
+					? buildWondersDescription(cardForListing, body.condition || 'Near Mint', variant)
+					: buildBobaDescription(cardForListing, body.condition || 'Near Mint', heroName || 'Unknown'));
 
 		const aspects = gameId === 'wonders'
 			? {
-				'Card Name': [heroName || 'Unknown'],
-				'Set': [body.setCode || 'Wonders of The First'],
-				'Game': ['Wonders of The First'],
-				'Card Manufacturer': ['Wonders of The First'],
-				...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-				...(variant !== 'paper' ? { 'Parallel/Variety': [variant.toUpperCase()] } : {}),
-			}
+					'Card Name': [heroName || (typeof body.metadata?.card_name === 'string' ? body.metadata.card_name : 'Unknown')],
+					'Set': [body.setCode || 'Wonders of The First'],
+					'Game': ['Wonders of The First'],
+					'Card Manufacturer': ['Wonders of The First'],
+					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
+					...(variant !== 'paper' ? { 'Parallel/Variety': [variant.toUpperCase()] } : {}),
+				}
 			: {
-				'Card Name': [heroName || 'Unknown'],
-				'Set': [body.setCode || 'BoBA'],
-				'Sport': ['Multi-Sport'],
-				'Game': ['Bo Jackson Battle Arena'],
-				'Card Manufacturer': ['Bo Jackson Battle Arena'],
-				...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-				...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
-				...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
-			};
+					'Card Name': [heroName || 'Unknown'],
+					'Set': [body.setCode || 'BoBA'],
+					'Sport': ['Multi-Sport'],
+					'Game': ['Bo Jackson Battle Arena'],
+					'Card Manufacturer': ['Bo Jackson Battle Arena'],
+					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
+					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
+					...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
+				};
 
 		// Step 1: Create or update inventory item
 		const inventoryItem = {
@@ -257,7 +278,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				imageUrls: body.scanImageUrl && body.scanImageUrl.startsWith('https://')
 					? [body.scanImageUrl]
 					: ['https://boba.cards/icon-512.png'],
-				aspects
+				aspects,
 			},
 			condition: conditionToEbay(body.condition),
 			conditionDescriptors: [

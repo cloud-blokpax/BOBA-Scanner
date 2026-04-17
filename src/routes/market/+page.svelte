@@ -65,9 +65,8 @@
 
 	onMount(async () => {
 		try {
-			const filter = gameFilter();
-			const gameParam = filter === 'wonders' ? 'wonders' : 'boba';
-			const res = await fetch(`/api/market/pulse?game_id=${gameParam}`);
+			const currentGame = gameFilter() === 'wonders' ? 'wonders' : 'boba';
+			const res = await fetch(`/api/market/pulse?game_id=${currentGame}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			summary = data.summary;

@@ -63,32 +63,34 @@
 
 {#if filters.filtersExpanded}
 	<div class="filters-panel">
-		{#if filters.cardType === 'hero' && !isWonders}
-			<div class="filter-row">
-				<label class="filter-label">
-					Parallel
-					<select class="filter-select" value={filters.parallel} onchange={(e) => filters.setParallel((e.target as HTMLSelectElement).value)}>
-						<option value="">All</option>
-						{#if facets?.parallel}
-							{#each facets.parallel as f}
-								<option value={f.value}>{f.value} ({f.count})</option>
-							{/each}
-						{/if}
-					</select>
-				</label>
+		{#if filters.cardType === 'hero'}
+			{#if gameId !== 'wonders'}
+				<div class="filter-row">
+					<label class="filter-label">
+						Parallel
+						<select class="filter-select" value={filters.parallel} onchange={(e) => filters.setParallel((e.target as HTMLSelectElement).value)}>
+							<option value="">All</option>
+							{#if facets?.parallel}
+								{#each facets.parallel as f}
+									<option value={f.value}>{f.value} ({f.count})</option>
+								{/each}
+							{/if}
+						</select>
+					</label>
 
-				<label class="filter-label">
-					Weapon
-					<select class="filter-select" value={filters.weapon} onchange={(e) => filters.setWeapon((e.target as HTMLSelectElement).value)}>
-						<option value="">All</option>
-						{#if facets?.weapon}
-							{#each facets.weapon as f}
-								<option value={f.value}>{f.value} ({f.count})</option>
-							{/each}
-						{/if}
-					</select>
-				</label>
-			</div>
+					<label class="filter-label">
+						Weapon
+						<select class="filter-select" value={filters.weapon} onchange={(e) => filters.setWeapon((e.target as HTMLSelectElement).value)}>
+							<option value="">All</option>
+							{#if facets?.weapon}
+								{#each facets.weapon as f}
+									<option value={f.value}>{f.value} ({f.count})</option>
+								{/each}
+							{/if}
+						</select>
+					</label>
+				</div>
+			{/if}
 
 			<div class="filter-row">
 				<label class="filter-label">
@@ -116,30 +118,32 @@
 				</label>
 			</div>
 
-			<div class="filter-row">
-				<label class="filter-label">
-					Hero
-					<select class="filter-select" value={filters.hero} onchange={(e) => filters.setHero((e.target as HTMLSelectElement).value)}>
-						<option value="">All Heroes</option>
-						{#if facets?.hero}
-							{#each facets.hero as f}
-								<option value={f.value}>{f.value} ({f.count})</option>
-							{/each}
-						{/if}
-					</select>
-				</label>
-			</div>
+			{#if gameId !== 'wonders'}
+				<div class="filter-row">
+					<label class="filter-label">
+						Hero
+						<select class="filter-select" value={filters.hero} onchange={(e) => filters.setHero((e.target as HTMLSelectElement).value)}>
+							<option value="">All Heroes</option>
+							{#if facets?.hero}
+								{#each facets.hero as f}
+									<option value={f.value}>{f.value} ({f.count})</option>
+								{/each}
+							{/if}
+						</select>
+					</label>
+				</div>
 
-			<div class="filter-row">
-				<label class="filter-label">
-					Power Min
-					<input class="filter-input" type="number" placeholder="e.g. 100" value={filters.powerMin} oninput={(e) => filters.setPowerMin((e.target as HTMLInputElement).value)} />
-				</label>
-				<label class="filter-label">
-					Power Max
-					<input class="filter-input" type="number" placeholder="e.g. 170" value={filters.powerMax} oninput={(e) => filters.setPowerMax((e.target as HTMLInputElement).value)} />
-				</label>
-			</div>
+				<div class="filter-row">
+					<label class="filter-label">
+						Power Min
+						<input class="filter-input" type="number" placeholder="e.g. 100" value={filters.powerMin} oninput={(e) => filters.setPowerMin((e.target as HTMLInputElement).value)} />
+					</label>
+					<label class="filter-label">
+						Power Max
+						<input class="filter-input" type="number" placeholder="e.g. 170" value={filters.powerMax} oninput={(e) => filters.setPowerMax((e.target as HTMLInputElement).value)} />
+					</label>
+				</div>
+			{/if}
 		{/if}
 
 		<div class="filter-row">

@@ -90,9 +90,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Please reconnect your eBay account.');
 
-	const skuPrefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
+	const prefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
 	const cardIdShort = card_id.replace(/-/g, '').slice(0, 12);
-	const sku = `${skuPrefix}${cardIdShort}${Date.now()}`;
+	const sku = `${prefix}${cardIdShort}${Date.now()}`;
 	const adminClient = getAdminClient();
 
 	// Save template record (pending state)

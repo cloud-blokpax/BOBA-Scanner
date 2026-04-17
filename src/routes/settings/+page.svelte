@@ -4,66 +4,9 @@
 	import { user } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, proUntil, daysRemaining, proExpired, setShowGoProModal } from '$lib/stores/pro.svelte';
-	import { getUserProfile, ensureProfileLoaded, featureEnabled } from '$lib/stores/feature-flags.svelte';
-	import { ALL_GAMES } from '$lib/games/all-games';
-	import { fetchUserGamePrefs, saveUserGamePrefs } from '$lib/services/user-game-prefs';
+	import { getUserProfile, ensureProfileLoaded } from '$lib/stores/feature-flags.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-
-	const multiGameEnabled = featureEnabled('multi_game_ui');
-
-	// Game preferences state
-	let gamePrefsLoading = $state(false);
-	let gamePrefsSaving = $state(false);
-	let enabledGames = $state<string[]>(['boba']);
-	let defaultGame = $state<string | null>(null);
-
-	async function loadGamePrefs() {
-		const current = user();
-		if (!current) return;
-		gamePrefsLoading = true;
-		try {
-			const prefs = await fetchUserGamePrefs(current.id);
-			enabledGames = prefs?.enabled_games ?? ['boba'];
-			defaultGame = prefs?.default_game ?? null;
-		} finally {
-			gamePrefsLoading = false;
-		}
-	}
-
-	async function saveGamePrefs() {
-		const current = user();
-		if (!current) return;
-		gamePrefsSaving = true;
-		try {
-			const ok = await saveUserGamePrefs(current.id, {
-				enabled_games: enabledGames,
-				default_game: defaultGame,
-			});
-			showToast(ok ? 'Game preferences saved' : 'Failed to save preferences', ok ? 'check' : 'x');
-		} finally {
-			gamePrefsSaving = false;
-		}
-	}
-
-	function toggleEnabledGame(gameId: string) {
-		if (enabledGames.includes(gameId)) {
-			// Don't allow disabling the last enabled game
-			if (enabledGames.length === 1) {
-				showToast('At least one game must be enabled', 'x');
-				return;
-			}
-			enabledGames = enabledGames.filter((id) => id !== gameId);
-			// If we just disabled the default, clear default
-			if (defaultGame === gameId) defaultGame = null;
-		} else {
-			enabledGames = [...enabledGames, gameId];
-		}
-	}
-
-	function setDefaultGame(game: string | null) {
-		defaultGame = game;
-	}
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -194,7 +137,6 @@
 		const currentUser = user();
 		if (currentUser) {
 			loadProfile();
-			if (multiGameEnabled()) loadGamePrefs();
 		} else {
 			loading = false;
 		}
@@ -422,68 +364,6 @@
 				</div>
 			</div>
 		</div>
-
-		<!-- Games (multi-game flag only) -->
-		{#if multiGameEnabled()}
-			<div class="settings-group">
-				<div class="group-label">Games</div>
-				<div class="group-card">
-					<div class="games-prefs-body">
-						<p class="games-prefs-intro">Choose which games appear in your app and which dashboard to open by default.</p>
-
-						<div class="games-prefs-subsection">
-							<div class="games-prefs-title">Your Games</div>
-							{#each ALL_GAMES as game}
-								<label class="game-toggle-row">
-									<input
-										type="checkbox"
-										checked={enabledGames.includes(game.id)}
-										onchange={() => toggleEnabledGame(game.id)}
-									/>
-									<span class="game-toggle-icon">{game.icon}</span>
-									<span class="game-toggle-label">{game.name}</span>
-								</label>
-							{/each}
-						</div>
-
-						<div class="games-prefs-subsection">
-							<div class="games-prefs-title">Default Home Screen</div>
-							<label class="game-radio-row">
-								<input
-									type="radio"
-									name="default-game"
-									checked={defaultGame === null}
-									onchange={() => setDefaultGame(null)}
-								/>
-								<span class="game-radio-label">Show Hub (both games)</span>
-							</label>
-							{#each ALL_GAMES as game}
-								{#if enabledGames.includes(game.id)}
-									<label class="game-radio-row">
-										<input
-											type="radio"
-											name="default-game"
-											checked={defaultGame === game.id}
-											onchange={() => setDefaultGame(game.id)}
-										/>
-										<span class="game-toggle-icon">{game.icon}</span>
-										<span class="game-radio-label">{game.shortName} Dashboard</span>
-									</label>
-								{/if}
-							{/each}
-						</div>
-
-						<button
-							class="save-btn"
-							onclick={saveGamePrefs}
-							disabled={gamePrefsSaving || gamePrefsLoading}
-						>
-							{gamePrefsSaving ? 'Saving…' : 'Save game preferences'}
-						</button>
-					</div>
-				</div>
-			</div>
-		{/if}
 
 		<!-- Badges -->
 		{#if badges.length > 0}
@@ -814,40 +694,4 @@
 	.sign-out-btn:hover { background: rgba(239,68,68,0.12); }
 
 	.loading { text-align: center; padding: 3rem; color: var(--text-muted); }
-
-	/* ── Games preferences (multi-game flag) ──────────────── */
-	.games-prefs-body {
-		padding: 1rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	.games-prefs-intro {
-		margin: 0;
-		color: var(--text-secondary, #94a3b8);
-		font-size: 0.85rem;
-	}
-	.games-prefs-subsection { display: flex; flex-direction: column; gap: 0.5rem; }
-	.games-prefs-title {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted, #475569);
-		font-weight: 700;
-	}
-	.game-toggle-row,
-	.game-radio-row {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.5rem 0.25rem;
-		cursor: pointer;
-	}
-	.game-toggle-row input[type="checkbox"],
-	.game-radio-row input[type="radio"] {
-		accent-color: var(--gold, #f59e0b);
-	}
-	.game-toggle-icon { font-size: 1.1rem; line-height: 1; }
-	.game-toggle-label,
-	.game-radio-label { font-size: 0.95rem; color: var(--text-primary, #e2e8f0); }
 </style>
