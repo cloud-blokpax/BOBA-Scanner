@@ -11,11 +11,14 @@
 	let {
 		isAuthenticated = false,
 		onComplete,
-		onClose
+		onClose,
+		gameHint = null
 	}: {
 		isAuthenticated?: boolean;
 		onComplete?: (results: BatchResult[]) => void;
 		onClose?: () => void;
+		/** 'boba' | 'wonders' for explicit game mode; null for auto-detect */
+		gameHint?: string | null;
 	} = $props();
 
 	const MAX_PHOTOS = 50;
@@ -127,7 +130,8 @@
 				try {
 					result = await recognizeCard(bitmap, undefined, {
 						isAuthenticated,
-						skipBlurCheck: true
+						skipBlurCheck: true,
+						gameHint
 					});
 				} finally {
 					bitmap.close();
@@ -188,7 +192,8 @@
 			});
 			const result = await recognizeCard(bitmap, undefined, {
 				isAuthenticated,
-				skipBlurCheck: true
+				skipBlurCheck: true,
+				gameHint
 			});
 			item.result = result;
 			if (result.card_id && result.card) {

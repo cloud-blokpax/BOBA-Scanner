@@ -34,6 +34,20 @@ const { MOCK_CARDS } = vi.hoisted(() => {
 			set_code: 'ALPHA', card_number: 'ALP-003', parallel: null, power: 60,
 			rarity: 'common', weapon_type: null, battle_zone: null, image_url: null,
 			created_at: '2024-01-01'
+		},
+		// Wonders cards — same numeric prefix as BoBA ALP-* to force collisions
+		// in fuzzy search so tests can verify the game_id filter.
+		{
+			id: 'w1', name: 'Bellator', hero_name: null, athlete_name: null,
+			set_code: 'CLA', card_number: '78/402', parallel: null, power: 4,
+			rarity: 'rare', weapon_type: null, battle_zone: null, image_url: null,
+			created_at: '2024-01-01', game_id: 'wonders'
+		},
+		{
+			id: 'w2', name: 'Bright Robin', hero_name: null, athlete_name: null,
+			set_code: 'CLA', card_number: '79/402', parallel: null, power: 2,
+			rarity: 'common', weapon_type: null, battle_zone: null, image_url: null,
+			created_at: '2024-01-01', game_id: 'wonders'
 		}
 	];
 
@@ -103,7 +117,7 @@ describe('card-db integration', () => {
 
 	it('loads cards from mock IDB data plus play cards', () => {
 		const cards = getAllCards();
-		expect(cards.length).toBe(514); // 5 named + 100 filler + 409 play cards from local JSON fallback
+		expect(cards.length).toBe(516); // 5 boba + 2 wonders + 100 filler + 409 play cards from local JSON fallback
 	});
 
 	it('findCard returns exact match by card number', () => {
@@ -200,5 +214,34 @@ describe('card-db integration', () => {
 		const results = searchCards('Front Run');
 		expect(results.length).toBeGreaterThanOrEqual(1);
 		expect(results[0].name).toBe('Front Run');
+	});
+
+	// Auto-detect scans load multiple games' cards into the shared index;
+	// the validation fallbacks must scope results to the detected game or
+	// a Wonders number (e.g. "78/402") will match BoBA cards with "78" and
+	// then be rejected on hero-name mismatch, producing the "not found in
+	// database" bug.
+	it('findSimilarCardNumbers filters by gameId when provided', () => {
+		const wondersOnly = findSimilarCardNumbers('78/402', 2, 'wonders');
+		expect(wondersOnly.length).toBeGreaterThan(0);
+		expect(wondersOnly.every((r) => (r.card.game_id || 'boba') === 'wonders')).toBe(true);
+
+		const bobaOnly = findSimilarCardNumbers('78/402', 2, 'boba');
+		expect(bobaOnly.every((r) => (r.card.game_id || 'boba') === 'boba')).toBe(true);
+	});
+
+	it('findSimilarCardNumbers without gameId returns cross-game matches', () => {
+		const all = findSimilarCardNumbers('78/402', 4);
+		const wondersHits = all.filter((r) => r.card.game_id === 'wonders');
+		expect(wondersHits.length).toBeGreaterThan(0);
+	});
+
+	it('searchCards filters by gameId when provided', () => {
+		const wondersOnly = searchCards('Bellator', 10, 'wonders');
+		expect(wondersOnly.length).toBe(1);
+		expect(wondersOnly[0].game_id).toBe('wonders');
+
+		const bobaOnly = searchCards('Bellator', 10, 'boba');
+		expect(bobaOnly.length).toBe(0);
 	});
 });

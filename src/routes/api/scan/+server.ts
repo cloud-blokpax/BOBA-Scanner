@@ -18,8 +18,33 @@ import {
 	MULTI_GAME_SYSTEM_PROMPT,
 	MULTI_GAME_USER_PROMPT
 } from '$lib/games/multi-game-prompt';
-import { resolveGameConfig, isValidGameId } from '$lib/games/resolver';
+import { resolveGameConfig, isValidGameId, getAllGameConfigs } from '$lib/games/resolver';
 import type { RequestHandler } from './$types';
+
+/**
+ * Probe each registered game's card-number extractor against a candidate
+ * number string. Returns the first game whose extractor accepts the format,
+ * or 'boba' if none do. Used as a fallback when Claude omits the `game`
+ * field during auto-detect.
+ */
+async function disambiguateGameFromCardNumber(candidate: unknown): Promise<string> {
+	if (typeof candidate !== 'string' || !candidate.trim()) return 'boba';
+	try {
+		const configs = await getAllGameConfigs();
+		// Prefer non-BoBA matches so a Wonders-shaped number isn't masked by
+		// BoBA's permissive numeric-only fallback.
+		const nonBoba = configs.filter((c) => c.id !== 'boba');
+		for (const cfg of nonBoba) {
+			if (cfg.extractCardNumber(candidate)) return cfg.id;
+		}
+		for (const cfg of configs) {
+			if (cfg.id === 'boba' && cfg.extractCardNumber(candidate)) return 'boba';
+		}
+	} catch (err) {
+		console.debug('[api/scan] Game disambiguation failed, defaulting to boba:', err);
+	}
+	return 'boba';
+}
 
 // Claude Haiku vision call + sharp CDR + rate limiting = 5-12s typical
 export const config = { maxDuration: 60 };
@@ -175,14 +200,21 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		const cardData = toolUse.input as Record<string, unknown>;
 
 		// ── Determine which game the card belongs to ────────────
-		// Priority: explicit gameIdParam > Claude's `game` field > default 'boba'
+		// Priority: explicit gameIdParam > Claude's `game` field >
+		//          extractor-based disambiguation on the returned number >
+		//          default 'boba'.
+		// The extractor fallback catches the case where auto-detect Claude
+		// returns a Wonders-shaped collector number without the `game` field,
+		// which would otherwise route the card to BoBA validation and fail.
 		let detectedGameId: string;
 		if (gameIdParam && isValidGameId(gameIdParam)) {
 			detectedGameId = gameIdParam;
 		} else if (typeof cardData.game === 'string' && isValidGameId(cardData.game)) {
 			detectedGameId = cardData.game;
 		} else {
-			detectedGameId = 'boba';
+			detectedGameId = await disambiguateGameFromCardNumber(
+				cardData.card_number ?? cardData.collector_number
+			);
 		}
 
 		// ── Normalize Wonders field aliases into the common shape ─
