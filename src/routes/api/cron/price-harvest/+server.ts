@@ -28,6 +28,7 @@ import {
 	filterRelevantWondersListings,
 	scoreWondersListingMatch,
 } from '$lib/server/ebay-query-wonders';
+import { captureCardImage } from '$lib/services/image-harvester';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby supports up to 60s
@@ -508,6 +509,8 @@ async function refreshCardPrice(
 			title?: string;
 			price?: { value?: string };
 			buyingOptions?: string[];
+			image?: { imageUrl?: string };
+			thumbnailImages?: Array<{ imageUrl?: string }>;
 		}> = data.itemSummaries || [];
 
 		const ebayResultsRaw = rawItems.length;
@@ -516,6 +519,11 @@ async function refreshCardPrice(
 		const items = isWonders
 			? filterRelevantWondersListings(rawItems, wondersCardInfo)
 			: filterRelevantListings(rawItems, card);
+
+		// Piggyback: harvest image from first relevant listing (BoBA only). Fire-and-forget.
+		if (!isWonders && items.length > 0) {
+			void captureCardImage(card.id, items[0], 'boba');
+		}
 
 		// Separate by buying option
 		const fixedPriceItems = items.filter(item =>
@@ -755,10 +763,17 @@ async function refreshPlayCardPrice(
 			title?: string;
 			price?: { value?: string };
 			buyingOptions?: string[];
+			image?: { imageUrl?: string };
+			thumbnailImages?: Array<{ imageUrl?: string }>;
 		}> = data.itemSummaries || [];
 
 		const ebayResultsRaw = rawItems.length;
 		const items = filterRelevantListings(rawItems, card);
+
+		// Piggyback: harvest image from first relevant listing. Fire-and-forget.
+		if (items.length > 0) {
+			void captureCardImage(card.id, items[0], 'boba');
+		}
 
 		const fixedPriceItems = items.filter(item =>
 			item.buyingOptions?.includes('FIXED_PRICE')
