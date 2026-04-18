@@ -34,11 +34,15 @@ interface PlayCardRaw {
  * skip incremental refresh and do a full fetch instead.
  *
  * WHEN TO BUMP: After any bulk data migration that touches existing rows
- * without updating `updated_at` (e.g. backfilling athlete_name, re-seeding).
+ * without updating `updated_at` (e.g. backfilling athlete_name, re-seeding),
+ * OR after any change to client-side card-db filter logic that could have
+ * polluted existing IDB caches.
  *
- * Last bumped: 2026-04-08 (athlete_name backfill across all sets).
+ * Last bumped: 2026-04-18 (Phase 0 play-card filter fix — flushes caches
+ *   that had Wonders items/spells/lands stripped under the pre-fix filter).
+ * Previously:  2026-04-08 (athlete_name backfill across all sets).
  */
-const CARD_DATA_EPOCH = '2026-04-08T00:00:00.000Z';
+const CARD_DATA_EPOCH = '2026-04-18T00:00:00.000Z';
 
 /**
  * Map a play card record to the Card interface so it can be indexed
