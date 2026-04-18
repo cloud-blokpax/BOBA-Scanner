@@ -32,11 +32,36 @@ jobs:
 
       - name: Check bundle size
         run: |
-          # Client JS bundle size check (excludes CSS, sourcemaps, server code)
-          JS_TOTAL=$(find .svelte-kit/output/client/_app/ -name '*.js' -exec du -cb {} + 2>/dev/null | tail -1 | awk '{print $1}')
-          JS_MAX=1400000  # 1.4MB limit for client JS
-          echo "Client JS bundle: ${JS_TOTAL:-0} bytes (limit: $JS_MAX)"
-          if [ "${JS_TOTAL:-0}" -gt "$JS_MAX" ]; then
-            echo "::error::Client JS bundle ${JS_TOTAL} exceeds limit of $JS_MAX bytes"
+          # ── Entry chunk budget (first-paint metric) ──────────────
+          # This is the load-bearing check. Entry = bootstrap JS that
+          # loads on every page visit. Growth here directly hits TTI on
+          # mobile. Tight by design.
+          ENTRY_JS=$(find .svelte-kit/output/client/_app/immutable/entry -name '*.js' -exec du -cb {} + 2>/dev/null | tail -1 | awk '{print $1}')
+          ENTRY_MAX=200000  # baseline ~17KB post-prompt-leak fix; 200KB gives headroom for the remaining launch features
+          echo "Client entry JS: ${ENTRY_JS:-0} bytes (limit: $ENTRY_MAX)"
+          if [ "${ENTRY_JS:-0}" -gt "$ENTRY_MAX" ]; then
+            echo "::error::Client entry JS ${ENTRY_JS} exceeds limit of $ENTRY_MAX bytes. This is the first-paint budget — if this grew, check vite.config.ts and stats.html (CI artifact) to find what got eagerly imported."
             exit 1
           fi
+
+          # ── Cumulative client JS (catastrophic-growth tripwire) ──
+          # Secondary check. Lazy chunks count here but not in entry.
+          # Tripping this means someone added a heavy dep or shipped a
+          # large blob into client code. 1.7MB gives headroom for the
+          # remaining launch features (pack EV, etc.).
+          JS_TOTAL=$(find .svelte-kit/output/client/_app -name '*.js' -exec du -cb {} + 2>/dev/null | tail -1 | awk '{print $1}')
+          JS_MAX=1700000
+          echo "Client total JS: ${JS_TOTAL:-0} bytes (limit: $JS_MAX)"
+          if [ "${JS_TOTAL:-0}" -gt "$JS_MAX" ]; then
+            echo "::error::Client total JS ${JS_TOTAL} exceeds limit of $JS_MAX bytes. Download the 'bundle-stats' CI artifact and open stats.html to see what grew."
+            exit 1
+          fi
+
+      - name: Upload bundle stats artifact
+        if: always()  # upload even on failure — most useful when the check fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-stats
+          path: .svelte-kit/stats.html
+          retention-days: 14
+          if-no-files-found: warn

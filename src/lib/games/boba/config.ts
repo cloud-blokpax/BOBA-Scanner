@@ -11,7 +11,6 @@
 
 import type { GameConfig } from '../types';
 import { KNOWN_PREFIXES, extractCardNumber } from './extract';
-import { BOBA_CARD_ID_TOOL, BOBA_SYSTEM_PROMPT, BOBA_USER_PROMPT } from './prompt';
 import { bobaTheme } from './theme';
 import { bobaNavItems, bobaProtectedRoutes } from './nav';
 import {
@@ -37,11 +36,6 @@ const bobaConfig: GameConfig = {
 	// ── Config Bundles ─────────────────────────────────────────
 	scanConfig: BOBA_SCAN_CONFIG,
 	pipelineConfig: BOBA_PIPELINE_CONFIG,
-
-	// ── AI Identification (Tier 3) ─────────────────────────────
-	claudeSystemPrompt: BOBA_SYSTEM_PROMPT,
-	claudeUserPrompt: BOBA_USER_PROMPT,
-	cardIdTool: BOBA_CARD_ID_TOOL,
 
 	// ── eBay Integration ───────────────────────────────────────
 	ebaySearchKeywords: ['BoBA', 'Bo Jackson Battle Arena', 'BOBA card'],
