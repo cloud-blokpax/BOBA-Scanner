@@ -13,6 +13,42 @@ import { findCard, getAllCards, wondersCardNumberAlternates } from './card-db';
 import { findSimilarCardNumbers, searchCards } from './card-db-search';
 import { trigramSimilarity, fuzzyNameMatch } from '$lib/utils/fuzzy-match';
 
+// ── Digit-substitution candidate generation ─────────────────
+// Font-based digit confusions observed in production scans. Groups are
+// mutually-confusable sets, not asymmetric pairs — a read `8` could be
+// a real `6` or `0`, not just `3` or `5`. Add to these groups only when
+// you see a misread in prod, not speculatively.
+const AMBIGUOUS_DIGIT_GROUPS: readonly string[][] = [
+	['3', '5', '8'],      // Existence serif 3↔5 (confirmed: clock, token)
+	['0', '6', '8', '9'], // rounded-digit confusions at low resolution
+];
+
+/**
+ * Generate card-number candidates by single-digit substitution on visually
+ * ambiguous digits. Returns a Set (deduped) excluding the original input.
+ *
+ * Example: "T-050" → Set { "T-030", "T-080", "T-058", "T-056", "T-059", "T-853", ... }
+ *
+ * Only ONE digit is swapped per candidate. Multi-digit errors are the job
+ * of the Levenshtein-2 fuzzy fallback — don't duplicate that work here.
+ *
+ * Non-digit characters (letters, dashes, slashes) pass through unchanged.
+ */
+function generateDigitSubstitutionCandidates(cardNumber: string): Set<string> {
+	const out = new Set<string>();
+	for (let i = 0; i < cardNumber.length; i++) {
+		const ch = cardNumber[i];
+		for (const group of AMBIGUOUS_DIGIT_GROUPS) {
+			if (!group.includes(ch)) continue;
+			for (const alt of group) {
+				if (alt === ch) continue;
+				out.add(cardNumber.slice(0, i) + alt + cardNumber.slice(i + 1));
+			}
+		}
+	}
+	return out;
+}
+
 // ── Types ───────────────────────────────────────────────────
 
 export interface CrossValidationInput {
@@ -179,7 +215,59 @@ export function crossValidateCardResult(
 			};
 		}
 
-		// ── Step 2b: Trigram similarity for card numbers with unusual prefixes ──
+		// ── Step 2b: Digit-substitution candidates ──
+		// Targeted single-digit swap on visually ambiguous pairs (3↔5, 6↔8, etc).
+		// Runs only when Levenshtein-2 fuzzy returned nothing — catches cases where
+		// the misread changed the leading characters enough that the prefix index
+		// in findSimilarCardNumbers excluded the real card. Hero-name verification
+		// is REQUIRED — at prod scale there are 12K+ single-digit-adjacent card
+		// pairs in BoBA alone, so name match is the only safe disambiguator.
+		if (fuzzyResults.length === 0 && ai.heroName) {
+			const subCandidates = generateDigitSubstitutionCandidates(ai.cardNumber);
+			let bestSubMatch: Card | null = null;
+			let bestCandidateUsed = '';
+
+			for (const candidate of subCandidates) {
+				// Thread Wonders format alternates so "130" substitution can find
+				// Existence's stored-plain "130" AND any future-stored "130/401".
+				const lookupForms = gameId === 'wonders'
+					? wondersCardNumberAlternates(candidate)
+					: [candidate];
+
+				for (const form of lookupForms) {
+					const match = findCard(form, null, gameId);
+					if (!match) continue;
+
+					const nameScore = fuzzyNameMatch(
+						match.hero_name || match.name || '',
+						ai.heroName
+					);
+					if (nameScore <= 0.7) continue; // name mismatch — keep looking
+
+					// Found a name-verified substitution. Prefer the first one found
+					// (ordering of AMBIGUOUS_DIGIT_GROUPS is by observed frequency).
+					bestSubMatch = match;
+					bestCandidateUsed = candidate;
+					break;
+				}
+				if (bestSubMatch) break;
+			}
+
+			if (bestSubMatch) {
+				return {
+					card: bestSubMatch,
+					confidence: Math.min(ai.confidence, 0.75),
+					validationMethod: 'fuzzy_match',
+					warnings: [
+						`Digit-substitution matched: AI read "${ai.cardNumber}", ` +
+						`corrected to "${bestSubMatch.card_number}" via ambiguous-digit ` +
+						`swap (candidate "${bestCandidateUsed}", name verified: "${ai.heroName}").`
+					]
+				};
+			}
+		}
+
+		// ── Step 2c: Trigram similarity for card numbers with unusual prefixes ──
 		if (fuzzyResults.length === 0) {
 			let bestTrigram: { card: Card; similarity: number } | null = null;
 			for (const card of allCards) {
