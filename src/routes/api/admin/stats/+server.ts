@@ -94,9 +94,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			.eq('success', false),
 		// Total cards in DB (live count)
 		admin.from('cards').select('id', { count: 'exact', head: true }),
-		// Pending scan flags
-		admin.from('scan_flags').select('id', { count: 'exact', head: true })
-			.eq('status', 'pending'),
+		// Pending disputes (formerly scan_flags).
+		// scan_disputes isn't in database.ts yet (Phase 0.5 regeneration pending).
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(admin as any).from('scan_disputes').select('id', { count: 'exact', head: true })
+			.eq('resolution', 'pending'),
 		// Recent signups (last 10)
 		admin.from('users').select('id, email, name, created_at')
 			.order('created_at', { ascending: false })

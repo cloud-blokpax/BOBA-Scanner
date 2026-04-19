@@ -25,19 +25,96 @@
 		const client = getSupabase();
 		if (!client || !userId) return;
 		try {
-			let query = client
-				.from('scans').select('id, card_id, hero_name, card_number, scan_method, game_id, created_at')
-				.not('card_id', 'is', null).order('created_at', { ascending: false }).limit(10);
+			// Pull scans + their latest resolution + winning tier result in one round-trip.
+			// Scans without a resolution (pending, abandoned) are filtered client-side.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let query = (client as any)
+				.from('scans')
+				.select(`
+					id,
+					game_id,
+					captured_at,
+					outcome,
+					resolution:scan_resolutions!scan_id(
+						card_id,
+						variant,
+						confirmed_at
+					),
+					tier_result:scan_tier_results!scan_id(
+						engine,
+						parsed_card_id,
+						parsed_confidence,
+						latency_ms,
+						raw_output
+					)
+				`)
+				.order('captured_at', { ascending: false })
+				.limit(20);  // Over-fetch because we filter client-side
 			if (gameId) query = query.eq('game_id', gameId);
 			const { data: rows, error: err } = await query;
 			if (err) throw err;
-			supabaseScans = (rows || []).map(row => ({
-				...row,
-				timestamp: new Date(row.created_at).getTime(),
-				imageUrl: row.card_id ? getCardImageUrl({ id: row.card_id }) : null,
-				cardId: row.card_id, heroName: row.hero_name, cardNumber: row.card_number,
-				confidence: 1, method: row.scan_method || 'unknown', processingMs: 0, success: true,
-			}));
+
+			// Embedded selects return arrays. Take the first (most recent) resolution
+			// and the highest-confidence tier result per scan. Filter scans that
+			// never got a resolution — they're pending/abandoned.
+			type ResolutionRow = { card_id: string | null; variant: string | null; confirmed_at: string | null };
+			type TierRow = {
+				engine: string | null;
+				parsed_card_id: string | null;
+				parsed_confidence: number | null;
+				latency_ms: number | null;
+				raw_output: Record<string, unknown> | null;
+			};
+			type ScanRow = {
+				id: string;
+				game_id: string;
+				captured_at: string;
+				outcome: string;
+				resolution: ResolutionRow | ResolutionRow[] | null;
+				tier_result: TierRow | TierRow[] | null;
+			};
+
+			supabaseScans = ((rows as ScanRow[] | null) || [])
+				.map((row) => {
+					const resolution = Array.isArray(row.resolution) ? row.resolution[0] : row.resolution;
+					const tierResults: TierRow[] = Array.isArray(row.tier_result)
+						? row.tier_result
+						: row.tier_result
+							? [row.tier_result]
+							: [];
+					// Pick the tier result whose parsed_card_id matches the resolved card_id,
+					// falling back to the highest-confidence one.
+					const winning =
+						tierResults.find((t) => t?.parsed_card_id === resolution?.card_id) ??
+						[...tierResults].sort(
+							(a, b) => (b?.parsed_confidence ?? 0) - (a?.parsed_confidence ?? 0)
+						)[0];
+
+					if (!resolution?.card_id) return null; // No confirmed card yet
+
+					const rawOut = winning?.raw_output as
+						| { hero_name?: string; card_number?: string }
+						| undefined;
+					return {
+						id: row.id,
+						card_id: resolution.card_id,
+						hero_name: rawOut?.hero_name ?? null,
+						card_number: rawOut?.card_number ?? null,
+						timestamp: new Date(row.captured_at).getTime(),
+						created_at: row.captured_at,
+						imageUrl: resolution.card_id ? getCardImageUrl({ id: resolution.card_id }) : null,
+						cardId: resolution.card_id,
+						heroName: rawOut?.hero_name ?? null,
+						cardNumber: rawOut?.card_number ?? null,
+						confidence: winning?.parsed_confidence ?? 1,
+						method: winning?.engine ?? 'unknown',
+						scan_method: winning?.engine ?? 'unknown',
+						processingMs: winning?.latency_ms ?? 0,
+						success: true,
+					} as RecentScan;
+				})
+				.filter((s): s is RecentScan => s !== null)
+				.slice(0, 10);
 		} catch (err) { console.debug('[home] Failed to load recent scans:', err); }
 		supabaseScansLoaded = true;
 	}

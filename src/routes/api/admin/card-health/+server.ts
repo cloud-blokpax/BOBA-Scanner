@@ -2,7 +2,7 @@
  * GET /api/admin/card-health — Card metrics for admin Cards tab
  *
  * Returns price_cache counts, scan flag counts, and pending flags list.
- * Uses service-role client to bypass RLS on price_cache / scan_flags.
+ * Uses service-role client to bypass RLS on price_cache / scan_disputes.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -19,15 +19,18 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const sevenDaysAgo = new Date();
 	sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+	// scan_disputes isn't in database.ts yet (Phase 0.5 regeneration pending)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const adminUntyped = admin as any;
 	const [cardsRes, pricesRes, stalePricesRes, flagsCountRes, flagsRes] = await Promise.all([
 		admin.from('cards').select('id', { count: 'exact', head: true }),
 		admin.from('price_cache').select('id', { count: 'exact', head: true }),
 		admin.from('price_cache').select('id', { count: 'exact', head: true })
 			.lt('fetched_at', sevenDaysAgo.toISOString()),
-		admin.from('scan_flags').select('id', { count: 'exact', head: true })
-			.eq('status', 'pending'),
-		admin.from('scan_flags').select('*')
-			.eq('status', 'pending')
+		adminUntyped.from('scan_disputes').select('id', { count: 'exact', head: true })
+			.eq('resolution', 'pending'),
+		adminUntyped.from('scan_disputes').select('*')
+			.eq('resolution', 'pending')
 			.order('created_at', { ascending: false })
 			.limit(50)
 	]);
