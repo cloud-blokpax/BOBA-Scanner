@@ -32,6 +32,11 @@ import {
 } from './recognition-workers';
 import { runTier1, runTier2, runTier3, type ScanContext } from './recognition-tiers';
 import { incrementPersona } from './persona';
+import {
+	getOrOpenActiveSession,
+	recordScan as writerRecordScan,
+	recordTierResult as writerRecordTierResult
+} from './scan-writer';
 
 // Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
@@ -41,10 +46,92 @@ export { disableFuzzyHashRpc, isFuzzyHashRpcDisabled } from './recognition-tiers
 let _upsertHashRpcDisabled = false;
 
 /**
- * Persist a successful scan to Supabase for cross-device recent scans.
+ * Persist a scan to the new 6-table schema (Phase 0.1).
  * Non-blocking, best-effort — does not affect scan flow.
+ *
+ * Produces: one scan_sessions row (cached across the camera-mount),
+ * one scans row per shutter-press, one scan_tier_results row per tier
+ * that actually ran (hash / ocr / claude).
  */
-async function logScanToSupabase(result: ScanResult): Promise<void> {
+async function logScanToSupabaseNew(result: ScanResult): Promise<void> {
+	const uid = userId();
+	if (!uid || !result.card_id) return;
+
+	const sessionId = await getOrOpenActiveSession({
+		gameId: result.game_id ?? 'boba'
+	});
+	if (!sessionId) return;
+
+	const scanId = await writerRecordScan({
+		sessionId,
+		gameId: result.game_id ?? 'boba',
+		captureLatencyMs: result.processing_ms ?? null
+		// capture_context, quality_signals, photo_storage_path stay null
+		// until Phase 3 (camera telemetry) and 0.4 (blob storage) land.
+	});
+	if (!scanId) return;
+
+	// Map the legacy scan_method -> tier + engine for scan_tier_results.
+	// This preserves which tier resolved the scan even though the recognition
+	// pipeline hasn't been restructured to emit per-tier records yet.
+	// In a later session we'll instrument each tier function to call
+	// writerRecordTierResult directly; for now we emit one "final result"
+	// row that captures what won.
+	const { tier, engine, engineVersion } = scanMethodToTier(result);
+
+	// Fire-and-forget; errors logged inside writerRecordTierResult.
+	void writerRecordTierResult({
+		scanId,
+		tier,
+		engine,
+		engineVersion,
+		rawOutput: {
+			card_id: result.card_id,
+			variant: result.variant ?? null,
+			confidence: result.confidence ?? null,
+			hero_name: result.card?.hero_name ?? null,
+			card_number: result.card?.card_number ?? null,
+			scan_method: result.scan_method ?? null
+		},
+		latencyMs: result.processing_ms ?? null
+	});
+
+	// Preserve the existing persona increment behavior
+	const client = getSupabase();
+	if (client) incrementPersona(client, 'collector');
+}
+
+/**
+ * Map legacy scan_method to the new (tier, engine, engineVersion) triple.
+ * The recognition pipeline will eventually emit these directly, but for
+ * now we map at persistence time.
+ */
+function scanMethodToTier(result: ScanResult): {
+	tier: 'tier1_hash' | 'tier2_ocr' | 'tier3_claude';
+	engine: 'phash' | 'tesseract_v5' | 'claude_haiku';
+	engineVersion: string;
+} {
+	switch (result.scan_method) {
+		case 'hash_cache':
+			return { tier: 'tier1_hash', engine: 'phash', engineVersion: 'phash-v1' };
+		case 'tesseract':
+			return { tier: 'tier2_ocr', engine: 'tesseract_v5', engineVersion: 'tesseract-5' };
+		case 'claude':
+			return { tier: 'tier3_claude', engine: 'claude_haiku', engineVersion: 'claude-haiku-unknown' };
+		case 'manual':
+		default:
+			// Manual and unknown get recorded as Tier 3 Claude with engineVersion='manual'
+			// to keep the schema's NOT NULL constraints happy without lying about method.
+			return { tier: 'tier3_claude', engine: 'claude_haiku', engineVersion: 'manual' };
+	}
+}
+
+/**
+ * LEGACY — writes to the dropped pre-0.1 `scans` table shape.
+ * Retained only as a rollback path while `new_scan_pipeline` flag is off.
+ * Remove entirely in Phase 1 once new writer has baked for 48h.
+ */
+async function logScanToSupabaseLegacy(result: ScanResult): Promise<void> {
 	const uid = userId();
 	if (!uid || !result.card_id) return;
 
@@ -169,8 +256,16 @@ export async function recognizeCard(
 		});
 
 		// Persist to Supabase for cross-device consistency (non-blocking)
+		// Feature-flagged dual-write: new pipeline when enabled, legacy otherwise.
+		// Both paths are fire-and-forget; neither affects scan completion.
 		if (final.card_id) {
-			logScanToSupabase(final);
+			void isNewScanPipelineEnabled().then((enabled) => {
+				if (enabled) {
+					logScanToSupabaseNew(final);
+				} else {
+					logScanToSupabaseLegacy(final);
+				}
+			});
 		}
 
 		// Track scan performance metrics for operational monitoring
@@ -383,6 +478,22 @@ async function writeHashToAllLayers(
 		} catch (err) {
 			console.debug('[scan] Reference image preparation failed:', err);
 		}
+	}
+}
+
+/**
+ * Phase 0.3 rollout flag. Returns true when the new scan-writer should run.
+ * Default off until admin-verified; flip for authenticated users in Phase 1.
+ */
+async function isNewScanPipelineEnabled(): Promise<boolean> {
+	try {
+		// Lazy dynamic import to avoid a potential circular dependency with
+		// feature-flags (which imports Supabase, also imported by scan-writer).
+		const { featureEnabled } = await import('$lib/stores/feature-flags.svelte');
+		return featureEnabled('new_scan_pipeline')();
+	} catch {
+		// Store not available (first load, SSR, etc.) — default off
+		return false;
 	}
 }
 
