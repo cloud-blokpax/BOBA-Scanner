@@ -82,7 +82,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Only upload to storage if the submission was accepted
 	if (result?.accepted) {
 		const { error: uploadErr } = await client.storage
-			.from('scans')
+			.from('scan-images')
 			.upload(storagePath, cleanBuffer, {
 				contentType: 'image/jpeg',
 				upsert: true
