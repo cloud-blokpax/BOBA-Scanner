@@ -11,6 +11,7 @@ migration — check them in with the code change that depends on them.
 | 1 | `001_variant_harvest_seed.sql` | Create `variant_harvest_seed` table and populate CF / FF / OCM rows from Wonders card collector-number patterns (~892 rows). |
 | 2 | `002_get_harvest_candidates_rpc.sql` | Replace the harvester RPC so it UNIONs the seed table and excludes paper for A1-/P- Wonders cards. |
 | 3 | `003_cleanup_polluted_paper_rows.sql` | Delete the ~83 polluted `paper` rows in `price_cache` for A1-/P- Wonders cards. |
+| 4 | `004_add_new_scan_pipeline_flag.sql` | Register the `new_scan_pipeline` feature flag (Phase 0.3) so the new client-side scan-writer can be rolled out admin-first. |
 
 ### Deploy order
 
