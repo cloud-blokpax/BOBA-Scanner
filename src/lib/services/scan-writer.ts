@@ -59,6 +59,13 @@ export interface RecordScanInput {
 	qualitySignals?: Record<string, unknown>;
 	captureLatencyMs?: number | null;
 	extras?: Record<string, unknown>;
+
+	/**
+	 * Optional source photo. If provided, uploaded asynchronously to
+	 * scan-images/{user_id}/{scan_id}.jpg and the path patched back
+	 * into the scans row. Upload failure does not fail the scan.
+	 */
+	photoBlob?: Blob | null;
 }
 
 export type ScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
@@ -292,6 +299,14 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 			});
 			return null;
 		}
+
+		// Fire-and-forget photo upload if a blob was supplied.
+		// The scan row exists now; upload success patches in the path.
+		if (input.photoBlob) {
+			// eslint-disable-next-line no-void
+			void uploadScanPhoto(data.id, uid, input.photoBlob);
+		}
+
 		return data.id;
 	} catch (err) {
 		logFailure('recordScan', err, { userId: uid, sessionId: input.sessionId });
@@ -359,4 +374,104 @@ export async function closeSession(sessionId?: string): Promise<void> {
 	}
 
 	if (targetId === _activeSessionId) resetActiveSession();
+}
+
+/**
+ * Upload a scan's source photo to Supabase Storage and patch the path
+ * back into the scans row.
+ *
+ * Best-effort. Never throws. Logs and returns silently on failure.
+ * Runs asynchronously from recordScan — the caller doesn't await this.
+ *
+ * Path: scan-images/{user_id}/{scan_id}.jpg
+ * Compression: resized to max 1024px long-edge, JPEG quality 0.85
+ */
+async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise<void> {
+	const client = getSupabase();
+	if (!client) return;
+
+	try {
+		// Resize in a canvas — keeps upload size predictable.
+		const resized = await resizeBlobForUpload(blob, 1024, 0.85);
+		if (!resized) {
+			logFailure('uploadScanPhoto.resize', new Error('resize returned null'), { scanId });
+			return;
+		}
+
+		const path = `${uid}/${scanId}.jpg`;
+		const { error: uploadErr } = await client.storage
+			.from('scan-images')
+			.upload(path, resized, {
+				contentType: 'image/jpeg',
+				upsert: true,
+				cacheControl: '3600'
+			});
+
+		if (uploadErr) {
+			logFailure('uploadScanPhoto.upload', uploadErr, { scanId, path });
+			return;
+		}
+
+		// Patch the scans row with the storage path + size.
+		const untypedClient = untyped();
+		if (!untypedClient) return;
+		const { error: updateErr } = await untypedClient
+			.from('scans')
+			.update({
+				photo_storage_path: path,
+				photo_bytes: resized.size
+			})
+			.eq('id', scanId);
+
+		if (updateErr) {
+			logFailure('uploadScanPhoto.patchPath', updateErr, { scanId, path });
+		}
+	} catch (err) {
+		logFailure('uploadScanPhoto', err, { scanId });
+	}
+}
+
+/**
+ * Resize a Blob to max `maxLongEdge` pixels, JPEG-encoded at `quality`.
+ * Returns null if the input can't be decoded.
+ *
+ * Uses ImageBitmap + OffscreenCanvas when available for Worker-safety.
+ * Falls back to HTMLCanvas in environments that don't support Offscreen.
+ */
+async function resizeBlobForUpload(
+	blob: Blob,
+	maxLongEdge: number,
+	quality: number
+): Promise<Blob | null> {
+	try {
+		const bitmap = await createImageBitmap(blob);
+		const longEdge = Math.max(bitmap.width, bitmap.height);
+		const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+		const width = Math.round(bitmap.width * scale);
+		const height = Math.round(bitmap.height * scale);
+
+		// Prefer OffscreenCanvas; fall back to HTMLCanvas on Safari < 16.4
+		if (typeof OffscreenCanvas !== 'undefined') {
+			const canvas = new OffscreenCanvas(width, height);
+			const ctx = canvas.getContext('2d');
+			if (!ctx) { bitmap.close(); return null; }
+			ctx.drawImage(bitmap, 0, 0, width, height);
+			bitmap.close();
+			return await canvas.convertToBlob({ type: 'image/jpeg', quality });
+		}
+
+		const canvas = document.createElement('canvas');
+		canvas.width = width;
+		canvas.height = height;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) { bitmap.close(); return null; }
+		ctx.drawImage(bitmap, 0, 0, width, height);
+		bitmap.close();
+		return await new Promise<Blob | null>(resolve =>
+			canvas.toBlob(b => resolve(b), 'image/jpeg', quality)
+		);
+	} catch (err) {
+		console.debug('[scan-writer] resize failed', err);
+		return null;
+	}
 }

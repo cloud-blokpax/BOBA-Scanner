@@ -53,7 +53,10 @@ let _upsertHashRpcDisabled = false;
  * one scans row per shutter-press, one scan_tier_results row per tier
  * that actually ran (hash / ocr / claude).
  */
-async function logScanToSupabaseNew(result: ScanResult): Promise<void> {
+async function logScanToSupabaseNew(
+	result: ScanResult,
+	sourceImage?: File | Blob | ImageBitmap
+): Promise<void> {
 	const uid = userId();
 	if (!uid || !result.card_id) return;
 
@@ -62,12 +65,16 @@ async function logScanToSupabaseNew(result: ScanResult): Promise<void> {
 	});
 	if (!sessionId) return;
 
+	// Convert ImageBitmap to Blob if necessary. File and Blob pass through.
+	const photoBlob = await normalizeToBlob(sourceImage);
+
 	const scanId = await writerRecordScan({
 		sessionId,
 		gameId: result.game_id ?? 'boba',
-		captureLatencyMs: result.processing_ms ?? null
-		// capture_context, quality_signals, photo_storage_path stay null
-		// until Phase 3 (camera telemetry) and 0.4 (blob storage) land.
+		captureLatencyMs: result.processing_ms ?? null,
+		photoBlob
+		// capture_context, quality_signals stay null until Phase 3
+		// (camera telemetry) and Phase 4 (quality-gate worker) land.
 	});
 	if (!scanId) return;
 
@@ -261,7 +268,7 @@ export async function recognizeCard(
 		if (final.card_id) {
 			void isNewScanPipelineEnabled().then((enabled) => {
 				if (enabled) {
-					logScanToSupabaseNew(final);
+					logScanToSupabaseNew(final, imageSource);
 				} else {
 					logScanToSupabaseLegacy(final);
 				}
@@ -478,6 +485,41 @@ async function writeHashToAllLayers(
 		} catch (err) {
 			console.debug('[scan] Reference image preparation failed:', err);
 		}
+	}
+}
+
+/**
+ * Coerce any recognition input shape into a Blob suitable for upload.
+ * Returns undefined if no source was provided or conversion failed.
+ */
+async function normalizeToBlob(
+	source?: File | Blob | ImageBitmap
+): Promise<Blob | undefined> {
+	if (!source) return undefined;
+	if (source instanceof Blob) return source; // File extends Blob, handled here
+
+	// ImageBitmap path — draw to a canvas and extract.
+	try {
+		if (typeof OffscreenCanvas !== 'undefined') {
+			const canvas = new OffscreenCanvas(source.width, source.height);
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return undefined;
+			ctx.drawImage(source, 0, 0);
+			return await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.95 });
+		}
+
+		const canvas = document.createElement('canvas');
+		canvas.width = source.width;
+		canvas.height = source.height;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return undefined;
+		ctx.drawImage(source, 0, 0);
+		return await new Promise<Blob | undefined>(resolve =>
+			canvas.toBlob(b => resolve(b ?? undefined), 'image/jpeg', 0.95)
+		);
+	} catch (err) {
+		console.debug('[recognition] normalizeToBlob failed', err);
+		return undefined;
 	}
 }
 
