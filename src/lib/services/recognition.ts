@@ -146,6 +146,9 @@ async function logScanToSupabaseLegacy(result: ScanResult): Promise<void> {
 	if (!client) return;
 
 	try {
+		// TODO: migrate to new scan schema (Phase 1) — this legacy path writes to
+		// columns that no longer exist post-0.1. Retained until new_scan_pipeline
+		// flag is default-on for 48h, then delete this function entirely.
 		const { error: scanError } = await client.from('scans').insert({
 			user_id: uid,
 			card_id: result.card_id,
@@ -155,7 +158,7 @@ async function logScanToSupabaseLegacy(result: ScanResult): Promise<void> {
 			confidence: result.confidence ?? null,
 			processing_ms: result.processing_ms ?? null,
 			game_id: result.game_id || 'boba'
-		});
+		} as never);
 		if (scanError) {
 			console.error('[scan] Supabase scan log FAILED:', scanError.message);
 		}

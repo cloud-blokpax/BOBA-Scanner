@@ -77,33 +77,216 @@ export interface Database {
 					}
 				];
 			};
-			scans: {
+			scan_sessions: {
 				Row: {
 					id: string;
 					user_id: string;
-					card_id: string | null;
-					image_path: string | null;
-					scan_method: string;
-					confidence: number | null;
-					processing_ms: number | null;
-					hero_name: string | null;
-					card_number: string | null;
 					game_id: string;
+					device_model: string | null;
+					os_name: string | null;
+					os_version: string | null;
+					browser_name: string | null;
+					browser_version: string | null;
+					app_version: string | null;
+					viewport_width: number | null;
+					viewport_height: number | null;
+					device_memory_gb: number | null;
+					network_type: string | null;
+					capabilities: Record<string, unknown>;
+					started_at: string;
+					ended_at: string | null;
+					extras: Record<string, unknown>;
+					schema_version: number;
 					created_at: string;
 				};
 				Insert: {
 					id?: string;
 					user_id: string;
-					card_id?: string | null;
-					image_path?: string | null;
-					scan_method?: string;
-					confidence?: number | null;
-					processing_ms?: number | null;
-					hero_name?: string | null;
-					card_number?: string | null;
 					game_id?: string;
+					device_model?: string | null;
+					os_name?: string | null;
+					os_version?: string | null;
+					browser_name?: string | null;
+					browser_version?: string | null;
+					app_version?: string | null;
+					viewport_width?: number | null;
+					viewport_height?: number | null;
+					device_memory_gb?: number | null;
+					network_type?: string | null;
+					capabilities?: Record<string, unknown>;
+					started_at?: string;
+					ended_at?: string | null;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['scan_sessions']['Insert']>;
+				Relationships: [];
+			};
+			scans: {
+				Row: {
+					id: string;
+					session_id: string;
+					user_id: string;
+					game_id: string;
+					photo_storage_path: string | null;
+					photo_thumbnail_path: string | null;
+					photo_bytes: number | null;
+					photo_width: number | null;
+					photo_height: number | null;
+					parent_scan_id: string | null;
+					retake_chain_idx: number;
+					capture_context: Record<string, unknown>;
+					quality_signals: Record<string, unknown>;
+					thermal_state: string | null;
+					battery_level: number | null;
+					composite_quality: number | null;
+					outcome: 'pending' | 'auto_confirmed' | 'user_confirmed' | 'user_corrected' | 'disputed' | 'abandoned' | 'timeout' | 'low_quality_rejected';
+					pipeline_version: string;
+					extras: Record<string, unknown>;
+					schema_version: number;
+					captured_at: string;
+					capture_latency_ms: number | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					session_id: string;
+					user_id: string;
+					game_id?: string;
+					photo_storage_path?: string | null;
+					photo_thumbnail_path?: string | null;
+					photo_bytes?: number | null;
+					photo_width?: number | null;
+					photo_height?: number | null;
+					parent_scan_id?: string | null;
+					retake_chain_idx?: number;
+					capture_context?: Record<string, unknown>;
+					quality_signals?: Record<string, unknown>;
+					outcome?: 'pending' | 'auto_confirmed' | 'user_confirmed' | 'user_corrected' | 'disputed' | 'abandoned' | 'timeout' | 'low_quality_rejected';
+					pipeline_version: string;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					captured_at?: string;
+					capture_latency_ms?: number | null;
+					created_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['scans']['Insert']>;
+				Relationships: [];
+			};
+			scan_tier_results: {
+				Row: {
+					id: string;
+					scan_id: string;
+					user_id: string;
+					tier: 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
+					engine: 'phash' | 'dhash' | 'multicrop_hash' | 'mobileclip_v1' | 'dinov2_s14' | 'paddleocr_pp_v5' | 'tesseract_v5' | 'claude_haiku' | 'claude_sonnet';
+					engine_version: string;
+					raw_output: Record<string, unknown>;
+					parsed_card_id: string | null;
+					parsed_variant: string | null;
+					parsed_confidence: number | null;
+					latency_ms: number | null;
+					cost_usd: number | null;
+					errored: boolean;
+					error_message: string | null;
+					extras: Record<string, unknown>;
+					schema_version: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					scan_id: string;
+					user_id: string;
+					tier: 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
+					engine: 'phash' | 'dhash' | 'multicrop_hash' | 'mobileclip_v1' | 'dinov2_s14' | 'paddleocr_pp_v5' | 'tesseract_v5' | 'claude_haiku' | 'claude_sonnet';
+					engine_version: string;
+					raw_output: Record<string, unknown>;
+					latency_ms?: number | null;
+					cost_usd?: number | null;
+					errored?: boolean;
+					error_message?: string | null;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['scan_tier_results']['Insert']>;
+				Relationships: [];
+			};
+			scan_resolutions: {
+				Row: {
+					id: string;
+					scan_id: string;
+					user_id: string;
+					card_id: string | null;
+					variant: string;
+					consensus_score: number | null;
+					tier_agreement_bits: number | null;
+					confirmed_at: string | null;
+					confirmed_by: string | null;
+					superseded_at: string | null;
+					superseded_by: string | null;
+					extras: Record<string, unknown>;
+					schema_version: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					scan_id: string;
+					user_id: string;
+					card_id?: string | null;
+					variant?: string;
+					consensus_score?: number | null;
+					tier_agreement_bits?: number | null;
+					confirmed_at?: string | null;
+					confirmed_by?: string | null;
+					superseded_at?: string | null;
+					superseded_by?: string | null;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['scan_resolutions']['Insert']>;
+				Relationships: [];
+			};
+			scan_disputes: {
+				Row: {
+					id: string;
+					resolution_id: string;
+					scan_id: string;
+					disputing_user_id: string;
+					proposed_card_id: string | null;
+					proposed_variant: string | null;
+					reason_text: string | null;
+					revalidation_raw: Record<string, unknown> | null;
+					revalidation_verdict: string | null;
+					revalidated_at: string | null;
+					resolution: 'pending' | 'upheld' | 'rejected' | 'inconclusive';
+					resolved_at: string | null;
+					resolved_by: string | null;
+					extras: Record<string, unknown>;
+					schema_version: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					resolution_id: string;
+					scan_id: string;
+					disputing_user_id: string;
+					proposed_card_id?: string | null;
+					proposed_variant?: string | null;
+					reason_text?: string | null;
+					revalidation_raw?: Record<string, unknown> | null;
+					revalidation_verdict?: string | null;
+					revalidated_at?: string | null;
+					resolution?: 'pending' | 'upheld' | 'rejected' | 'inconclusive';
+					resolved_at?: string | null;
+					resolved_by?: string | null;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['scan_disputes']['Insert']>;
 				Relationships: [];
 			};
 			price_cache: {
@@ -149,6 +332,14 @@ export interface Database {
 					confidence: number;
 					scan_count: number;
 					last_seen: string;
+					source: 'ebay_seed' | 'official_seed' | 'user_scan' | 'consensus' | 'claude_confirmed' | 'admin';
+					superseded_at: string | null;
+					consensus_count: number;
+					dispute_count: number;
+					last_confirmed_at: string | null;
+					extras: Record<string, unknown>;
+					schema_version: number;
+					created_at: string;
 				};
 				Insert: {
 					phash: string;
@@ -156,6 +347,14 @@ export interface Database {
 					confidence: number;
 					scan_count?: number;
 					last_seen?: string;
+					source?: 'ebay_seed' | 'official_seed' | 'user_scan' | 'consensus' | 'claude_confirmed' | 'admin';
+					superseded_at?: string | null;
+					consensus_count?: number;
+					dispute_count?: number;
+					last_confirmed_at?: string | null;
+					extras?: Record<string, unknown>;
+					schema_version?: number;
+					created_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['hash_cache']['Insert']>;
 				Relationships: [];
@@ -320,26 +519,6 @@ export interface Database {
 						referencedColumns: ['id'];
 					}
 				];
-			};
-			scan_metrics: {
-				Row: {
-					id: string;
-					scan_method: string;
-					processing_time_ms: number | null;
-					confidence: number | null;
-					cache_hit: boolean;
-					cache_layer: string | null;
-					created_at: string;
-				};
-				Insert: {
-					scan_method: string;
-					processing_time_ms?: number | null;
-					confidence?: number | null;
-					cache_hit?: boolean;
-					cache_layer?: string | null;
-				};
-				Update: Partial<Database['public']['Tables']['scan_metrics']['Insert']>;
-				Relationships: [];
 			};
 			parallel_rarity_config: {
 				Row: {
@@ -875,27 +1054,6 @@ export interface Database {
 					session_id?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['error_logs']['Insert']>;
-				Relationships: [];
-			};
-			scan_flags: {
-				Row: {
-					id: string;
-					user_id: string;
-					scan_id: string;
-					card_identified: string | null;
-					card_suggested: string | null;
-					status: string;
-					created_at: string;
-				};
-				Insert: {
-					id?: string;
-					user_id: string;
-					scan_id: string;
-					card_identified?: string | null;
-					card_suggested?: string | null;
-					status?: string;
-				};
-				Update: Partial<Database['public']['Tables']['scan_flags']['Insert']>;
 				Relationships: [];
 			};
 			changelog_entries: {
