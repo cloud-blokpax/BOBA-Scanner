@@ -1,19 +1,15 @@
 /**
  * POST /api/admin/backfill/wonders-hashes
  *
- * Phase 1 / Session 1.1.1 — Wonders hash backfill, admin-triggered,
- * self-chaining within Vercel's 60-second function budget.
+ * Phase 1 / Session 1.1.1b — Wonders hash backfill, admin-triggered.
+ * Each tap processes one batch with a 6-wide parallelism pool and
+ * returns. The admin UI shows "Continue backfill (N/total)" until done.
  *
- * Processes a batch of ~100 Wonders cards per call, then fires itself
- * again via fetch() if more cards remain. First call requires admin
- * session; self-chain calls authenticate via CRON_SECRET header.
- *
- * Idempotent: skips cards that already have a hash_cache row for
- * variant='paper'. Safe to re-run. Redis mutex prevents concurrent runs.
+ * Idempotent: ON CONFLICT (phash) DO NOTHING. Safe to re-run. Redis
+ * mutex persists progress across taps.
  */
 
 import { json, error } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { getRedis } from '$lib/server/redis';
@@ -52,17 +48,11 @@ type BackfillStatus = {
 
 type WondersCard = { id: string; image_url: string };
 
-async function authorizeOrThrow(
-	request: Request,
-	locals: App.Locals
-): Promise<{ callerType: 'admin' | 'cron'; adminId: string | null }> {
-	const cronSecret = env.CRON_SECRET;
-	const auth = request.headers.get('authorization') ?? '';
-	if (cronSecret && auth === `Bearer ${cronSecret}`) {
-		return { callerType: 'cron', adminId: null };
-	}
+// Auth: admin session only. Self-chain was removed in 1.1.1b, so the only
+// caller is the admin UI.
+async function authorizeOrThrow(locals: App.Locals): Promise<string> {
 	const user = await requireAdmin(locals);
-	return { callerType: 'admin', adminId: user.id };
+	return user.id;
 }
 
 async function fetchImageBuffer(url: string): Promise<Buffer> {
@@ -91,9 +81,9 @@ async function getExistingCardIds(admin: AdminClient): Promise<string[]> {
 	return (data ?? []).map((r) => r.card_id);
 }
 
-export const POST: RequestHandler = async ({ request, locals, url }) => {
+export const POST: RequestHandler = async ({ locals }) => {
 	const startTime = Date.now();
-	const { callerType, adminId } = await authorizeOrThrow(request, locals);
+	const adminId = await authorizeOrThrow(locals);
 
 	const redis = getRedis();
 	if (!redis) throw error(503, 'Redis not available');
@@ -103,11 +93,14 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 
 	let status = (await redis.get<BackfillStatus>(MUTEX_KEY)) ?? null;
 
-	if (callerType === 'admin') {
-		if (status && !status.completed) {
-			return json({ error: 'Backfill already in progress', status }, { status: 409 });
-		}
-
+	// Resume path: if a prior run is in-progress, continue from where it
+	// stopped. No 409 — each admin tap is an explicit "continue" action.
+	if (status && !status.completed) {
+		console.log(
+			`[backfill:wonders] resuming: ${status.processed}/${status.total_cards}`
+		);
+	} else {
+		// Fresh run — count total Wonders cards and initialize status.
 		const { count, error: countErr } = await admin
 			.from('cards')
 			.select('id', { count: 'exact', head: true })
@@ -133,19 +126,13 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 			admin_id: adminId
 		};
 
-		if (adminId) {
-			await admin.from('admin_activity_log').insert({
-				admin_id: adminId,
-				action: 'backfill_wonders_hashes_start',
-				entity_type: 'hash_cache',
-				entity_id: 'wonders',
-				details: { total_cards: count }
-			});
-		}
-	}
-
-	if (!status) {
-		throw error(500, 'Self-chain call found no status in Redis — mutex expired?');
+		await admin.from('admin_activity_log').insert({
+			admin_id: adminId,
+			action: 'backfill_wonders_hashes_start',
+			entity_type: 'hash_cache',
+			entity_id: 'wonders',
+			details: { total_cards: count }
+		});
 	}
 
 	// Antijoin against cards that already have a hash row. PostgREST rejects
@@ -195,30 +182,29 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 		return json({ ok: true, done: true, status });
 	}
 
+	// Process this batch with a 6-wide parallelism pool. Most per-card time
+	// is the HTTP fetch; parallelism pushes throughput ~4x without
+	// overloading Sharp or the Supabase bucket's rate limit.
 	status.batch_count++;
 	status.last_batch_at = new Date().toISOString();
 
-	for (const card of batch) {
-		status.processed++;
+	const PARALLELISM = 6;
+	// Capture non-null refs so the closure below doesn't need `!` assertions.
+	const adminRef = admin;
+	const statusRef = status;
 
-		if (Date.now() - startTime > MAX_FUNCTION_MS - SAFETY_MARGIN_MS) {
-			console.log(
-				`[backfill:wonders] time budget reached mid-batch at ${status.processed}`
-			);
-			break;
-		}
-
+	async function processOne(card: WondersCard): Promise<void> {
 		let buffer: Buffer;
 		try {
 			buffer = await fetchImageBuffer(card.image_url);
 		} catch (err) {
-			status.fetch_failed++;
+			statusRef.fetch_failed++;
 			console.warn(
 				`[backfill:wonders] fetch failed for ${card.id}: ${
 					err instanceof Error ? err.message : String(err)
 				}`
 			);
-			continue;
+			return;
 		}
 
 		let dHash: string;
@@ -227,16 +213,16 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 			dHash = await computeDHashFromBuffer(buffer);
 			pHash256 = await computePHashFromBuffer(buffer);
 		} catch (err) {
-			status.hash_failed++;
+			statusRef.hash_failed++;
 			console.warn(
 				`[backfill:wonders] hash failed for ${card.id}: ${
 					err instanceof Error ? err.message : String(err)
 				}`
 			);
-			continue;
+			return;
 		}
 
-		const { error: upErr } = await admin
+		const { error: upErr } = await adminRef
 			.from('hash_cache')
 			.upsert(
 				{
@@ -254,38 +240,33 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 			);
 
 		if (upErr) {
-			status.db_failed++;
+			statusRef.db_failed++;
 			console.error(
 				`[backfill:wonders] upsert failed for ${card.id}: ${upErr.message}`
 			);
 		} else {
-			status.succeeded++;
+			statusRef.succeeded++;
 		}
 	}
 
-	await redis.set(MUTEX_KEY, status, { ex: MUTEX_TTL_SECONDS });
-
-	// Fire-and-forget self-chain. Awaiting this would stack function lifetimes
-	// and blow the 60s budget, so we kick off the next link and return.
-	const cronSecret = env.CRON_SECRET;
-	if (cronSecret) {
-		const selfUrl = `${url.origin}/api/admin/backfill/wonders-hashes`;
-		void fetch(selfUrl, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${cronSecret}`,
-				'Content-Type': 'application/json'
-			}
-		}).catch((err) => {
-			console.error(
-				`[backfill:wonders] self-chain fetch failed: ${
-					err instanceof Error ? err.message : String(err)
-				}`
+	// Walk the batch in chunks of PARALLELISM. Check time budget between
+	// chunks so we never start a new chunk after the safety margin.
+	for (let i = 0; i < batch.length; i += PARALLELISM) {
+		if (Date.now() - startTime > MAX_FUNCTION_MS - SAFETY_MARGIN_MS) {
+			console.log(
+				`[backfill:wonders] time budget reached at processed=${status.processed}`
 			);
-		});
-	} else {
-		console.error('[backfill:wonders] CRON_SECRET missing — self-chain skipped');
+			break;
+		}
+
+		const slice = batch.slice(i, i + PARALLELISM);
+		await Promise.all(slice.map(processOne));
+		status.processed += slice.length;
 	}
+
+	// Persist updated status. Admin UI re-reads it via the status endpoint
+	// and prompts the user to tap again if not done.
+	await redis.set(MUTEX_KEY, status, { ex: MUTEX_TTL_SECONDS });
 
 	return json({ ok: true, done: false, status });
 };

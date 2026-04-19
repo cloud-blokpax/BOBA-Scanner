@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	let { health }: {
@@ -35,7 +35,6 @@
 
 	let backfillStatus = $state<BackfillStatus | null>(null);
 	let backfillTriggering = $state(false);
-	let backfillPollTimer: ReturnType<typeof setInterval> | null = null;
 
 	const backfillPercent = $derived(
 		backfillStatus && backfillStatus.total_cards > 0
@@ -50,41 +49,27 @@
 			const data = await res.json();
 			backfillStatus = data.status ?? null;
 		} catch {
-			// non-fatal; next poll retries
-		}
-	}
-
-	function startBackfillPolling() {
-		if (backfillPollTimer) return;
-		backfillPollTimer = setInterval(refreshBackfillStatus, 5000);
-	}
-
-	function stopBackfillPolling() {
-		if (backfillPollTimer) {
-			clearInterval(backfillPollTimer);
-			backfillPollTimer = null;
+			// non-fatal
 		}
 	}
 
 	async function triggerBackfill() {
 		if (backfillTriggering) return;
-		if (!confirm('Start Wonders hash backfill? Takes 2–5 minutes.')) return;
+		// Only confirm on initial start — resume taps are obviously intentional.
+		if (!backfillStatus && !confirm('Start Wonders hash backfill? Takes ~4 taps to finish.')) return;
 		backfillTriggering = true;
 		try {
 			const res = await fetch('/api/admin/backfill/wonders-hashes', {
 				method: 'POST'
 			});
-			if (res.status === 409) {
-				showToast('Backfill already in progress', 'x');
-				await refreshBackfillStatus();
-				startBackfillPolling();
-			} else if (!res.ok) {
-				showToast(`Failed to start (${res.status})`, 'x');
+			if (!res.ok) {
+				showToast(`Failed: HTTP ${res.status}`, 'x');
 			} else {
 				const data = await res.json();
 				backfillStatus = data.status ?? null;
-				showToast('Backfill started', 'check');
-				startBackfillPolling();
+				// Button label updates reactively:
+				//   completed → "Re-run backfill"
+				//   else → "Continue backfill (N/total)"
 			}
 		} catch (err) {
 			showToast(
@@ -96,15 +81,7 @@
 	}
 
 	onMount(() => {
-		refreshBackfillStatus().then(() => {
-			if (backfillStatus && !backfillStatus.completed) startBackfillPolling();
-		});
-	});
-
-	onDestroy(stopBackfillPolling);
-
-	$effect(() => {
-		if (backfillStatus?.completed) stopBackfillPolling();
+		refreshBackfillStatus();
 	});
 
 	async function doExport(type: string) {
@@ -192,19 +169,20 @@
 		<h3 class="section-title">Wonders Hash Backfill</h3>
 		<p class="section-desc">
 			Seeds <code>hash_cache</code> for all Wonders cards using first-party
-			images. Self-chains across multiple 60-second function calls. Safe to
-			re-run — already-seeded cards are skipped.
+			images. Each tap processes one batch; tap again to continue until the
+			button reads "Re-run backfill". Safe to re-run — already-seeded cards
+			are skipped.
 		</p>
 		<div class="backfill-controls">
 			<button
 				class="backfill-btn"
 				onclick={triggerBackfill}
-				disabled={backfillTriggering || Boolean(backfillStatus && !backfillStatus.completed)}
+				disabled={backfillTriggering}
 			>
 				{#if backfillTriggering}
-					Starting…
+					Running…
 				{:else if backfillStatus && !backfillStatus.completed}
-					Backfill in progress
+					Continue backfill ({backfillStatus.processed}/{backfillStatus.total_cards})
 				{:else if backfillStatus?.completed}
 					Re-run backfill
 				{:else}
