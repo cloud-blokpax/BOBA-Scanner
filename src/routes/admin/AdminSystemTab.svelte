@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 
 	let { health }: {
@@ -15,6 +16,96 @@
 		{ key: 'changelog', label: 'Changelog', desc: 'All changelog entries' },
 		{ key: 'feature-flags', label: 'Feature Flags', desc: 'All feature flags' }
 	];
+
+	// ── Wonders hash backfill (Phase 1 / Session 1.1.1) ──
+	type BackfillStatus = {
+		started_at: string;
+		last_batch_at: string;
+		batch_count: number;
+		total_cards: number;
+		processed: number;
+		succeeded: number;
+		skipped: number;
+		fetch_failed: number;
+		hash_failed: number;
+		db_failed: number;
+		completed: boolean;
+		completed_at?: string;
+	};
+
+	let backfillStatus = $state<BackfillStatus | null>(null);
+	let backfillTriggering = $state(false);
+	let backfillPollTimer: ReturnType<typeof setInterval> | null = null;
+
+	const backfillPercent = $derived(
+		backfillStatus && backfillStatus.total_cards > 0
+			? Math.round((backfillStatus.processed / backfillStatus.total_cards) * 100)
+			: 0
+	);
+
+	async function refreshBackfillStatus() {
+		try {
+			const res = await fetch('/api/admin/backfill/wonders-hashes/status');
+			if (!res.ok) return;
+			const data = await res.json();
+			backfillStatus = data.status ?? null;
+		} catch {
+			// non-fatal; next poll retries
+		}
+	}
+
+	function startBackfillPolling() {
+		if (backfillPollTimer) return;
+		backfillPollTimer = setInterval(refreshBackfillStatus, 5000);
+	}
+
+	function stopBackfillPolling() {
+		if (backfillPollTimer) {
+			clearInterval(backfillPollTimer);
+			backfillPollTimer = null;
+		}
+	}
+
+	async function triggerBackfill() {
+		if (backfillTriggering) return;
+		if (!confirm('Start Wonders hash backfill? Takes 2–5 minutes.')) return;
+		backfillTriggering = true;
+		try {
+			const res = await fetch('/api/admin/backfill/wonders-hashes', {
+				method: 'POST'
+			});
+			if (res.status === 409) {
+				showToast('Backfill already in progress', 'x');
+				await refreshBackfillStatus();
+				startBackfillPolling();
+			} else if (!res.ok) {
+				showToast(`Failed to start (${res.status})`, 'x');
+			} else {
+				const data = await res.json();
+				backfillStatus = data.status ?? null;
+				showToast('Backfill started', 'check');
+				startBackfillPolling();
+			}
+		} catch (err) {
+			showToast(
+				'Network error: ' + (err instanceof Error ? err.message : 'unknown'),
+				'x'
+			);
+		}
+		backfillTriggering = false;
+	}
+
+	onMount(() => {
+		refreshBackfillStatus().then(() => {
+			if (backfillStatus && !backfillStatus.completed) startBackfillPolling();
+		});
+	});
+
+	onDestroy(stopBackfillPolling);
+
+	$effect(() => {
+		if (backfillStatus?.completed) stopBackfillPolling();
+	});
 
 	async function doExport(type: string) {
 		exporting = type;
@@ -94,6 +185,61 @@
 				</button>
 			{/each}
 		</div>
+	</div>
+
+	<!-- Wonders Hash Backfill (Phase 1) -->
+	<div class="section">
+		<h3 class="section-title">Wonders Hash Backfill</h3>
+		<p class="section-desc">
+			Seeds <code>hash_cache</code> for all Wonders cards using first-party
+			images. Self-chains across multiple 60-second function calls. Safe to
+			re-run — already-seeded cards are skipped.
+		</p>
+		<div class="backfill-controls">
+			<button
+				class="backfill-btn"
+				onclick={triggerBackfill}
+				disabled={backfillTriggering || Boolean(backfillStatus && !backfillStatus.completed)}
+			>
+				{#if backfillTriggering}
+					Starting…
+				{:else if backfillStatus && !backfillStatus.completed}
+					Backfill in progress
+				{:else if backfillStatus?.completed}
+					Re-run backfill
+				{:else}
+					Start backfill
+				{/if}
+			</button>
+		</div>
+
+		{#if backfillStatus}
+			<div class="backfill-status">
+				<div class="backfill-bar">
+					<div class="backfill-fill" style:width="{backfillPercent}%"></div>
+				</div>
+				<div class="backfill-stats">
+					<span>Processed: {backfillStatus.processed} / {backfillStatus.total_cards} ({backfillPercent}%)</span>
+					<span>Succeeded: {backfillStatus.succeeded}</span>
+					<span>Skipped: {backfillStatus.skipped}</span>
+					{#if backfillStatus.fetch_failed > 0}
+						<span class="backfill-warn">Fetch failures: {backfillStatus.fetch_failed}</span>
+					{/if}
+					{#if backfillStatus.hash_failed > 0}
+						<span class="backfill-warn">Hash failures: {backfillStatus.hash_failed}</span>
+					{/if}
+					{#if backfillStatus.db_failed > 0}
+						<span class="backfill-err">DB failures: {backfillStatus.db_failed}</span>
+					{/if}
+					<span>Batches: {backfillStatus.batch_count}</span>
+					{#if backfillStatus.completed && backfillStatus.completed_at}
+						<span class="backfill-done">
+							✓ Completed at {new Date(backfillStatus.completed_at).toLocaleTimeString()}
+						</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Quick DB Info -->
@@ -265,4 +411,63 @@
 		border-color: var(--gold);
 		color: var(--gold);
 	}
+
+	/* Backfill */
+	.backfill-controls {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.backfill-btn {
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-primary);
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+
+	.backfill-btn:hover:not(:disabled) {
+		border-color: var(--gold);
+		color: var(--gold);
+	}
+
+	.backfill-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.backfill-status {
+		margin-top: 0.5rem;
+	}
+
+	.backfill-bar {
+		height: 8px;
+		background: var(--border);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.backfill-fill {
+		height: 100%;
+		background: var(--success, #22c55e);
+		transition: width 0.5s ease;
+	}
+
+	.backfill-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.backfill-warn { color: var(--warning); }
+	.backfill-err { color: var(--danger); }
+	.backfill-done { color: var(--success); font-weight: 600; }
 </style>

@@ -9,8 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:card-seed": "node scripts/generate-card-seed.js",
-    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.generated.ts",
-    "backfill:wonders-hashes": "tsx scripts/backfill-wonders-hashes.ts"
+    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.generated.ts"
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",
