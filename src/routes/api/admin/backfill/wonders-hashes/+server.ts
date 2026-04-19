@@ -148,21 +148,23 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
 		throw error(500, 'Self-chain call found no status in Redis — mutex expired?');
 	}
 
-	// Antijoin against cards that already have a hash row. For 1,007 Wonders
-	// cards the inline id list stays comfortably under Postgres' 1MB query cap.
+	// Antijoin against cards that already have a hash row. PostgREST rejects
+	// empty IN clauses, so we branch on whether any cards have been seeded yet.
+	// First-ever batch uses the no-antijoin path.
 	const existingIds = await getExistingCardIds(admin);
-	const existingList = existingIds.length
-		? '(' + existingIds.map((id) => `"${id}"`).join(',') + ')'
-		: '(NULL)';
 
-	const { data: batch, error: batchErr } = await admin
+	let batchQuery = admin
 		.from('cards')
 		.select('id, image_url')
 		.eq('game_id', 'wonders')
 		.not('image_url', 'is', null)
-		.not('id', 'in', existingList)
-		.limit(BATCH_SIZE)
-		.returns<WondersCard[]>();
+		.limit(BATCH_SIZE);
+
+	if (existingIds.length > 0) {
+		batchQuery = batchQuery.not('id', 'in', '(' + existingIds.join(',') + ')');
+	}
+
+	const { data: batch, error: batchErr } = await batchQuery.returns<WondersCard[]>();
 
 	if (batchErr) {
 		throw error(500, `Batch query failed: ${batchErr.message}`);
