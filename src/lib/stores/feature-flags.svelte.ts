@@ -61,6 +61,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: true,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'new_scan_pipeline',
+		display_name: 'New Scan Pipeline (Phase 0.3+)',
+		description: 'Routes scan telemetry through the new scan_sessions / scans / scan_tier_results tables. Admin-only during Phase 1 evaluation.',
+		icon: '📸',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 
