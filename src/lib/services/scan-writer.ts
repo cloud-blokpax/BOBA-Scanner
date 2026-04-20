@@ -167,6 +167,8 @@ export interface RecordTierResultInput {
 	winnerPhashDistance?: number | null;
 	runnerUpMarginDhash?: number | null;
 	hashMatchCount?: number | null;
+	queryDhash?: string | null;
+	queryPhash256?: string | null;
 
 	// OCR-tier specifics
 	ocrTextRaw?: string | null;
@@ -528,6 +530,8 @@ export async function recordTierResult(input: RecordTierResultInput): Promise<st
 			winner_phash_distance: input.winnerPhashDistance ?? null,
 			runner_up_margin_dhash: input.runnerUpMarginDhash ?? null,
 			hash_match_count: input.hashMatchCount ?? null,
+			query_dhash: input.queryDhash ?? null,
+			query_phash_256: input.queryPhash256 ?? null,
 
 			ocr_text_raw: input.ocrTextRaw ?? null,
 			ocr_mean_confidence: input.ocrMeanConfidence ?? null,
@@ -618,6 +622,13 @@ export async function recordClaudeResponse(
  * can FK to it).
  *
  * Fire-and-forget. Never throws. Logs and returns silently on failure.
+ *
+ * IMPORTANT: the `outcome` field is a Postgres enum (scan_outcome).
+ * Valid values: pending, auto_confirmed, user_confirmed, user_corrected,
+ * disputed, abandoned, timeout, low_quality_rejected, resolved.
+ * Any value outside this list → Postgres rejects the UPDATE with 22P02,
+ * logFailure swallows the error, and EVERY finalization field stays null.
+ * Add new values via ALTER TYPE migration before using them here.
  */
 export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<void> {
 	const client = untyped();
