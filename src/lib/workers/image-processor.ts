@@ -12,10 +12,11 @@
 import * as Comlink from 'comlink';
 
 // ── OpenCV.js lazy-loader (card rectification only) ────────
-// Dynamic import keeps the ~2MB WASM payload out of the main worker
-// bundle. The first call to rectifyCard() pays the download; every
-// subsequent scan (and the rest of the app) pays nothing. The promise
-// is cached so concurrent first-scans share the same load.
+// OpenCV ships as a ~11MB UMD bundle. We serve it as a static asset
+// from /vendor/opencv.js (copied by scripts/copy-opencv.js at build
+// time) and load it via importScripts() on first rectifyCard() call
+// so it stays out of the rollup graph. The promise is cached so
+// concurrent first-scans share the same load.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _cvPromise: Promise<any> | null = null;
 
@@ -23,9 +24,16 @@ let _cvPromise: Promise<any> | null = null;
 async function loadOpenCV(): Promise<any> {
 	if (_cvPromise) return _cvPromise;
 	_cvPromise = (async () => {
-		const mod = await import('@techstark/opencv-js');
+		// importScripts is synchronous and only available in classic
+		// workers. The UMD wrapper detects the worker context and
+		// attaches `cv` to the worker global (self).
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const cv: any = (mod as unknown as { default?: unknown }).default ?? mod;
+		(self as any).importScripts('/vendor/opencv.js');
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const cv: any = (self as any).cv;
+		if (!cv) {
+			throw new Error('OpenCV script loaded but self.cv is not defined');
+		}
 
 		// @techstark/opencv-js exposes `cv.ready` as the authoritative
 		// "WASM runtime is done instantiating" signal. It's a Promise set

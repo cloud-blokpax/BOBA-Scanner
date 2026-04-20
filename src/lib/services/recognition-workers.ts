@@ -109,7 +109,7 @@ export async function initWorkers(): Promise<void> {
 			try {
 				const ImageWorker = new Worker(
 					new URL('$lib/workers/image-processor.ts', import.meta.url),
-					{ type: 'module' }
+					{ type: 'classic' }
 				);
 				imageWorker = Comlink.wrap(ImageWorker);
 			} catch (err) {
