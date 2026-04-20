@@ -196,6 +196,8 @@ function emitTier1Result(scanId: string, t: Tier1Telemetry): void {
 			sb_exact_hit: t.sbExactHit,
 			sb_fuzzy_hit: t.sbFuzzyHit
 		},
+		queryDhash: t.queryDhash,
+		queryPhash256: t.queryPhash256,
 		latencyMs: t.latencyMs,
 		errored: t.outcome === 'error',
 		errorMessage: t.errorMessage,
@@ -237,6 +239,14 @@ function emitTier2Result(scanId: string, t: Tier2Telemetry): void {
 }
 
 function emitTier3Result(scanId: string, t: Tier3Telemetry): void {
+	// Cost calculation for Haiku 4.5 (claude-haiku-4-5-20251001).
+	// Pricing: $1.00/M input tokens, $5.00/M output tokens as of 2026-04.
+	// When we add AI Gateway, this moves to the gateway's automatic capture.
+	const costUsd =
+		t.llmInputTokens !== null && t.llmOutputTokens !== null
+			? (t.llmInputTokens * 1.0 + t.llmOutputTokens * 5.0) / 1_000_000
+			: null;
+
 	void writerRecordTierResult({
 		scanId,
 		tier: 'tier3_claude',
@@ -244,6 +254,7 @@ function emitTier3Result(scanId: string, t: Tier3Telemetry): void {
 		engineVersion: t.llmModelResponded ?? 'claude-haiku-4-5-20251001',
 		rawOutput: (t.rawResponse ?? {}) as Record<string, unknown>,
 		latencyMs: t.latencyMs,
+		costUsd,
 		errored: t.outcome === 'error',
 		errorMessage: t.errorMessage,
 		outcome: t.outcome,
@@ -257,7 +268,7 @@ function emitTier3Result(scanId: string, t: Tier3Telemetry): void {
 		llmCacheReadTokens: t.llmCacheReadTokens,
 		llmFinishReason: t.llmFinishReason,
 		promptTemplateVersion: 'phase2.5',
-		pricingTableVersion: 'claude-haiku-4.5-2025-q2',
+		pricingTableVersion: 'haiku-4.5-2026-04',
 		claudeReturnedNameInCatalog: t.claudeReturnedNameInCatalog
 	});
 }
@@ -444,6 +455,13 @@ export async function recognizeCard(
 		}
 	}
 
+	// Declared here (not at each tier's run site) so finalize() can close over
+	// them on every exit path — including early Tier 1/offline returns that
+	// happen before Tier 2/3 would otherwise be declared.
+	const tier1Tel = emptyTier1Telemetry();
+	const tier2Tel = emptyTier2Telemetry();
+	const tier3Tel = emptyTier3Telemetry();
+
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
 		// Prefer the card's own game_id, then the result's tier-set game_id,
@@ -497,14 +515,25 @@ export async function recognizeCard(
 					});
 					const scanId = await scanIdPromise;
 					if (scanId) {
+						// Sum per-tier costs into total_cost_usd. Tiers 1 and 2 are
+						// free (hash lookup + local OCR). Tier 3 cost duplicates the
+						// per-row calc in emitTier3Result — fine for now; fold into
+						// a shared helper in the AI Gateway session.
+						const tier3CostUsd =
+							tier3Tel.llmInputTokens !== null && tier3Tel.llmOutputTokens !== null
+								? (tier3Tel.llmInputTokens * 1.0 + tier3Tel.llmOutputTokens * 5.0) / 1_000_000
+								: 0;
+						const totalCostUsd = tier3CostUsd > 0 ? tier3CostUsd : null;
 						void writerUpdateScanOutcome({
 							scanId,
 							winningTier: winningTierFromResult(final),
+							// string; Postgres casts to uuid. Assumes recognize-card
+							// returns a valid UUID (validated upstream).
 							finalCardId: final.card_id!,
 							finalConfidence: final.confidence ?? null,
 							finalVariant: final.variant ?? null,
 							totalLatencyMs: final.processing_ms ?? null,
-							totalCostUsd: null
+							totalCostUsd
 						});
 						// Preserve the persona increment from the old logScanToSupabaseNew path.
 						const client = getSupabase();
@@ -557,7 +586,6 @@ export async function recognizeCard(
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
-	const tier1Tel = emptyTier1Telemetry();
 	let tier1Result: ScanResult | null = null;
 	try {
 		tier1Result = await runTier1(bitmap, ctx, writeHashToAllLayers, tier1Tel);
@@ -615,7 +643,6 @@ export async function recognizeCard(
 		}
 	}
 
-	const tier2Tel = emptyTier2Telemetry();
 	if (isOcrAvailable()) {
 		onTierChange?.(2);
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
@@ -656,7 +683,6 @@ export async function recognizeCard(
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	const tier3Tel = emptyTier3Telemetry();
 	const tier3Result = await runTier3(bitmap, ctx, tier3Tel);
 	void scanIdPromise.then((sid) => { if (sid) emitTier3Result(sid, tier3Tel); });
 	if (tier3Result) {
