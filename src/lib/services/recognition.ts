@@ -37,6 +37,20 @@ import {
 	recordScan as writerRecordScan,
 	recordTierResult as writerRecordTierResult
 } from './scan-writer';
+import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
+import { parseExifSafe } from '$lib/utils/exif';
+
+/**
+ * Decision thresholds captured per scan so future analysis can replay
+ * how a decision was reached without referring back to source control.
+ * Any time these move, bump the values here so the replay is accurate.
+ */
+const DECISION_CONTEXT = {
+	dhash_max_distance_fuzzy: 5,
+	phash_verification_max_distance: 20,
+	tier1_min_confidence: 0.8,
+	hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2'
+} as const;
 
 // Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
@@ -44,6 +58,35 @@ export { disableFuzzyHashRpc, isFuzzyHashRpcDisabled } from './recognition-tiers
 
 /** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
 let _upsertHashRpcDisabled = false;
+
+/**
+ * Shape of the extra telemetry captured inside `recognizeCard()` at
+ * shutter-time, handed off to `logScanToSupabaseNew` so we don't repeat
+ * the (potentially) expensive EXIF + quality-signal computations.
+ */
+interface ScanWriteExtras {
+	telemetry: ReturnType<typeof captureScanTelemetry>;
+	exif: {
+		make: string | null;
+		model: string | null;
+		orientation: number | null;
+		captureAt: Date | null;
+		software: string | null;
+	};
+	qualitySignals: {
+		blur: number;
+		luminanceMean: number;
+		luminanceStd: number;
+		overexposedPct: number;
+		underexposedPct: number;
+		edgeDensityCanny: number;
+		passed: boolean;
+		failReason: string | null;
+	} | null;
+	photoWidth: number | null;
+	photoHeight: number | null;
+	captureSource: 'camera_live' | 'camera_upload' | null;
+}
 
 /**
  * Persist a scan to the new 6-table schema (Phase 0.1).
@@ -55,26 +98,71 @@ let _upsertHashRpcDisabled = false;
  */
 async function logScanToSupabaseNew(
 	result: ScanResult,
-	sourceImage?: File | Blob | ImageBitmap
+	sourceImage?: File | Blob | ImageBitmap,
+	extras?: ScanWriteExtras
 ): Promise<void> {
 	const uid = userId();
 	if (!uid || !result.card_id) return;
 
+	// Resolve battery outside of the hot scan path — its first call reads
+	// navigator.getBattery() which resolves a Promise on Chrome; cached after.
+	const battery = await getBatteryStatus().catch(() => ({ level: null, charging: null }));
+
 	const sessionId = await getOrOpenActiveSession({
-		gameId: result.game_id ?? 'boba'
+		gameId: result.game_id ?? 'boba',
+		netEffectiveType: extras?.telemetry.netEffectiveType ?? null,
+		netDownlinkMbps: extras?.telemetry.netDownlinkMbps ?? null,
+		netRttMs: extras?.telemetry.netRttMs ?? null,
+		isPwaStandalone: extras?.telemetry.isPwaStandalone ?? null,
+		pageSessionAgeMs: extras?.telemetry.pageSessionAgeMs ?? null,
+		batteryLevel: battery.level,
+		batteryCharging: battery.charging
 	});
 	if (!sessionId) return;
 
 	// Convert ImageBitmap to Blob if necessary. File and Blob pass through.
 	const photoBlob = await normalizeToBlob(sourceImage);
 
+	const photoMimeType = sourceImage instanceof Blob ? sourceImage.type || null : null;
+	const photoBytes = sourceImage instanceof Blob ? sourceImage.size : null;
+
 	const scanId = await writerRecordScan({
 		sessionId,
 		gameId: result.game_id ?? 'boba',
 		captureLatencyMs: result.processing_ms ?? null,
-		photoBlob
-		// capture_context, quality_signals stay null until Phase 3
-		// (camera telemetry) and Phase 4 (quality-gate worker) land.
+		photoBlob,
+
+		// Capture source identity
+		captureSource: extras?.captureSource ?? null,
+		photoMimeType,
+		photoBytes,
+		photoWidth: extras?.photoWidth ?? null,
+		photoHeight: extras?.photoHeight ?? null,
+
+		// EXIF subset (GPS never captured)
+		exifMake: extras?.exif.make ?? null,
+		exifModel: extras?.exif.model ?? null,
+		exifOrientation: extras?.exif.orientation ?? null,
+		exifCaptureAt: extras?.exif.captureAt ?? null,
+		exifSoftware: extras?.exif.software ?? null,
+
+		// Device state at shutter
+		deviceOrientationBeta: extras?.telemetry.deviceOrientationBeta ?? null,
+		deviceOrientationGamma: extras?.telemetry.deviceOrientationGamma ?? null,
+		accelMagnitude: extras?.telemetry.accelMagnitude ?? null,
+
+		// Image quality signals
+		blurLaplacianVariance: extras?.qualitySignals?.blur ?? null,
+		luminanceMean: extras?.qualitySignals?.luminanceMean ?? null,
+		luminanceStd: extras?.qualitySignals?.luminanceStd ?? null,
+		overexposedPct: extras?.qualitySignals?.overexposedPct ?? null,
+		underexposedPct: extras?.qualitySignals?.underexposedPct ?? null,
+		edgeDensityCanny: extras?.qualitySignals?.edgeDensityCanny ?? null,
+		qualityGatePassed: extras?.qualitySignals?.passed ?? null,
+		qualityGateFailReason: extras?.qualitySignals?.failReason ?? null,
+
+		// Decision context (replay / counterfactual)
+		decisionContext: { ...DECISION_CONTEXT }
 	});
 	if (!scanId) return;
 
@@ -100,7 +188,14 @@ async function logScanToSupabaseNew(
 			card_number: result.card?.card_number ?? null,
 			scan_method: result.scan_method ?? null
 		},
-		latencyMs: result.processing_ms ?? null
+		latencyMs: result.processing_ms ?? null,
+		outcome: 'winner',
+		ranAt: new Date(),
+		// Stamp the prompt/pricing metadata for Tier 3 winners so analysts
+		// can bucket Claude responses by which prompt version produced them.
+		promptTemplateVersion: tier === 'tier3_claude' ? 'phase2.5' : null,
+		pricingTableVersion: tier === 'tier3_claude' ? 'claude-haiku-4.5-2025-q2' : null,
+		llmModelRequested: tier === 'tier3_claude' ? 'claude-haiku-4-5-20251001' : null
 	});
 
 	// Preserve the existing persona increment behavior
@@ -220,6 +315,52 @@ export async function recognizeCard(
 			? imageSource
 			: await createImageBitmap(imageSource);
 
+	// ── Shutter-time telemetry capture ─────────────────────
+	// All of this is best-effort. Any failure here MUST NOT break a scan.
+	// Runs alongside the existing blur check, so we pay no extra latency.
+	const shutterTelemetry = captureScanTelemetry();
+	const captureSource: 'camera_live' | 'camera_upload' | null =
+		imageSource instanceof File
+			? 'camera_upload'
+			: imageSource instanceof Blob || imageSource instanceof ImageBitmap
+				? 'camera_live'
+				: null;
+
+	// EXIF read only makes sense for uploads (live camera frames have no EXIF).
+	let shutterExif: Awaited<ReturnType<typeof parseExifSafe>> = {
+		make: null,
+		model: null,
+		orientation: null,
+		captureAt: null,
+		software: null
+	};
+	if (imageSource instanceof Blob) {
+		try {
+			shutterExif = await parseExifSafe(imageSource);
+		} catch {
+			// swallow
+		}
+	}
+
+	// Image quality signals — piggybacks the existing blur check worker.
+	let shutterQuality: Awaited<
+		ReturnType<ReturnType<typeof getImageWorker>['computeQualitySignals']>
+	> | null = null;
+	try {
+		shutterQuality = await getImageWorker().computeQualitySignals(bitmap);
+	} catch (err) {
+		console.debug('[scan] computeQualitySignals failed, continuing:', err);
+	}
+
+	const scanWriteExtras: ScanWriteExtras = {
+		telemetry: shutterTelemetry,
+		exif: shutterExif,
+		qualitySignals: shutterQuality,
+		photoWidth: bitmap.width,
+		photoHeight: bitmap.height,
+		captureSource
+	};
+
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
 		const blurResult = await getImageWorker().checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
@@ -289,7 +430,7 @@ export async function recognizeCard(
 						card_id: final.card_id,
 						trace_id: traceId
 					});
-					logScanToSupabaseNew(final, imageSource);
+					logScanToSupabaseNew(final, imageSource, scanWriteExtras);
 				} else {
 					void traceScanPipeline('writer_entry', {
 						branch: 'legacy',

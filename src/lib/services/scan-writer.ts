@@ -27,6 +27,13 @@ import { getSupabase } from '$lib/services/supabase';
 import { PIPELINE_VERSION } from '$lib/services/pipeline-version';
 import { userId } from '$lib/stores/auth.svelte';
 
+/**
+ * Session 1.2: schema bump signal for the enriched scans-row shape. Every
+ * insert that includes the new telemetry columns stamps this value so
+ * downstream readers can distinguish pre- and post-1.2 rows.
+ */
+const SCAN_SCHEMA_VERSION = 2 as const;
+
 // ---------- Public input types ----------
 
 export interface OpenSessionInput {
@@ -43,6 +50,24 @@ export interface OpenSessionInput {
 	networkType?: string;
 	capabilities?: Record<string, unknown>;
 	extras?: Record<string, unknown>;
+
+	// ── NEW (Session 1.2) ──
+	/** Network Information API effective type (e.g. '4g', '3g'). Chrome/Edge only. */
+	netEffectiveType?: string | null;
+	/** Downlink estimate in Mbps. Chrome/Edge only. */
+	netDownlinkMbps?: number | null;
+	/** Round-trip time estimate in ms. Chrome/Edge only. */
+	netRttMs?: number | null;
+	/** Is the page running as an installed PWA? */
+	isPwaStandalone?: boolean | null;
+	/** Age of the current page session in ms at the time the scan session opened. */
+	pageSessionAgeMs?: number | null;
+	/** Battery level 0..1. Chrome only. */
+	batteryLevel?: number | null;
+	/** Whether the device is charging. Chrome only. */
+	batteryCharging?: boolean | null;
+	/** Deploy git SHA (set at build time via env var). */
+	releaseGitSha?: string | null;
 }
 
 export interface RecordScanInput {
@@ -66,6 +91,50 @@ export interface RecordScanInput {
 	 * into the scans row. Upload failure does not fail the scan.
 	 */
 	photoBlob?: Blob | null;
+
+	// ── NEW (Session 1.2) ──
+
+	// Capture source identity
+	captureSource?:
+		| 'camera_live'
+		| 'camera_upload'
+		| 'deck_upload'
+		| 'sell_upload'
+		| 'binder'
+		| 'batch'
+		| null;
+	photoMimeType?: string | null;
+	photoSha256?: Uint8Array | null;
+
+	// EXIF (non-PII subset — GPS never captured)
+	exifMake?: string | null;
+	exifModel?: string | null;
+	exifOrientation?: number | null;
+	exifCaptureAt?: Date | null;
+	exifSoftware?: string | null;
+
+	// Device/camera state at shutter
+	cameraFacing?: 'user' | 'environment' | null;
+	torchOn?: boolean | null;
+	focusMode?: string | null;
+	deviceOrientationBeta?: number | null;
+	deviceOrientationGamma?: number | null;
+	accelMagnitude?: number | null;
+
+	// Image quality signals
+	blurLaplacianVariance?: number | null;
+	luminanceMean?: number | null;
+	luminanceStd?: number | null;
+	overexposedPct?: number | null;
+	underexposedPct?: number | null;
+	edgeDensityCanny?: number | null;
+	cardAreaPct?: number | null;
+	perspectiveSkewDeg?: number | null;
+	qualityGatePassed?: boolean | null;
+	qualityGateFailReason?: string | null;
+
+	// Decision context (replay / counterfactual)
+	decisionContext?: Record<string, unknown>;
 }
 
 export type ScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
@@ -86,6 +155,53 @@ export interface RecordTierResultInput {
 	errored?: boolean;
 	errorMessage?: string | null;
 	extras?: Record<string, unknown>;
+
+	// ── NEW (Session 1.2) ──
+
+	// Hash-tier specifics
+	topnCandidates?: Array<Record<string, unknown>> | null;
+	idbCacheHit?: boolean | null;
+	sbExactHit?: boolean | null;
+	sbFuzzyHit?: boolean | null;
+	winnerDhashDistance?: number | null;
+	winnerPhashDistance?: number | null;
+	runnerUpMarginDhash?: number | null;
+	hashMatchCount?: number | null;
+
+	// OCR-tier specifics
+	ocrTextRaw?: string | null;
+	ocrMeanConfidence?: number | null;
+	ocrWordCount?: number | null;
+	ocrDetectedCardNumber?: string | null;
+	ocrOrientationDeg?: number | null;
+
+	// LLM-tier specifics
+	llmModelRequested?: string | null;
+	llmModelResponded?: string | null;
+	llmInputTokens?: number | null;
+	llmOutputTokens?: number | null;
+	llmCacheCreationTokens?: number | null;
+	llmCacheReadTokens?: number | null;
+	llmFinishReason?: string | null;
+	pricingTableVersion?: string | null;
+	promptTemplateSha?: string | null;
+	promptTemplateVersion?: string | null;
+	claudeReturnedNameInCatalog?: boolean | null;
+
+	// Shared outcome telemetry
+	outcome?: string | null;
+	skipReason?: string | null;
+	errorCode?: string | null;
+	ranAt?: Date | null;
+}
+
+export interface RecordClaudeResponseInput {
+	tierResultId: string;
+	scanId: string;
+	rawResponse: Record<string, unknown>;
+	parsedOutput?: Record<string, unknown> | null;
+	parseSuccess?: boolean | null;
+	anthropicRequestId?: string | null;
 }
 
 // ---------- Untyped client facade ----------
@@ -237,7 +353,17 @@ export async function getOrOpenActiveSession(
 				device_memory_gb: input.deviceMemoryGb ?? browserCaps.deviceMemoryGb ?? null,
 				network_type: input.networkType ?? browserCaps.networkType ?? null,
 				capabilities: { ...browserCaps.capabilities, ...input.capabilities },
-				extras: input.extras ?? {}
+				extras: input.extras ?? {},
+
+				// ── Session 1.2 telemetry ──
+				net_effective_type: input.netEffectiveType ?? null,
+				net_downlink_mbps: input.netDownlinkMbps ?? null,
+				net_rtt_ms: input.netRttMs ?? null,
+				is_pwa_standalone: input.isPwaStandalone ?? null,
+				page_session_age_ms: input.pageSessionAgeMs ?? null,
+				battery_level: input.batteryLevel ?? null,
+				battery_charging: input.batteryCharging ?? null,
+				release_git_sha: input.releaseGitSha ?? null
 			})
 			.select('id')
 			.single();
@@ -287,7 +413,48 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 				outcome: 'pending',
 				pipeline_version: PIPELINE_VERSION,
 				capture_latency_ms: input.captureLatencyMs ?? null,
-				extras: input.extras ?? {}
+				extras: input.extras ?? {},
+
+				// ── Session 1.2 telemetry ──
+
+				// Capture source identity
+				capture_source: input.captureSource ?? null,
+				photo_mime_type: input.photoMimeType ?? null,
+				photo_sha256: input.photoSha256 ?? null,
+
+				// EXIF — GPS never written; privacy invariant enforced here
+				exif_make: input.exifMake ?? null,
+				exif_model: input.exifModel ?? null,
+				exif_orientation: input.exifOrientation ?? null,
+				exif_capture_at: input.exifCaptureAt ? input.exifCaptureAt.toISOString() : null,
+				exif_software: input.exifSoftware ?? null,
+				exif_gps_stripped: true,
+
+				// Device/camera state at shutter
+				camera_facing: input.cameraFacing ?? null,
+				torch_on: input.torchOn ?? null,
+				focus_mode: input.focusMode ?? null,
+				device_orientation_beta: input.deviceOrientationBeta ?? null,
+				device_orientation_gamma: input.deviceOrientationGamma ?? null,
+				accel_magnitude: input.accelMagnitude ?? null,
+
+				// Image quality signals
+				blur_laplacian_variance: input.blurLaplacianVariance ?? null,
+				luminance_mean: input.luminanceMean ?? null,
+				luminance_std: input.luminanceStd ?? null,
+				overexposed_pct: input.overexposedPct ?? null,
+				underexposed_pct: input.underexposedPct ?? null,
+				edge_density_canny: input.edgeDensityCanny ?? null,
+				card_area_pct: input.cardAreaPct ?? null,
+				perspective_skew_deg: input.perspectiveSkewDeg ?? null,
+				quality_gate_passed: input.qualityGatePassed ?? null,
+				quality_gate_fail_reason: input.qualityGateFailReason ?? null,
+
+				// Decision context for replay / counterfactual analysis
+				decision_context: input.decisionContext ?? {},
+
+				// Bump signals the new-shape insert
+				schema_version: SCAN_SCHEMA_VERSION
 			})
 			.select('id')
 			.single();
@@ -317,16 +484,18 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 /**
  * Record one engine's output for a given scan. Fire-and-forget.
  * Multiple calls per scan_id are expected (one per tier attempt).
+ * Returns the new row's id on success, null on failure — callers that
+ * need to link a downstream row (e.g., scan_claude_responses) use it.
  */
-export async function recordTierResult(input: RecordTierResultInput): Promise<void> {
+export async function recordTierResult(input: RecordTierResultInput): Promise<string | null> {
 	const uid = userId();
-	if (!uid) return;
+	if (!uid) return null;
 
 	const client = untyped();
-	if (!client) return;
+	if (!client) return null;
 
 	try {
-		const { error } = await client.from('scan_tier_results').insert({
+		const { data, error } = await client.from('scan_tier_results').insert({
 			scan_id: input.scanId,
 			user_id: uid,
 			tier: input.tier,
@@ -337,20 +506,96 @@ export async function recordTierResult(input: RecordTierResultInput): Promise<vo
 			cost_usd: input.costUsd ?? null,
 			errored: input.errored ?? false,
 			error_message: input.errorMessage ?? null,
-			extras: input.extras ?? {}
-		});
-		if (error) {
-			logFailure('recordTierResult', error, {
+			extras: input.extras ?? {},
+
+			// ── Session 1.2 telemetry ──
+			topn_candidates: input.topnCandidates ?? null,
+			idb_cache_hit: input.idbCacheHit ?? null,
+			sb_exact_hit: input.sbExactHit ?? null,
+			sb_fuzzy_hit: input.sbFuzzyHit ?? null,
+			winner_dhash_distance: input.winnerDhashDistance ?? null,
+			winner_phash_distance: input.winnerPhashDistance ?? null,
+			runner_up_margin_dhash: input.runnerUpMarginDhash ?? null,
+			hash_match_count: input.hashMatchCount ?? null,
+
+			ocr_text_raw: input.ocrTextRaw ?? null,
+			ocr_mean_confidence: input.ocrMeanConfidence ?? null,
+			ocr_word_count: input.ocrWordCount ?? null,
+			ocr_detected_card_number: input.ocrDetectedCardNumber ?? null,
+			ocr_orientation_deg: input.ocrOrientationDeg ?? null,
+
+			llm_model_requested: input.llmModelRequested ?? null,
+			llm_model_responded: input.llmModelResponded ?? null,
+			llm_input_tokens: input.llmInputTokens ?? null,
+			llm_output_tokens: input.llmOutputTokens ?? null,
+			llm_cache_creation_tokens: input.llmCacheCreationTokens ?? null,
+			llm_cache_read_tokens: input.llmCacheReadTokens ?? null,
+			llm_finish_reason: input.llmFinishReason ?? null,
+			pricing_table_version: input.pricingTableVersion ?? null,
+			prompt_template_sha: input.promptTemplateSha ?? null,
+			prompt_template_version: input.promptTemplateVersion ?? null,
+			claude_returned_name_in_catalog: input.claudeReturnedNameInCatalog ?? null,
+
+			outcome: input.outcome ?? null,
+			skip_reason: input.skipReason ?? null,
+			error_code: input.errorCode ?? null,
+			ran_at: input.ranAt ? input.ranAt.toISOString() : null
+		}).select('id').single();
+
+		if (error || !data) {
+			logFailure('recordTierResult', error ?? new Error('no row returned'), {
 				scanId: input.scanId,
 				tier: input.tier,
 				engine: input.engine
 			});
+			return null;
 		}
+		return data.id;
 	} catch (err) {
 		logFailure('recordTierResult', err, {
 			scanId: input.scanId,
 			tier: input.tier,
 			engine: input.engine
+		});
+		return null;
+	}
+}
+
+/**
+ * Persist the raw Claude response for a Tier 3 tier_result row.
+ * Fire-and-forget. One row per Tier 3 attempt. Never blocks scan completion.
+ * The `rawResponse` jsonb is stored as-is; column-level compression handles
+ * size, and no field redaction is performed (no PII is present at this layer).
+ */
+export async function recordClaudeResponse(
+	input: RecordClaudeResponseInput
+): Promise<void> {
+	const uid = userId();
+	if (!uid) return;
+
+	const client = untyped();
+	if (!client) return;
+
+	try {
+		const { error } = await client.from('scan_claude_responses').insert({
+			tier_result_id: input.tierResultId,
+			scan_id: input.scanId,
+			user_id: uid,
+			raw_response: input.rawResponse,
+			parsed_output: input.parsedOutput ?? null,
+			parse_success: input.parseSuccess ?? null,
+			anthropic_request_id: input.anthropicRequestId ?? null
+		});
+		if (error) {
+			logFailure('recordClaudeResponse', error, {
+				scanId: input.scanId,
+				tierResultId: input.tierResultId
+			});
+		}
+	} catch (err) {
+		logFailure('recordClaudeResponse', err, {
+			scanId: input.scanId,
+			tierResultId: input.tierResultId
 		});
 	}
 }

@@ -16,6 +16,7 @@
 	import { loadNavConfig, clearNavConfig, visibleNavItems } from '$lib/stores/nav-config.svelte';
 	import { loadFeatureFlags } from '$lib/stores/feature-flags.svelte';
 	import { initAuth } from '$lib/stores/auth.svelte';
+	import { initScanTelemetry } from '$lib/services/scan-telemetry';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -68,6 +69,11 @@
 		void authInit.ready.catch((err) => {
 			console.warn('[layout] initAuth failed:', err);
 		});
+
+		// Start passive sensor/network listeners so shutter-time snapshots
+		// have rolling orientation/accel/battery data. Safe on every route;
+		// listeners dedupe internally.
+		initScanTelemetry();
 
 		// Bootstrap feature flags once per session so gated UI
 		// (multi-game hub, Pro features, etc.) resolves correctly
