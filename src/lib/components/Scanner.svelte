@@ -4,7 +4,7 @@
 	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
-	import { scanImage, scanState, resetScanner } from '$lib/stores/scanner.svelte';
+	import { scanImage, scanState, resetScanner, startNewScan, isScanStale } from '$lib/stores/scanner.svelte';
 	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
@@ -263,11 +263,20 @@
 
 			const croppedUrl = cropRegion ? cropFrame(videoEl, cropRegion) : null;
 			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
+			// Mint a generation BEFORE invoking scanImage so we can detect a
+			// concurrent Try Again that supersedes this scan. If staleness is
+			// detected after scanImage returns, drop the result silently rather
+			// than letting handleScanResult overwrite the new scan's UI state.
+			const myGen = startNewScan();
 			let scanResult;
 			try {
-				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion, gameHint });
+				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion, gameHint }, myGen);
 			} finally {
 				bitmap.close();
+			}
+			if (isScanStale(myGen)) {
+				console.debug('[Scanner] Discarding stale scan result (Try Again superseded this run)');
+				return;
 			}
 			if (scanResult) {
 				handleScanResult(scanResult, imageUrl);

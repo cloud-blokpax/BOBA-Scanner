@@ -6,7 +6,7 @@
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import ScannerErrorBoundary from '$lib/components/ScannerErrorBoundary.svelte';
 	import CloseButton from '$lib/components/CloseButton.svelte';
-	import { initScanner, setScannerActive } from '$lib/stores/scanner.svelte';
+	import { initScanner, setScannerActive, resetScanner } from '$lib/stores/scanner.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
@@ -68,12 +68,17 @@
 		cleanupImageUrl();
 		scanResult = null;
 		capturedImageUrl = null;
+		// Force-reset store state and bump the scan generation. A scan that
+		// was still in flight when Try Again was tapped will now resolve into
+		// a stale generation and be discarded by the Scanner's staleness check.
+		resetScanner();
 	}
 
 	function handleClose() {
 		cleanupImageUrl();
 		scanResult = null;
 		capturedImageUrl = null;
+		resetScanner();
 	}
 
 	function cleanupImageUrl() {

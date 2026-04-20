@@ -18,6 +18,7 @@ import { extractCardNumber } from '$lib/utils/extract-card-number';
 import { checkCorrection } from '$lib/services/scan-learning';
 import { BOBA_OCR_REGIONS, BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 import { resolveGameConfig, getAllGameConfigs } from '$lib/games/resolver';
+import { recordTierResult as writerRecordTierResult } from './scan-writer';
 import type { GameConfig } from '$lib/games/types';
 import type { Card, ScanResult, ScanMethod, HashCacheEntry } from '$lib/types';
 
@@ -149,6 +150,115 @@ export function emptyTier3Telemetry(): Tier3Telemetry {
 	};
 }
 
+// ── Tier-result emit (Session 1.4-rect-pathA) ───────────────
+//
+// Each tier calls its own emit at the END of the run, against fully-populated
+// telemetry. This replaces the previous outer-orchestrator emit which fired
+// whenever the outer Promise.race resolved — including timeout-wins-race,
+// when telemetry was still pristine and a row of nulls was written.
+
+export async function emitTier1Result(scanId: string, t: Tier1Telemetry): Promise<void> {
+	await writerRecordTierResult({
+		scanId,
+		tier: 'tier1_hash',
+		engine: 'phash',
+		engineVersion: 'phash-v1',
+		rawOutput: {
+			query_dhash: t.queryDhash,
+			query_phash_256: t.queryPhash256,
+			idb_cache_hit: t.idbCacheHit,
+			sb_exact_hit: t.sbExactHit,
+			sb_fuzzy_hit: t.sbFuzzyHit
+		},
+		queryDhash: t.queryDhash,
+		queryPhash256: t.queryPhash256,
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		ranAt: new Date(),
+		topnCandidates: t.topnCandidates as Array<Record<string, unknown>> | null,
+		idbCacheHit: t.idbCacheHit,
+		sbExactHit: t.sbExactHit,
+		sbFuzzyHit: t.sbFuzzyHit,
+		winnerDhashDistance: t.winnerDhashDistance,
+		winnerPhashDistance: t.winnerPhashDistance,
+		runnerUpMarginDhash: t.runnerUpMarginDhash,
+		hashMatchCount: t.hashMatchCount
+	});
+}
+
+export async function emitTier2Result(scanId: string, t: Tier2Telemetry): Promise<void> {
+	await writerRecordTierResult({
+		scanId,
+		tier: 'tier2_ocr',
+		engine: 'tesseract_v5',
+		engineVersion: 'tesseract-5',
+		rawOutput: {
+			attempted: t.attempted,
+			regions_attempted: t.regionsAttempted,
+			regions_succeeded: t.regionsSucceeded
+		},
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		skipReason: t.skipReason,
+		ranAt: new Date(),
+		ocrTextRaw: t.ocrTextRaw,
+		ocrMeanConfidence: t.ocrMeanConfidence,
+		ocrWordCount: t.ocrWordCount,
+		ocrDetectedCardNumber: t.ocrDetectedCardNumber
+	});
+}
+
+export async function emitTier3Result(scanId: string, t: Tier3Telemetry): Promise<void> {
+	// Cost calc for Haiku 4.5 — duplicates the per-row sum done in
+	// recognition.ts's finalize(). Fold into a shared helper when the
+	// AI Gateway lands and replaces this hand-rolled pricing table.
+	const costUsd =
+		t.llmInputTokens !== null && t.llmOutputTokens !== null
+			? (t.llmInputTokens * 1.0 + t.llmOutputTokens * 5.0) / 1_000_000
+			: null;
+
+	await writerRecordTierResult({
+		scanId,
+		tier: 'tier3_claude',
+		engine: 'claude_haiku',
+		engineVersion: t.llmModelResponded ?? 'claude-haiku-4-5-20251001',
+		rawOutput: (t.rawResponse ?? {}) as Record<string, unknown>,
+		latencyMs: t.latencyMs,
+		costUsd,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		skipReason: t.skipReason,
+		ranAt: new Date(),
+		llmModelRequested: t.llmModelRequested,
+		llmModelResponded: t.llmModelResponded,
+		llmInputTokens: t.llmInputTokens,
+		llmOutputTokens: t.llmOutputTokens,
+		llmCacheCreationTokens: t.llmCacheCreationTokens,
+		llmCacheReadTokens: t.llmCacheReadTokens,
+		llmFinishReason: t.llmFinishReason,
+		promptTemplateVersion: 'phase2.5',
+		pricingTableVersion: 'haiku-4.5-2026-04',
+		claudeReturnedNameInCatalog: t.claudeReturnedNameInCatalog
+	});
+}
+
+/**
+ * Resolve a scanIdPromise to a scan id, swallowing rejections. Used inside
+ * tier finally blocks where a scan-id lookup failure must not propagate.
+ */
+async function resolveScanId(p: Promise<string | null>): Promise<string | null> {
+	try {
+		return await p;
+	} catch {
+		return null;
+	}
+}
+
 // ── Mutable state ───────────────────────────────────────────
 
 /** Circuit breaker: disable fuzzy hash RPC for the session if it fails once */
@@ -183,7 +293,8 @@ export async function runTier1(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
 	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string) => Promise<void>,
-	telemetry: Tier1Telemetry = emptyTier1Telemetry()
+	telemetry: Tier1Telemetry = emptyTier1Telemetry(),
+	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
 	const started = performance.now();
 	const worker = getImageWorker();
@@ -447,6 +558,15 @@ export async function runTier1(
 		telemetry.errorMessage = err instanceof Error ? err.message : String(err);
 		telemetry.latencyMs = Math.round(performance.now() - started);
 		throw err;
+	} finally {
+		const sid = await resolveScanId(scanIdPromise);
+		if (sid) {
+			try {
+				await emitTier1Result(sid, telemetry);
+			} catch (err) {
+				console.debug(`[scan:${ctx.traceId}:tier1] emit failed:`, err);
+			}
+		}
 	}
 }
 
@@ -455,7 +575,8 @@ export async function runTier1(
 export async function runTier2(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	telemetry: Tier2Telemetry = emptyTier2Telemetry()
+	telemetry: Tier2Telemetry = emptyTier2Telemetry(),
+	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
 	const TIER2_BUDGET_MS = 12000;
 	const tier2Start = performance.now();
@@ -629,6 +750,15 @@ export async function runTier2(
 		telemetry.errorMessage = err instanceof Error ? err.message : String(err);
 		telemetry.latencyMs = Math.round(performance.now() - tier2Start);
 		throw err;
+	} finally {
+		const sid = await resolveScanId(scanIdPromise);
+		if (sid) {
+			try {
+				await emitTier2Result(sid, telemetry);
+			} catch (err) {
+				console.debug(`[scan:${ctx.traceId}:tier2] emit failed:`, err);
+			}
+		}
 	}
 }
 
@@ -637,13 +767,15 @@ export async function runTier2(
 export async function runTier3(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	telemetry: Tier3Telemetry = emptyTier3Telemetry()
+	telemetry: Tier3Telemetry = emptyTier3Telemetry(),
+	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
 	const started = performance.now();
 	ctx.lastTier3FailReason = null;
 	telemetry.attempted = true;
 	telemetry.llmModelRequested = 'claude-haiku-4-5-20251001';
 
+	try {
 	// Resize and send to API
 	let response: Response;
 	try {
@@ -834,4 +966,19 @@ export async function runTier3(
 	telemetry.outcome = 'miss';
 	telemetry.latencyMs = Math.round(performance.now() - started);
 	return null;
+	} catch (err) {
+		telemetry.outcome = 'error';
+		telemetry.errorMessage = err instanceof Error ? err.message : String(err);
+		telemetry.latencyMs = Math.round(performance.now() - started);
+		throw err;
+	} finally {
+		const sid = await resolveScanId(scanIdPromise);
+		if (sid) {
+			try {
+				await emitTier3Result(sid, telemetry);
+			} catch (err) {
+				console.debug(`[scan:${ctx.traceId}:tier3] emit failed:`, err);
+			}
+		}
+	}
 }
