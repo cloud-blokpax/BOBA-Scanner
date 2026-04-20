@@ -261,7 +261,111 @@ export async function runTier1(
 			}
 		}
 
-		// Layer 3: Supabase fuzzy match via Hamming distance (≤5 bits different)
+		// Layer 3: Supabase fuzzy pHash-256 via find_similar_phash_256.
+		// Primary post-rectification matcher. pHash-256 (DCT-based) carries 256
+		// bits of signal vs dHash's 64 — more robust to the residual variance
+		// that rectification can't completely eliminate. The RPC returns up to
+		// 5 candidates ordered by Hamming distance ascending.
+		//
+		// Accept policy:
+		//   - Tight match: distance < 30. Safe on its own.
+		//   - Loose-but-distinct: distance < 40 AND runner-up margin ≥ 10.
+		//     Tolerates marginal top matches when the field is clearly separated.
+		// Calibrated against the measured ~58-bit different-card noise floor.
+		if (client) {
+			try {
+				const phash256 = await worker.computePHash(bitmap, 16);
+				telemetry.queryPhash256 = phash256;
+				if (/^[0-9a-f]{64}$/.test(phash256)) {
+					// `find_similar_phash_256` was applied to production via MCP but
+					// isn't in the generated Supabase types yet. Cast via unknown to
+					// bypass the stale typings until db:types is regenerated.
+					type PHashCandidate = {
+						card_id: string;
+						distance: number;
+						confidence: number | null;
+						variant?: string | null;
+						source?: string | null;
+					};
+					const untypedRpc = client.rpc as unknown as (
+						fn: string,
+						args: Record<string, unknown>
+					) => Promise<{ data: PHashCandidate[] | null; error: { message: string } | null }>;
+					const { data: candidates, error } = await untypedRpc('find_similar_phash_256', {
+						query_phash_256: phash256,
+						max_distance: 40,
+						p_game_id: ctx.gameHint || null,
+						p_limit: 5
+					});
+					if (error) {
+						console.debug(`[scan:${ctx.traceId}:tier1] pHash-256 RPC error:`, error.message);
+						telemetry.errorMessage = `phash_rpc: ${error.message}`;
+					} else if (candidates && candidates.length > 0) {
+						telemetry.hashMatchCount = candidates.length;
+						telemetry.topnCandidates = candidates.slice(0, 5).map((c, i) => ({
+							card_id: c.card_id,
+							distance: c.distance,
+							rank: i
+						}));
+						if (candidates.length >= 2) {
+							telemetry.runnerUpMarginDhash =
+								candidates[1].distance - candidates[0].distance;
+						}
+
+						const match = candidates[0];
+						const tightMatch = match.distance < 30;
+						const looseButDistinct =
+							match.distance < 40 &&
+							candidates.length >= 2 &&
+							candidates[1].distance - match.distance >= 10;
+
+						if (tightMatch || looseButDistinct) {
+							const card =
+								getCardById(match.card_id) || (await fetchCardById(match.card_id));
+							if (card) {
+								// Slightly lighter confidence decay than dHash — pHash distance
+								// units carry more information per bit.
+								const adjustedConfidence =
+									(match.confidence ?? 1) * (1 - match.distance * 0.005);
+								const matchVariant = match.variant ?? 'paper';
+								console.debug(
+									`[scan:${ctx.traceId}:tier1] pHash-256 match: distance=${match.distance}, ` +
+										`runnerUp=${candidates[1]?.distance ?? 'n/a'}, card=${card.card_number}, variant=${matchVariant}`
+								);
+								await writeHashToAllLayers(
+									hash,
+									match.card_id,
+									adjustedConfidence,
+									bitmap,
+									ctx.gameHint
+								);
+								telemetry.sbFuzzyHit = true;
+								telemetry.winnerPhashDistance = match.distance;
+								telemetry.outcome = 'hit';
+								telemetry.latencyMs = Math.round(performance.now() - started);
+								return {
+									card_id: card.id,
+									card,
+									scan_method: 'hash_cache' as const,
+									confidence: adjustedConfidence,
+									processing_ms: 0,
+									variant: matchVariant,
+									variant_confidence: matchVariant !== 'paper' ? 1.0 : null
+								};
+							}
+						}
+					}
+				}
+			} catch (err) {
+				console.debug(`[scan:${ctx.traceId}:tier1] pHash-256 lookup unavailable:`, err);
+				telemetry.errorMessage =
+					telemetry.errorMessage ?? (err instanceof Error ? err.message : String(err));
+			}
+		}
+
+		// Layer 4: Supabase fuzzy dHash via Hamming distance (≤5 bits different).
+		// Legacy fallback — retained so pre-rectification cache rows still match
+		// when pHash-256 misses. Will be pruned once Layer 3 has baked.
 		if (client && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
 			try {
 				const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {

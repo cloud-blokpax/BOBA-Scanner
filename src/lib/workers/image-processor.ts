@@ -7,8 +7,100 @@
  *   - resizeForUpload(imageBitmap, maxDimension) → Blob
  *   - checkBlurry(imageBitmap, threshold) → { isBlurry, variance }
  *   - preprocessForOCR(imageBitmap, region) → Blob
+ *   - rectifyCard(imageBitmap) → { bitmap, confidence, corners } | null
  */
 import * as Comlink from 'comlink';
+
+// ── OpenCV.js lazy-loader (card rectification only) ────────
+// Dynamic import keeps the ~2MB WASM payload out of the main worker
+// bundle. The first call to rectifyCard() pays the download; every
+// subsequent scan (and the rest of the app) pays nothing. The promise
+// is cached so concurrent first-scans share the same load.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _cvPromise: Promise<any> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadOpenCV(): Promise<any> {
+	if (_cvPromise) return _cvPromise;
+	_cvPromise = (async () => {
+		const mod = await import('@techstark/opencv-js');
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const cv: any = (mod as unknown as { default?: unknown }).default ?? mod;
+		// Emscripten runtime may already be initialized if the module was
+		// loaded previously; if not, `onRuntimeInitialized` fires once WASM
+		// is ready. `cv.Mat` being a function is the cheap "already loaded"
+		// test used by the official examples.
+		if (typeof cv?.Mat === 'function') return cv;
+		await new Promise<void>((resolve) => {
+			cv.onRuntimeInitialized = () => resolve();
+		});
+		return cv;
+	})().catch((err) => {
+		// Reset cache so a subsequent scan can retry (e.g., transient CDN flake).
+		_cvPromise = null;
+		throw err;
+	});
+	return _cvPromise;
+}
+
+// ── Rectification geometry helpers (no OpenCV needed) ──────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bitmapToMat(cv: any, bitmap: ImageBitmap): any {
+	const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+	const ctx = canvas.getContext('2d')!;
+	ctx.drawImage(bitmap, 0, 0);
+	const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+	return cv.matFromImageData(imageData);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractCorners(approx: any): Array<{ x: number; y: number }> {
+	// approxPolyDP output is a 4×1×2 CV_32S matrix; coordinates live in data32S.
+	const corners: Array<{ x: number; y: number }> = [];
+	for (let i = 0; i < approx.rows; i++) {
+		corners.push({
+			x: approx.data32S[i * 2],
+			y: approx.data32S[i * 2 + 1]
+		});
+	}
+	return corners;
+}
+
+function orderCornersClockwise(
+	corners: Array<{ x: number; y: number }>
+): Array<{ x: number; y: number }> {
+	// Image coordinates: origin top-left, y increases downward.
+	//   TL = smallest (x+y)       BR = largest (x+y)
+	//   TR = smallest (y-x)       BL = largest (y-x)
+	const sums = corners.map((c) => c.x + c.y);
+	const diffs = corners.map((c) => c.y - c.x);
+	const tl = corners[sums.indexOf(Math.min(...sums))];
+	const br = corners[sums.indexOf(Math.max(...sums))];
+	const tr = corners[diffs.indexOf(Math.min(...diffs))];
+	const bl = corners[diffs.indexOf(Math.max(...diffs))];
+	return [tl, tr, br, bl];
+}
+
+function quadAspectRatio(orderedCorners: Array<{ x: number; y: number }>): number {
+	const [tl, tr, br, bl] = orderedCorners;
+	const topW = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+	const bottomW = Math.hypot(br.x - bl.x, br.y - bl.y);
+	const leftH = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+	const rightH = Math.hypot(br.x - tr.x, br.y - tr.y);
+	const avgW = (topW + bottomW) / 2;
+	const avgH = (leftH + rightH) / 2;
+	if (avgH === 0) return 0;
+	return avgW / avgH;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleanupMats(mats: Array<any>): void {
+	for (const m of mats) {
+		if (m && typeof m.delete === 'function') {
+			try { m.delete(); } catch { /* ignore */ }
+		}
+	}
+}
 
 interface OcrRegion {
 	x: number;
@@ -600,6 +692,158 @@ const imageProcessor = {
 		}
 
 		return canvas.convertToBlob({ type: 'image/png' });
+	},
+
+	/**
+	 * Detect the card quadrilateral in a photo and perspective-correct it
+	 * to a canonical 500×700 bitmap. Returns null if no card-shaped quad
+	 * is found — callers must fall back to hashing the uncropped input.
+	 *
+	 * Pipeline: grayscale → Gaussian blur → Canny → dilate → findContours
+	 * → largest approxPolyDP quadrilateral with card-like aspect ratio
+	 * → getPerspectiveTransform + warpPerspective.
+	 *
+	 * OpenCV.js is dynamically imported on first call (~2MB WASM, one-time
+	 * cost per session). Every failure mode — load error, no quad found,
+	 * runtime exception — resolves to null so the scan pipeline degrades
+	 * cleanly to pre-rectification behavior.
+	 */
+	async rectifyCard(bitmap: ImageBitmap): Promise<{
+		bitmap: ImageBitmap;
+		confidence: number;
+		corners: Array<{ x: number; y: number }>;
+	} | null> {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let cv: any;
+		try {
+			cv = await loadOpenCV();
+		} catch (err) {
+			console.debug('[rectify] OpenCV load failed, falling back:', err);
+			return null;
+		}
+
+		// Track every Mat we allocate so the finally block can release them.
+		// OpenCV.js wraps emscripten heap memory — forgetting delete() leaks.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const mats: Array<any> = [];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let bestQuad: any = null;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let contours: any = null;
+
+		try {
+			const src = bitmapToMat(cv, bitmap);
+			mats.push(src);
+
+			const gray = new cv.Mat();
+			mats.push(gray);
+			cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+			cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+
+			const edges = new cv.Mat();
+			mats.push(edges);
+			cv.Canny(gray, edges, 75, 200);
+
+			const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+			mats.push(kernel);
+			cv.dilate(edges, edges, kernel);
+
+			contours = new cv.MatVector();
+			const hierarchy = new cv.Mat();
+			mats.push(hierarchy);
+			cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+			// Largest card-shaped quadrilateral wins.
+			// Card must occupy ≥15% of the frame (rejects noise/text edges).
+			let bestArea = 0;
+			const minAreaThreshold = src.rows * src.cols * 0.15;
+
+			for (let i = 0; i < contours.size(); i++) {
+				const contour = contours.get(i);
+				const peri = cv.arcLength(contour, true);
+				const approx = new cv.Mat();
+				cv.approxPolyDP(contour, approx, 0.02 * peri, true);
+
+				let kept = false;
+				if (approx.rows === 4) {
+					const area = cv.contourArea(approx);
+					if (area > bestArea && area > minAreaThreshold) {
+						const ordered = orderCornersClockwise(extractCorners(approx));
+						const aspect = quadAspectRatio(ordered);
+						// Trading card aspect ≈ 2.5/3.5 = 0.714. Accept 0.55–0.85
+						// to tolerate perspective foreshortening on moderate angles.
+						if (aspect > 0.55 && aspect < 0.85) {
+							if (bestQuad) bestQuad.delete();
+							bestQuad = approx;
+							bestArea = area;
+							kept = true;
+						}
+					}
+				}
+				if (!kept) approx.delete();
+				contour.delete();
+			}
+
+			if (!bestQuad) {
+				return null;
+			}
+
+			const ordered = orderCornersClockwise(extractCorners(bestQuad));
+			const detectedAspect = quadAspectRatio(ordered);
+
+			// Canonical card dimensions: 500×700 is close to the physical
+			// 2.5:3.5 aspect ratio and is a clean size for downstream hashing.
+			const CANONICAL_W = 500;
+			const CANONICAL_H = 700;
+
+			const srcCorners = cv.matFromArray(
+				4, 1, cv.CV_32FC2,
+				ordered.flatMap((c) => [c.x, c.y])
+			);
+			mats.push(srcCorners);
+			const dstCorners = cv.matFromArray(
+				4, 1, cv.CV_32FC2,
+				[0, 0, CANONICAL_W, 0, CANONICAL_W, CANONICAL_H, 0, CANONICAL_H]
+			);
+			mats.push(dstCorners);
+
+			const M = cv.getPerspectiveTransform(srcCorners, dstCorners);
+			mats.push(M);
+
+			const warped = new cv.Mat();
+			mats.push(warped);
+			cv.warpPerspective(src, warped, M, new cv.Size(CANONICAL_W, CANONICAL_H));
+
+			// Copy warped bytes into an ImageData → OffscreenCanvas → ImageBitmap.
+			// Avoids cv.imshow which reaches for document.getElementById in some
+			// builds — fragile inside a worker.
+			const outCanvas = new OffscreenCanvas(CANONICAL_W, CANONICAL_H);
+			const outCtx = outCanvas.getContext('2d')!;
+			const imgData = outCtx.createImageData(CANONICAL_W, CANONICAL_H);
+			imgData.data.set(warped.data as Uint8Array);
+			outCtx.putImageData(imgData, 0, 0);
+			const rectifiedBitmap = outCanvas.transferToImageBitmap();
+
+			// Confidence in [0, 1]: 1 when aspect matches the ideal 0.71 exactly,
+			// 0 when it's ≥0.15 off. Linear falloff within the acceptance window.
+			const confidence = Math.max(
+				0,
+				Math.min(1, 1 - Math.abs(detectedAspect - 0.71) / 0.15)
+			);
+
+			return { bitmap: rectifiedBitmap, confidence, corners: ordered };
+		} catch (err) {
+			console.debug('[rectify] OpenCV runtime error, falling back:', err);
+			return null;
+		} finally {
+			if (bestQuad && typeof bestQuad.delete === 'function') {
+				try { bestQuad.delete(); } catch { /* ignore */ }
+			}
+			if (contours && typeof contours.delete === 'function') {
+				try { contours.delete(); } catch { /* ignore */ }
+			}
+			cleanupMats(mats);
+		}
 	},
 
 	/**
