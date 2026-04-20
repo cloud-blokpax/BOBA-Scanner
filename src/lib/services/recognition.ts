@@ -268,13 +268,41 @@ export async function recognizeCard(
 		// Persist to Supabase for cross-device consistency (non-blocking)
 		// Feature-flagged dual-write: new pipeline when enabled, legacy otherwise.
 		// Both paths are fire-and-forget; neither affects scan completion.
+		//
+		// Session 1.1.1f: two telemetry writes so we can see from MCP what
+		// actually happens. Throwaway — delete after bug is identified.
 		if (final.card_id) {
-			void isNewScanPipelineEnabled().then((enabled) => {
+			void isNewScanPipelineEnabled().then(async (enabled) => {
+				// Telemetry 1: what did the flag check return?
+				void traceScanPipeline('flag_check_result', {
+					enabled,
+					card_id: final.card_id,
+					game_id: final.game_id ?? null,
+					scan_method: final.scan_method ?? null,
+					trace_id: traceId
+				});
+
 				if (enabled) {
+					// Telemetry 2: we're about to call logScanToSupabaseNew
+					void traceScanPipeline('writer_entry', {
+						branch: 'new',
+						card_id: final.card_id,
+						trace_id: traceId
+					});
 					logScanToSupabaseNew(final, imageSource);
 				} else {
+					void traceScanPipeline('writer_entry', {
+						branch: 'legacy',
+						card_id: final.card_id,
+						trace_id: traceId
+					});
 					logScanToSupabaseLegacy(final);
 				}
+			}).catch((err) => {
+				void traceScanPipeline('flag_check_threw', {
+					error: err instanceof Error ? err.message : String(err),
+					trace_id: traceId
+				});
 			});
 		}
 
@@ -523,6 +551,27 @@ async function normalizeToBlob(
 	} catch (err) {
 		console.debug('[recognition] normalizeToBlob failed', err);
 		return undefined;
+	}
+}
+
+/**
+ * Session 1.1.1f telemetry helper. Writes a row to scan_pipeline_trace
+ * from the browser's authenticated client so MCP can read what happened
+ * inside the scan path. Throwaway — delete after pipeline debugging done.
+ */
+async function traceScanPipeline(
+	eventName: string,
+	eventData: Record<string, unknown>
+): Promise<void> {
+	try {
+		const client = getSupabase();
+		if (!client) return;
+		await client.from('scan_pipeline_trace').insert({
+			event_name: eventName,
+			event_data: eventData
+		} as never);
+	} catch {
+		// Swallow — telemetry failure must never break a scan
 	}
 }
 
