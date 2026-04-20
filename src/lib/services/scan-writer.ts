@@ -195,6 +195,17 @@ export interface RecordTierResultInput {
 	ranAt?: Date | null;
 }
 
+export interface UpdateScanOutcomeInput {
+	scanId: string;
+	winningTier: string;
+	finalCardId: string;
+	finalConfidence: number | null;
+	finalVariant: string | null;
+	totalLatencyMs: number | null;
+	totalCostUsd: number | null;
+	userOverrode?: boolean;
+}
+
 export interface RecordClaudeResponseInput {
 	tierResultId: string;
 	scanId: string;
@@ -597,6 +608,40 @@ export async function recordClaudeResponse(
 			scanId: input.scanId,
 			tierResultId: input.tierResultId
 		});
+	}
+}
+
+/**
+ * Update a scan row after the recognition pipeline resolves. Sets the
+ * winning-tier / final-card / total-latency fields that were unknown at
+ * INSERT time (the scan row is written BEFORE tiers run so tier_results
+ * can FK to it).
+ *
+ * Fire-and-forget. Never throws. Logs and returns silently on failure.
+ */
+export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<void> {
+	const client = untyped();
+	if (!client) return;
+
+	try {
+		const { error } = await client
+			.from('scans')
+			.update({
+				winning_tier: input.winningTier,
+				final_card_id: input.finalCardId,
+				final_confidence: input.finalConfidence,
+				final_variant: input.finalVariant,
+				total_latency_ms: input.totalLatencyMs,
+				total_cost_usd: input.totalCostUsd,
+				user_overrode: input.userOverrode ?? false,
+				outcome: 'resolved'
+			})
+			.eq('id', input.scanId);
+		if (error) {
+			logFailure('updateScanOutcome', error, { scanId: input.scanId });
+		}
+	} catch (err) {
+		logFailure('updateScanOutcome', err, { scanId: input.scanId });
 	}
 }
 

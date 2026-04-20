@@ -30,12 +30,24 @@ import {
 	markOcrRetryAttempted,
 	markOcrAvailable
 } from './recognition-workers';
-import { runTier1, runTier2, runTier3, type ScanContext } from './recognition-tiers';
+import {
+	runTier1,
+	runTier2,
+	runTier3,
+	emptyTier1Telemetry,
+	emptyTier2Telemetry,
+	emptyTier3Telemetry,
+	type ScanContext,
+	type Tier1Telemetry,
+	type Tier2Telemetry,
+	type Tier3Telemetry
+} from './recognition-tiers';
 import { incrementPersona } from './persona';
 import {
 	getOrOpenActiveSession,
 	recordScan as writerRecordScan,
-	recordTierResult as writerRecordTierResult
+	recordTierResult as writerRecordTierResult,
+	updateScanOutcome as writerUpdateScanOutcome
 } from './scan-writer';
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
@@ -89,142 +101,178 @@ interface ScanWriteExtras {
 }
 
 /**
- * Persist a scan to the new 6-table schema (Phase 0.1).
- * Non-blocking, best-effort — does not affect scan flow.
+ * Open the scan row BEFORE any tier runs so each tier_result can FK to it.
+ * Returns the scan_id (or null on failure / anonymous user).
  *
- * Produces: one scan_sessions row (cached across the camera-mount),
- * one scans row per shutter-press, one scan_tier_results row per tier
- * that actually ran (hash / ocr / claude).
+ * Replaces the old logScanToSupabaseNew which wrote the scan + a single
+ * winning-tier row AFTER the pipeline completed. Now finalize() calls
+ * writerUpdateScanOutcome to patch in the winning_tier / final_* fields.
  */
-async function logScanToSupabaseNew(
-	result: ScanResult,
-	sourceImage?: File | Blob | ImageBitmap,
-	extras?: ScanWriteExtras
-): Promise<void> {
+async function openScanRow(
+	bitmap: ImageBitmap,
+	sourceImage: File | Blob | ImageBitmap | undefined,
+	extras: ScanWriteExtras,
+	gameHint: string
+): Promise<string | null> {
 	const uid = userId();
-	if (!uid || !result.card_id) return;
+	if (!uid) return null;
 
 	// Resolve battery outside of the hot scan path — its first call reads
 	// navigator.getBattery() which resolves a Promise on Chrome; cached after.
 	const battery = await getBatteryStatus().catch(() => ({ level: null, charging: null }));
 
+	const sessionGameId = gameHint || 'boba';
 	const sessionId = await getOrOpenActiveSession({
-		gameId: result.game_id ?? 'boba',
-		netEffectiveType: extras?.telemetry.netEffectiveType ?? null,
-		netDownlinkMbps: extras?.telemetry.netDownlinkMbps ?? null,
-		netRttMs: extras?.telemetry.netRttMs ?? null,
-		isPwaStandalone: extras?.telemetry.isPwaStandalone ?? null,
-		pageSessionAgeMs: extras?.telemetry.pageSessionAgeMs ?? null,
+		gameId: sessionGameId,
+		netEffectiveType: extras.telemetry.netEffectiveType ?? null,
+		netDownlinkMbps: extras.telemetry.netDownlinkMbps ?? null,
+		netRttMs: extras.telemetry.netRttMs ?? null,
+		isPwaStandalone: extras.telemetry.isPwaStandalone ?? null,
+		pageSessionAgeMs: extras.telemetry.pageSessionAgeMs ?? null,
 		batteryLevel: battery.level,
 		batteryCharging: battery.charging
 	});
-	if (!sessionId) return;
+	if (!sessionId) return null;
 
 	// Convert ImageBitmap to Blob if necessary. File and Blob pass through.
-	const photoBlob = await normalizeToBlob(sourceImage);
+	// When no sourceImage was provided, fall back to the bitmap so we still
+	// get a photo uploaded for diagnostics.
+	const photoBlob = await normalizeToBlob(sourceImage ?? bitmap);
 
 	const photoMimeType = sourceImage instanceof Blob ? sourceImage.type || null : null;
 	const photoBytes = sourceImage instanceof Blob ? sourceImage.size : null;
 
 	const scanId = await writerRecordScan({
 		sessionId,
-		gameId: result.game_id ?? 'boba',
-		captureLatencyMs: result.processing_ms ?? null,
+		gameId: sessionGameId,
+		captureLatencyMs: null,
 		photoBlob,
 
 		// Capture source identity
-		captureSource: extras?.captureSource ?? null,
+		captureSource: extras.captureSource ?? null,
 		photoMimeType,
 		photoBytes,
-		photoWidth: extras?.photoWidth ?? null,
-		photoHeight: extras?.photoHeight ?? null,
+		photoWidth: extras.photoWidth ?? null,
+		photoHeight: extras.photoHeight ?? null,
 
 		// EXIF subset (GPS never captured)
-		exifMake: extras?.exif.make ?? null,
-		exifModel: extras?.exif.model ?? null,
-		exifOrientation: extras?.exif.orientation ?? null,
-		exifCaptureAt: extras?.exif.captureAt ?? null,
-		exifSoftware: extras?.exif.software ?? null,
+		exifMake: extras.exif.make ?? null,
+		exifModel: extras.exif.model ?? null,
+		exifOrientation: extras.exif.orientation ?? null,
+		exifCaptureAt: extras.exif.captureAt ?? null,
+		exifSoftware: extras.exif.software ?? null,
 
 		// Device state at shutter
-		deviceOrientationBeta: extras?.telemetry.deviceOrientationBeta ?? null,
-		deviceOrientationGamma: extras?.telemetry.deviceOrientationGamma ?? null,
-		accelMagnitude: extras?.telemetry.accelMagnitude ?? null,
+		deviceOrientationBeta: extras.telemetry.deviceOrientationBeta ?? null,
+		deviceOrientationGamma: extras.telemetry.deviceOrientationGamma ?? null,
+		accelMagnitude: extras.telemetry.accelMagnitude ?? null,
 
 		// Image quality signals
-		blurLaplacianVariance: extras?.qualitySignals?.blur ?? null,
-		luminanceMean: extras?.qualitySignals?.luminanceMean ?? null,
-		luminanceStd: extras?.qualitySignals?.luminanceStd ?? null,
-		overexposedPct: extras?.qualitySignals?.overexposedPct ?? null,
-		underexposedPct: extras?.qualitySignals?.underexposedPct ?? null,
-		edgeDensityCanny: extras?.qualitySignals?.edgeDensityCanny ?? null,
-		qualityGatePassed: extras?.qualitySignals?.passed ?? null,
-		qualityGateFailReason: extras?.qualitySignals?.failReason ?? null,
+		blurLaplacianVariance: extras.qualitySignals?.blur ?? null,
+		luminanceMean: extras.qualitySignals?.luminanceMean ?? null,
+		luminanceStd: extras.qualitySignals?.luminanceStd ?? null,
+		overexposedPct: extras.qualitySignals?.overexposedPct ?? null,
+		underexposedPct: extras.qualitySignals?.underexposedPct ?? null,
+		edgeDensityCanny: extras.qualitySignals?.edgeDensityCanny ?? null,
+		qualityGatePassed: extras.qualitySignals?.passed ?? null,
+		qualityGateFailReason: extras.qualitySignals?.failReason ?? null,
 
 		// Decision context (replay / counterfactual)
 		decisionContext: { ...DECISION_CONTEXT }
 	});
-	if (!scanId) return;
+	return scanId;
+}
 
-	// Map the legacy scan_method -> tier + engine for scan_tier_results.
-	// This preserves which tier resolved the scan even though the recognition
-	// pipeline hasn't been restructured to emit per-tier records yet.
-	// In a later session we'll instrument each tier function to call
-	// writerRecordTierResult directly; for now we emit one "final result"
-	// row that captures what won.
-	const { tier, engine, engineVersion } = scanMethodToTier(result);
-
-	// Fire-and-forget; errors logged inside writerRecordTierResult.
+function emitTier1Result(scanId: string, t: Tier1Telemetry): void {
 	void writerRecordTierResult({
 		scanId,
-		tier,
-		engine,
-		engineVersion,
+		tier: 'tier1_hash',
+		engine: 'phash',
+		engineVersion: 'phash-v1',
 		rawOutput: {
-			card_id: result.card_id,
-			variant: result.variant ?? null,
-			confidence: result.confidence ?? null,
-			hero_name: result.card?.hero_name ?? null,
-			card_number: result.card?.card_number ?? null,
-			scan_method: result.scan_method ?? null
+			query_dhash: t.queryDhash,
+			query_phash_256: t.queryPhash256,
+			idb_cache_hit: t.idbCacheHit,
+			sb_exact_hit: t.sbExactHit,
+			sb_fuzzy_hit: t.sbFuzzyHit
 		},
-		latencyMs: result.processing_ms ?? null,
-		outcome: 'winner',
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
 		ranAt: new Date(),
-		// Stamp the prompt/pricing metadata for Tier 3 winners so analysts
-		// can bucket Claude responses by which prompt version produced them.
-		promptTemplateVersion: tier === 'tier3_claude' ? 'phase2.5' : null,
-		pricingTableVersion: tier === 'tier3_claude' ? 'claude-haiku-4.5-2025-q2' : null,
-		llmModelRequested: tier === 'tier3_claude' ? 'claude-haiku-4-5-20251001' : null
+		topnCandidates: t.topnCandidates as Array<Record<string, unknown>> | null,
+		idbCacheHit: t.idbCacheHit,
+		sbExactHit: t.sbExactHit,
+		sbFuzzyHit: t.sbFuzzyHit,
+		winnerDhashDistance: t.winnerDhashDistance,
+		winnerPhashDistance: t.winnerPhashDistance,
+		runnerUpMarginDhash: t.runnerUpMarginDhash,
+		hashMatchCount: t.hashMatchCount
 	});
+}
 
-	// Preserve the existing persona increment behavior
-	const client = getSupabase();
-	if (client) incrementPersona(client, 'collector');
+function emitTier2Result(scanId: string, t: Tier2Telemetry): void {
+	void writerRecordTierResult({
+		scanId,
+		tier: 'tier2_ocr',
+		engine: 'tesseract_v5',
+		engineVersion: 'tesseract-5',
+		rawOutput: {
+			attempted: t.attempted,
+			regions_attempted: t.regionsAttempted,
+			regions_succeeded: t.regionsSucceeded
+		},
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		skipReason: t.skipReason,
+		ranAt: new Date(),
+		ocrTextRaw: t.ocrTextRaw,
+		ocrMeanConfidence: t.ocrMeanConfidence,
+		ocrWordCount: t.ocrWordCount,
+		ocrDetectedCardNumber: t.ocrDetectedCardNumber
+	});
+}
+
+function emitTier3Result(scanId: string, t: Tier3Telemetry): void {
+	void writerRecordTierResult({
+		scanId,
+		tier: 'tier3_claude',
+		engine: 'claude_haiku',
+		engineVersion: t.llmModelResponded ?? 'claude-haiku-4-5-20251001',
+		rawOutput: (t.rawResponse ?? {}) as Record<string, unknown>,
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		skipReason: t.skipReason,
+		ranAt: new Date(),
+		llmModelRequested: t.llmModelRequested,
+		llmModelResponded: t.llmModelResponded,
+		llmInputTokens: t.llmInputTokens,
+		llmOutputTokens: t.llmOutputTokens,
+		llmCacheCreationTokens: t.llmCacheCreationTokens,
+		llmCacheReadTokens: t.llmCacheReadTokens,
+		llmFinishReason: t.llmFinishReason,
+		promptTemplateVersion: 'phase2.5',
+		pricingTableVersion: 'claude-haiku-4.5-2025-q2',
+		claudeReturnedNameInCatalog: t.claudeReturnedNameInCatalog
+	});
 }
 
 /**
- * Map legacy scan_method to the new (tier, engine, engineVersion) triple.
- * The recognition pipeline will eventually emit these directly, but for
- * now we map at persistence time.
+ * Map the winning ScanResult back to a `winning_tier` string for the
+ * scans.winning_tier column.
  */
-function scanMethodToTier(result: ScanResult): {
-	tier: 'tier1_hash' | 'tier2_ocr' | 'tier3_claude';
-	engine: 'phash' | 'tesseract_v5' | 'claude_haiku';
-	engineVersion: string;
-} {
+function winningTierFromResult(result: ScanResult): string {
 	switch (result.scan_method) {
-		case 'hash_cache':
-			return { tier: 'tier1_hash', engine: 'phash', engineVersion: 'phash-v1' };
-		case 'tesseract':
-			return { tier: 'tier2_ocr', engine: 'tesseract_v5', engineVersion: 'tesseract-5' };
-		case 'claude':
-			return { tier: 'tier3_claude', engine: 'claude_haiku', engineVersion: 'claude-haiku-unknown' };
+		case 'hash_cache': return 'tier1_hash';
+		case 'tesseract': return 'tier2_ocr';
+		case 'claude': return 'tier3_claude';
 		case 'manual':
-		default:
-			// Manual and unknown get recorded as Tier 3 Claude with engineVersion='manual'
-			// to keep the schema's NOT NULL constraints happy without lying about method.
-			return { tier: 'tier3_claude', engine: 'claude_haiku', engineVersion: 'manual' };
+		default: return 'manual';
 	}
 }
 
@@ -361,6 +409,23 @@ export async function recognizeCard(
 		captureSource
 	};
 
+	// ── Open scan row EARLY so tier_results can FK to it ────
+	// The flag check + scan row INSERT run in parallel with tier execution.
+	// If the flag is off (legacy path), scanIdPromise resolves to null and
+	// no tier_results are emitted — finalize() falls back to legacy write.
+	const newPipelineEnabledPromise = isNewScanPipelineEnabled();
+	const scanIdPromise: Promise<string | null> = userId()
+		? newPipelineEnabledPromise
+			.then((enabled) => {
+				if (!enabled) return null;
+				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint);
+			})
+			.catch((err) => {
+				console.debug(`[scan:${traceId}] openScanRow failed:`, err);
+				return null;
+			})
+		: Promise.resolve(null);
+
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
 		const blurResult = await getImageWorker().checkBlurry(bitmap, BOBA_SCAN_CONFIG.blurThreshold);
@@ -413,7 +478,7 @@ export async function recognizeCard(
 		// Session 1.1.1f: two telemetry writes so we can see from MCP what
 		// actually happens. Throwaway — delete after bug is identified.
 		if (final.card_id) {
-			void isNewScanPipelineEnabled().then(async (enabled) => {
+			void newPipelineEnabledPromise.then(async (enabled) => {
 				// Telemetry 1: what did the flag check return?
 				void traceScanPipeline('flag_check_result', {
 					enabled,
@@ -424,13 +489,27 @@ export async function recognizeCard(
 				});
 
 				if (enabled) {
-					// Telemetry 2: we're about to call logScanToSupabaseNew
+					// Telemetry 2: we're about to update the scan outcome
 					void traceScanPipeline('writer_entry', {
 						branch: 'new',
 						card_id: final.card_id,
 						trace_id: traceId
 					});
-					logScanToSupabaseNew(final, imageSource, scanWriteExtras);
+					const scanId = await scanIdPromise;
+					if (scanId) {
+						void writerUpdateScanOutcome({
+							scanId,
+							winningTier: winningTierFromResult(final),
+							finalCardId: final.card_id!,
+							finalConfidence: final.confidence ?? null,
+							finalVariant: final.variant ?? null,
+							totalLatencyMs: final.processing_ms ?? null,
+							totalCostUsd: null
+						});
+						// Preserve the persona increment from the old logScanToSupabaseNew path.
+						const client = getSupabase();
+						if (client) incrementPersona(client, 'collector');
+					}
 				} else {
 					void traceScanPipeline('writer_entry', {
 						branch: 'legacy',
@@ -478,15 +557,22 @@ export async function recognizeCard(
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
+	const tier1Tel = emptyTier1Telemetry();
+	let tier1Result: ScanResult | null = null;
 	try {
-		const tier1Result = await runTier1(bitmap, ctx, writeHashToAllLayers);
+		tier1Result = await runTier1(bitmap, ctx, writeHashToAllLayers, tier1Tel);
 		if (tier1Result) {
 			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
-			return finalize(tier1Result);
+		} else {
+			console.debug('[scan] Tier 1 MISS: no hash match found');
 		}
-		console.debug('[scan] Tier 1 MISS: no hash match found');
 	} catch (err) {
 		console.warn(`[scan:${ctx.traceId}] Tier 1 failed, falling through:`, err);
+	}
+	// Emit Tier 1 telemetry regardless of hit/miss/error
+	void scanIdPromise.then((sid) => { if (sid) emitTier1Result(sid, tier1Tel); });
+	if (tier1Result) {
+		return finalize(tier1Result);
 	}
 
 	// ── Offline handling: queue for later if no network ──────
@@ -529,37 +615,50 @@ export async function recognizeCard(
 		}
 	}
 
+	const tier2Tel = emptyTier2Telemetry();
 	if (isOcrAvailable()) {
 		onTierChange?.(2);
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
+		let tier2Result: ScanResult | null = null;
 		try {
-			const tier2Result = await runTier2(bitmap, ctx);
+			tier2Result = await runTier2(bitmap, ctx, tier2Tel);
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
-				const hash = await getImageWorker().computeDHash(bitmap);
-				const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
-				// Tier 2 can't detect variant visually. Default to 'paper' in the hash
-				// cache — the Tier 2 confirmation UI forces the user to choose variant
-				// before the collection entry is created, so the collection row records
-				// the truth regardless of what the hash cache says.
-				const hashVariant = tier2Result.variant || 'paper';
-				await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId, hashVariant);
-				return finalize(tier2Result);
+			} else {
+				console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
 			}
-			console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
 		} catch (err) {
 			// OCR failure is non-fatal — fall through to Tier 3
 			console.warn('[scan] Tier 2 error (falling through to Tier 3):', err);
 		}
+		// Emit Tier 2 telemetry regardless of hit/miss/error
+		void scanIdPromise.then((sid) => { if (sid) emitTier2Result(sid, tier2Tel); });
+		if (tier2Result) {
+			const hash = await getImageWorker().computeDHash(bitmap);
+			const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
+			// Tier 2 can't detect variant visually. Default to 'paper' in the hash
+			// cache — the Tier 2 confirmation UI forces the user to choose variant
+			// before the collection entry is created, so the collection row records
+			// the truth regardless of what the hash cache says.
+			const hashVariant = tier2Result.variant || 'paper';
+			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId, hashVariant);
+			return finalize(tier2Result);
+		}
 	} else {
 		console.debug('[scan] Tier 2 skipped: OCR not available');
+		tier2Tel.attempted = false;
+		tier2Tel.skipReason = 'ocr_unavailable';
+		tier2Tel.outcome = 'skipped';
+		void scanIdPromise.then((sid) => { if (sid) emitTier2Result(sid, tier2Tel); });
 	}
 
 	// ── TIER 3: Claude API ──────────────────────────────────
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	const tier3Result = await runTier3(bitmap, ctx);
+	const tier3Tel = emptyTier3Telemetry();
+	const tier3Result = await runTier3(bitmap, ctx, tier3Tel);
+	void scanIdPromise.then((sid) => { if (sid) emitTier3Result(sid, tier3Tel); });
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
 		const hash = await getImageWorker().computeDHash(bitmap);
