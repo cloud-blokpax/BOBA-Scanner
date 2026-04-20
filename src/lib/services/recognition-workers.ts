@@ -10,6 +10,11 @@ import * as Comlink from 'comlink';
 import { initOcr } from '$lib/services/ocr';
 import { loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
+import type { RectifyResult } from '$lib/workers/image-processor';
+
+// Re-export the worker-side type so consumers (recognition.ts) can
+// depend on a single source of truth without importing the worker module.
+export type { RectifyResult, RectifyDiagnostic } from '$lib/workers/image-processor';
 
 // ── Worker Type ────────────────────────────────────────────
 
@@ -33,11 +38,7 @@ export type ImageWorkerProxy = Comlink.Remote<{
 	}>;
 	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
 	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
-	rectifyCard: (bitmap: ImageBitmap) => Promise<{
-		bitmap: ImageBitmap;
-		confidence: number;
-		corners: Array<{ x: number; y: number }>;
-	} | null>;
+	rectifyCard: (bitmap: ImageBitmap) => Promise<RectifyResult>;
 }>;
 
 // ── Worker State ───────────────────────────────────────────
