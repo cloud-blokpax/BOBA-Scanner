@@ -583,10 +583,29 @@ async function isNewScanPipelineEnabled(): Promise<boolean> {
 	try {
 		// Lazy dynamic import to avoid a potential circular dependency with
 		// feature-flags (which imports Supabase, also imported by scan-writer).
-		const { featureEnabled } = await import('$lib/stores/feature-flags.svelte');
-		return featureEnabled('new_scan_pipeline')();
-	} catch {
-		// Store not available (first load, SSR, etc.) — default off
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		const { featureEnabled, getUserProfile } = flagsModule;
+		const authModule = await import('$lib/stores/auth.svelte');
+
+		const result = featureEnabled('new_scan_pipeline')();
+
+		// Session 1.1.1g telemetry: capture what the store sees when flag returns false.
+		// Throwaway — remove in next session after bug is identified.
+		if (!result) {
+			void traceScanPipeline('flag_resolver_state', {
+				flag_result: result,
+				user_present: authModule.user() !== null,
+				user_id: authModule.userId(),
+				profile: getUserProfile ? getUserProfile() : 'getUserProfile_not_exported',
+				flag_definition_present: !!(flagsModule as unknown as { _featureFlags?: unknown })._featureFlags
+			});
+		}
+
+		return result;
+	} catch (err) {
+		void traceScanPipeline('flag_check_threw', {
+			error: err instanceof Error ? err.message : String(err)
+		});
 		return false;
 	}
 }
