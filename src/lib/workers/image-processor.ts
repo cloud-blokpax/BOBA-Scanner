@@ -140,6 +140,33 @@ function quadAspectRatio(orderedCorners: Array<{ x: number; y: number }>): numbe
 	return avgW / avgH;
 }
 
+/**
+ * Mean |corner angle − 90°| across the 4 corners of an ordered quad.
+ * 0 = perfect rectangle; larger = more sheared / less card-like.
+ * Used as one factor in the scoring-based quad selection.
+ */
+function averageCornerDeviation(ordered: Array<{ x: number; y: number }>): number {
+	const deviations: number[] = [];
+	for (let i = 0; i < 4; i++) {
+		const prev = ordered[(i + 3) % 4];
+		const curr = ordered[i];
+		const next = ordered[(i + 1) % 4];
+		const v1x = prev.x - curr.x;
+		const v1y = prev.y - curr.y;
+		const v2x = next.x - curr.x;
+		const v2y = next.y - curr.y;
+		const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+		if (mag === 0) {
+			deviations.push(90); // degenerate corner, maximally bad
+			continue;
+		}
+		const cos = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / mag));
+		const angleDeg = (Math.acos(cos) * 180) / Math.PI;
+		deviations.push(Math.abs(angleDeg - 90));
+	}
+	return deviations.reduce((a, b) => a + b, 0) / 4;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function cleanupMats(mats: Array<any>): void {
 	for (const m of mats) {
@@ -155,6 +182,55 @@ interface OcrRegion {
 	w: number;
 	h: number;
 }
+
+/**
+ * Per-attempt rectification diagnostic. Always populated — on both success
+ * and failure paths — so the caller can write a rectification_attempt row
+ * regardless of outcome. Drives data-driven threshold tuning.
+ */
+export interface RectifyDiagnostic {
+	succeeded: boolean;
+	fail_reason: string | null;
+	total_ms: number;
+	src_width: number;
+	src_height: number;
+	contour_count: number;
+	quad_count: number;
+	viable_quad_count: number;
+	best_quad: {
+		area_ratio: number;
+		aspect: number;
+		score: number;
+		chosen: boolean;
+		reject_reason: string | null;
+		points: Array<{ x: number; y: number }>;
+	} | null;
+	timings: {
+		gray_ms: number;
+		blur_ms: number;
+		canny_ms: number;
+		dilate_ms: number;
+		contour_ms: number;
+		approx_ms: number;
+		warp_ms: number;
+	};
+}
+
+/**
+ * Discriminated union: bitmap is non-null only on success. Diagnostic is
+ * always present.
+ */
+export type RectifyResult =
+	| {
+			bitmap: ImageBitmap;
+			confidence: number;
+			corners: Array<{ x: number; y: number }>;
+			diagnostic: RectifyDiagnostic;
+	  }
+	| {
+			bitmap: null;
+			diagnostic: RectifyDiagnostic;
+	  };
 
 // ── DCT-II coefficient matrix (32×32) for pHash ───────────
 // C[k][n] = cos(π * k * (2n+1) / (2N))
@@ -743,128 +819,256 @@ const imageProcessor = {
 
 	/**
 	 * Detect the card quadrilateral in a photo and perspective-correct it
-	 * to a canonical 500×700 bitmap. Returns null if no card-shaped quad
-	 * is found — callers must fall back to hashing the uncropped input.
+	 * to a canonical 500×700 bitmap. Returns a RectifyResult — either with
+	 * a warped bitmap (success) or bitmap: null (failure). Diagnostic is
+	 * always populated so the caller can write rectification_attempt.
 	 *
 	 * Pipeline: grayscale → Gaussian blur → Canny → dilate → findContours
-	 * → largest approxPolyDP quadrilateral with card-like aspect ratio
-	 * → getPerspectiveTransform + warpPerspective.
+	 * → scoring-based quad selection → getPerspectiveTransform +
+	 * warpPerspective.
+	 *
+	 * Quad selection is scoring-based: area, aspect proximity to 0.714,
+	 * corner orthogonality, convexity — no hard rejects. The highest-scoring
+	 * quad above a minimum threshold wins. Replaces the prior hard-threshold
+	 * filter that rejected most tilted phone captures.
+	 *
+	 * Internal 2s budget with early exit on each stage. No outer Promise.race:
+	 * the internal checkpoints force completion within budget.
 	 *
 	 * OpenCV.js is dynamically imported on first call (~2MB WASM, one-time
-	 * cost per session). Every failure mode — load error, no quad found,
-	 * runtime exception — resolves to null so the scan pipeline degrades
-	 * cleanly to pre-rectification behavior.
+	 * cost per session).
 	 */
-	async rectifyCard(bitmap: ImageBitmap): Promise<{
-		bitmap: ImageBitmap;
-		confidence: number;
-		corners: Array<{ x: number; y: number }>;
-	} | null> {
-		// Hard timeout for the full rectification pipeline. Normal success path
-		// is 200-500ms on mobile; 3s is ~6x that and catches any pathological
-		// slow case (e.g., WASM memory pressure, unusual input dimensions).
-		return Promise.race([
-			this._rectifyCardInner(bitmap),
-			new Promise<null>((resolve) =>
-				setTimeout(() => {
-					console.debug('[rectify] timeout after 3s, falling back');
-					resolve(null);
-				}, 3000)
-			)
-		]);
+	async rectifyCard(bitmap: ImageBitmap): Promise<RectifyResult> {
+		// No outer Promise.race — internal budget checkpoints handle timing.
+		// Guaranteed to return within ~2.5s under normal circumstances.
+		return this._rectifyCardInner(bitmap);
 	},
 
-	async _rectifyCardInner(bitmap: ImageBitmap): Promise<{
-		bitmap: ImageBitmap;
-		confidence: number;
-		corners: Array<{ x: number; y: number }>;
-	} | null> {
+	async _rectifyCardInner(bitmap: ImageBitmap): Promise<RectifyResult> {
+		const startTime = performance.now();
+		const BUDGET_MS = 2000;
+
+		const diagnostic: RectifyDiagnostic = {
+			succeeded: false,
+			fail_reason: null,
+			total_ms: 0,
+			src_width: bitmap.width,
+			src_height: bitmap.height,
+			contour_count: 0,
+			quad_count: 0,
+			viable_quad_count: 0,
+			best_quad: null,
+			timings: {
+				gray_ms: 0,
+				blur_ms: 0,
+				canny_ms: 0,
+				dilate_ms: 0,
+				contour_ms: 0,
+				approx_ms: 0,
+				warp_ms: 0
+			}
+		};
+
+		const finalize = (): void => {
+			diagnostic.total_ms = Math.round(performance.now() - startTime);
+		};
+
+		const checkBudget = (stage: string): boolean => {
+			if (performance.now() - startTime > BUDGET_MS) {
+				diagnostic.fail_reason = `timeout_${stage}`;
+				finalize();
+				return false;
+			}
+			return true;
+		};
+
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		let cv: any;
 		try {
 			cv = await loadOpenCV();
 		} catch (err) {
-			console.debug('[rectify] OpenCV load failed, falling back:', err);
-			return null;
+			diagnostic.fail_reason = `opencv_load: ${err instanceof Error ? err.message : String(err)}`;
+			finalize();
+			return { bitmap: null, diagnostic };
 		}
 
-		// Track every Mat we allocate so the finally block can release them.
-		// OpenCV.js wraps emscripten heap memory — forgetting delete() leaks.
+		// Track every Mat we allocate (except quad candidates, which we own
+		// individually) so the cleanup path can release them. OpenCV.js wraps
+		// emscripten heap memory — forgetting delete() leaks.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const mats: Array<any> = [];
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let bestQuad: any = null;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		let contours: any = null;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const scoredQuads: Array<{
+			quad: any;
+			score: number;
+			area_ratio: number;
+			aspect: number;
+			points: Array<{ x: number; y: number }>;
+			convex: boolean;
+			corner_dev: number;
+		}> = [];
+
+		const cleanup = (): void => {
+			for (const sq of scoredQuads) {
+				if (sq.quad && typeof sq.quad.delete === 'function') {
+					try { sq.quad.delete(); } catch { /* ignore */ }
+				}
+			}
+			if (contours && typeof contours.delete === 'function') {
+				try { contours.delete(); } catch { /* ignore */ }
+			}
+			cleanupMats(mats);
+		};
 
 		try {
 			const src = bitmapToMat(cv, bitmap);
 			mats.push(src);
+			const imageArea = src.rows * src.cols;
 
+			// === Gray ===
+			if (!checkBudget('pre_gray')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t0 = performance.now();
 			const gray = new cv.Mat();
 			mats.push(gray);
 			cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-			cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+			diagnostic.timings.gray_ms = Math.round(performance.now() - t0);
 
+			// === Blur ===
+			if (!checkBudget('pre_blur')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t1 = performance.now();
+			cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+			diagnostic.timings.blur_ms = Math.round(performance.now() - t1);
+
+			// === Canny ===
+			// Looser thresholds (40/150 vs prior 75/200) for phone photos with
+			// moderate glare/shadow. The prior tuning was for clean scan data.
+			if (!checkBudget('pre_canny')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t2 = performance.now();
 			const edges = new cv.Mat();
 			mats.push(edges);
-			cv.Canny(gray, edges, 75, 200);
+			cv.Canny(gray, edges, 40, 150);
+			diagnostic.timings.canny_ms = Math.round(performance.now() - t2);
 
+			// === Dilate (close small edge gaps) ===
+			if (!checkBudget('pre_dilate')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t3 = performance.now();
 			const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
 			mats.push(kernel);
 			cv.dilate(edges, edges, kernel);
+			diagnostic.timings.dilate_ms = Math.round(performance.now() - t3);
 
+			// === Find contours ===
+			if (!checkBudget('pre_contour')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t4 = performance.now();
 			contours = new cv.MatVector();
 			const hierarchy = new cv.Mat();
 			mats.push(hierarchy);
 			cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+			diagnostic.contour_count = contours.size();
+			diagnostic.timings.contour_ms = Math.round(performance.now() - t4);
 
-			// Largest card-shaped quadrilateral wins.
-			// Card must occupy ≥15% of the frame (rejects noise/text edges).
-			let bestArea = 0;
-			const minAreaThreshold = src.rows * src.cols * 0.15;
-
+			// === Score each contour that reduces to a quad ===
+			// Cap iteration count. Pathological inputs (e.g., heavy texture)
+			// can produce thousands of contours — pre-sort by area and examine
+			// only the 50 largest. Anything a card would appear in is in that set.
+			if (!checkBudget('pre_approx')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t5 = performance.now();
+			const MAX_CONTOURS_TO_EXAMINE = 50;
+			const contourIndices: Array<{ idx: number; area: number }> = [];
 			for (let i = 0; i < contours.size(); i++) {
-				const contour = contours.get(i);
+				const c = contours.get(i);
+				const area = cv.contourArea(c);
+				c.delete();
+				// Filter out trivially-small contours (<2% of frame). Purely a
+				// budget optimization — anything that small would score near 0.
+				if (area < imageArea * 0.02) continue;
+				contourIndices.push({ idx: i, area });
+			}
+			contourIndices.sort((a, b) => b.area - a.area);
+			const examine = contourIndices.slice(0, MAX_CONTOURS_TO_EXAMINE);
+
+			for (let loopIdx = 0; loopIdx < examine.length; loopIdx++) {
+				if (!checkBudget(`approx_${loopIdx}`)) break;
+
+				const { idx, area } = examine[loopIdx];
+				const contour = contours.get(idx);
 				const peri = cv.arcLength(contour, true);
 				const approx = new cv.Mat();
 				cv.approxPolyDP(contour, approx, 0.02 * peri, true);
-
-				let kept = false;
-				if (approx.rows === 4) {
-					const area = cv.contourArea(approx);
-					if (area > bestArea && area > minAreaThreshold) {
-						const ordered = orderCornersClockwise(extractCorners(approx));
-						const aspect = quadAspectRatio(ordered);
-						// Trading card aspect ≈ 2.5/3.5 = 0.714. Accept 0.55–0.85
-						// to tolerate perspective foreshortening on moderate angles.
-						if (aspect > 0.55 && aspect < 0.85) {
-							if (bestQuad) bestQuad.delete();
-							bestQuad = approx;
-							bestArea = area;
-							kept = true;
-						}
-					}
-				}
-				if (!kept) approx.delete();
 				contour.delete();
+
+				if (approx.rows !== 4) {
+					approx.delete();
+					continue;
+				}
+
+				diagnostic.quad_count += 1;
+				const points = extractCorners(approx);
+				const ordered = orderCornersClockwise(points);
+				const aspect = quadAspectRatio(ordered);
+				const area_ratio = area / imageArea;
+
+				// Scoring: each criterion contributes 0..1, weighted sum.
+				// Area ≥10% full marks; ramps to 0 at 2%.
+				const areaScore = Math.min(1, Math.max(0, (area_ratio - 0.02) / 0.08));
+				// Aspect proximity to 0.714 (2.5:3.5). ±0.05 full marks; ±0.20 → 0.
+				const aspectDelta = Math.abs(aspect - 0.714);
+				const aspectScore = Math.min(1, Math.max(0, 1 - (aspectDelta - 0.05) / 0.15));
+				// Corner orthogonality. 0° deviation full marks; 30° → 0.
+				const corner_dev = averageCornerDeviation(ordered);
+				const orthoScore = Math.min(1, Math.max(0, 1 - corner_dev / 30));
+				// Convexity: real cards are convex quads.
+				const convex = cv.isContourConvex(approx);
+				const convexScore = convex ? 1 : 0;
+
+				const score =
+					areaScore * 0.35 + aspectScore * 0.35 + orthoScore * 0.20 + convexScore * 0.10;
+
+				scoredQuads.push({ quad: approx, score, area_ratio, aspect, points: ordered, convex, corner_dev });
+				if (score >= 0.5) diagnostic.viable_quad_count += 1;
+			}
+			diagnostic.timings.approx_ms = Math.round(performance.now() - t5);
+
+			if (scoredQuads.length === 0) {
+				diagnostic.fail_reason = diagnostic.contour_count === 0 ? 'no_contours' : 'no_quads';
+				finalize();
+				cleanup();
+				return { bitmap: null, diagnostic };
 			}
 
-			if (!bestQuad) {
-				return null;
+			scoredQuads.sort((a, b) => b.score - a.score);
+			const best = scoredQuads[0];
+			diagnostic.best_quad = {
+				area_ratio: best.area_ratio,
+				aspect: best.aspect,
+				score: best.score,
+				chosen: false,
+				reject_reason: null,
+				points: best.points
+			};
+
+			// Minimum score threshold. Permissive: accepts tilted phone captures
+			// with moderate glare. Tune based on rectification_attempt data.
+			const MIN_ACCEPT_SCORE = 0.45;
+			if (best.score < MIN_ACCEPT_SCORE) {
+				diagnostic.fail_reason = 'no_valid_quad';
+				diagnostic.best_quad.reject_reason =
+					`score_${best.score.toFixed(2)}_below_${MIN_ACCEPT_SCORE}`;
+				finalize();
+				cleanup();
+				return { bitmap: null, diagnostic };
 			}
 
-			const ordered = orderCornersClockwise(extractCorners(bestQuad));
-			const detectedAspect = quadAspectRatio(ordered);
-
-			// Canonical card dimensions: 500×700 is close to the physical
-			// 2.5:3.5 aspect ratio and is a clean size for downstream hashing.
+			// === Warp ===
+			if (!checkBudget('pre_warp')) { cleanup(); return { bitmap: null, diagnostic }; }
+			const t6 = performance.now();
 			const CANONICAL_W = 500;
 			const CANONICAL_H = 700;
-
 			const srcCorners = cv.matFromArray(
 				4, 1, cv.CV_32FC2,
-				ordered.flatMap((c) => [c.x, c.y])
+				best.points.flatMap((p) => [p.x, p.y])
 			);
 			mats.push(srcCorners);
 			const dstCorners = cv.matFromArray(
@@ -872,13 +1076,12 @@ const imageProcessor = {
 				[0, 0, CANONICAL_W, 0, CANONICAL_W, CANONICAL_H, 0, CANONICAL_H]
 			);
 			mats.push(dstCorners);
-
 			const M = cv.getPerspectiveTransform(srcCorners, dstCorners);
 			mats.push(M);
-
 			const warped = new cv.Mat();
 			mats.push(warped);
 			cv.warpPerspective(src, warped, M, new cv.Size(CANONICAL_W, CANONICAL_H));
+			diagnostic.timings.warp_ms = Math.round(performance.now() - t6);
 
 			// Copy warped bytes into an ImageData → OffscreenCanvas → ImageBitmap.
 			// Avoids cv.imshow which reaches for document.getElementById in some
@@ -890,25 +1093,22 @@ const imageProcessor = {
 			outCtx.putImageData(imgData, 0, 0);
 			const rectifiedBitmap = outCanvas.transferToImageBitmap();
 
-			// Confidence in [0, 1]: 1 when aspect matches the ideal 0.71 exactly,
-			// 0 when it's ≥0.15 off. Linear falloff within the acceptance window.
-			const confidence = Math.max(
-				0,
-				Math.min(1, 1 - Math.abs(detectedAspect - 0.71) / 0.15)
-			);
+			diagnostic.succeeded = true;
+			diagnostic.best_quad.chosen = true;
+			finalize();
+			cleanup();
 
-			return { bitmap: rectifiedBitmap, confidence, corners: ordered };
+			return {
+				bitmap: rectifiedBitmap,
+				confidence: best.score,
+				corners: best.points,
+				diagnostic
+			};
 		} catch (err) {
-			console.debug('[rectify] OpenCV runtime error, falling back:', err);
-			return null;
-		} finally {
-			if (bestQuad && typeof bestQuad.delete === 'function') {
-				try { bestQuad.delete(); } catch { /* ignore */ }
-			}
-			if (contours && typeof contours.delete === 'function') {
-				try { contours.delete(); } catch { /* ignore */ }
-			}
-			cleanupMats(mats);
+			diagnostic.fail_reason = `opencv_error: ${err instanceof Error ? err.message : String(err)}`;
+			finalize();
+			cleanup();
+			return { bitmap: null, diagnostic };
 		}
 	},
 

@@ -1,6 +1,7 @@
 import type { User, Session } from '@supabase/supabase-js';
 import { getSupabase } from '$lib/services/supabase';
 import { setCheckpointJwt } from '$lib/services/scan-checkpoint';
+import { setRectificationDiagnosticJwt } from '$lib/services/rectification-diagnostic';
 
 // ── Private mutable state ──────────────────────────────────
 let _user = $state<User | null>(null);
@@ -38,17 +39,20 @@ export function initAuth(): { ready: Promise<void>; cleanup: () => void } {
 					_session = null;
 					_user = null;
 					setCheckpointJwt(null);
+					setRectificationDiagnosticJwt(null);
 					return;
 				}
 				_user = validatedUser;
 				const { data } = await client.auth.getSession();
 				_session = data.session;
 				setCheckpointJwt(data.session?.access_token ?? null);
+				setRectificationDiagnosticJwt(data.session?.access_token ?? null);
 			} catch (err) {
 				console.warn('Failed to get initial auth session:', err);
 				_session = null;
 				_user = null;
 				setCheckpointJwt(null);
+				setRectificationDiagnosticJwt(null);
 			}
 		})();
 	}
@@ -62,6 +66,7 @@ export function initAuth(): { ready: Promise<void>; cleanup: () => void } {
 		_session = newSession;
 		_user = newSession?.user ?? null;
 		setCheckpointJwt(newSession?.access_token ?? null);
+		setRectificationDiagnosticJwt(newSession?.access_token ?? null);
 	});
 
 	return {

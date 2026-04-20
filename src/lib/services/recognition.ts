@@ -49,6 +49,8 @@ import {
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
 import { checkpoint } from './scan-checkpoint';
+import { recordRectificationAttempt } from './rectification-diagnostic';
+import type { RectifyDiagnostic } from './recognition-workers';
 
 /**
  * Decision thresholds captured per scan so future analysis can replay
@@ -384,7 +386,14 @@ export async function recognizeCard(
 	// Gated by card_rectification feature flag. If disabled (default for
 	// non-admins until verified working) or if rectification fails/times out,
 	// fall through to hashing the raw bitmap — matches pre-1.4 behavior.
-	let rectified: Awaited<ReturnType<ReturnType<typeof getImageWorker>['rectifyCard']>> = null;
+	let rectified: {
+		bitmap: ImageBitmap;
+		confidence: number;
+		corners: Array<{ x: number; y: number }>;
+	} | null = null;
+	// Captured at rectification time; fire-and-forget write is deferred until
+	// scanIdPromise is available so rectification_attempt.scan_id can FK to scans.
+	let rectDiagnostic: RectifyDiagnostic | null = null;
 
 	checkpoint(traceId, 'rectification:flag_check:start', performance.now() - startTime);
 	const rectificationEnabled = await isCardRectificationEnabled().catch(() => false);
@@ -398,16 +407,24 @@ export async function recognizeCard(
 			// Pass a clone so Comlink's ImageBitmap transfer (if it happens)
 			// leaves the main-thread `bitmap` reference intact. ~3ms overhead.
 			const rectifyClone = await cloneImageBitmap(bitmap);
-			// rectifyCard has its own 3s hard timeout inside the worker and returns
-			// null on any failure (timeout, no quad found, WASM error). Wrapping
-			// it in an outer Promise.race here just duplicated the timeout — the
-			// inner result and the outer reject would race, producing both a
-			// `:done` and a `:timeout` checkpoint within milliseconds and writing
-			// a tier_result row against pristine telemetry. Trust the inner budget.
-			rectified = await getImageWorker().rectifyCard(rectifyClone);
+			// rectifyCard uses an internal 2s budget with per-stage checkpoints;
+			// no outer Promise.race needed. It always returns a RectifyResult
+			// with a diagnostic regardless of success.
+			const rectResult = await getImageWorker().rectifyCard(rectifyClone);
+			rectDiagnostic = rectResult.diagnostic;
+			const succeeded = rectResult.bitmap !== null;
+			if (rectResult.bitmap !== null) {
+				rectified = {
+					bitmap: rectResult.bitmap,
+					confidence: rectResult.confidence,
+					corners: rectResult.corners
+				};
+			}
 			checkpoint(traceId, 'rectification:rectifyCard:done', performance.now() - startTime, {
-				succeeded: rectified !== null,
-				confidence: rectified?.confidence ?? null
+				succeeded,
+				confidence: succeeded ? rectResult.confidence : null,
+				fail_reason: rectResult.diagnostic.fail_reason,
+				total_ms: rectResult.diagnostic.total_ms
 			});
 		} catch (err) {
 			checkpoint(traceId, 'rectification:rectifyCard:threw', performance.now() - startTime, {
@@ -487,6 +504,46 @@ export async function recognizeCard(
 				return null;
 			})
 		: Promise.resolve(null);
+
+	// ── Fire-and-forget rectification diagnostic write ──────
+	// Deferred so scan_id (when available) is attached via FK. Never awaited;
+	// never blocks the scan. Written regardless of success/failure so failure
+	// modes are visible in the rectification_attempt table.
+	if (rectDiagnostic) {
+		const diag = rectDiagnostic;
+		void scanIdPromise
+			.then((scanId) => {
+				recordRectificationAttempt({
+					trace_id: traceId,
+					scan_id: scanId,
+					succeeded: diag.succeeded,
+					confidence: rectified?.confidence ?? null,
+					total_ms: diag.total_ms,
+					fail_reason: diag.fail_reason,
+					src_width: diag.src_width,
+					src_height: diag.src_height,
+					contour_count: diag.contour_count,
+					quad_count: diag.quad_count,
+					viable_quad_count: diag.viable_quad_count,
+					best_quad_area_ratio: diag.best_quad?.area_ratio ?? null,
+					best_quad_aspect: diag.best_quad?.aspect ?? null,
+					best_quad_score: diag.best_quad?.score ?? null,
+					best_quad_chosen: diag.best_quad?.chosen ?? null,
+					best_quad_reject_reason: diag.best_quad?.reject_reason ?? null,
+					gray_ms: diag.timings.gray_ms,
+					blur_ms: diag.timings.blur_ms,
+					canny_ms: diag.timings.canny_ms,
+					dilate_ms: diag.timings.dilate_ms,
+					contour_ms: diag.timings.contour_ms,
+					approx_ms: diag.timings.approx_ms,
+					warp_ms: diag.timings.warp_ms,
+					quad_points: diag.best_quad?.points ?? null
+				});
+			})
+			.catch(() => {
+				/* swallow — diagnostic loss must never affect scan outcome */
+			});
+	}
 
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
