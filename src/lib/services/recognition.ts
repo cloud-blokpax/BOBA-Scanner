@@ -37,16 +37,13 @@ import {
 	emptyTier1Telemetry,
 	emptyTier2Telemetry,
 	emptyTier3Telemetry,
-	type ScanContext,
-	type Tier1Telemetry,
-	type Tier2Telemetry,
-	type Tier3Telemetry
+	emitTier2Result,
+	type ScanContext
 } from './recognition-tiers';
 import { incrementPersona } from './persona';
 import {
 	getOrOpenActiveSession,
 	recordScan as writerRecordScan,
-	recordTierResult as writerRecordTierResult,
 	updateScanOutcome as writerUpdateScanOutcome
 } from './scan-writer';
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
@@ -195,96 +192,6 @@ async function openScanRow(
 		decisionContext: { ...DECISION_CONTEXT }
 	});
 	return scanId;
-}
-
-function emitTier1Result(scanId: string, t: Tier1Telemetry): void {
-	void writerRecordTierResult({
-		scanId,
-		tier: 'tier1_hash',
-		engine: 'phash',
-		engineVersion: 'phash-v1',
-		rawOutput: {
-			query_dhash: t.queryDhash,
-			query_phash_256: t.queryPhash256,
-			idb_cache_hit: t.idbCacheHit,
-			sb_exact_hit: t.sbExactHit,
-			sb_fuzzy_hit: t.sbFuzzyHit
-		},
-		queryDhash: t.queryDhash,
-		queryPhash256: t.queryPhash256,
-		latencyMs: t.latencyMs,
-		errored: t.outcome === 'error',
-		errorMessage: t.errorMessage,
-		outcome: t.outcome,
-		ranAt: new Date(),
-		topnCandidates: t.topnCandidates as Array<Record<string, unknown>> | null,
-		idbCacheHit: t.idbCacheHit,
-		sbExactHit: t.sbExactHit,
-		sbFuzzyHit: t.sbFuzzyHit,
-		winnerDhashDistance: t.winnerDhashDistance,
-		winnerPhashDistance: t.winnerPhashDistance,
-		runnerUpMarginDhash: t.runnerUpMarginDhash,
-		hashMatchCount: t.hashMatchCount
-	});
-}
-
-function emitTier2Result(scanId: string, t: Tier2Telemetry): void {
-	void writerRecordTierResult({
-		scanId,
-		tier: 'tier2_ocr',
-		engine: 'tesseract_v5',
-		engineVersion: 'tesseract-5',
-		rawOutput: {
-			attempted: t.attempted,
-			regions_attempted: t.regionsAttempted,
-			regions_succeeded: t.regionsSucceeded
-		},
-		latencyMs: t.latencyMs,
-		errored: t.outcome === 'error',
-		errorMessage: t.errorMessage,
-		outcome: t.outcome,
-		skipReason: t.skipReason,
-		ranAt: new Date(),
-		ocrTextRaw: t.ocrTextRaw,
-		ocrMeanConfidence: t.ocrMeanConfidence,
-		ocrWordCount: t.ocrWordCount,
-		ocrDetectedCardNumber: t.ocrDetectedCardNumber
-	});
-}
-
-function emitTier3Result(scanId: string, t: Tier3Telemetry): void {
-	// Cost calculation for Haiku 4.5 (claude-haiku-4-5-20251001).
-	// Pricing: $1.00/M input tokens, $5.00/M output tokens as of 2026-04.
-	// When we add AI Gateway, this moves to the gateway's automatic capture.
-	const costUsd =
-		t.llmInputTokens !== null && t.llmOutputTokens !== null
-			? (t.llmInputTokens * 1.0 + t.llmOutputTokens * 5.0) / 1_000_000
-			: null;
-
-	void writerRecordTierResult({
-		scanId,
-		tier: 'tier3_claude',
-		engine: 'claude_haiku',
-		engineVersion: t.llmModelResponded ?? 'claude-haiku-4-5-20251001',
-		rawOutput: (t.rawResponse ?? {}) as Record<string, unknown>,
-		latencyMs: t.latencyMs,
-		costUsd,
-		errored: t.outcome === 'error',
-		errorMessage: t.errorMessage,
-		outcome: t.outcome,
-		skipReason: t.skipReason,
-		ranAt: new Date(),
-		llmModelRequested: t.llmModelRequested,
-		llmModelResponded: t.llmModelResponded,
-		llmInputTokens: t.llmInputTokens,
-		llmOutputTokens: t.llmOutputTokens,
-		llmCacheCreationTokens: t.llmCacheCreationTokens,
-		llmCacheReadTokens: t.llmCacheReadTokens,
-		llmFinishReason: t.llmFinishReason,
-		promptTemplateVersion: 'phase2.5',
-		pricingTableVersion: 'haiku-4.5-2026-04',
-		claudeReturnedNameInCatalog: t.claudeReturnedNameInCatalog
-	});
 }
 
 /**
@@ -491,24 +398,13 @@ export async function recognizeCard(
 			// Pass a clone so Comlink's ImageBitmap transfer (if it happens)
 			// leaves the main-thread `bitmap` reference intact. ~3ms overhead.
 			const rectifyClone = await cloneImageBitmap(bitmap);
-			// Outer timeout on the worker call. The worker itself has a 3s
-			// timeout inside rectifyCard; this 4s outer timeout catches the
-			// case where the worker postMessage itself hangs (thread stall,
-			// Comlink deadlock, etc.).
-			rectified = await Promise.race([
-				getImageWorker().rectifyCard(rectifyClone),
-				new Promise<null>((resolve) =>
-					setTimeout(() => {
-						checkpoint(
-							traceId,
-							'rectification:rectifyCard:timeout',
-							performance.now() - startTime
-						);
-						console.debug(`[scan:${traceId}] rectification worker timeout (4s), falling back`);
-						resolve(null);
-					}, 4000)
-				)
-			]);
+			// rectifyCard has its own 3s hard timeout inside the worker and returns
+			// null on any failure (timeout, no quad found, WASM error). Wrapping
+			// it in an outer Promise.race here just duplicated the timeout — the
+			// inner result and the outer reject would race, producing both a
+			// `:done` and a `:timeout` checkpoint within milliseconds and writing
+			// a tier_result row against pristine telemetry. Trust the inner budget.
+			rectified = await getImageWorker().rectifyCard(rectifyClone);
 			checkpoint(traceId, 'rectification:rectifyCard:done', performance.now() - startTime, {
 				succeeded: rectified !== null,
 				confidence: rectified?.confidence ?? null
@@ -749,15 +645,13 @@ export async function recognizeCard(
 	checkpoint(traceId, 'tier1:start', performance.now() - startTime);
 	let tier1Result: ScanResult | null = null;
 	try {
-		tier1Result = await Promise.race([
-			runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel),
-			new Promise<null>((resolve) =>
-				setTimeout(() => {
-					checkpoint(traceId, 'tier1:timeout', performance.now() - startTime);
-					resolve(null);
-				}, 8000)
-			)
-		]);
+		// No outer race: Tier 1's external calls (worker.computeDHash, IDB get,
+		// Supabase RPCs over fetch) are individually bounded. The previous 8s
+		// outer timeout fired on legitimately-slow tiers (e.g., 12s), causing
+		// emitTier1Result to write a row of nulls because telemetry was still
+		// pristine when the timeout-resolves arm of the race won. The tier
+		// itself emits its scan_tier_results row inside try/finally now.
+		tier1Result = await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise);
 		checkpoint(traceId, 'tier1:done', performance.now() - startTime, {
 			hit: tier1Result !== null,
 			outcome: tier1Tel.outcome
@@ -773,8 +667,6 @@ export async function recognizeCard(
 		});
 		console.warn(`[scan:${ctx.traceId}] Tier 1 failed, falling through:`, err);
 	}
-	// Emit Tier 1 telemetry regardless of hit/miss/error
-	void scanIdPromise.then((sid) => { if (sid) emitTier1Result(sid, tier1Tel); });
 	if (tier1Result) {
 		return finalize(tier1Result);
 	}
@@ -825,15 +717,10 @@ export async function recognizeCard(
 		checkpoint(traceId, 'tier2:start', performance.now() - startTime);
 		let tier2Result: ScanResult | null = null;
 		try {
-			tier2Result = await Promise.race([
-				runTier2(workingBitmap, ctx, tier2Tel),
-				new Promise<null>((resolve) =>
-					setTimeout(() => {
-						checkpoint(traceId, 'tier2:timeout', performance.now() - startTime);
-						resolve(null);
-					}, 8000)
-				)
-			]);
+			// No outer race: Tier 2's per-region OCR calls already use withTimeout
+			// against a TIER2_BUDGET_MS budget that early-exits when exhausted.
+			// runTier2 emits its scan_tier_results row inside try/finally now.
+			tier2Result = await runTier2(workingBitmap, ctx, tier2Tel, scanIdPromise);
 			checkpoint(traceId, 'tier2:done', performance.now() - startTime, {
 				hit: tier2Result !== null,
 				outcome: tier2Tel.outcome
@@ -850,8 +737,6 @@ export async function recognizeCard(
 			// OCR failure is non-fatal — fall through to Tier 3
 			console.warn('[scan] Tier 2 error (falling through to Tier 3):', err);
 		}
-		// Emit Tier 2 telemetry regardless of hit/miss/error
-		void scanIdPromise.then((sid) => { if (sid) emitTier2Result(sid, tier2Tel); });
 		if (tier2Result) {
 			const hash = await getImageWorker().computeDHash(workingBitmap);
 			const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
@@ -864,11 +749,21 @@ export async function recognizeCard(
 			return finalize(tier2Result);
 		}
 	} else {
+		// runTier2 isn't called in the OCR-unavailable path, so emit the skip row
+		// from out here. Inside-tier emit is the rule for runTier1/2/3 invocations;
+		// this is the lone exception where the tier function itself never runs.
 		console.debug('[scan] Tier 2 skipped: OCR not available');
 		tier2Tel.attempted = false;
 		tier2Tel.skipReason = 'ocr_unavailable';
 		tier2Tel.outcome = 'skipped';
-		void scanIdPromise.then((sid) => { if (sid) emitTier2Result(sid, tier2Tel); });
+		void scanIdPromise.then(async (sid) => {
+			if (!sid) return;
+			try {
+				await emitTier2Result(sid, tier2Tel);
+			} catch (err) {
+				console.debug('[scan] Tier 2 skip emit failed:', err);
+			}
+		});
 	}
 
 	// ── TIER 3: Claude API ──────────────────────────────────
@@ -878,15 +773,10 @@ export async function recognizeCard(
 	checkpoint(traceId, 'tier3:start', performance.now() - startTime);
 	let tier3Result: ScanResult | null = null;
 	try {
-		tier3Result = await Promise.race([
-			runTier3(workingBitmap, ctx, tier3Tel),
-			new Promise<null>((resolve) =>
-				setTimeout(() => {
-					checkpoint(traceId, 'tier3:timeout', performance.now() - startTime);
-					resolve(null);
-				}, 20000)
-			)
-		]);
+		// No outer race: the fetch to /api/scan is the only network op and it's
+		// bounded by the server-side Anthropic client + Vercel function timeout.
+		// runTier3 emits its scan_tier_results row inside try/finally now.
+		tier3Result = await runTier3(workingBitmap, ctx, tier3Tel, scanIdPromise);
 		checkpoint(traceId, 'tier3:done', performance.now() - startTime, {
 			hit: tier3Result !== null,
 			outcome: tier3Tel.outcome
@@ -897,7 +787,6 @@ export async function recognizeCard(
 		});
 		console.warn('[scan] Tier 3 threw:', err);
 	}
-	void scanIdPromise.then((sid) => { if (sid) emitTier3Result(sid, tier3Tel); });
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
 		const hash = await getImageWorker().computeDHash(workingBitmap);
