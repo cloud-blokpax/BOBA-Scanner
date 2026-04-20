@@ -15,6 +15,7 @@
 	import { scannerActive } from '$lib/stores/scanner.svelte';
 	import { loadNavConfig, clearNavConfig, visibleNavItems } from '$lib/stores/nav-config.svelte';
 	import { loadFeatureFlags } from '$lib/stores/feature-flags.svelte';
+	import { initAuth } from '$lib/stores/auth.svelte';
 	import GoProModal from '$lib/components/GoProModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -59,6 +60,15 @@
 	});
 
 	onMount(() => {
+		// Initialize the client-side auth store. Without this call the
+		// store's user() returns null forever, which silently breaks the
+		// feature-flags role check and prevents the new scan pipeline
+		// from recording any rows.
+		const authInit = initAuth();
+		void authInit.ready.catch((err) => {
+			console.warn('[layout] initAuth failed:', err);
+		});
+
 		// Bootstrap feature flags once per session so gated UI
 		// (multi-game hub, Pro features, etc.) resolves correctly
 		// on every route. Dedupes internally; safe to call anywhere.
@@ -212,6 +222,7 @@
 		window.addEventListener('online', handleOnline);
 
 		return () => {
+			authInit.cleanup();
 			authSubscription?.data.subscription.unsubscribe();
 			cleanupErrors();
 			cleanupVersion();
