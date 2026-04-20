@@ -317,7 +317,27 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 		console.log(`[api/scan] Claude identified: game=${detectedGameId}, card_number="${cardData.card_number}", hero="${cardData.hero_name}", confidence=${cardData.confidence}`);
 
-		return json({ success: true, card: cardData, method: 'claude', game_id: detectedGameId });
+		// Surface Anthropic usage/model metadata so Tier 3 telemetry can record
+		// tokens, finish reason, responded model, and request ID. All fields are
+		// defensively guarded — unknown fields on future SDK versions won't throw.
+		const usage = response.usage as {
+			input_tokens?: number;
+			output_tokens?: number;
+			cache_creation_input_tokens?: number | null;
+			cache_read_input_tokens?: number | null;
+		} | undefined;
+		const meta = {
+			model: response.model ?? null,
+			input_tokens: usage?.input_tokens ?? null,
+			output_tokens: usage?.output_tokens ?? null,
+			cache_creation_tokens: usage?.cache_creation_input_tokens ?? null,
+			cache_read_tokens: usage?.cache_read_input_tokens ?? null,
+			finish_reason: response.stop_reason ?? null,
+			anthropic_request_id: response.id ?? null,
+			image_bytes: cleanBuffer.length
+		};
+
+		return json({ success: true, card: cardData, method: 'claude', game_id: detectedGameId, meta });
 	} catch (err) {
 		console.error('[api/scan] Claude API error:', err);
 
