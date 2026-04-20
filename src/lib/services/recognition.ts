@@ -425,26 +425,43 @@ export async function recognizeCard(
 	}
 
 	// ── Card rectification (OpenCV.js) ────────────────────────
-	// Detect the card quad and warp to a canonical 500×700 bitmap. Phone
-	// photos have 15+ bits of dHash variance for the same card uncropped;
-	// rectifying to a canonical frame collapses that variance so hash-based
-	// matching can actually resolve. Every failure mode — OpenCV load error,
-	// no quad found, runtime exception — returns null and we fall through
-	// to the raw bitmap. Pipeline strictly improves, never degrades.
+	// Gated by card_rectification feature flag. If disabled (default for
+	// non-admins until verified working) or if rectification fails/times out,
+	// fall through to hashing the raw bitmap — matches pre-1.4 behavior.
 	let rectified: Awaited<ReturnType<ReturnType<typeof getImageWorker>['rectifyCard']>> = null;
-	try {
-		rectified = await getImageWorker().rectifyCard(bitmap);
-	} catch (err) {
-		console.debug('[scan] rectifyCard threw, falling back to raw bitmap:', err);
+
+	const rectificationEnabled = await isCardRectificationEnabled().catch(() => false);
+
+	if (rectificationEnabled) {
+		try {
+			// Outer timeout on the worker call. The worker itself has a 3s
+			// timeout inside rectifyCard; this 4s outer timeout catches the
+			// case where the worker postMessage itself hangs (thread stall,
+			// Comlink deadlock, etc.).
+			rectified = await Promise.race([
+				getImageWorker().rectifyCard(bitmap),
+				new Promise<null>((resolve) =>
+					setTimeout(() => {
+						console.debug(`[scan:${traceId}] rectification worker timeout (4s), falling back`);
+						resolve(null);
+					}, 4000)
+				)
+			]);
+		} catch (err) {
+			console.debug('[scan] rectifyCard threw, falling back to raw bitmap:', err);
+		}
 	}
+
 	const workingBitmap = rectified?.bitmap ?? bitmap;
 	const ownsWorkingBitmap = rectified !== null; // we created this one; release it on exit
 	if (rectified) {
 		console.debug(
 			`[scan:${traceId}] Rectification succeeded (confidence=${rectified.confidence.toFixed(3)})`
 		);
-	} else {
+	} else if (rectificationEnabled) {
 		console.debug(`[scan:${traceId}] Rectification miss — hashing uncropped bitmap`);
+	} else {
+		console.debug(`[scan:${traceId}] Rectification disabled by feature flag`);
 	}
 
 	const scanWriteExtras: ScanWriteExtras = {
@@ -881,6 +898,21 @@ async function traceScanPipeline(
 		} as never);
 	} catch {
 		// Swallow — telemetry failure must never break a scan
+	}
+}
+
+/**
+ * Session 1.4-fix gate for card rectification. Default off globally, on for
+ * admin via user override until verified on real traffic. Flipping the flag
+ * via MCP immediately restores pre-rectification behavior — no code rollback.
+ */
+async function isCardRectificationEnabled(): Promise<boolean> {
+	try {
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		const { featureEnabled } = flagsModule;
+		return featureEnabled('card_rectification')();
+	} catch {
+		return false;
 	}
 }
 
