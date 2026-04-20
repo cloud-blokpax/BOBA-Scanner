@@ -60,8 +60,10 @@ import { parseExifSafe } from '$lib/utils/exif';
 const DECISION_CONTEXT = {
 	dhash_max_distance_fuzzy: 5,
 	phash_verification_max_distance: 20,
+	phash_256_max_distance: 40,
 	tier1_min_confidence: 0.8,
-	hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2'
+	hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2',
+	rectification_enabled: true
 } as const;
 
 // Re-export for backward compatibility
@@ -98,6 +100,10 @@ interface ScanWriteExtras {
 	photoWidth: number | null;
 	photoHeight: number | null;
 	captureSource: 'camera_live' | 'camera_upload' | null;
+	/** Did the OpenCV quad-detect pass succeed for this scan? */
+	rectificationSucceeded: boolean;
+	/** Aspect-ratio fit score in [0, 1] when rectification ran. */
+	rectificationConfidence: number | null;
 }
 
 /**
@@ -147,6 +153,13 @@ async function openScanRow(
 		gameId: sessionGameId,
 		captureLatencyMs: null,
 		photoBlob,
+
+		// Capture-time rectification outcome. Stored in capture_context JSONB
+		// so we can correlate Tier 1 hit rate with rectification success.
+		captureContext: {
+			rectification_succeeded: extras.rectificationSucceeded,
+			rectification_confidence: extras.rectificationConfidence
+		},
 
 		// Capture source identity
 		captureSource: extras.captureSource ?? null,
@@ -411,13 +424,38 @@ export async function recognizeCard(
 		console.debug('[scan] computeQualitySignals failed, continuing:', err);
 	}
 
+	// ── Card rectification (OpenCV.js) ────────────────────────
+	// Detect the card quad and warp to a canonical 500×700 bitmap. Phone
+	// photos have 15+ bits of dHash variance for the same card uncropped;
+	// rectifying to a canonical frame collapses that variance so hash-based
+	// matching can actually resolve. Every failure mode — OpenCV load error,
+	// no quad found, runtime exception — returns null and we fall through
+	// to the raw bitmap. Pipeline strictly improves, never degrades.
+	let rectified: Awaited<ReturnType<ReturnType<typeof getImageWorker>['rectifyCard']>> = null;
+	try {
+		rectified = await getImageWorker().rectifyCard(bitmap);
+	} catch (err) {
+		console.debug('[scan] rectifyCard threw, falling back to raw bitmap:', err);
+	}
+	const workingBitmap = rectified?.bitmap ?? bitmap;
+	const ownsWorkingBitmap = rectified !== null; // we created this one; release it on exit
+	if (rectified) {
+		console.debug(
+			`[scan:${traceId}] Rectification succeeded (confidence=${rectified.confidence.toFixed(3)})`
+		);
+	} else {
+		console.debug(`[scan:${traceId}] Rectification miss — hashing uncropped bitmap`);
+	}
+
 	const scanWriteExtras: ScanWriteExtras = {
 		telemetry: shutterTelemetry,
 		exif: shutterExif,
 		qualitySignals: shutterQuality,
 		photoWidth: bitmap.width,
 		photoHeight: bitmap.height,
-		captureSource
+		captureSource,
+		rectificationSucceeded: rectified !== null,
+		rectificationConfidence: rectified?.confidence ?? null
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
@@ -444,6 +482,7 @@ export async function recognizeCard(
 		if (blurResult.isBlurry) {
 			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
 			if (ownsBitmap) bitmap.close();
+			if (ownsWorkingBitmap) workingBitmap.close();
 			return {
 				card_id: null,
 				card: null,
@@ -584,11 +623,15 @@ export async function recognizeCard(
 	}
 
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
+	// Every tier operates on `workingBitmap` — the rectified frame if
+	// detection succeeded, otherwise the raw bitmap. Hash cache writebacks
+	// also store the rectified-frame hash so future scans of the same card
+	// hit the same cache row.
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
 	let tier1Result: ScanResult | null = null;
 	try {
-		tier1Result = await runTier1(bitmap, ctx, writeHashToAllLayers, tier1Tel);
+		tier1Result = await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel);
 		if (tier1Result) {
 			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
 		} else {
@@ -648,7 +691,7 @@ export async function recognizeCard(
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
 		let tier2Result: ScanResult | null = null;
 		try {
-			tier2Result = await runTier2(bitmap, ctx, tier2Tel);
+			tier2Result = await runTier2(workingBitmap, ctx, tier2Tel);
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
 			} else {
@@ -661,14 +704,14 @@ export async function recognizeCard(
 		// Emit Tier 2 telemetry regardless of hit/miss/error
 		void scanIdPromise.then((sid) => { if (sid) emitTier2Result(sid, tier2Tel); });
 		if (tier2Result) {
-			const hash = await getImageWorker().computeDHash(bitmap);
+			const hash = await getImageWorker().computeDHash(workingBitmap);
 			const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
 			// Tier 2 can't detect variant visually. Default to 'paper' in the hash
 			// cache — the Tier 2 confirmation UI forces the user to choose variant
 			// before the collection entry is created, so the collection row records
 			// the truth regardless of what the hash cache says.
 			const hashVariant = tier2Result.variant || 'paper';
-			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, bitmap, hashGameId, hashVariant);
+			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, workingBitmap, hashGameId, hashVariant);
 			return finalize(tier2Result);
 		}
 	} else {
@@ -683,16 +726,16 @@ export async function recognizeCard(
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	const tier3Result = await runTier3(bitmap, ctx, tier3Tel);
+	const tier3Result = await runTier3(workingBitmap, ctx, tier3Tel);
 	void scanIdPromise.then((sid) => { if (sid) emitTier3Result(sid, tier3Tel); });
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
-		const hash = await getImageWorker().computeDHash(bitmap);
+		const hash = await getImageWorker().computeDHash(workingBitmap);
 		const hashGameId = tier3Result.card?.game_id || tier3Result.game_id || gameHint || 'boba';
 		// Tier 3 variant comes from Claude's decision-tree output. Default to
 		// 'paper' only if null (e.g., BoBA cards where variant is baked into card_number).
 		const hashVariant = tier3Result.variant || 'paper';
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, bitmap, hashGameId, hashVariant);
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, workingBitmap, hashGameId, hashVariant);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
