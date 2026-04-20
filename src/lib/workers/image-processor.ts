@@ -18,6 +18,7 @@ import * as Comlink from 'comlink';
 // is cached so concurrent first-scans share the same load.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _cvPromise: Promise<any> | null = null;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadOpenCV(): Promise<any> {
 	if (_cvPromise) return _cvPromise;
@@ -25,18 +26,56 @@ async function loadOpenCV(): Promise<any> {
 		const mod = await import('@techstark/opencv-js');
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const cv: any = (mod as unknown as { default?: unknown }).default ?? mod;
-		// Emscripten runtime may already be initialized if the module was
-		// loaded previously; if not, `onRuntimeInitialized` fires once WASM
-		// is ready. `cv.Mat` being a function is the cheap "already loaded"
-		// test used by the official examples.
-		if (typeof cv?.Mat === 'function') return cv;
-		await new Promise<void>((resolve) => {
-			cv.onRuntimeInitialized = () => resolve();
-		});
+
+		// @techstark/opencv-js exposes `cv.ready` as the authoritative
+		// "WASM runtime is done instantiating" signal. It's a Promise set
+		// inside the module's evaluation and is safe to await regardless of
+		// whether the runtime is already initialized or still loading.
+		//
+		// The older `cv.onRuntimeInitialized` callback pattern is unreliable
+		// because Emscripten may have already fired init by the time we
+		// assign the callback, resulting in a Promise that never resolves
+		// (this was the source of the Session 1.4 scan hang).
+		if (cv?.ready && typeof cv.ready.then === 'function') {
+			// Race the ready promise against a 5-second hard cap. If WASM isn't
+			// ready in 5s on modern hardware, something is deeply wrong — we'd
+			// rather error and fall back than hang the user's scan forever.
+			await Promise.race([
+				cv.ready,
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('OpenCV cv.ready timed out after 5s')), 5000)
+				)
+			]);
+		} else if (typeof cv?.Mat !== 'function') {
+			// Fallback for builds that don't expose cv.ready: 5s race on
+			// onRuntimeInitialized OR polling cv.Mat becoming a function.
+			await Promise.race([
+				new Promise<void>((resolve) => {
+					if (typeof cv?.Mat === 'function') { resolve(); return; }
+					cv.onRuntimeInitialized = () => resolve();
+					// Polling fallback in case onRuntimeInitialized already fired
+					const poll = setInterval(() => {
+						if (typeof cv?.Mat === 'function') {
+							clearInterval(poll);
+							resolve();
+						}
+					}, 50);
+				}),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('OpenCV init timed out after 5s')), 5000)
+				)
+			]);
+		}
+
+		// Final sanity check: if we got here but cv.Mat still isn't callable,
+		// something's wrong — throw so the catch clears the cached promise.
+		if (typeof cv?.Mat !== 'function') {
+			throw new Error('OpenCV load completed but cv.Mat is not available');
+		}
+
 		return cv;
 	})().catch((err) => {
-		// Reset cache so a subsequent scan can retry (e.g., transient CDN flake).
-		_cvPromise = null;
+		_cvPromise = null; // allow retry on next scan
 		throw err;
 	});
 	return _cvPromise;
@@ -709,6 +748,25 @@ const imageProcessor = {
 	 * cleanly to pre-rectification behavior.
 	 */
 	async rectifyCard(bitmap: ImageBitmap): Promise<{
+		bitmap: ImageBitmap;
+		confidence: number;
+		corners: Array<{ x: number; y: number }>;
+	} | null> {
+		// Hard timeout for the full rectification pipeline. Normal success path
+		// is 200-500ms on mobile; 3s is ~6x that and catches any pathological
+		// slow case (e.g., WASM memory pressure, unusual input dimensions).
+		return Promise.race([
+			this._rectifyCardInner(bitmap),
+			new Promise<null>((resolve) =>
+				setTimeout(() => {
+					console.debug('[rectify] timeout after 3s, falling back');
+					resolve(null);
+				}, 3000)
+			)
+		]);
+	},
+
+	async _rectifyCardInner(bitmap: ImageBitmap): Promise<{
 		bitmap: ImageBitmap;
 		confidence: number;
 		corners: Array<{ x: number; y: number }>;
