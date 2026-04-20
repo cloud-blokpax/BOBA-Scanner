@@ -51,6 +51,7 @@ import {
 } from './scan-writer';
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
+import { checkpoint } from './scan-checkpoint';
 
 /**
  * Decision thresholds captured per scan so future analysis can replay
@@ -337,6 +338,35 @@ async function logScanToSupabaseLegacy(result: ScanResult): Promise<void> {
 }
 
 /**
+ * Clone an ImageBitmap by drawing it to an OffscreenCanvas and transferring
+ * back out. Used at the Comlink boundary so main-thread bitmap ownership
+ * survives regardless of Comlink's auto-transfer semantics for ImageBitmap.
+ */
+async function cloneImageBitmap(src: ImageBitmap): Promise<ImageBitmap> {
+	const canvas = new OffscreenCanvas(src.width, src.height);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('no 2d ctx');
+	ctx.drawImage(src, 0, 0);
+	return canvas.transferToImageBitmap();
+}
+
+/**
+ * Probe an ImageBitmap for validity. A bitmap whose ownership was transferred
+ * to a worker (or has been closed) throws InvalidStateError on width access
+ * or reports 0×0 dimensions.
+ */
+function isBitmapValid(bmp: ImageBitmap): { valid: boolean; reason: string | null } {
+	try {
+		const w = bmp.width;
+		const h = bmp.height;
+		if (!(w > 0 && h > 0)) return { valid: false, reason: `zero-size ${w}x${h}` };
+		return { valid: true, reason: null };
+	} catch (err) {
+		return { valid: false, reason: err instanceof Error ? err.message : String(err) };
+	}
+}
+
+/**
  * @param imageSource - File, Blob, or ImageBitmap to scan
  * @param onTierChange - Optional callback for UI progress updates
  * @returns ScanResult with matched card data
@@ -348,7 +378,16 @@ export async function recognizeCard(
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
+	checkpoint(traceId, 'recognize:start', 0, {
+		capture_source:
+			imageSource instanceof File
+				? 'upload'
+				: imageSource instanceof ImageBitmap
+					? 'live_bitmap'
+					: 'live_blob'
+	});
 	await initWorkers();
+	checkpoint(traceId, 'initWorkers:done', performance.now() - startTime);
 
 	// Resolve game context:
 	//   - Explicit gameHint ('boba' | 'wonders') → single-game mode (backward compat)
@@ -418,9 +457,19 @@ export async function recognizeCard(
 	let shutterQuality: Awaited<
 		ReturnType<ReturnType<typeof getImageWorker>['computeQualitySignals']>
 	> | null = null;
+	checkpoint(traceId, 'quality_signals:start', performance.now() - startTime);
 	try {
-		shutterQuality = await getImageWorker().computeQualitySignals(bitmap);
+		// Pass a clone so Comlink transfer doesn't detach the main-thread bitmap.
+		const qsClone = await cloneImageBitmap(bitmap);
+		shutterQuality = await getImageWorker().computeQualitySignals(qsClone);
+		checkpoint(traceId, 'quality_signals:done', performance.now() - startTime, {
+			blur: shutterQuality?.blur ?? null,
+			passed: shutterQuality?.passed ?? null
+		});
 	} catch (err) {
+		checkpoint(traceId, 'quality_signals:threw', performance.now() - startTime, {
+			error: err instanceof Error ? err.message : String(err)
+		});
 		console.debug('[scan] computeQualitySignals failed, continuing:', err);
 	}
 
@@ -430,24 +479,44 @@ export async function recognizeCard(
 	// fall through to hashing the raw bitmap — matches pre-1.4 behavior.
 	let rectified: Awaited<ReturnType<ReturnType<typeof getImageWorker>['rectifyCard']>> = null;
 
+	checkpoint(traceId, 'rectification:flag_check:start', performance.now() - startTime);
 	const rectificationEnabled = await isCardRectificationEnabled().catch(() => false);
+	checkpoint(traceId, 'rectification:flag_check:done', performance.now() - startTime, {
+		enabled: rectificationEnabled
+	});
 
 	if (rectificationEnabled) {
+		checkpoint(traceId, 'rectification:rectifyCard:start', performance.now() - startTime);
 		try {
+			// Pass a clone so Comlink's ImageBitmap transfer (if it happens)
+			// leaves the main-thread `bitmap` reference intact. ~3ms overhead.
+			const rectifyClone = await cloneImageBitmap(bitmap);
 			// Outer timeout on the worker call. The worker itself has a 3s
 			// timeout inside rectifyCard; this 4s outer timeout catches the
 			// case where the worker postMessage itself hangs (thread stall,
 			// Comlink deadlock, etc.).
 			rectified = await Promise.race([
-				getImageWorker().rectifyCard(bitmap),
+				getImageWorker().rectifyCard(rectifyClone),
 				new Promise<null>((resolve) =>
 					setTimeout(() => {
+						checkpoint(
+							traceId,
+							'rectification:rectifyCard:timeout',
+							performance.now() - startTime
+						);
 						console.debug(`[scan:${traceId}] rectification worker timeout (4s), falling back`);
 						resolve(null);
 					}, 4000)
 				)
 			]);
+			checkpoint(traceId, 'rectification:rectifyCard:done', performance.now() - startTime, {
+				succeeded: rectified !== null,
+				confidence: rectified?.confidence ?? null
+			});
 		} catch (err) {
+			checkpoint(traceId, 'rectification:rectifyCard:threw', performance.now() - startTime, {
+				error: err instanceof Error ? err.message : String(err)
+			});
 			console.debug('[scan] rectifyCard threw, falling back to raw bitmap:', err);
 		}
 	}
@@ -462,6 +531,37 @@ export async function recognizeCard(
 		console.debug(`[scan:${traceId}] Rectification miss — hashing uncropped bitmap`);
 	} else {
 		console.debug(`[scan:${traceId}] Rectification disabled by feature flag`);
+	}
+
+	// CRITICAL: check the bitmap is still valid BEFORE passing it to tiers.
+	// If a Comlink call transferred ownership, the original bitmap is closed
+	// and subsequent worker calls hang. The clone above SHOULD prevent this,
+	// but we verify explicitly so we catch a regression instead of hanging.
+	checkpoint(traceId, 'bitmap:validity_check:start', performance.now() - startTime);
+	const wbValidity = isBitmapValid(workingBitmap);
+	checkpoint(traceId, 'bitmap:validity_check:done', performance.now() - startTime, {
+		valid: wbValidity.valid,
+		width: wbValidity.valid ? workingBitmap.width : null,
+		reason: wbValidity.reason
+	});
+	if (!wbValidity.valid) {
+		checkpoint(traceId, 'bitmap:INVALID', performance.now() - startTime, {
+			reason: wbValidity.reason
+		});
+		if (ownsBitmap) {
+			try { bitmap.close(); } catch { /* ignore */ }
+		}
+		if (ownsWorkingBitmap) {
+			try { workingBitmap.close(); } catch { /* ignore */ }
+		}
+		return {
+			card_id: null,
+			card: null,
+			scan_method: 'hash_cache' as ScanMethod,
+			confidence: 0,
+			processing_ms: Math.round(performance.now() - startTime),
+			failReason: 'Image buffer was lost during processing — please try again'
+		};
 	}
 
 	const scanWriteExtras: ScanWriteExtras = {
@@ -646,15 +746,31 @@ export async function recognizeCard(
 	// hit the same cache row.
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
+	checkpoint(traceId, 'tier1:start', performance.now() - startTime);
 	let tier1Result: ScanResult | null = null;
 	try {
-		tier1Result = await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel);
+		tier1Result = await Promise.race([
+			runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel),
+			new Promise<null>((resolve) =>
+				setTimeout(() => {
+					checkpoint(traceId, 'tier1:timeout', performance.now() - startTime);
+					resolve(null);
+				}, 8000)
+			)
+		]);
+		checkpoint(traceId, 'tier1:done', performance.now() - startTime, {
+			hit: tier1Result !== null,
+			outcome: tier1Tel.outcome
+		});
 		if (tier1Result) {
 			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
 		} else {
 			console.debug('[scan] Tier 1 MISS: no hash match found');
 		}
 	} catch (err) {
+		checkpoint(traceId, 'tier1:threw', performance.now() - startTime, {
+			error: err instanceof Error ? err.message : String(err)
+		});
 		console.warn(`[scan:${ctx.traceId}] Tier 1 failed, falling through:`, err);
 	}
 	// Emit Tier 1 telemetry regardless of hit/miss/error
@@ -706,15 +822,31 @@ export async function recognizeCard(
 	if (isOcrAvailable()) {
 		onTierChange?.(2);
 		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
+		checkpoint(traceId, 'tier2:start', performance.now() - startTime);
 		let tier2Result: ScanResult | null = null;
 		try {
-			tier2Result = await runTier2(workingBitmap, ctx, tier2Tel);
+			tier2Result = await Promise.race([
+				runTier2(workingBitmap, ctx, tier2Tel),
+				new Promise<null>((resolve) =>
+					setTimeout(() => {
+						checkpoint(traceId, 'tier2:timeout', performance.now() - startTime);
+						resolve(null);
+					}, 8000)
+				)
+			]);
+			checkpoint(traceId, 'tier2:done', performance.now() - startTime, {
+				hit: tier2Result !== null,
+				outcome: tier2Tel.outcome
+			});
 			if (tier2Result) {
 				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
 			} else {
 				console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
 			}
 		} catch (err) {
+			checkpoint(traceId, 'tier2:threw', performance.now() - startTime, {
+				error: err instanceof Error ? err.message : String(err)
+			});
 			// OCR failure is non-fatal — fall through to Tier 3
 			console.warn('[scan] Tier 2 error (falling through to Tier 3):', err);
 		}
@@ -743,7 +875,28 @@ export async function recognizeCard(
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
 	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	const tier3Result = await runTier3(workingBitmap, ctx, tier3Tel);
+	checkpoint(traceId, 'tier3:start', performance.now() - startTime);
+	let tier3Result: ScanResult | null = null;
+	try {
+		tier3Result = await Promise.race([
+			runTier3(workingBitmap, ctx, tier3Tel),
+			new Promise<null>((resolve) =>
+				setTimeout(() => {
+					checkpoint(traceId, 'tier3:timeout', performance.now() - startTime);
+					resolve(null);
+				}, 20000)
+			)
+		]);
+		checkpoint(traceId, 'tier3:done', performance.now() - startTime, {
+			hit: tier3Result !== null,
+			outcome: tier3Tel.outcome
+		});
+	} catch (err) {
+		checkpoint(traceId, 'tier3:threw', performance.now() - startTime, {
+			error: err instanceof Error ? err.message : String(err)
+		});
+		console.warn('[scan] Tier 3 threw:', err);
+	}
 	void scanIdPromise.then((sid) => { if (sid) emitTier3Result(sid, tier3Tel); });
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
