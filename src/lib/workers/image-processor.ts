@@ -281,6 +281,125 @@ const imageProcessor = {
 		return { cardDetected, isSharp, variance };
 	},
 
+	/**
+	 * Compact image quality report for telemetry.
+	 *
+	 * Computes blur (Laplacian variance), luminance mean/std, over/underexposed
+	 * pixel percentages, and edge density (Sobel-thresholded, not full Canny)
+	 * on a 256×192 grayscale downscale. Target budget is <50ms on mobile.
+	 *
+	 * The `passed` / `failReason` output is a soft guideline, not a gate —
+	 * the scan pipeline still runs even when this reports poor quality.
+	 */
+	async computeQualitySignals(imageBitmap: ImageBitmap): Promise<{
+		blur: number;
+		luminanceMean: number;
+		luminanceStd: number;
+		overexposedPct: number;
+		underexposedPct: number;
+		edgeDensityCanny: number;
+		passed: boolean;
+		failReason: string | null;
+	}> {
+		const W = 256;
+		const H = 192;
+		const canvas = new OffscreenCanvas(W, H);
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(imageBitmap, 0, 0, W, H);
+		const { data } = ctx.getImageData(0, 0, W, H);
+		const total = W * H;
+
+		// Grayscale + luminance histogram in one pass
+		const gray = new Float32Array(total);
+		let sum = 0;
+		let sumSq = 0;
+		let over = 0;
+		let under = 0;
+		for (let i = 0; i < total; i++) {
+			const idx = i * 4;
+			const g = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+			gray[i] = g;
+			sum += g;
+			sumSq += g * g;
+			if (g > 245) over++;
+			else if (g < 10) under++;
+		}
+		const luminanceMean = sum / total;
+		const luminanceStd = Math.sqrt(Math.max(0, sumSq / total - luminanceMean * luminanceMean));
+		const overexposedPct = over / total;
+		const underexposedPct = under / total;
+
+		// Laplacian variance (blur). 3×3 kernel, inner pixels only.
+		let lapSum = 0;
+		let lapSumSq = 0;
+		let lapCount = 0;
+		for (let y = 1; y < H - 1; y++) {
+			for (let x = 1; x < W - 1; x++) {
+				const c = gray[y * W + x];
+				const lap =
+					gray[(y - 1) * W + x] +
+					gray[(y + 1) * W + x] +
+					gray[y * W + x - 1] +
+					gray[y * W + x + 1] -
+					4 * c;
+				lapSum += lap;
+				lapSumSq += lap * lap;
+				lapCount++;
+			}
+		}
+		const lapMean = lapSum / lapCount;
+		const blur = lapSumSq / lapCount - lapMean * lapMean;
+
+		// Edge density (Sobel magnitude thresholded > 60). Close-enough
+		// substitute for a full Canny pass without the hysteresis cost.
+		let edgePixels = 0;
+		for (let y = 1; y < H - 1; y++) {
+			for (let x = 1; x < W - 1; x++) {
+				const tl = gray[(y - 1) * W + x - 1];
+				const tc = gray[(y - 1) * W + x];
+				const tr = gray[(y - 1) * W + x + 1];
+				const ml = gray[y * W + x - 1];
+				const mr = gray[y * W + x + 1];
+				const bl = gray[(y + 1) * W + x - 1];
+				const bc = gray[(y + 1) * W + x];
+				const br = gray[(y + 1) * W + x + 1];
+				const gx = tr + 2 * mr + br - tl - 2 * ml - bl;
+				const gy = bl + 2 * bc + br - tl - 2 * tc - tr;
+				const mag = Math.sqrt(gx * gx + gy * gy);
+				if (mag > 60) edgePixels++;
+			}
+		}
+		const edgeDensityCanny = edgePixels / ((W - 2) * (H - 2));
+
+		// Soft quality gate — advisory only.
+		let passed = true;
+		let failReason: string | null = null;
+		if (blur < 80) {
+			passed = false;
+			failReason = 'blur';
+		} else if (overexposedPct > 0.4) {
+			passed = false;
+			failReason = 'overexposed';
+		} else if (underexposedPct > 0.4) {
+			passed = false;
+			failReason = 'underexposed';
+		} else if (luminanceMean < 30 || luminanceMean > 230) {
+			passed = false;
+			failReason = 'lighting';
+		}
+
+		return {
+			blur,
+			luminanceMean,
+			luminanceStd,
+			overexposedPct,
+			underexposedPct,
+			edgeDensityCanny,
+			passed,
+			failReason
+		};
+	},
+
 	async checkGlare(imageBitmap: ImageBitmap, brightnessThreshold = 240, areaThreshold = 0.03): Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }> {
 		const analyzeW = 200;
 		const analyzeH = 150;

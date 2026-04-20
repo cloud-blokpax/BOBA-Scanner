@@ -21,6 +21,16 @@ export type ImageWorkerProxy = Comlink.Remote<{
 	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;
 	checkGlare: (bitmap: ImageBitmap, brightnessThreshold?: number, areaThreshold?: number) => Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }>;
 	analyzeCardPresence: (bitmap: ImageBitmap, blurThreshold?: number) => Promise<{ cardDetected: boolean; isSharp: boolean; variance: number }>;
+	computeQualitySignals: (bitmap: ImageBitmap) => Promise<{
+		blur: number;
+		luminanceMean: number;
+		luminanceStd: number;
+		overexposedPct: number;
+		underexposedPct: number;
+		edgeDensityCanny: number;
+		passed: boolean;
+		failReason: string | null;
+	}>;
 	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
 	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
 }>;
