@@ -67,20 +67,6 @@ async function fetchImageBuffer(url: string): Promise<Buffer> {
 	}
 }
 
-type AdminClient = NonNullable<ReturnType<typeof getAdminClient>>;
-
-async function getExistingCardIds(admin: AdminClient): Promise<string[]> {
-	const { data } = await admin
-		.from('hash_cache')
-		.select('card_id')
-		// Narrow to Wonders paper hashes; columns exist in the live schema even
-		// when the generated Database type hasn't caught up yet.
-		.eq('game_id' as never, 'wonders')
-		.eq('variant' as never, 'paper')
-		.is('superseded_at', null);
-	return (data ?? []).map((r) => r.card_id);
-}
-
 export const POST: RequestHandler = async ({ locals }) => {
 	const startTime = Date.now();
 	const adminId = await authorizeOrThrow(locals);
@@ -135,23 +121,18 @@ export const POST: RequestHandler = async ({ locals }) => {
 		});
 	}
 
-	// Antijoin against cards that already have a hash row. PostgREST rejects
-	// empty IN clauses, so we branch on whether any cards have been seeded yet.
-	// First-ever batch uses the no-antijoin path.
-	const existingIds = await getExistingCardIds(admin);
-
-	let batchQuery = admin
-		.from('cards')
-		.select('id, image_url')
-		.eq('game_id', 'wonders')
-		.not('image_url', 'is', null)
-		.limit(BATCH_SIZE);
-
-	if (existingIds.length > 0) {
-		batchQuery = batchQuery.not('id', 'in', '(' + existingIds.join(',') + ')');
-	}
-
-	const { data: batch, error: batchErr } = await batchQuery.returns<WondersCard[]>();
+	// Server-side RPC does the antijoin inside Postgres, avoiding the
+	// PostgREST URL-size limit that 500'd the endpoint once ~600 cards
+	// were already seeded. The RPC exists in the live schema but the
+	// generated Database type hasn't caught up, so we cast around it.
+	const rpcCall = (admin.rpc as unknown as (
+		fn: string,
+		args: Record<string, unknown>
+	) => PromiseLike<{ data: WondersCard[] | null; error: { message: string } | null }>)(
+		'get_wonders_cards_to_seed',
+		{ p_limit: BATCH_SIZE }
+	);
+	const { data: batch, error: batchErr } = await rpcCall;
 
 	if (batchErr) {
 		throw error(500, `Batch query failed: ${batchErr.message}`);
