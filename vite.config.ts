@@ -22,6 +22,8 @@ export default defineConfig({
 		target: 'es2020'
 	},
 	worker: {
-		format: 'es'
+		// Classic workers so the image-processor can importScripts('/vendor/opencv.js')
+		// without needing CSP 'unsafe-eval'. Vite bundles imports into an IIFE.
+		format: 'iife'
 	}
 });

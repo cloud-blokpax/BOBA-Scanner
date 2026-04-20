@@ -9,6 +9,7 @@ dist/
 *.local
 .vercel
 scripts/output/
+static/vendor/
 
 # Prevent accidentally committing AI-generated review documents
 *-REVIEW.md
