@@ -170,6 +170,8 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		'/boba/collection', '/boba/set-completion', '/boba/market',
 		'/wonders/collection', '/wonders/set-completion', '/wonders/market',
 		'/wonders/dragon-points',
+		// Dev spike routes (admin-gated in their +page.server.ts loaders)
+		'/dev',
 	];
 	const isProtected = protectedRoutes.some((route) => event.url.pathname.startsWith(route));
 
