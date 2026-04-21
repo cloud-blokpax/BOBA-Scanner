@@ -32,6 +32,7 @@ import {
 } from './recognition-workers';
 import {
 	runTier1,
+	runTier1Embedding,
 	runTier2,
 	runTier3,
 	emptyTier1Telemetry,
@@ -103,6 +104,8 @@ interface ScanWriteExtras {
 	alignmentStateAtCapture: 'no_card' | 'partial' | 'ready' | null;
 	/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
 	viewfinder: { x: number; y: number; width: number; height: number } | null;
+	/** Which Tier 1 path ran for this scan (Session 1.6). */
+	tier1Engine: 'phash' | 'embedding';
 }
 
 /**
@@ -156,12 +159,15 @@ async function openScanRow(
 		// Session 1.5 capture-context: viewfinder-alignment telemetry. Stored
 		// in capture_context JSONB so Tier 1 hit rate can be segmented by
 		// alignment quality at the moment of shutter.
+		// Session 1.6 adds tier1_engine so hit-rate views can split
+		// embedding runs from pHash runs.
 		captureContext: {
 			alignment_state_at_capture: extras.alignmentStateAtCapture,
 			viewfinder_x: extras.viewfinder?.x ?? null,
 			viewfinder_y: extras.viewfinder?.y ?? null,
 			viewfinder_width: extras.viewfinder?.width ?? null,
-			viewfinder_height: extras.viewfinder?.height ?? null
+			viewfinder_height: extras.viewfinder?.height ?? null,
+			tier1_engine: extras.tier1Engine
 		},
 
 		// Capture source identity
@@ -424,6 +430,13 @@ export async function recognizeCard(
 		};
 	}
 
+	// ── Tier 1 engine selection (Session 1.6) ──────────────
+	// Resolved before openScanRow so capture_context.tier1_engine is written
+	// at INSERT time. The flag is read once per scan so a mid-scan flag flip
+	// doesn't split the telemetry for this scan across engines.
+	const embeddingTier1Enabled = await isEmbeddingTier1Enabled().catch(() => false);
+	const tier1Engine: 'phash' | 'embedding' = embeddingTier1Enabled ? 'embedding' : 'phash';
+
 	const scanWriteExtras: ScanWriteExtras = {
 		telemetry: shutterTelemetry,
 		exif: shutterExif,
@@ -432,7 +445,8 @@ export async function recognizeCard(
 		photoHeight: bitmap.height,
 		captureSource,
 		alignmentStateAtCapture: options?.alignmentStateAtCapture ?? null,
-		viewfinder: options?.viewfinder ?? null
+		viewfinder: options?.viewfinder ?? null,
+		tier1Engine
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
@@ -598,29 +612,28 @@ export async function recognizeCard(
 		return final;
 	}
 
-	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
+	// ── TIER 1: Hash or Embedding Lookup ─────────────────────
 	// All tiers operate on `workingBitmap`, which is the viewfinder-cropped
 	// canonical 500×700 frame produced by Scanner.svelte's capture flow.
+	// Session 1.6: gated by 'embedding_tier1' — if enabled, DINOv2-based
+	// nearest-neighbor replaces pHash. pHash remains the default.
 	onTierChange?.(1);
-	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
-	checkpoint(traceId, 'tier1:start', performance.now() - startTime);
+	console.debug(`[scan] Starting Tier 1 (${tier1Engine}) lookup...`);
+	checkpoint(traceId, 'tier1:start', performance.now() - startTime, { engine: tier1Engine });
 	let tier1Result: ScanResult | null = null;
 	try {
-		// No outer race: Tier 1's external calls (worker.computeDHash, IDB get,
-		// Supabase RPCs over fetch) are individually bounded. The previous 8s
-		// outer timeout fired on legitimately-slow tiers (e.g., 12s), causing
-		// emitTier1Result to write a row of nulls because telemetry was still
-		// pristine when the timeout-resolves arm of the race won. The tier
-		// itself emits its scan_tier_results row inside try/finally now.
-		tier1Result = await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise);
+		tier1Result = tier1Engine === 'embedding'
+			? await runTier1Embedding(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise)
+			: await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise);
 		checkpoint(traceId, 'tier1:done', performance.now() - startTime, {
 			hit: tier1Result !== null,
-			outcome: tier1Tel.outcome
+			outcome: tier1Tel.outcome,
+			engine: tier1Engine
 		});
 		if (tier1Result) {
-			console.debug(`[scan] Tier 1 HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
+			console.debug(`[scan] Tier 1 (${tier1Engine}) HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
 		} else {
-			console.debug('[scan] Tier 1 MISS: no hash match found');
+			console.debug(`[scan] Tier 1 (${tier1Engine}) MISS`);
 		}
 	} catch (err) {
 		checkpoint(traceId, 'tier1:threw', performance.now() - startTime, {
@@ -901,6 +914,20 @@ async function traceScanPipeline(
 		} as never);
 	} catch {
 		// Swallow — telemetry failure must never break a scan
+	}
+}
+
+/**
+ * Session 1.6 gate. Returns true when Tier 1 should run the DINOv2
+ * embedding path instead of pHash. Admin-only at launch; widen after
+ * measuring real-traffic hit rate via tier1_hit_rate_v1.
+ */
+async function isEmbeddingTier1Enabled(): Promise<boolean> {
+	try {
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		return flagsModule.featureEnabled('embedding_tier1')();
+	} catch {
+		return false;
 	}
 }
 

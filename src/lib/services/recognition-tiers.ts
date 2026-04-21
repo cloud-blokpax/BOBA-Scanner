@@ -287,6 +287,239 @@ async function fetchCardById(cardId: string): Promise<Card | null> {
 	return data as Card;
 }
 
+// ── Tier 1 (embedding) — DINOv2 nearest-neighbor via pgvector ──
+//
+// Session 1.6 swap-in for pHash Tier 1. Uploads the viewfinder-cropped
+// bitmap to /api/scan/embedding, receives a 768-d L2-normalized vector,
+// and calls match_card_embedding to find the closest source-art embedding.
+//
+// Gated by the 'embedding_tier1' feature flag — admin-only until measured.
+// pHash Tier 1 (runTier1 below) remains the default for everyone else.
+
+const EMBEDDING_MIN_SIMILARITY = 0.25;
+const EMBEDDING_TOP_K = 3;
+const EMBEDDING_JPEG_QUALITY = 0.9;
+
+export async function runTier1Embedding(
+	bitmap: ImageBitmap,
+	ctx: ScanContext,
+	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string) => Promise<void>,
+	telemetry: Tier1Telemetry = emptyTier1Telemetry(),
+	scanIdPromise: Promise<string | null> = Promise.resolve(null)
+): Promise<ScanResult | null> {
+	const started = performance.now();
+	let emittedViaEmbedding = false;
+	try {
+		// 1. Bitmap → JPEG blob. OffscreenCanvas.convertToBlob keeps this off
+		//    the main thread's paint path; falls back to HTMLCanvas only if
+		//    Offscreen is unavailable (Safari < 16.4).
+		let blob: Blob;
+		try {
+			if (typeof OffscreenCanvas !== 'undefined') {
+				const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+				const bctx = canvas.getContext('2d');
+				if (!bctx) throw new Error('no 2d ctx');
+				bctx.drawImage(bitmap, 0, 0);
+				blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: EMBEDDING_JPEG_QUALITY });
+			} else {
+				const canvas = document.createElement('canvas');
+				canvas.width = bitmap.width;
+				canvas.height = bitmap.height;
+				const bctx = canvas.getContext('2d');
+				if (!bctx) throw new Error('no 2d ctx');
+				bctx.drawImage(bitmap, 0, 0);
+				blob = await new Promise<Blob>((resolve, reject) =>
+					canvas.toBlob(
+						(b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
+						'image/jpeg',
+						EMBEDDING_JPEG_QUALITY
+					)
+				);
+			}
+		} catch (err) {
+			telemetry.outcome = 'error';
+			telemetry.errorMessage = `encode: ${err instanceof Error ? err.message : String(err)}`;
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+
+		// 2. Server-side embedding
+		let embedding: number[] | null = null;
+		try {
+			const resp = await fetch('/api/scan/embedding', {
+				method: 'POST',
+				headers: { 'Content-Type': 'image/jpeg' },
+				body: blob
+			});
+			if (!resp.ok) {
+				telemetry.errorMessage = `endpoint_${resp.status}`;
+				telemetry.outcome = resp.status >= 500 ? 'error' : 'miss';
+				telemetry.latencyMs = Math.round(performance.now() - started);
+				return null;
+			}
+			const body = (await resp.json()) as { embedding?: number[] };
+			if (!Array.isArray(body.embedding) || body.embedding.length !== 768) {
+				telemetry.outcome = 'error';
+				telemetry.errorMessage = 'endpoint_bad_shape';
+				telemetry.latencyMs = Math.round(performance.now() - started);
+				return null;
+			}
+			embedding = body.embedding;
+		} catch (err) {
+			telemetry.outcome = 'error';
+			telemetry.errorMessage = `endpoint: ${err instanceof Error ? err.message : String(err)}`;
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+
+		// 3. Nearest-neighbor via match_card_embedding RPC. Game-scoped so
+		//    BoBA scans (no embeddings seeded) miss gracefully and fall
+		//    through to Tier 2/3.
+		const client = getSupabase();
+		if (!client) {
+			telemetry.outcome = 'miss';
+			telemetry.errorMessage = 'supabase_unavailable';
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+
+		type MatchCandidate = {
+			card_id: string;
+			variant: string;
+			similarity: number;
+			source: string;
+		};
+		const untypedRpc = client.rpc as unknown as (
+			fn: string,
+			args: Record<string, unknown>
+		) => Promise<{ data: MatchCandidate[] | null; error: { message: string } | null }>;
+
+		const targetGameId = ctx.gameHint || 'wonders'; // embeddings currently seeded for Wonders only
+		const { data: candidates, error: rpcErr } = await untypedRpc('match_card_embedding', {
+			query_embedding: embedding,
+			target_game_id: targetGameId,
+			top_k: EMBEDDING_TOP_K,
+			min_similarity: EMBEDDING_MIN_SIMILARITY
+		});
+
+		if (rpcErr) {
+			telemetry.outcome = 'error';
+			telemetry.errorMessage = `rpc: ${rpcErr.message}`;
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+		if (!candidates || candidates.length === 0) {
+			telemetry.outcome = 'miss';
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+
+		telemetry.hashMatchCount = candidates.length;
+		telemetry.topnCandidates = candidates.map((c, i) => ({
+			card_id: c.card_id,
+			distance: 1 - c.similarity,
+			rank: i
+		}));
+		if (candidates.length >= 2) {
+			telemetry.runnerUpMarginDhash = (1 - candidates[1].similarity) - (1 - candidates[0].similarity);
+		}
+
+		const best = candidates[0];
+		const card = getCardById(best.card_id) || (await fetchCardById(best.card_id));
+		if (!card) {
+			telemetry.outcome = 'miss';
+			telemetry.errorMessage = 'card_not_in_local_db';
+			telemetry.latencyMs = Math.round(performance.now() - started);
+			return null;
+		}
+
+		// Fold the embedding hit into the pHash cache too: on next scan of the
+		// same card, Tier 1 pHash can short-circuit without hitting the
+		// embedding endpoint (which costs an HF call). The dHash is a free
+		// byproduct since we're about to need it for the hash cache writeback.
+		try {
+			const hash = await getImageWorker().computeDHash(bitmap);
+			await writeHashToAllLayers(
+				hash,
+				best.card_id,
+				Math.min(1, Math.max(0, best.similarity)),
+				bitmap,
+				card.game_id || targetGameId
+			);
+		} catch (err) {
+			console.debug(`[scan:${ctx.traceId}:tier1-embed] writeback failed (non-fatal):`, err);
+		}
+
+		telemetry.outcome = 'hit';
+		telemetry.latencyMs = Math.round(performance.now() - started);
+		// Stash for the emit: write via a dedicated tier1_embedding row so the
+		// tier1_hit_rate view can segment by engine.
+		await emitTier1EmbeddingResult(await resolveScanId(scanIdPromise), telemetry, best);
+		emittedViaEmbedding = true;
+
+		return {
+			card_id: card.id,
+			card,
+			scan_method: 'hash_cache' as ScanMethod,
+			confidence: best.similarity,
+			processing_ms: 0,
+			variant: best.variant || 'paper',
+			variant_confidence: best.variant && best.variant !== 'paper' ? 1.0 : null
+		};
+	} catch (err) {
+		telemetry.outcome = 'error';
+		telemetry.errorMessage = err instanceof Error ? err.message : String(err);
+		telemetry.latencyMs = Math.round(performance.now() - started);
+		throw err;
+	} finally {
+		if (!emittedViaEmbedding) {
+			const sid = await resolveScanId(scanIdPromise);
+			if (sid) {
+				try {
+					await emitTier1EmbeddingResult(sid, telemetry, null);
+				} catch (err) {
+					console.debug(`[scan:${ctx.traceId}:tier1-embed] emit failed:`, err);
+				}
+			}
+		}
+	}
+}
+
+async function emitTier1EmbeddingResult(
+	scanId: string | null,
+	t: Tier1Telemetry,
+	best:
+		| { card_id: string; variant: string; similarity: number; source: string }
+		| null
+): Promise<void> {
+	if (!scanId) return;
+	await writerRecordTierResult({
+		scanId,
+		tier: 'tier1_embedding',
+		engine: 'dinov2_s14',
+		engineVersion: 'dinov2-base-v1',
+		rawOutput: {
+			top_match: best
+				? {
+						card_id: best.card_id,
+						variant: best.variant,
+						similarity: best.similarity,
+						source: best.source
+					}
+				: null,
+			hash_match_count: t.hashMatchCount,
+			topn_candidates: t.topnCandidates
+		},
+		latencyMs: t.latencyMs,
+		errored: t.outcome === 'error',
+		errorMessage: t.errorMessage,
+		outcome: t.outcome,
+		ranAt: new Date(),
+		topnCandidates: (t.topnCandidates as Array<Record<string, unknown>> | null) ?? null,
+		hashMatchCount: t.hashMatchCount
+	});
+}
+
 // ── Tier 1: Perceptual Hash Lookup ──────────────────────────
 
 export async function runTier1(
