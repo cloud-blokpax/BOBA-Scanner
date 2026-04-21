@@ -1294,6 +1294,18 @@ export interface Database {
 				Args: { p_phash: string; p_card_id: string; p_confidence?: number; p_phash_256?: string };
 				Returns: void;
 			};
+			upsert_hash_cache_v2: {
+				Args: {
+					p_phash: string;
+					p_card_id: string;
+					p_phash_256?: string | null;
+					p_game_id?: string;
+					p_variant?: string;
+					p_source?: 'ebay_seed' | 'official_seed' | 'user_scan' | 'consensus' | 'claude_confirmed' | 'admin';
+					p_confidence?: number;
+				};
+				Returns: boolean;
+			};
 			submit_correction: {
 				Args: { p_ocr_reading: string; p_correct_card_number: string };
 				Returns: void;

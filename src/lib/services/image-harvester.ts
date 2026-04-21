@@ -8,6 +8,10 @@
 
 import sharp from 'sharp';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import {
+	computeDHashFromBuffer,
+	computePHashFromBuffer
+} from '$lib/server/hashing';
 
 type ItemImageFields = {
 	image?: { imageUrl?: string };
@@ -105,6 +109,42 @@ export async function captureCardImage(
 		}
 
 		console.log(`[harvest:image] captured ${cardId} (${processed.length} bytes)`);
+
+		// Session 1.3: hash the same buffer we just stored and seed hash_cache.
+		// Fire-and-forget: hashing failure must not affect image capture.
+		try {
+			const [phash, phash256] = await Promise.all([
+				computeDHashFromBuffer(processed),
+				computePHashFromBuffer(processed)
+			]);
+
+			const { data: inserted, error: hashErr } = await admin.rpc(
+				'upsert_hash_cache_v2',
+				{
+					p_phash: phash,
+					p_card_id: cardId,
+					p_phash_256: phash256,
+					p_game_id: 'boba',
+					p_variant: 'paper',
+					p_source: 'ebay_seed',
+					p_confidence: 1.0
+				}
+			);
+
+			if (hashErr) {
+				console.warn(`[harvest:hash] rpc failed ${cardId}: ${hashErr.message}`);
+			} else {
+				console.log(
+					`[harvest:hash] seeded ${cardId} collision=${inserted === false}`
+				);
+			}
+		} catch (hashCatchErr) {
+			const msg =
+				hashCatchErr instanceof Error
+					? hashCatchErr.message
+					: String(hashCatchErr);
+			console.warn(`[harvest:hash] compute failed ${cardId}: ${msg}`);
+		}
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		console.warn(`[harvest:image] error for ${cardId}: ${msg}`);
