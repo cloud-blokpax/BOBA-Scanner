@@ -23,7 +23,10 @@
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let guideEl = $state<HTMLDivElement | null>(null);
-	const camera = useScannerCamera(false);
+	// Pass embedded=true so initCamera skips the pre-prompt explainer branch
+	// (this dev route doesn't render an explainer UI) and goes straight to
+	// getUserMedia, which triggers the native browser permission prompt.
+	const camera = useScannerCamera(true);
 
 	let phase = $state<'initializing' | 'ready' | 'running' | 'stopped' | 'error'>('initializing');
 	let currentLabel = $state<Label>('no_card');
