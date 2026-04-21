@@ -11,11 +11,6 @@ import { initOcr } from '$lib/services/ocr';
 import { loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 
-// Rectification types live in the disposable-worker module — consumers should
-// import from $lib/services/rectification/types directly. Re-exported here for
-// backward compatibility with existing imports.
-export type { RectifyResult, RectifyDiagnostic } from '$lib/services/rectification/types';
-
 // ── Worker Type ────────────────────────────────────────────
 
 export type ImageWorkerProxy = Comlink.Remote<{

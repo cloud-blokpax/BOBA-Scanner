@@ -57,7 +57,17 @@ export async function initScanner(): Promise<void> {
 
 export async function scanImage(
 	imageSource: File | Blob | ImageBitmap,
-	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean; cropRegion?: { x: number; y: number; width: number; height: number } | null; gameHint?: string | null },
+	options?: {
+		isAuthenticated?: boolean;
+		skipBlurCheck?: boolean;
+		cropRegion?: { x: number; y: number; width: number; height: number } | null;
+		gameHint?: string | null;
+		/** Alignment classifier state at the moment of shutter. Written to
+		 *  capture_context so Tier 1 hit rate can be segmented by capture quality. */
+		alignmentStateAtCapture?: 'no_card' | 'partial' | 'ready' | null;
+		/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
+		viewfinder?: { x: number; y: number; width: number; height: number } | null;
+	},
 	generation?: number
 ): Promise<ScanResult | null> {
 	// Mint a generation if the caller didn't pass one. The Scanner component's

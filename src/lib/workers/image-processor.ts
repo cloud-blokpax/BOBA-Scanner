@@ -1,10 +1,7 @@
 /**
  * Image Processing Web Worker (runs off main thread)
  *
- * Persistent Comlink worker. Does NOT load OpenCV — rectification runs
- * in a disposable per-scan worker (see $lib/services/rectification/)
- * so a hung OpenCV call can be killed via worker.terminate() without
- * poisoning this long-lived worker.
+ * Persistent Comlink worker. Pure JS/Canvas — no WASM, no OpenCV.
  *
  * Exposed via Comlink:
  *   - computeDHash(imageBitmap, hashSize) → 16-char hex perceptual hash

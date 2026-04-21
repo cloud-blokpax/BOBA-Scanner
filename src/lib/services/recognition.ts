@@ -49,26 +49,19 @@ import {
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
 import { checkpoint } from './scan-checkpoint';
-import { recordRectificationAttempt } from './rectification-diagnostic';
-import { rectifyBitmap } from './rectification/rectify';
-import type { RectifyDiagnostic } from './rectification/types';
 
 /**
  * Decision thresholds captured per scan so future analysis can replay
  * how a decision was reached without referring back to source control.
  * Any time these move, bump the values here so the replay is accurate.
- *
- * Built per-scan so `rectification_enabled` reflects the actual runtime
- * flag state rather than a hardcoded literal.
  */
-function buildDecisionContext(rectificationEnabled: boolean) {
+function buildDecisionContext() {
 	return {
 		dhash_max_distance_fuzzy: 5,
 		phash_verification_max_distance: 20,
 		phash_256_max_distance: 40,
 		tier1_min_confidence: 0.8,
-		hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2',
-		rectification_enabled: rectificationEnabled
+		hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2'
 	};
 }
 
@@ -106,10 +99,10 @@ interface ScanWriteExtras {
 	photoWidth: number | null;
 	photoHeight: number | null;
 	captureSource: 'camera_live' | 'camera_upload' | null;
-	/** Did the OpenCV quad-detect pass succeed for this scan? */
-	rectificationSucceeded: boolean;
-	/** Aspect-ratio fit score in [0, 1] when rectification ran. */
-	rectificationConfidence: number | null;
+	/** Classifier state at the moment of shutter (Session 1.5). */
+	alignmentStateAtCapture: 'no_card' | 'partial' | 'ready' | null;
+	/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
+	viewfinder: { x: number; y: number; width: number; height: number } | null;
 }
 
 /**
@@ -124,8 +117,7 @@ async function openScanRow(
 	bitmap: ImageBitmap,
 	sourceImage: File | Blob | ImageBitmap | undefined,
 	extras: ScanWriteExtras,
-	gameHint: string,
-	rectificationEnabled: boolean
+	gameHint: string
 ): Promise<string | null> {
 	const uid = userId();
 	if (!uid) return null;
@@ -161,11 +153,15 @@ async function openScanRow(
 		captureLatencyMs: null,
 		photoBlob,
 
-		// Capture-time rectification outcome. Stored in capture_context JSONB
-		// so we can correlate Tier 1 hit rate with rectification success.
+		// Session 1.5 capture-context: viewfinder-alignment telemetry. Stored
+		// in capture_context JSONB so Tier 1 hit rate can be segmented by
+		// alignment quality at the moment of shutter.
 		captureContext: {
-			rectification_succeeded: extras.rectificationSucceeded,
-			rectification_confidence: extras.rectificationConfidence
+			alignment_state_at_capture: extras.alignmentStateAtCapture,
+			viewfinder_x: extras.viewfinder?.x ?? null,
+			viewfinder_y: extras.viewfinder?.y ?? null,
+			viewfinder_width: extras.viewfinder?.width ?? null,
+			viewfinder_height: extras.viewfinder?.height ?? null
 		},
 
 		// Capture source identity
@@ -198,7 +194,7 @@ async function openScanRow(
 		qualityGateFailReason: extras.qualitySignals?.failReason ?? null,
 
 		// Decision context (replay / counterfactual)
-		decisionContext: buildDecisionContext(rectificationEnabled)
+		decisionContext: buildDecisionContext()
 	});
 	return scanId;
 }
@@ -290,7 +286,14 @@ function isBitmapValid(bmp: ImageBitmap): { valid: boolean; reason: string | nul
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
 	onTierChange?: (tier: 1 | 2 | 3) => void,
-	options?: { isAuthenticated?: boolean; skipBlurCheck?: boolean; cropRegion?: { x: number; y: number; width: number; height: number } | null; gameHint?: string | null }
+	options?: {
+		isAuthenticated?: boolean;
+		skipBlurCheck?: boolean;
+		cropRegion?: { x: number; y: number; width: number; height: number } | null;
+		gameHint?: string | null;
+		alignmentStateAtCapture?: 'no_card' | 'partial' | 'ready' | null;
+		viewfinder?: { x: number; y: number; width: number; height: number } | null;
+	}
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
 	const startTime = performance.now();
@@ -389,74 +392,14 @@ export async function recognizeCard(
 		console.debug('[scan] computeQualitySignals failed, continuing:', err);
 	}
 
-	// ── Card rectification (OpenCV.js) ────────────────────────
-	// Gated by card_rectification feature flag. If disabled (default for
-	// non-admins until verified working) or if rectification fails/times out,
-	// fall through to hashing the raw bitmap — matches pre-1.4 behavior.
-	let rectified: {
-		bitmap: ImageBitmap;
-		confidence: number;
-		corners: Array<{ x: number; y: number }>;
-	} | null = null;
-	// Captured at rectification time; fire-and-forget write is deferred until
-	// scanIdPromise is available so rectification_attempt.scan_id can FK to scans.
-	let rectDiagnostic: RectifyDiagnostic | null = null;
-
-	checkpoint(traceId, 'rectification:flag_check:start', performance.now() - startTime);
-	const rectificationEnabled = await isCardRectificationEnabled().catch(() => false);
-	checkpoint(traceId, 'rectification:flag_check:done', performance.now() - startTime, {
-		enabled: rectificationEnabled
-	});
-
-	if (rectificationEnabled) {
-		checkpoint(traceId, 'rectification:rectifyCard:start', performance.now() - startTime);
-		try {
-			// Path B2: disposable worker. Pass a clone because rectifyBitmap
-			// transfers ownership of its argument to the worker; `bitmap`
-			// stays live on the main thread for Tier 1/2/3. ~3ms clone cost.
-			// rectifyBitmap always returns a RectifyResult with a diagnostic
-			// — never throws — even on main-thread timeout (worker.terminate).
-			const rectifyClone = await cloneImageBitmap(bitmap);
-			const rectResult = await rectifyBitmap(rectifyClone);
-			rectDiagnostic = rectResult.diagnostic;
-			const succeeded = rectResult.bitmap !== null;
-			if (rectResult.bitmap !== null) {
-				rectified = {
-					bitmap: rectResult.bitmap,
-					confidence: rectResult.confidence,
-					corners: rectResult.corners
-				};
-			}
-			checkpoint(traceId, 'rectification:rectifyCard:done', performance.now() - startTime, {
-				succeeded,
-				confidence: succeeded && rectResult.bitmap !== null ? rectResult.confidence : null,
-				fail_reason: rectResult.diagnostic.fail_reason,
-				total_ms: rectResult.diagnostic.total_ms
-			});
-		} catch (err) {
-			checkpoint(traceId, 'rectification:rectifyCard:threw', performance.now() - startTime, {
-				error: err instanceof Error ? err.message : String(err)
-			});
-			console.debug('[scan] rectifyBitmap threw, falling back to raw bitmap:', err);
-		}
-	}
-
-	const workingBitmap = rectified?.bitmap ?? bitmap;
-	const ownsWorkingBitmap = rectified !== null; // we created this one; release it on exit
-	if (rectified) {
-		console.debug(
-			`[scan:${traceId}] Rectification succeeded (confidence=${rectified.confidence.toFixed(3)})`
-		);
-	} else if (rectificationEnabled) {
-		console.debug(`[scan:${traceId}] Rectification miss — hashing uncropped bitmap`);
-	} else {
-		console.debug(`[scan:${traceId}] Rectification disabled by feature flag`);
-	}
+	// Session 1.5: the caller (Scanner.svelte) already cropped `bitmap` to the
+	// viewfinder region via cropToCanonical, so the Tier 1/2 hashes/OCR run on
+	// a known-aspect frame. Tier 3 still sees this same bitmap.
+	const workingBitmap = bitmap;
 
 	// CRITICAL: check the bitmap is still valid BEFORE passing it to tiers.
-	// If a Comlink call transferred ownership, the original bitmap is closed
-	// and subsequent worker calls hang. The clone above SHOULD prevent this,
-	// but we verify explicitly so we catch a regression instead of hanging.
+	// If a prior worker call transferred ownership, it's closed and subsequent
+	// worker calls hang. Verify explicitly so we catch a regression instead.
 	checkpoint(traceId, 'bitmap:validity_check:start', performance.now() - startTime);
 	const wbValidity = isBitmapValid(workingBitmap);
 	checkpoint(traceId, 'bitmap:validity_check:done', performance.now() - startTime, {
@@ -470,9 +413,6 @@ export async function recognizeCard(
 		});
 		if (ownsBitmap) {
 			try { bitmap.close(); } catch { /* ignore */ }
-		}
-		if (ownsWorkingBitmap) {
-			try { workingBitmap.close(); } catch { /* ignore */ }
 		}
 		return {
 			card_id: null,
@@ -491,8 +431,8 @@ export async function recognizeCard(
 		photoWidth: bitmap.width,
 		photoHeight: bitmap.height,
 		captureSource,
-		rectificationSucceeded: rectified !== null,
-		rectificationConfidence: rectified?.confidence ?? null
+		alignmentStateAtCapture: options?.alignmentStateAtCapture ?? null,
+		viewfinder: options?.viewfinder ?? null
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
@@ -504,53 +444,13 @@ export async function recognizeCard(
 		? newPipelineEnabledPromise
 			.then((enabled) => {
 				if (!enabled) return null;
-				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint, rectificationEnabled);
+				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint);
 			})
 			.catch((err) => {
 				console.debug(`[scan:${traceId}] openScanRow failed:`, err);
 				return null;
 			})
 		: Promise.resolve(null);
-
-	// ── Fire-and-forget rectification diagnostic write ──────
-	// Deferred so scan_id (when available) is attached via FK. Never awaited;
-	// never blocks the scan. Written regardless of success/failure so failure
-	// modes are visible in the rectification_attempt table.
-	if (rectDiagnostic) {
-		const diag = rectDiagnostic;
-		void scanIdPromise
-			.then((scanId) => {
-				recordRectificationAttempt({
-					trace_id: traceId,
-					scan_id: scanId,
-					succeeded: diag.succeeded,
-					confidence: rectified?.confidence ?? null,
-					total_ms: diag.total_ms,
-					fail_reason: diag.fail_reason,
-					src_width: diag.src_width,
-					src_height: diag.src_height,
-					contour_count: diag.contour_count,
-					quad_count: diag.quad_count,
-					viable_quad_count: diag.viable_quad_count,
-					best_quad_area_ratio: diag.best_quad?.area_ratio ?? null,
-					best_quad_aspect: diag.best_quad?.aspect ?? null,
-					best_quad_score: diag.best_quad?.score ?? null,
-					best_quad_chosen: diag.best_quad?.chosen ?? null,
-					best_quad_reject_reason: diag.best_quad?.reject_reason ?? null,
-					gray_ms: diag.timings.gray_ms,
-					blur_ms: diag.timings.blur_ms,
-					canny_ms: diag.timings.canny_ms,
-					dilate_ms: diag.timings.dilate_ms,
-					contour_ms: diag.timings.contour_ms,
-					approx_ms: diag.timings.approx_ms,
-					warp_ms: diag.timings.warp_ms,
-					quad_points: diag.best_quad?.points ?? null
-				});
-			})
-			.catch(() => {
-				/* swallow — diagnostic loss must never affect scan outcome */
-			});
-	}
 
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
@@ -559,7 +459,6 @@ export async function recognizeCard(
 		if (blurResult.isBlurry) {
 			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
 			if (ownsBitmap) bitmap.close();
-			if (ownsWorkingBitmap) workingBitmap.close();
 			return {
 				card_id: null,
 				card: null,
@@ -700,10 +599,8 @@ export async function recognizeCard(
 	}
 
 	// ── TIER 1: Perceptual Hash Lookup ──────────────────────
-	// Every tier operates on `workingBitmap` — the rectified frame if
-	// detection succeeded, otherwise the raw bitmap. Hash cache writebacks
-	// also store the rectified-frame hash so future scans of the same card
-	// hit the same cache row.
+	// All tiers operate on `workingBitmap`, which is the viewfinder-cropped
+	// canonical 500×700 frame produced by Scanner.svelte's capture flow.
 	onTierChange?.(1);
 	console.debug('[scan] Starting Tier 1: Hash Cache lookup...');
 	checkpoint(traceId, 'tier1:start', performance.now() - startTime);
@@ -1004,21 +901,6 @@ async function traceScanPipeline(
 		} as never);
 	} catch {
 		// Swallow — telemetry failure must never break a scan
-	}
-}
-
-/**
- * Session 1.4-fix gate for card rectification. Default off globally, on for
- * admin via user override until verified on real traffic. Flipping the flag
- * via MCP immediately restores pre-rectification behavior — no code rollback.
- */
-export async function isCardRectificationEnabled(): Promise<boolean> {
-	try {
-		const flagsModule = await import('$lib/stores/feature-flags.svelte');
-		const { featureEnabled } = flagsModule;
-		return featureEnabled('card_rectification')();
-	} catch {
-		return false;
 	}
 }
 

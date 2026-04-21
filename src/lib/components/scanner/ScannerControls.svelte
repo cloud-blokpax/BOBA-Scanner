@@ -4,7 +4,7 @@
 		foilMode,
 		cameraReady,
 		scanning,
-		stabilityProgress,
+		alignmentReady = false,
 		onTorchToggle,
 		onCapture,
 		onFoilCapture,
@@ -17,7 +17,10 @@
 		foilMode: boolean;
 		cameraReady: boolean;
 		scanning: boolean;
-		stabilityProgress: number;
+		/** When true, the card is aligned to the viewfinder. The shutter
+		 *  stays tappable either way; this just brightens the ring so the
+		 *  user gets visual confirmation of a good capture window. */
+		alignmentReady?: boolean;
 		onTorchToggle: () => void;
 		onCapture: () => void;
 		onFoilCapture: () => void;
@@ -57,17 +60,17 @@
 		hidden
 	/>
 
-	<!-- Capture button — big, centered, unobstructed -->
+	<!-- Capture button — always tappable when the camera is live; a dim state
+	     communicates "not ready" without blocking the user from forcing a capture. -->
 	<div class="capture-row">
 		<button
 			class="capture-btn"
+			class:ready={alignmentReady && !scanning}
+			class:dimmed={!alignmentReady && !scanning}
 			onclick={foilMode ? onFoilCapture : onCapture}
 			disabled={!cameraReady || scanning}
 			aria-label="Capture"
 		>
-			{#if stabilityProgress > 0 && !scanning}
-				<div class="stability-ring" style:background="conic-gradient(#22C55E {stabilityProgress * 360}deg, transparent {stabilityProgress * 360}deg)"></div>
-			{/if}
 			<div class="capture-ring">
 				{#if scanning}
 					<div class="capture-spinner"></div>
@@ -138,16 +141,16 @@
 		padding: 4px;
 		cursor: pointer;
 		position: relative;
+		transition: border-color 150ms ease, opacity 150ms ease, box-shadow 150ms ease;
 	}
 
-	.stability-ring {
-		position: absolute;
-		inset: -2px;
-		border-radius: 50%;
+	.capture-btn.ready {
+		border-color: rgb(34, 197, 94);
+		box-shadow: 0 0 18px rgba(34, 197, 94, 0.45);
+	}
+
+	.capture-btn.dimmed {
 		opacity: 0.7;
-		pointer-events: none;
-		mask: radial-gradient(circle, transparent 60%, black 61%);
-		-webkit-mask: radial-gradient(circle, transparent 60%, black 61%);
 	}
 
 	.capture-btn:disabled {
@@ -163,6 +166,10 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.capture-btn.ready .capture-ring {
+		background: rgb(187, 247, 208);
 	}
 
 	.capture-spinner {

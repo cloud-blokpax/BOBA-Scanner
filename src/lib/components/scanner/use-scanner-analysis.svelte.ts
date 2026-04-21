@@ -1,30 +1,42 @@
 /**
  * Scanner Analysis Composable
  *
- * Manages the auto-analyze loop: frame capture → card presence detection →
- * frame stability tracking → AR price overlay → auto-capture trigger.
+ * Manages the auto-analyze loop: frame capture → alignment signal computation →
+ * AR price overlay → auto-capture trigger.
  *
- * Runs on a 250ms interval when active. Tracks frame hashes to detect
- * when the card is being held still enough for auto-capture.
+ * Runs on a 250ms interval when active. Computes viewfinder alignment signals
+ * in the image worker via computeAlignmentSignals and classifies each frame
+ * as 'no_card' | 'partial' | 'ready'. Auto-capture fires when the state has
+ * been 'ready' for ≥300ms continuous (tunable).
+ *
+ * Thresholds validated Session 1.4.a:
+ *   blur_inside >= 5500 AND corner_gradient_score >= 140 → 'ready'
+ *   corner_gradient_score >= 100 → 'partial'
+ *   otherwise → 'no_card'
  */
 
 import { captureFrame } from '$lib/services/camera';
-import { analyzeFrame, computeFrameHash, computeHammingDistance } from '$lib/services/recognition';
+import { computeFrameHash } from '$lib/services/recognition';
+import { getImageWorker, initWorkers } from '$lib/services/recognition-workers';
 import { triggerHaptic } from '$lib/utils/haptics';
 import { lookupOverlayPrice, type OverlayData } from './overlay-price-lookup';
+import type { ViewfinderRect } from '$lib/services/constrained-crop';
 
-const STABLE_FRAMES_REQUIRED = 3;
-const STABILITY_THRESHOLD = 5;
-const GUIDANCE_COOLDOWN = 1500;
+const READY_DWELL_MS = 300;
+const ALIGN_BLUR_THRESHOLD = 5500;
+const ALIGN_CORNER_READY = 140;
+const ALIGN_CORNER_PARTIAL = 100;
+
+export type AlignmentState = 'no_card' | 'partial' | 'ready';
 
 export interface AnalysisState {
-	readonly bracketState: 'idle' | 'detected' | 'locked';
+	readonly alignmentState: AlignmentState;
 	readonly guidanceText: string | null;
 	readonly overlayData: OverlayData | null;
 	readonly overlayVisible: boolean;
 	readonly showFlash: boolean;
-	readonly stableFrameCount: number;
-	readonly lastFrameHash: string | null;
+	readonly alignmentReadySince: number | null;
+	shouldAutoTrigger: () => boolean;
 	start: () => void;
 	stop: () => void;
 	destroy: () => void;
@@ -35,118 +47,130 @@ export function useScannerAnalysis(
 	getVideoEl: () => HTMLVideoElement | null,
 	isScanReady: () => boolean,
 	onAutoCapture: () => Promise<void>,
+	getViewfinderRect: () => ViewfinderRect | null
 ): AnalysisState {
-	let _bracketState = $state<'idle' | 'detected' | 'locked'>('idle');
+	let _alignmentState = $state<AlignmentState>('no_card');
+	let _alignmentReadySince = $state<number | null>(null);
 	let _guidanceText = $state<string | null>(null);
-	let _guidanceLastChanged = $state(0);
 	let _overlayData = $state<OverlayData | null>(null);
 	let _overlayVisible = $state(false);
 	let _showFlash = $state(false);
 
-	let _lastFrameHash = $state<string | null>(null);
-	let _stableFrameCount = $state(0);
-	let _cardDetectedSince: number | null = null;
 	let _interval: ReturnType<typeof setInterval> | null = null;
 	let _overlayTimeout: ReturnType<typeof setTimeout> | null = null;
 	let _overlayLookupInProgress = false;
 	let _lastOverlayHash: string | null = null;
+	let _autoCaptureFired = false;
 
-	function updateGuidance(text: string | null) {
-		const now = Date.now();
-		if (now - _guidanceLastChanged < GUIDANCE_COOLDOWN && _guidanceText !== null) return;
-		_guidanceText = text;
-		_guidanceLastChanged = now;
+	function guidanceFor(state: AlignmentState): string {
+		if (state === 'ready') return 'Hold still…';
+		if (state === 'partial') return 'Align with frame';
+		return 'Point at card';
 	}
 
 	async function runAnalysis() {
 		const videoEl = getVideoEl();
 		if (!videoEl || !isScanReady()) {
-			_bracketState = 'idle';
-			_cardDetectedSince = null;
-			_stableFrameCount = 0;
-			_lastFrameHash = null;
+			_alignmentState = 'no_card';
+			_alignmentReadySince = null;
+			_guidanceText = null;
+			_autoCaptureFired = false;
 			return;
 		}
 
 		let bitmap: ImageBitmap | null = null;
 		try {
 			bitmap = await captureFrame(videoEl);
-			const result = await analyzeFrame(bitmap);
+			await initWorkers();
 
-			if (result.cardDetected && result.isSharp) {
+			const viewfinder = getViewfinderRect();
+			// Fall back to a centered 60%×75% region of the bitmap if the caller
+			// can't resolve a viewfinder rect yet (e.g., before video metadata
+			// loaded). Keeps alignment signals meaningful on the first few ticks.
+			const vf = viewfinder ?? {
+				x: Math.round(bitmap.width * 0.2),
+				y: Math.round(bitmap.height * 0.125),
+				width: Math.round(bitmap.width * 0.6),
+				height: Math.round(bitmap.height * 0.75)
+			};
+
+			const signals = await getImageWorker().computeAlignmentSignals(bitmap, {
+				x: vf.x,
+				y: vf.y,
+				w: vf.width,
+				h: vf.height
+			});
+
+			const nextState: AlignmentState =
+				signals.blurInside >= ALIGN_BLUR_THRESHOLD &&
+				signals.cornerGradientScore >= ALIGN_CORNER_READY
+					? 'ready'
+					: signals.cornerGradientScore >= ALIGN_CORNER_PARTIAL
+						? 'partial'
+						: 'no_card';
+
+			const now = performance.now();
+			if (nextState !== _alignmentState) {
+				_alignmentState = nextState;
+				_alignmentReadySince = nextState === 'ready' ? now : null;
+				_autoCaptureFired = false;
+			} else if (nextState === 'ready' && _alignmentReadySince === null) {
+				_alignmentReadySince = now;
+			}
+			_guidanceText = guidanceFor(nextState);
+
+			// AR Price Overlay: attempt lookup on the first 'ready' frame
+			// so we don't fire lookups during re-acquisition churn.
+			if (nextState === 'ready' && !_overlayLookupInProgress) {
 				const frameHash = await computeFrameHash(bitmap);
-				bitmap.close();
-				bitmap = null;
-
-				if (_lastFrameHash) {
-					const dist = await computeHammingDistance(_lastFrameHash, frameHash);
-					if (dist <= STABILITY_THRESHOLD) {
-						_stableFrameCount++;
-					} else {
-						_stableFrameCount = 1;
-					}
-				} else {
-					_stableFrameCount = 1;
-				}
-				_lastFrameHash = frameHash;
-
-				// AR Price Overlay: attempt lookup on first stable frame
-				if (_stableFrameCount === 1 && frameHash !== _lastOverlayHash && !_overlayLookupInProgress) {
+				if (frameHash !== _lastOverlayHash) {
 					_lastOverlayHash = frameHash;
 					_overlayLookupInProgress = true;
-					lookupOverlayPrice(frameHash).then(data => {
-						if (data) {
-							_overlayData = data;
-							_overlayVisible = true;
-							if (_overlayTimeout) clearTimeout(_overlayTimeout);
-							_overlayTimeout = setTimeout(() => { _overlayVisible = false; }, 4000);
-						}
-					}).catch((err) => {
-						console.debug('[scanner] AR overlay price lookup failed:', err);
-					}).finally(() => {
-						_overlayLookupInProgress = false;
-					});
+					lookupOverlayPrice(frameHash)
+						.then((data) => {
+							if (data) {
+								_overlayData = data;
+								_overlayVisible = true;
+								if (_overlayTimeout) clearTimeout(_overlayTimeout);
+								_overlayTimeout = setTimeout(() => {
+									_overlayVisible = false;
+								}, 4000);
+							}
+						})
+						.catch((err) => {
+							console.debug('[scanner] AR overlay price lookup failed:', err);
+						})
+						.finally(() => {
+							_overlayLookupInProgress = false;
+						});
 				}
-
-				if (_stableFrameCount >= STABLE_FRAMES_REQUIRED) {
-					_bracketState = 'locked';
-					_stableFrameCount = 0;
-					_lastFrameHash = null;
-					updateGuidance(null);
-					// Trigger auto-capture
-					_overlayData = null;
-					_overlayVisible = false;
-					_lastOverlayHash = null;
-					_showFlash = true;
-					setTimeout(() => { _showFlash = false; }, 150);
-					triggerHaptic('tap');
-					await onAutoCapture();
-					_bracketState = 'idle';
-				} else if (!_cardDetectedSince) {
-					_cardDetectedSince = Date.now();
-					_bracketState = 'detected';
-					updateGuidance('Hold still...');
-				}
-			} else {
-				bitmap.close();
-				bitmap = null;
-				_stableFrameCount = 0;
-				_lastFrameHash = null;
-				_cardDetectedSince = null;
+			} else if (nextState !== 'ready') {
 				_overlayData = null;
 				_overlayVisible = false;
 				_lastOverlayHash = null;
+			}
 
-				if (result.cardDetected && !result.isSharp) {
-					_bracketState = 'idle';
-					updateGuidance('Hold steady...');
-				} else {
-					_bracketState = 'idle';
-					updateGuidance('Position card within the frame');
-				}
+			// Fire auto-capture once per sustained 'ready' dwell.
+			if (
+				nextState === 'ready' &&
+				!_autoCaptureFired &&
+				_alignmentReadySince !== null &&
+				now - _alignmentReadySince >= READY_DWELL_MS
+			) {
+				_autoCaptureFired = true;
+				_overlayData = null;
+				_overlayVisible = false;
+				_lastOverlayHash = null;
+				_showFlash = true;
+				setTimeout(() => {
+					_showFlash = false;
+				}, 150);
+				triggerHaptic('tap');
+				await onAutoCapture();
 			}
 		} catch (err) {
 			console.debug('[Scanner] Frame analysis failed:', err);
+		} finally {
 			bitmap?.close();
 		}
 	}
@@ -172,21 +196,42 @@ export function useScannerAnalysis(
 	}
 
 	function resetStability() {
-		_stableFrameCount = 0;
-		_lastFrameHash = null;
+		_alignmentReadySince = null;
+		_autoCaptureFired = false;
+	}
+
+	function shouldAutoTrigger(): boolean {
+		return (
+			_alignmentState === 'ready' &&
+			_alignmentReadySince !== null &&
+			performance.now() - _alignmentReadySince >= READY_DWELL_MS &&
+			!_autoCaptureFired
+		);
 	}
 
 	return {
-		get bracketState() { return _bracketState; },
-		get guidanceText() { return _guidanceText; },
-		get overlayData() { return _overlayData; },
-		get overlayVisible() { return _overlayVisible; },
-		get showFlash() { return _showFlash; },
-		get stableFrameCount() { return _stableFrameCount; },
-		get lastFrameHash() { return _lastFrameHash; },
+		get alignmentState() {
+			return _alignmentState;
+		},
+		get guidanceText() {
+			return _guidanceText;
+		},
+		get overlayData() {
+			return _overlayData;
+		},
+		get overlayVisible() {
+			return _overlayVisible;
+		},
+		get showFlash() {
+			return _showFlash;
+		},
+		get alignmentReadySince() {
+			return _alignmentReadySince;
+		},
+		shouldAutoTrigger,
 		start,
 		stop,
 		destroy,
-		resetStability,
+		resetStability
 	};
 }

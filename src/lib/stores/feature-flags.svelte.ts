@@ -72,17 +72,6 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
-	},
-	{
-		feature_key: 'card_rectification',
-		display_name: 'Card Rectification (OpenCV)',
-		description: 'Pre-hash card detection and perspective correction. Required for Tier 1 hash matching to work on phone photos.',
-		icon: '🔲',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: false,
-		enabled_for_pro: false,
-		enabled_for_admin: true
 	}
 ];
 
