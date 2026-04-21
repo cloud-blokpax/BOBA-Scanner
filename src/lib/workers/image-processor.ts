@@ -408,6 +408,284 @@ const imageProcessor = {
 		};
 	},
 
+	/**
+	 * Phase 1.5.a spike: compute six candidate alignment signals + a
+	 * pHash-256 of the viewfinder-cropped region, for offline analysis of
+	 * which signal(s) best discriminate "card aligned in viewfinder" from
+	 * "no card" and "partial". Caller supplies the viewfinder rect in
+	 * bitmap-pixel coordinates.
+	 *
+	 * All region-based signals are computed from a single 256×192 grayscale
+	 * downscale and a single Sobel pass to keep total cost <5ms on mobile.
+	 * The pHash is computed at the canonical 32×32 DCT resolution from the
+	 * viewfinder region at source resolution (not the downscale) so it is
+	 * directly comparable to production hashes.
+	 */
+	async computeAlignmentSignals(
+		imageBitmap: ImageBitmap,
+		viewfinder: { x: number; y: number; w: number; h: number }
+	): Promise<{
+		blurInside: number;
+		luminanceInside: number;
+		edgeDensityInside: number;
+		edgeDensityOutside: number;
+		borderGradientScore: number;
+		cornerGradientScore: number;
+		interiorVariance: number;
+		phash256: string;
+	}> {
+		const W = 256;
+		const H = 192;
+		const canvas = new OffscreenCanvas(W, H);
+		const ctx = canvas.getContext('2d')!;
+		ctx.drawImage(imageBitmap, 0, 0, W, H);
+		const { data } = ctx.getImageData(0, 0, W, H);
+
+		// Map viewfinder rect from bitmap coords into the 256×192 frame space.
+		const srcW = imageBitmap.width;
+		const srcH = imageBitmap.height;
+		const vfLeft = Math.max(0, Math.min(W - 2, Math.round((viewfinder.x / srcW) * W)));
+		const vfTop = Math.max(0, Math.min(H - 2, Math.round((viewfinder.y / srcH) * H)));
+		const vfRight = Math.max(vfLeft + 1, Math.min(W, Math.round(((viewfinder.x + viewfinder.w) / srcW) * W)));
+		const vfBottom = Math.max(vfTop + 1, Math.min(H, Math.round(((viewfinder.y + viewfinder.h) / srcH) * H)));
+		const vfW = vfRight - vfLeft;
+		const vfH = vfBottom - vfTop;
+
+		// Grayscale pass
+		const gray = new Float32Array(W * H);
+		for (let i = 0; i < W * H; i++) {
+			const idx = i * 4;
+			gray[i] = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+		}
+
+		// Single Sobel magnitude pass over the whole frame, reused by
+		// inside/outside edge density and the corner score.
+		const sobel = new Float32Array(W * H);
+		for (let y = 1; y < H - 1; y++) {
+			for (let x = 1; x < W - 1; x++) {
+				const tl = gray[(y - 1) * W + x - 1];
+				const tc = gray[(y - 1) * W + x];
+				const tr = gray[(y - 1) * W + x + 1];
+				const ml = gray[y * W + x - 1];
+				const mr = gray[y * W + x + 1];
+				const bl = gray[(y + 1) * W + x - 1];
+				const bc = gray[(y + 1) * W + x];
+				const br = gray[(y + 1) * W + x + 1];
+				const gx = tr + 2 * mr + br - tl - 2 * ml - bl;
+				const gy = bl + 2 * bc + br - tl - 2 * tc - tr;
+				sobel[y * W + x] = Math.sqrt(gx * gx + gy * gy);
+			}
+		}
+
+		const EDGE_THRESHOLD = 60;
+
+		// Inside-viewfinder: Laplacian variance (blur), luminance mean, edge density.
+		let lapSum = 0, lapSumSq = 0, lapCount = 0;
+		let lumSum = 0, lumCount = 0;
+		let edgesInside = 0;
+		let edgeInsideCount = 0;
+		for (let y = vfTop; y < vfBottom; y++) {
+			for (let x = vfLeft; x < vfRight; x++) {
+				const v = gray[y * W + x];
+				lumSum += v;
+				lumCount++;
+
+				if (y > 0 && y < H - 1 && x > 0 && x < W - 1) {
+					const lap =
+						gray[(y - 1) * W + x] +
+						gray[(y + 1) * W + x] +
+						gray[y * W + x - 1] +
+						gray[y * W + x + 1] -
+						4 * v;
+					lapSum += lap;
+					lapSumSq += lap * lap;
+					lapCount++;
+					if (sobel[y * W + x] > EDGE_THRESHOLD) edgesInside++;
+					edgeInsideCount++;
+				}
+			}
+		}
+		const luminanceInside = lumCount > 0 ? lumSum / lumCount : 0;
+		const lapMean = lapCount > 0 ? lapSum / lapCount : 0;
+		const blurInside = lapCount > 0 ? lapSumSq / lapCount - lapMean * lapMean : 0;
+		const edgeDensityInside = edgeInsideCount > 0 ? edgesInside / edgeInsideCount : 0;
+
+		// Outside-viewfinder edge density (same threshold, complement region).
+		let edgesOutside = 0;
+		let edgeOutsideCount = 0;
+		for (let y = 1; y < H - 1; y++) {
+			for (let x = 1; x < W - 1; x++) {
+				if (x >= vfLeft && x < vfRight && y >= vfTop && y < vfBottom) continue;
+				edgeOutsideCount++;
+				if (sobel[y * W + x] > EDGE_THRESHOLD) edgesOutside++;
+			}
+		}
+		const edgeDensityOutside = edgeOutsideCount > 0 ? edgesOutside / edgeOutsideCount : 0;
+
+		// Border gradient score: sample ~20 points along each viewfinder edge,
+		// compute the gradient magnitude perpendicular to that edge. High score
+		// means strong edges lie right on the viewfinder boundary (card aligned).
+		const SAMPLES_PER_EDGE = 20;
+		const BORDER_OFFSET = 1;
+		let borderSum = 0;
+		let borderCount = 0;
+		for (let i = 0; i < SAMPLES_PER_EDGE; i++) {
+			const x = Math.round(vfLeft + ((i + 0.5) / SAMPLES_PER_EDGE) * vfW);
+			const yTop = vfTop + BORDER_OFFSET;
+			if (yTop > 0 && yTop < H - 1 && x > 0 && x < W - 1) {
+				const gyTop = gray[(yTop + 1) * W + x] - gray[(yTop - 1) * W + x];
+				borderSum += Math.abs(gyTop);
+				borderCount++;
+			}
+			const yBot = vfBottom - 1 - BORDER_OFFSET;
+			if (yBot > 0 && yBot < H - 1 && x > 0 && x < W - 1) {
+				const gyBot = gray[(yBot + 1) * W + x] - gray[(yBot - 1) * W + x];
+				borderSum += Math.abs(gyBot);
+				borderCount++;
+			}
+		}
+		for (let i = 0; i < SAMPLES_PER_EDGE; i++) {
+			const y = Math.round(vfTop + ((i + 0.5) / SAMPLES_PER_EDGE) * vfH);
+			const xLeft = vfLeft + BORDER_OFFSET;
+			if (xLeft > 0 && xLeft < W - 1 && y > 0 && y < H - 1) {
+				const gxLeft = gray[y * W + xLeft + 1] - gray[y * W + xLeft - 1];
+				borderSum += Math.abs(gxLeft);
+				borderCount++;
+			}
+			const xRight = vfRight - 1 - BORDER_OFFSET;
+			if (xRight > 0 && xRight < W - 1 && y > 0 && y < H - 1) {
+				const gxRight = gray[y * W + xRight + 1] - gray[y * W + xRight - 1];
+				borderSum += Math.abs(gxRight);
+				borderCount++;
+			}
+		}
+		const borderGradientScore = borderCount > 0 ? borderSum / borderCount : 0;
+
+		// Corner gradient score: 10×10 patches at the viewfinder corners in
+		// frame space, mean Sobel magnitude averaged across the four.
+		const CORNER_PATCH = 10;
+		const cornerOrigins: Array<[number, number]> = [
+			[vfLeft, vfTop],
+			[Math.max(vfRight - CORNER_PATCH, vfLeft), vfTop],
+			[vfLeft, Math.max(vfBottom - CORNER_PATCH, vfTop)],
+			[Math.max(vfRight - CORNER_PATCH, vfLeft), Math.max(vfBottom - CORNER_PATCH, vfTop)]
+		];
+		let cornerSum = 0;
+		let cornersCounted = 0;
+		for (const [cx, cy] of cornerOrigins) {
+			let cs = 0;
+			let cn = 0;
+			const x2 = Math.min(W - 1, cx + CORNER_PATCH);
+			const y2 = Math.min(H - 1, cy + CORNER_PATCH);
+			for (let y = Math.max(1, cy); y < y2; y++) {
+				for (let x = Math.max(1, cx); x < x2; x++) {
+					cs += sobel[y * W + x];
+					cn++;
+				}
+			}
+			if (cn > 0) {
+				cornerSum += cs / cn;
+				cornersCounted++;
+			}
+		}
+		const cornerGradientScore = cornersCounted > 0 ? cornerSum / cornersCounted : 0;
+
+		// Interior variance: luminance variance in central 60% of viewfinder.
+		const interiorPadX = Math.round(vfW * 0.2);
+		const interiorPadY = Math.round(vfH * 0.2);
+		const intL = vfLeft + interiorPadX;
+		const intR = vfRight - interiorPadX;
+		const intT = vfTop + interiorPadY;
+		const intB = vfBottom - interiorPadY;
+		let intSum = 0, intSumSq = 0, intCount = 0;
+		for (let y = intT; y < intB; y++) {
+			for (let x = intL; x < intR; x++) {
+				const v = gray[y * W + x];
+				intSum += v;
+				intSumSq += v * v;
+				intCount++;
+			}
+		}
+		const intMean = intCount > 0 ? intSum / intCount : 0;
+		const interiorVariance = intCount > 0 ? intSumSq / intCount - intMean * intMean : 0;
+
+		// pHash-256 of the viewfinder region at source resolution. Using the
+		// same DCT pipeline as computePHash() so hashes are interchangeable
+		// with production hash_cache.phash_256 values.
+		const dctCanvas = new OffscreenCanvas(DCT_SIZE, DCT_SIZE);
+		const dctCtx = dctCanvas.getContext('2d')!;
+		const clampedVfX = Math.max(0, Math.min(srcW - 1, Math.round(viewfinder.x)));
+		const clampedVfY = Math.max(0, Math.min(srcH - 1, Math.round(viewfinder.y)));
+		const clampedVfW = Math.max(1, Math.min(srcW - clampedVfX, Math.round(viewfinder.w)));
+		const clampedVfH = Math.max(1, Math.min(srcH - clampedVfY, Math.round(viewfinder.h)));
+		dctCtx.drawImage(
+			imageBitmap,
+			clampedVfX, clampedVfY, clampedVfW, clampedVfH,
+			0, 0, DCT_SIZE, DCT_SIZE
+		);
+		const phashPixels = dctCtx.getImageData(0, 0, DCT_SIZE, DCT_SIZE).data;
+		const phashGray = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let i = 0; i < DCT_SIZE * DCT_SIZE; i++) {
+			const idx = i * 4;
+			phashGray[i] = phashPixels[idx] * 0.299 + phashPixels[idx + 1] * 0.587 + phashPixels[idx + 2] * 0.114;
+		}
+		const rowDct = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let y = 0; y < DCT_SIZE; y++) {
+			for (let k = 0; k < DCT_SIZE; k++) {
+				let sum = 0;
+				for (let n = 0; n < DCT_SIZE; n++) {
+					sum += DCT_MATRIX[k][n] * phashGray[y * DCT_SIZE + n];
+				}
+				rowDct[y * DCT_SIZE + k] = sum;
+			}
+		}
+		const dctCoeffs = new Float64Array(DCT_SIZE * DCT_SIZE);
+		for (let x = 0; x < DCT_SIZE; x++) {
+			for (let k = 0; k < DCT_SIZE; k++) {
+				let sum = 0;
+				for (let n = 0; n < DCT_SIZE; n++) {
+					sum += DCT_MATRIX[k][n] * rowDct[n * DCT_SIZE + x];
+				}
+				dctCoeffs[k * DCT_SIZE + x] = sum;
+			}
+		}
+		const PHASH_SIZE = 16;
+		const coeffs: number[] = [];
+		for (let y = 0; y < PHASH_SIZE; y++) {
+			for (let x = 0; x < PHASH_SIZE; x++) {
+				if (y === 0 && x === 0) continue;
+				coeffs.push(dctCoeffs[y * DCT_SIZE + x]);
+			}
+		}
+		const sorted = [...coeffs].sort((a, b) => a - b);
+		const median = sorted.length % 2 === 0
+			? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+			: sorted[Math.floor(sorted.length / 2)];
+		let hashBits = '';
+		for (let y = 0; y < PHASH_SIZE; y++) {
+			for (let x = 0; x < PHASH_SIZE; x++) {
+				if (y === 0 && x === 0) {
+					hashBits += '0';
+					continue;
+				}
+				hashBits += dctCoeffs[y * DCT_SIZE + x] > median ? '1' : '0';
+			}
+		}
+		const hexDigits = (PHASH_SIZE * PHASH_SIZE) / 4;
+		const phash256 = BigInt('0b' + hashBits).toString(16).padStart(hexDigits, '0');
+
+		return {
+			blurInside,
+			luminanceInside,
+			edgeDensityInside,
+			edgeDensityOutside,
+			borderGradientScore,
+			cornerGradientScore,
+			interiorVariance,
+			phash256
+		};
+	},
+
 	async checkGlare(imageBitmap: ImageBitmap, brightnessThreshold = 240, areaThreshold = 0.03): Promise<{ hasGlare: boolean; regions: Array<{ x: number; y: number; w: number; h: number }> }> {
 		const analyzeW = 200;
 		const analyzeH = 150;
