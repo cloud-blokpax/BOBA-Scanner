@@ -5,7 +5,8 @@
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { scanImage, scanState, resetScanner, startNewScan, isScanStale } from '$lib/stores/scanner.svelte';
-	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
+	import { checkImageQuality, compositeForFoilMode, isCardRectificationEnabled } from '$lib/services/recognition';
+	import { preWarm as preWarmRectification, disposePreWarmed as disposeRectificationPreWarm } from '$lib/services/rectification/rectify';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
@@ -134,6 +135,14 @@
 		if (videoEl) {
 			try {
 				await camera.initCamera(videoEl, onCameraReady);
+				// Camera is open; user is about to compose. Pre-warm a
+				// rectification worker in the background so first shutter
+				// doesn't pay the ~2-3s OpenCV cold-start cost. Gated on the
+				// same flag the scan pipeline checks so we don't load OpenCV
+				// for users where rectification is off.
+				isCardRectificationEnabled()
+					.then((enabled) => { if (enabled) preWarmRectification(); })
+					.catch(() => { /* flag check failed — skip prewarm */ });
 			} catch {
 				phase = 'error';
 			}
@@ -151,7 +160,15 @@
 
 		_cleanupVisibility = camera.setupVisibilityHandler(
 			videoEl!,
-			() => { phase = 'idle'; analysis.start(); },
+			() => {
+				phase = 'idle';
+				analysis.start();
+				// Re-entering from backgrounding: re-prime the stash. preWarm
+				// is idempotent, so this is a no-op when one is already ready.
+				isCardRectificationEnabled()
+					.then((enabled) => { if (enabled) preWarmRectification(); })
+					.catch(() => { /* noop */ });
+			},
 			() => { analysis.stop(); }
 		);
 	});
@@ -164,6 +181,9 @@
 			foilCaptures.forEach(b => b.close());
 			foilCaptures = [];
 			_cleanupVisibility?.();
+			// Terminate any stashed rectification worker so it doesn't leak
+			// when the scanner unmounts (e.g., user navigates away).
+			disposeRectificationPreWarm();
 		};
 	});
 
