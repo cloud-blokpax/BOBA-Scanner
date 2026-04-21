@@ -5,11 +5,24 @@
  * rectification-diagnostic.ts) so existing telemetry writing is unchanged.
  */
 
-export interface RectifyWorkerRequest {
+export interface RectifyWorkerRectifyRequest {
 	bitmap: ImageBitmap;
 	inputWidth: number;
 	inputHeight: number;
 }
+
+/**
+ * Pre-warm request: tells the worker to load OpenCV eagerly and then sit
+ * idle awaiting a rectify request. No response is posted for this message.
+ * Caller either follows up with a rectify request or terminates the worker.
+ */
+export interface RectifyWorkerPrewarmRequest {
+	prewarm: true;
+}
+
+export type RectifyWorkerRequest =
+	| RectifyWorkerRectifyRequest
+	| RectifyWorkerPrewarmRequest;
 
 /**
  * Per-attempt rectification diagnostic. Always populated — on both success

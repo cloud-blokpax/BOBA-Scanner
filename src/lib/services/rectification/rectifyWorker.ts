@@ -13,7 +13,12 @@
  * $lib/workers/image-processor.ts no longer touches OpenCV.
  */
 
-import type { RectifyWorkerRequest, RectifyWorkerResponse, RectifyDiagnostic } from './types';
+import type {
+	RectifyWorkerRequest,
+	RectifyWorkerRectifyRequest,
+	RectifyWorkerResponse,
+	RectifyDiagnostic
+} from './types';
 
 // ── OpenCV loader ──────────────────────────────────────────
 // OpenCV is served as a ~11MB static asset from /vendor/opencv.js (copied
@@ -403,7 +408,21 @@ async function rectify(bitmap: ImageBitmap): Promise<RectifyWorkerResponse> {
 // ── Message plumbing ──────────────────────────────────────
 
 self.onmessage = async (event: MessageEvent<RectifyWorkerRequest>) => {
-	const { bitmap } = event.data;
+	const msg = event.data;
+
+	// Pre-warm path (Path B3): load OpenCV eagerly and stay idle. No response
+	// is posted for this message — the caller will either follow up with a
+	// real rectify request or terminate us. If loadOpenCV rejects here, the
+	// subsequent rectify call will hit the same failure path and return a
+	// structured diagnostic; no need to signal anything to the main thread.
+	if ('prewarm' in msg && msg.prewarm === true) {
+		try {
+			await loadOpenCV();
+		} catch { /* swallow; real rectify call will surface the error */ }
+		return;
+	}
+
+	const { bitmap } = msg as RectifyWorkerRectifyRequest;
 	try {
 		const response = await rectify(bitmap);
 		if (response.ok) {

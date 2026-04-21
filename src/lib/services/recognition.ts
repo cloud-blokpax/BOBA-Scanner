@@ -57,15 +57,20 @@ import type { RectifyDiagnostic } from './rectification/types';
  * Decision thresholds captured per scan so future analysis can replay
  * how a decision was reached without referring back to source control.
  * Any time these move, bump the values here so the replay is accurate.
+ *
+ * Built per-scan so `rectification_enabled` reflects the actual runtime
+ * flag state rather than a hardcoded literal.
  */
-const DECISION_CONTEXT = {
-	dhash_max_distance_fuzzy: 5,
-	phash_verification_max_distance: 20,
-	phash_256_max_distance: 40,
-	tier1_min_confidence: 0.8,
-	hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2',
-	rectification_enabled: true
-} as const;
+function buildDecisionContext(rectificationEnabled: boolean) {
+	return {
+		dhash_max_distance_fuzzy: 5,
+		phash_verification_max_distance: 20,
+		phash_256_max_distance: 40,
+		tier1_min_confidence: 0.8,
+		hash_algo_version: 'dhash-krawetz-v1+phash-dct-v2',
+		rectification_enabled: rectificationEnabled
+	};
+}
 
 // Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
@@ -119,7 +124,8 @@ async function openScanRow(
 	bitmap: ImageBitmap,
 	sourceImage: File | Blob | ImageBitmap | undefined,
 	extras: ScanWriteExtras,
-	gameHint: string
+	gameHint: string,
+	rectificationEnabled: boolean
 ): Promise<string | null> {
 	const uid = userId();
 	if (!uid) return null;
@@ -192,7 +198,7 @@ async function openScanRow(
 		qualityGateFailReason: extras.qualitySignals?.failReason ?? null,
 
 		// Decision context (replay / counterfactual)
-		decisionContext: { ...DECISION_CONTEXT }
+		decisionContext: buildDecisionContext(rectificationEnabled)
 	});
 	return scanId;
 }
@@ -498,7 +504,7 @@ export async function recognizeCard(
 		? newPipelineEnabledPromise
 			.then((enabled) => {
 				if (!enabled) return null;
-				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint);
+				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint, rectificationEnabled);
 			})
 			.catch((err) => {
 				console.debug(`[scan:${traceId}] openScanRow failed:`, err);
@@ -1006,7 +1012,7 @@ async function traceScanPipeline(
  * admin via user override until verified on real traffic. Flipping the flag
  * via MCP immediately restores pre-rectification behavior — no code rollback.
  */
-async function isCardRectificationEnabled(): Promise<boolean> {
+export async function isCardRectificationEnabled(): Promise<boolean> {
 	try {
 		const flagsModule = await import('$lib/stores/feature-flags.svelte');
 		const { featureEnabled } = flagsModule;
