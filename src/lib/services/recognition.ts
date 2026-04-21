@@ -50,7 +50,8 @@ import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
 import { checkpoint } from './scan-checkpoint';
 import { recordRectificationAttempt } from './rectification-diagnostic';
-import type { RectifyDiagnostic } from './recognition-workers';
+import { rectifyBitmap } from './rectification/rectify';
+import type { RectifyDiagnostic } from './rectification/types';
 
 /**
  * Decision thresholds captured per scan so future analysis can replay
@@ -404,13 +405,13 @@ export async function recognizeCard(
 	if (rectificationEnabled) {
 		checkpoint(traceId, 'rectification:rectifyCard:start', performance.now() - startTime);
 		try {
-			// Pass a clone so Comlink's ImageBitmap transfer (if it happens)
-			// leaves the main-thread `bitmap` reference intact. ~3ms overhead.
+			// Path B2: disposable worker. Pass a clone because rectifyBitmap
+			// transfers ownership of its argument to the worker; `bitmap`
+			// stays live on the main thread for Tier 1/2/3. ~3ms clone cost.
+			// rectifyBitmap always returns a RectifyResult with a diagnostic
+			// — never throws — even on main-thread timeout (worker.terminate).
 			const rectifyClone = await cloneImageBitmap(bitmap);
-			// rectifyCard uses an internal 2s budget with per-stage checkpoints;
-			// no outer Promise.race needed. It always returns a RectifyResult
-			// with a diagnostic regardless of success.
-			const rectResult = await getImageWorker().rectifyCard(rectifyClone);
+			const rectResult = await rectifyBitmap(rectifyClone);
 			rectDiagnostic = rectResult.diagnostic;
 			const succeeded = rectResult.bitmap !== null;
 			if (rectResult.bitmap !== null) {
@@ -422,7 +423,7 @@ export async function recognizeCard(
 			}
 			checkpoint(traceId, 'rectification:rectifyCard:done', performance.now() - startTime, {
 				succeeded,
-				confidence: succeeded ? rectResult.confidence : null,
+				confidence: succeeded && rectResult.bitmap !== null ? rectResult.confidence : null,
 				fail_reason: rectResult.diagnostic.fail_reason,
 				total_ms: rectResult.diagnostic.total_ms
 			});
@@ -430,7 +431,7 @@ export async function recognizeCard(
 			checkpoint(traceId, 'rectification:rectifyCard:threw', performance.now() - startTime, {
 				error: err instanceof Error ? err.message : String(err)
 			});
-			console.debug('[scan] rectifyCard threw, falling back to raw bitmap:', err);
+			console.debug('[scan] rectifyBitmap threw, falling back to raw bitmap:', err);
 		}
 	}
 
