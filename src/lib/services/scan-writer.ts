@@ -140,7 +140,7 @@ export interface RecordScanInput {
 export type ScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
 export type ScanEngine =
 	| 'phash' | 'dhash' | 'multicrop_hash'
-	| 'mobileclip_v1' | 'dinov2_s14'
+	| 'mobileclip_v1' | 'dinov2_s14' | 'dinov2_base'
 	| 'paddleocr_pp_v5' | 'tesseract_v5'
 	| 'claude_haiku' | 'claude_sonnet';
 

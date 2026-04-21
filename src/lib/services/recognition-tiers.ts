@@ -496,7 +496,7 @@ async function emitTier1EmbeddingResult(
 	await writerRecordTierResult({
 		scanId,
 		tier: 'tier1_embedding',
-		engine: 'dinov2_s14',
+		engine: 'dinov2_base',
 		engineVersion: 'dinov2-base-v1',
 		rawOutput: {
 			top_match: best
