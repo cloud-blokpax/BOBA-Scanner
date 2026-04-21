@@ -72,6 +72,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'embedding_tier1',
+		display_name: 'Embedding-based Tier 1 (DINOv2)',
+		description: 'Replaces pHash Tier 1 with DINOv2 vision embeddings for nearest-neighbor card matching. Admin-only until measured on real traffic.',
+		icon: '🧠',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 
