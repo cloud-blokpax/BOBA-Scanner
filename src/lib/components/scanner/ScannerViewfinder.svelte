@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ScanEffects from '$lib/components/ScanEffects.svelte';
 	import type { Card } from '$lib/types';
+	import type { AlignmentState } from './use-scanner-analysis.svelte';
 
 	let {
-		bracketState,
+		alignmentState = 'no_card',
 		bracketAnimClass,
 		scanFailed,
 		revealColor,
@@ -14,7 +15,6 @@
 		glareRegions,
 		statusType,
 		revealedCard,
-		guidanceText,
 		scanning,
 		foilMode,
 		foilStep,
@@ -22,7 +22,7 @@
 		foilGuidance,
 		cameraError
 	}: {
-		bracketState: 'idle' | 'detected' | 'locked';
+		alignmentState?: AlignmentState;
 		bracketAnimClass: string;
 		scanFailed: boolean;
 		revealColor: { color: string; glow: number; pulses: number } | null;
@@ -33,7 +33,6 @@
 		glareRegions: Array<{ x: number; y: number; w: number; h: number }>;
 		statusType: string;
 		revealedCard: Card | null;
-		guidanceText: string | null;
 		scanning: boolean;
 		foilMode: boolean;
 		foilStep: number;
@@ -41,6 +40,28 @@
 		foilGuidance: string[];
 		cameraError: string | null;
 	} = $props();
+
+	const bracketColor = $derived(
+		alignmentState === 'ready'
+			? 'rgba(34, 197, 94, 0.95)'
+			: alignmentState === 'partial'
+				? 'rgba(234, 179, 8, 0.9)'
+				: 'rgba(148, 163, 184, 0.6)'
+	);
+	const bracketGlow = $derived(
+		alignmentState === 'ready'
+			? '0 0 10px rgba(34, 197, 94, 0.55)'
+			: alignmentState === 'partial'
+				? '0 0 6px rgba(234, 179, 8, 0.45)'
+				: 'none'
+	);
+	const promptText = $derived(
+		alignmentState === 'ready'
+			? 'Hold still…'
+			: alignmentState === 'partial'
+				? 'Align with frame'
+				: 'Point at card'
+	);
 </script>
 
 <!-- Auto-capture flash overlay -->
@@ -54,13 +75,21 @@
 <!-- Invisible guide rect for crop calculations -->
 <div class="scanner-guide-rect"></div>
 
+<!-- Alignment prompt near the top of the viewfinder, never covered by the shutter -->
+{#if !scanning && !scanSuccess && !scanFailed && !foilMode}
+	<div class="alignment-prompt" class:ready={alignmentState === 'ready'}>
+		{promptText}
+	</div>
+{/if}
+
 <!-- Corner brackets -->
 {#each ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as corner}
 	<div
 		class="bracket {corner} {bracketAnimClass}"
 		class:bracket-fail={scanFailed}
-		class:bracket-detected={bracketState === 'detected'}
-		class:bracket-locked={bracketState === 'locked'}
+		class:bracket-align-ready={alignmentState === 'ready'}
+		style:--bracket-color={bracketColor}
+		style:--bracket-glow={bracketGlow}
 		style:--reveal-color={revealColor?.color ?? ''}
 		style:--reveal-glow="{revealColor?.glow ?? 0}px"
 	></div>
@@ -94,14 +123,10 @@
 	></div>
 {/each}
 
-<!-- Guidance text -->
+<!-- Foil capture guidance -->
 {#if foilMode && foilStep < foilCapturesNeeded && !scanning}
 	<div class="guidance-text foil-guidance">
 		{foilGuidance[foilStep]}
-	</div>
-{:else if guidanceText && !scanning && !foilMode}
-	<div class="guidance-text">
-		{guidanceText}
 	</div>
 {/if}
 
@@ -154,11 +179,12 @@
 		position: absolute;
 		width: 40px;
 		height: 40px;
-		border-color: rgba(255,255,255,0.6);
+		border-color: var(--bracket-color, rgba(255, 255, 255, 0.6));
 		border-style: solid;
 		border-width: 0;
 		z-index: 2;
-		transition: border-color 200ms ease-out, filter 200ms ease-out;
+		filter: drop-shadow(var(--bracket-glow, none));
+		transition: border-color 150ms ease, filter 150ms ease;
 	}
 
 	.bracket.top-left {
@@ -182,7 +208,7 @@
 		border-bottom-right-radius: 8px;
 	}
 
-	/* Bracket animations */
+	/* Post-capture reveal animations (rarity-coded). Driven by bracketAnimClass. */
 	.bracket-reveal { animation: bracket-flash-reveal 1s ease-out; }
 	.bracket-reveal-double { animation: bracket-flash-reveal-double 1.2s ease-out; }
 	.bracket-reveal-triple {
@@ -193,33 +219,6 @@
 	.bracket-reveal-triple.top-right { border-top-width: 3px; border-right-width: 3px; }
 	.bracket-reveal-triple.bottom-left { border-bottom-width: 3px; border-left-width: 3px; }
 	.bracket-reveal-triple.bottom-right { border-bottom-width: 3px; border-right-width: 3px; }
-
-	.bracket-detected {
-		border-color: #F59E0B !important;
-		filter: drop-shadow(0 0 4px rgba(245,158,11,0.4));
-	}
-	.bracket-locked {
-		border-color: #10B981 !important;
-		filter: drop-shadow(0 0 8px rgba(16,185,129,0.5));
-	}
-	.bracket-fail {
-		animation: bracket-flash-fail 0.8s ease-out;
-	}
-
-	/* Auto-capture flash */
-	.flash-overlay {
-		position: absolute;
-		inset: 0;
-		background: white;
-		z-index: 20;
-		animation: flash-burst 0.15s ease-out forwards;
-		pointer-events: none;
-	}
-
-	@keyframes flash-burst {
-		0% { opacity: 0.8; }
-		100% { opacity: 0; }
-	}
 
 	@keyframes bracket-flash-reveal {
 		0%   { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
@@ -245,10 +244,73 @@
 		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
 	}
 
+	/* Subtle pulse when alignment is ready — draws the eye without being loud. */
+	.bracket-align-ready {
+		animation: bracket-ready-pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes bracket-ready-pulse {
+		0%, 100% {
+			filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.4));
+		}
+		50% {
+			filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.7));
+		}
+	}
+
+	.bracket-fail {
+		animation: bracket-flash-fail 0.8s ease-out;
+	}
+
+	/* Auto-capture flash */
+	.flash-overlay {
+		position: absolute;
+		inset: 0;
+		background: white;
+		z-index: 20;
+		animation: flash-burst 0.15s ease-out forwards;
+		pointer-events: none;
+	}
+
+	@keyframes flash-burst {
+		0% { opacity: 0.8; }
+		100% { opacity: 0; }
+	}
+
 	@keyframes bracket-flash-fail {
 		0%   { border-color: var(--accent-primary, #3b82f6); }
 		25%  { border-color: var(--danger, #ef4444); box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
 		100% { border-color: var(--accent-primary, #3b82f6); box-shadow: none; }
+	}
+
+	/* Alignment prompt: sits just below the top bracket corners, inside the
+	   viewfinder. Never overlaps the shutter at the bottom. */
+	.alignment-prompt {
+		position: absolute;
+		top: calc(15% + 48px);
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.375rem 0.875rem;
+		background: rgba(0, 0, 0, 0.55);
+		border-radius: 16px;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.9);
+		pointer-events: none;
+		z-index: 5;
+		white-space: nowrap;
+		transition: color 150ms ease, background 150ms ease;
+	}
+
+	.alignment-prompt.ready {
+		color: #bbf7d0;
+		background: rgba(5, 46, 22, 0.6);
+		animation: prompt-ready-pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes prompt-ready-pulse {
+		0%, 100% { opacity: 0.85; }
+		50% { opacity: 1; }
 	}
 
 	/* Blur warning overlay */
@@ -288,7 +350,8 @@
 		to { opacity: 1; }
 	}
 
-	/* Guidance text */
+	/* Foil-mode guidance text (kept bottom-anchored so it doesn't clash with
+	   the top-anchored alignment prompt). */
 	.guidance-text {
 		position: absolute;
 		bottom: 4.5rem;
@@ -327,6 +390,12 @@
 			animation: none;
 			top: 50%;
 			opacity: 0.3;
+		}
+		.bracket-align-ready {
+			animation: none;
+		}
+		.alignment-prompt.ready {
+			animation: none;
 		}
 	}
 

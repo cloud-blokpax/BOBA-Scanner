@@ -1,5 +1,5 @@
 /**
- * Pipeline checkpoint writer for rectification debugging.
+ * Pipeline checkpoint writer.
  *
  * Writes a row to scan_pipeline_checkpoint via direct fetch to PostgREST
  * (not supabase-js) so that a stalled supabase-js client can't prevent
@@ -7,8 +7,6 @@
  *
  * Fire-and-forget. Never awaits, never throws. If the write fails we lose
  * a diagnostic row; we never lose a scan.
- *
- * REMOVE AFTER RECTIFICATION IS VERIFIED WORKING. This is debug infra.
  */
 
 import { env } from '$env/dynamic/public';

@@ -4,9 +4,10 @@
 	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
+	import { cropToCanonical, type ViewfinderRect } from '$lib/services/constrained-crop';
 	import { scanImage, scanState, resetScanner, startNewScan, isScanStale } from '$lib/stores/scanner.svelte';
-	import { checkImageQuality, compositeForFoilMode, isCardRectificationEnabled } from '$lib/services/recognition';
-	import { preWarm as preWarmRectification, disposePreWarmed as disposeRectificationPreWarm } from '$lib/services/rectification/rectify';
+	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
+	import { showToast } from '$lib/stores/toast.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import type { ScanResult, Card } from '$lib/types';
 
@@ -80,6 +81,53 @@
 		legendary:  { color: '#F59E0B', glow: 28, pulses: 3 }
 	};
 
+	/**
+	 * Resolve the visible viewfinder rect (the DOM `.scanner-guide-rect`)
+	 * into source-video-pixel coordinates. The video element uses
+	 * object-fit: cover, so the displayed viewport may crop the video —
+	 * we unwind that transform here.
+	 *
+	 * Returns null until video metadata is loaded.
+	 */
+	function computeViewfinderInVideoCoords(): ViewfinderRect | null {
+		if (!videoEl || videoEl.videoWidth <= 0 || videoEl.videoHeight <= 0) return null;
+		const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect') as HTMLElement | null;
+		if (!guideEl) return null;
+		const guideRect = guideEl.getBoundingClientRect();
+		const videoRect = videoEl.getBoundingClientRect();
+		if (guideRect.width < 10 || guideRect.height < 10) return null;
+
+		// object-fit: cover — map CSS-pixel rect into video-pixel rect,
+		// accounting for the letterboxing the cover fit introduces.
+		const videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+		const elemAspect = videoRect.width / videoRect.height;
+		let displayedWidth: number;
+		let displayedHeight: number;
+		let offsetX: number;
+		let offsetY: number;
+		if (videoAspect > elemAspect) {
+			displayedHeight = videoRect.height;
+			displayedWidth = videoRect.height * videoAspect;
+			offsetX = (displayedWidth - videoRect.width) / 2;
+			offsetY = 0;
+		} else {
+			displayedWidth = videoRect.width;
+			displayedHeight = videoRect.width / videoAspect;
+			offsetX = 0;
+			offsetY = (displayedHeight - videoRect.height) / 2;
+		}
+		const scaleX = videoEl.videoWidth / displayedWidth;
+		const scaleY = videoEl.videoHeight / displayedHeight;
+		const relativeX = guideRect.left - videoRect.left + offsetX;
+		const relativeY = guideRect.top - videoRect.top + offsetY;
+
+		const x = Math.max(0, Math.round(relativeX * scaleX));
+		const y = Math.max(0, Math.round(relativeY * scaleY));
+		const width = Math.min(videoEl.videoWidth - x, Math.round(guideRect.width * scaleX));
+		const height = Math.min(videoEl.videoHeight - y, Math.round(guideRect.height * scaleY));
+		return { x, y, width, height };
+	}
+
 	// ── Auto-analyze composable ─────────────────────────────
 	const analysis = useScannerAnalysis(
 		() => videoEl,
@@ -88,9 +136,9 @@
 			if (scanning || paused || foilMode) return;
 			await handleCapture();
 		},
+		() => computeViewfinderInVideoCoords()
 	);
 
-	const stabilityProgress = $derived(analysis.stableFrameCount / 3);
 	const revealColor = $derived(RARITY_COLORS[revealedCard?.rarity ?? ''] ?? null);
 	const bracketAnimClass = $derived.by(() => {
 		if (!scanSuccess || !revealColor) return '';
@@ -135,14 +183,6 @@
 		if (videoEl) {
 			try {
 				await camera.initCamera(videoEl, onCameraReady);
-				// Camera is open; user is about to compose. Pre-warm a
-				// rectification worker in the background so first shutter
-				// doesn't pay the ~2-3s OpenCV cold-start cost. Gated on the
-				// same flag the scan pipeline checks so we don't load OpenCV
-				// for users where rectification is off.
-				isCardRectificationEnabled()
-					.then((enabled) => { if (enabled) preWarmRectification(); })
-					.catch(() => { /* flag check failed — skip prewarm */ });
 			} catch {
 				phase = 'error';
 			}
@@ -163,11 +203,6 @@
 			() => {
 				phase = 'idle';
 				analysis.start();
-				// Re-entering from backgrounding: re-prime the stash. preWarm
-				// is idempotent, so this is a no-op when one is already ready.
-				isCardRectificationEnabled()
-					.then((enabled) => { if (enabled) preWarmRectification(); })
-					.catch(() => { /* noop */ });
 			},
 			() => { analysis.stop(); }
 		);
@@ -181,9 +216,6 @@
 			foilCaptures.forEach(b => b.close());
 			foilCaptures = [];
 			_cleanupVisibility?.();
-			// Terminate any stashed rectification worker so it doesn't leak
-			// when the scanner unmounts (e.g., user navigates away).
-			disposeRectificationPreWarm();
 		};
 	});
 
@@ -251,12 +283,17 @@
 		videoEl.pause();
 		triggerHaptic('tap');
 
-		try {
-			const bitmap = await captureFrame(videoEl);
+		// Snapshot the alignment state at the moment of shutter so downstream
+		// telemetry can segment hit rate by capture quality.
+		const alignmentAtCapture = analysis.alignmentState;
 
-			const quality = await checkImageQuality(bitmap);
+		let rawBitmap: ImageBitmap | null = null;
+		let croppedBitmap: ImageBitmap | null = null;
+		try {
+			rawBitmap = await captureFrame(videoEl);
+
+			const quality = await checkImageQuality(rawBitmap);
 			if (quality.isBlurry) {
-				bitmap.close();
 				blurWarning = true;
 				triggerHaptic('error');
 				setTimeout(() => { blurWarning = false; }, 2000);
@@ -269,30 +306,51 @@
 			}
 
 			phase = 'processing';
-			let cropRegion: { x: number; y: number; width: number; height: number } | null = null;
-			try {
-				const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
-				if (guideEl) {
-					const guideRect = guideEl.getBoundingClientRect();
-					const videoRect = videoEl.getBoundingClientRect();
-					if (guideRect.width >= 10 && guideRect.height >= 10) {
-						cropRegion = cropToCardRegion(videoEl.videoWidth, videoEl.videoHeight, guideRect, videoRect);
-					}
-				}
-			} catch { /* ignore */ }
 
+			// Resolve the viewfinder region in source-pixel coords and crop to a
+			// canonical 500×700 frame for Tier 1/2. Tier 3 still sees the full
+			// bitmap via the recognition pipeline (Claude benefits from context).
+			const viewfinder = computeViewfinderInVideoCoords();
+			croppedBitmap = await cropToCanonical(rawBitmap, viewfinder ?? {
+				x: 0, y: 0, width: rawBitmap.width, height: rawBitmap.height
+			});
+
+			// Keep a cropped data URL for the scan-history thumbnail — the
+			// existing UI expects one and the cropped frame is prettier than
+			// the raw wide-angle capture.
+			let cropRegion: { x: number; y: number; width: number; height: number } | null = null;
+			if (viewfinder) {
+				cropRegion = viewfinder;
+			} else {
+				try {
+					const guideEl = videoEl.closest('.viewfinder')?.querySelector('.scanner-guide-rect');
+					if (guideEl) {
+						const guideRect = guideEl.getBoundingClientRect();
+						const videoRect = videoEl.getBoundingClientRect();
+						if (guideRect.width >= 10 && guideRect.height >= 10) {
+							cropRegion = cropToCardRegion(videoEl.videoWidth, videoEl.videoHeight, guideRect, videoRect);
+						}
+					}
+				} catch { /* ignore */ }
+			}
 			const croppedUrl = cropRegion ? cropFrame(videoEl, cropRegion) : null;
-			const imageUrl = croppedUrl ?? bitmapToDataUrl(bitmap);
-			// Mint a generation BEFORE invoking scanImage so we can detect a
-			// concurrent Try Again that supersedes this scan. If staleness is
-			// detected after scanImage returns, drop the result silently rather
-			// than letting handleScanResult overwrite the new scan's UI state.
+			const imageUrl = croppedUrl ?? bitmapToDataUrl(rawBitmap);
+
 			const myGen = startNewScan();
 			let scanResult;
 			try {
-				scanResult = await scanImage(bitmap, { isAuthenticated, skipBlurCheck: true, cropRegion, gameHint }, myGen);
+				scanResult = await scanImage(croppedBitmap, {
+					isAuthenticated,
+					skipBlurCheck: true,
+					cropRegion,
+					gameHint,
+					alignmentStateAtCapture: alignmentAtCapture,
+					viewfinder: viewfinder ?? null
+				}, myGen);
 			} finally {
-				bitmap.close();
+				// scanImage took ownership of croppedBitmap; null the local
+				// reference so the finally block below doesn't double-close.
+				croppedBitmap = null;
 			}
 			if (isScanStale(myGen)) {
 				console.debug('[Scanner] Discarding stale scan result (Try Again superseded this run)');
@@ -307,7 +365,17 @@
 		} catch (err) {
 			console.error('[Scanner] handleCapture error:', err);
 			handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: 'Scanner error — please try again' });
+		} finally {
+			rawBitmap?.close();
+			croppedBitmap?.close();
 		}
+	}
+
+	async function handleShutterTap() {
+		if (analysis.alignmentState !== 'ready') {
+			showToast('Align card with frame for best results', '📸', 2000);
+		}
+		await handleCapture();
 	}
 
 	async function handleFoilCapture() {
@@ -397,7 +465,7 @@
 		></video>
 
 		<ScannerViewfinder
-			bracketState={analysis.bracketState}
+			alignmentState={analysis.alignmentState}
 			{bracketAnimClass}
 			{scanFailed}
 			{revealColor}
@@ -408,7 +476,6 @@
 			{glareRegions}
 			{statusType}
 			{revealedCard}
-			guidanceText={analysis.guidanceText}
 			{scanning}
 			{foilMode}
 			{foilStep}
@@ -491,9 +558,9 @@
 			{foilMode}
 			{cameraReady}
 			{scanning}
-			{stabilityProgress}
+			alignmentReady={analysis.alignmentState === 'ready'}
 			onTorchToggle={handleTorchToggle}
-			onCapture={handleCapture}
+			onCapture={handleShutterTap}
 			onFoilCapture={handleFoilCapture}
 			onFoilToggle={handleFoilToggle}
 			onFileUpload={handleFileUpload}

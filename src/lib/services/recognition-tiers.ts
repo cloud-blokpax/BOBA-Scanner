@@ -373,10 +373,9 @@ export async function runTier1(
 		}
 
 		// Layer 3: Supabase fuzzy pHash-256 via find_similar_phash_256.
-		// Primary post-rectification matcher. pHash-256 (DCT-based) carries 256
-		// bits of signal vs dHash's 64 — more robust to the residual variance
-		// that rectification can't completely eliminate. The RPC returns up to
-		// 5 candidates ordered by Hamming distance ascending.
+		// pHash-256 (DCT-based) carries 256 bits of signal vs dHash's 64 —
+		// more robust to residual variance from camera angle and lighting.
+		// The RPC returns up to 5 candidates ordered by Hamming distance.
 		//
 		// Accept policy:
 		//   - Tight match: distance < 30. Safe on its own.
@@ -475,8 +474,8 @@ export async function runTier1(
 		}
 
 		// Layer 4: Supabase fuzzy dHash via Hamming distance (≤5 bits different).
-		// Legacy fallback — retained so pre-rectification cache rows still match
-		// when pHash-256 misses. Will be pruned once Layer 3 has baked.
+		// Legacy fallback — retained so older dHash-only cache rows still match
+		// when pHash-256 misses. Will be pruned once embedding Tier 1 is live.
 		if (client && !_fuzzyHashRpcDisabled && /^[0-9a-f]{16}$/.test(hash)) {
 			try {
 				const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
