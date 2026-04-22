@@ -78,10 +78,56 @@ export async function ocrRegion(
 	const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
 
 	const result = await _client.detect(blob);
+	return buildOCRResult(result);
+}
+
+/**
+ * Full-frame OCR — slower than region-cropped but robust to region-coord drift.
+ * Used by:
+ *   - Tier 1 canonical pass as a fallback when region OCR returns low conf
+ *   - Wonders parallel classifier's OCM/Stonefoil rules (single read powers both)
+ *
+ * Validated on 20 real phone-photographed cards at 2400px long edge:
+ *   - card_number returned among detected boxes at conf ≥ 0.97 in every case
+ *   - name returned at conf ≥ 0.92 in every case (including the LA-35 kanji card)
+ *
+ * 15MB model covers Latin + CJK glyphs. Do NOT load a second language model.
+ */
+export async function ocrFullFrame(
+	bitmap: ImageBitmap,
+	options: { maxLongEdge?: number } = {}
+): Promise<OCRResult> {
+	if (!_client) throw new Error('PaddleOCR not initialized');
+
+	const { maxLongEdge = 2400 } = options;
+	const longEdge = Math.max(bitmap.width, bitmap.height);
+	const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+	const W = Math.round(bitmap.width * scale);
+	const H = Math.round(bitmap.height * scale);
+
+	const canvas = new OffscreenCanvas(W, H);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('2D context unavailable');
+	ctx.imageSmoothingEnabled = true;
+	ctx.imageSmoothingQuality = 'high';
+	ctx.drawImage(bitmap, 0, 0, W, H);
+	const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+
+	const result = await _client.detect(blob);
+	return buildOCRResult(result);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildOCRResult(raw: any): OCRResult {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const boxes = ((result?.lines || result || []) as any[]).map((l: any) => ({
+	const boxes = ((raw?.lines || raw || []) as any[]).map((l: any) => ({
 		text: (l.text || '').trim(),
-		score: typeof l.score === 'number' ? l.score : typeof l.confidence === 'number' ? l.confidence : 0,
+		score:
+			typeof l.score === 'number'
+				? l.score
+				: typeof l.confidence === 'number'
+					? l.confidence
+					: 0,
 		box: l.box || l.points || []
 	}));
 	const text = boxes
@@ -91,6 +137,5 @@ export async function ocrRegion(
 	const confidence = boxes.length
 		? boxes.reduce((acc: number, b: { score: number }) => acc + b.score, 0) / boxes.length
 		: 0;
-
 	return { text, confidence, boxes };
 }

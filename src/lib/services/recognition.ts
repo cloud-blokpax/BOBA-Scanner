@@ -802,6 +802,7 @@ export async function recognizeCard(
 				const decisionCtx: Record<string, unknown> = {
 					live_session: liveSnap,
 					canonical_result: canonical.perTask,
+					canonical_ocr_strategy: canonical.ocrStrategy,
 					live_vs_canonical: {
 						live_ran: !!live,
 						agreed: liveAgreed,

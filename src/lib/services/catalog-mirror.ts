@@ -154,6 +154,67 @@ export async function lookupCard(
 	return (match as MirrorCard) || null;
 }
 
+/**
+ * Relaxed lookup: exact card_number match, fuzzy name match against catalog.
+ * Used when OCR returned card_number cleanly but the name has OCR artifacts
+ * like "CastOut" (missing space) or "A-9o" (0↔o confusion) that keep the
+ * exact-index lookup from hitting.
+ */
+export async function lookupCardByCardNumberFuzzy(
+	game: 'boba' | 'wonders',
+	cardNumber: string,
+	rawName: string
+): Promise<MirrorCard | null> {
+	const db = await getDB();
+	const all = (await db.getAll(STORE_CARDS)) as MirrorCard[];
+	const candidates = all.filter((c) => c.game_id === game && c.card_number === cardNumber);
+	if (candidates.length === 0) return null;
+	if (candidates.length === 1) return candidates[0];
+
+	const normalized = normalizeOcrName(rawName);
+	let best: { card: MirrorCard; dist: number } | null = null;
+	for (const c of candidates) {
+		const catalogName = (game === 'boba' ? c.hero_name : c.name) || '';
+		const d = levenshtein(normalized, normalizeOcrName(catalogName));
+		if (!best || d < best.dist) best = { card: c, dist: d };
+	}
+	if (!best) return null;
+	const catalogName = (game === 'boba' ? best.card.hero_name : best.card.name) || '';
+	const threshold = Math.max(2, Math.floor(catalogName.length * 0.2));
+	return best.dist <= threshold ? best.card : null;
+}
+
+/**
+ * Normalize OCR artifacts observed in Phase 2 validation:
+ *  - Space drops between kerned title words ("CastOut" vs "Cast Out")
+ *  - 0 ↔ o and 1 ↔ l confusion in mixed-content names ("A-9o" vs "A-90")
+ * Both sides of a comparison must pass through this normalizer. Applied
+ * symmetrically, it is distance-preserving for any genuine character
+ * difference and eliminates these two systematic quirks.
+ */
+export function normalizeOcrName(s: string): string {
+	return s
+		.toLowerCase()
+		.replace(/\s+/g, '')
+		.replace(/o/g, '0')
+		.replace(/l/g, '1');
+}
+
+function levenshtein(a: string, b: string): number {
+	if (!a.length) return b.length;
+	if (!b.length) return a.length;
+	const m: number[][] = [];
+	for (let i = 0; i <= b.length; i++) m[i] = [i];
+	for (let j = 0; j <= a.length; j++) m[0][j] = j;
+	for (let i = 1; i <= b.length; i++) {
+		for (let j = 1; j <= a.length; j++) {
+			const cost = a[j - 1] === b[i - 1] ? 0 : 1;
+			m[i][j] = Math.min(m[i - 1][j] + 1, m[i][j - 1] + 1, m[i - 1][j - 1] + cost);
+		}
+	}
+	return m[b.length][a.length];
+}
+
 export function catalogWarmedAt(): number | null {
 	return _warmedAt;
 }
