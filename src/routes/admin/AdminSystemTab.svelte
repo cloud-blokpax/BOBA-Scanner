@@ -36,9 +36,19 @@
 	let backfillStatus = $state<BackfillStatus | null>(null);
 	let backfillTriggering = $state(false);
 
+	let bobaBackfillStatus = $state<BackfillStatus | null>(null);
+	let bobaBackfillTriggering = $state(false);
+	let bobaBackfillAutoRun = $state(false);
+
 	const backfillPercent = $derived(
 		backfillStatus && backfillStatus.total_cards > 0
 			? Math.round((backfillStatus.processed / backfillStatus.total_cards) * 100)
+			: 0
+	);
+
+	const bobaBackfillPercent = $derived(
+		bobaBackfillStatus && bobaBackfillStatus.total_cards > 0
+			? Math.round((bobaBackfillStatus.processed / bobaBackfillStatus.total_cards) * 100)
 			: 0
 	);
 
@@ -48,6 +58,17 @@
 			if (!res.ok) return;
 			const data = await res.json();
 			backfillStatus = data.status ?? null;
+		} catch {
+			// non-fatal
+		}
+	}
+
+	async function refreshBobaBackfillStatus() {
+		try {
+			const res = await fetch('/api/admin/backfill/boba-hashes/status');
+			if (!res.ok) return;
+			const data = await res.json();
+			bobaBackfillStatus = data.status ?? null;
 		} catch {
 			// non-fatal
 		}
@@ -80,8 +101,53 @@
 		backfillTriggering = false;
 	}
 
+	async function runBobaBackfillBatch(): Promise<boolean> {
+		const res = await fetch('/api/admin/backfill/boba-hashes', {
+			method: 'POST'
+		});
+		if (!res.ok) {
+			showToast(`Failed: HTTP ${res.status}`, 'x');
+			return false;
+		}
+		const data = await res.json();
+		bobaBackfillStatus = data.status ?? null;
+		return data.done === true;
+	}
+
+	async function triggerBobaBackfill() {
+		if (bobaBackfillTriggering) return;
+		if (!bobaBackfillStatus && !confirm('Start BoBA hash backfill? Loops automatically until done (~5-10 min).')) return;
+		bobaBackfillTriggering = true;
+		bobaBackfillAutoRun = true;
+		try {
+			// Auto-loop batches until the server reports done=true or the user
+			// cancels. Each batch is its own serverless invocation (≤55s), so
+			// we don't need to worry about a single request timing out.
+			// eslint-disable-next-line no-constant-condition
+			while (bobaBackfillAutoRun) {
+				const done = await runBobaBackfillBatch();
+				if (done) {
+					showToast('BoBA hash backfill complete', 'check');
+					break;
+				}
+			}
+		} catch (err) {
+			showToast(
+				'Network error: ' + (err instanceof Error ? err.message : 'unknown'),
+				'x'
+			);
+		}
+		bobaBackfillTriggering = false;
+		bobaBackfillAutoRun = false;
+	}
+
+	function cancelBobaBackfill() {
+		bobaBackfillAutoRun = false;
+	}
+
 	onMount(() => {
 		refreshBackfillStatus();
+		refreshBobaBackfillStatus();
 	});
 
 	// ── Scan pipeline diagnostic (Phase 1 / Session 1.1.1d) ──
@@ -233,6 +299,66 @@
 					{#if backfillStatus.completed && backfillStatus.completed_at}
 						<span class="backfill-done">
 							✓ Completed at {new Date(backfillStatus.completed_at).toLocaleTimeString()}
+						</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+	</div>
+
+	<!-- BoBA Hash Backfill (Phase 1 / Session 1.3 follow-up) -->
+	<div class="section">
+		<h3 class="section-title">BoBA Hash Backfill</h3>
+		<p class="section-desc">
+			Seeds <code>hash_cache</code> for BoBA cards with an
+			<code>image_url</code> but no hash row yet. Tap once and leave the page
+			open — it auto-loops batches until done. Idempotent; safe to re-run.
+		</p>
+		<div class="backfill-controls">
+			<button
+				class="backfill-btn"
+				onclick={triggerBobaBackfill}
+				disabled={bobaBackfillTriggering}
+			>
+				{#if bobaBackfillTriggering}
+					Running… ({bobaBackfillStatus?.processed ?? 0}/{bobaBackfillStatus?.total_cards ?? '?'})
+				{:else if bobaBackfillStatus && !bobaBackfillStatus.completed}
+					Continue backfill ({bobaBackfillStatus.processed}/{bobaBackfillStatus.total_cards})
+				{:else if bobaBackfillStatus?.completed}
+					Re-run backfill
+				{:else}
+					Start backfill
+				{/if}
+			</button>
+			{#if bobaBackfillTriggering}
+				<button class="backfill-btn" onclick={cancelBobaBackfill}>
+					Stop after current batch
+				</button>
+			{/if}
+		</div>
+
+		{#if bobaBackfillStatus}
+			<div class="backfill-status">
+				<div class="backfill-bar">
+					<div class="backfill-fill" style:width="{bobaBackfillPercent}%"></div>
+				</div>
+				<div class="backfill-stats">
+					<span>Processed: {bobaBackfillStatus.processed} / {bobaBackfillStatus.total_cards} ({bobaBackfillPercent}%)</span>
+					<span>Succeeded: {bobaBackfillStatus.succeeded}</span>
+					<span>Skipped: {bobaBackfillStatus.skipped}</span>
+					{#if bobaBackfillStatus.fetch_failed > 0}
+						<span class="backfill-warn">Fetch failures: {bobaBackfillStatus.fetch_failed}</span>
+					{/if}
+					{#if bobaBackfillStatus.hash_failed > 0}
+						<span class="backfill-warn">Hash failures: {bobaBackfillStatus.hash_failed}</span>
+					{/if}
+					{#if bobaBackfillStatus.db_failed > 0}
+						<span class="backfill-err">DB failures: {bobaBackfillStatus.db_failed}</span>
+					{/if}
+					<span>Batches: {bobaBackfillStatus.batch_count}</span>
+					{#if bobaBackfillStatus.completed && bobaBackfillStatus.completed_at}
+						<span class="backfill-done">
+							✓ Completed at {new Date(bobaBackfillStatus.completed_at).toLocaleTimeString()}
 						</span>
 					{/if}
 				</div>
