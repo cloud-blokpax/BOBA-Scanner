@@ -94,6 +94,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'upload_tta_v1',
+		display_name: 'Upload TTA Voting (Tier 1 fallback)',
+		description: 'Runs test-time augmentation voting (5 synthetic frames, PaddleOCR consensus) on uploaded images whose single-frame canonical OCR falls below the confidence floor. Canonical still runs first; TTA only fires on the minority of uploads that need help. Requires live_ocr_tier1_v1 on.',
+		icon: '🎞️',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 

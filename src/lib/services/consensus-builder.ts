@@ -40,8 +40,19 @@ export interface Consensus {
 	frameCount: number;
 }
 
-const MIN_AGREEMENT = 2;
-const MIN_SUMMED_CONFIDENCE = 1.5;
+const DEFAULT_MIN_AGREEMENT = 2;
+const DEFAULT_MIN_SUMMED_CONFIDENCE = 1.5;
+
+/**
+ * Optional per-call override of the consensus thresholds. Live-scan callers
+ * (from 2.1a) omit this and get the permissive defaults (2-of-N, 1.5 summed
+ * confidence). Upload-TTA (2.1b) passes tighter values because synthetic
+ * frames are correlated and need stronger agreement to trust.
+ */
+export interface ConsensusBuilderConfig {
+	minAgreement?: number;
+	minSummedConfidence?: number;
+}
 
 interface Bucket {
 	count: number;
@@ -56,13 +67,21 @@ export class ConsensusBuilder {
 	private nameVotes: Map<string, Bucket>;
 	private parallelVotes: Map<string, Bucket>;
 	private frameCount = 0;
+	private minAgreement: number;
+	private minSummedConfidence: number;
 
-	constructor(sessionId: number, game: 'boba' | 'wonders') {
+	constructor(
+		sessionId: number,
+		game: 'boba' | 'wonders',
+		config: ConsensusBuilderConfig = {}
+	) {
 		this.sessionId = sessionId;
 		this.game = game;
 		this.cardNumberVotes = new Map();
 		this.nameVotes = new Map();
 		this.parallelVotes = new Map();
+		this.minAgreement = config.minAgreement ?? DEFAULT_MIN_AGREEMENT;
+		this.minSummedConfidence = config.minSummedConfidence ?? DEFAULT_MIN_SUMMED_CONFIDENCE;
 	}
 
 	addVote(vote: Vote): void {
@@ -164,9 +183,11 @@ export class ConsensusBuilder {
 		const pr = pick(this.parallelVotes);
 
 		const textReached = (t: TaskConsensus | null) =>
-			!!t && t.agreementCount >= MIN_AGREEMENT && t.summedConfidence >= MIN_SUMMED_CONFIDENCE;
+			!!t &&
+			t.agreementCount >= this.minAgreement &&
+			t.summedConfidence >= this.minSummedConfidence;
 		const parallelReached = (t: TaskConsensus | null) =>
-			!!t && t.agreementCount >= MIN_AGREEMENT;
+			!!t && t.agreementCount >= this.minAgreement;
 
 		// Parallel is only required for Wonders. BoBA's parallel is baked into
 		// card_number via prefix; the classifier doesn't run there.

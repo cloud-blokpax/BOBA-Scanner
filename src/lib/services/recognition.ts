@@ -207,9 +207,13 @@ async function openScanRow(
 
 /**
  * Map the winning ScanResult back to a `winning_tier` string for the
- * scans.winning_tier column.
+ * scans.winning_tier column. `winningTier` on the result takes precedence
+ * when set — used by the canonical PaddleOCR path (tier1_local_ocr) and
+ * the upload-TTA fallback (tier1_upload_tta, Session 2.1b) so analytics
+ * can separate them from the legacy hash_cache tier.
  */
 function winningTierFromResult(result: ScanResult): string {
+	if (result.winningTier) return result.winningTier;
 	switch (result.scan_method) {
 		case 'hash_cache': return 'tier1_hash';
 		case 'tesseract': return 'tier2_ocr';
@@ -761,6 +765,20 @@ export async function recognizeCard(
 	// the old Haiku-first behavior stays intact when the flag is off.
 	const liveOCREnabled = await isLiveOCRTier1Enabled();
 	let liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
+	// Shared across canonical + TTA telemetry so fallback Haiku rows still
+	// carry what canonical / TTA saw when they couldn't close the deal.
+	let canonicalTelemetry: {
+		perTask: import('./tier1-canonical').CanonicalResult['perTask'];
+		ocrStrategy: import('./tier1-canonical').CanonicalResult['ocrStrategy'];
+	} | null = null;
+	let ttaTelemetry: {
+		frames_processed: number;
+		consensus_reached: boolean;
+		parallel_code: string | null;
+		parallel_rule_fired: string | null;
+		per_frame_results: unknown[];
+		augmentation_set_version: string;
+	} | null = null;
 	if (liveOCREnabled) {
 		onTierChange?.(3); // reuse tier3 UI state for OCR-in-progress
 		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
@@ -769,6 +787,10 @@ export async function recognizeCard(
 			const { toParallelName } = await import('$lib/data/wonders-parallels');
 			const game = (gameHint === 'wonders' ? 'wonders' : 'boba') as 'boba' | 'wonders';
 			const canonical = await runCanonicalTier1(workingBitmap, game);
+			canonicalTelemetry = {
+				perTask: canonical.perTask,
+				ocrStrategy: canonical.ocrStrategy
+			};
 
 			const liveSnap = options?.liveConsensusSnapshot ?? null;
 			const live = liveSnap?.consensus ?? null;
@@ -831,12 +853,86 @@ export async function recognizeCard(
 					liveConsensusReached,
 					liveVsCanonicalAgreed: liveAgreed,
 					fallbackTierUsed: null,
+					// Distinguishes canonical wins from hash-cache hits in telemetry.
+					winningTier: 'tier1_local_ocr',
 					decisionContext: decisionCtx
 				};
 				return finalize(tier1Result);
 			}
-			// Below confidence floor — fall through to Tier 3 Haiku.
+			// Below confidence floor — fall through to TTA (uploads only) or
+			// Tier 3 Haiku. Preserve canonical telemetry for both fallbacks.
 			ctx.lastTier3FailReason = null;
+
+			// ── Upload TTA voting (Session 2.1b) ───────────────
+			// Only fires on File uploads whose canonical pass couldn't clear
+			// the floor. Live captures (ImageBitmap / Blob that came from the
+			// camera) skip this — they already had temporal-frame voting via
+			// the live OCR coordinator. Gated by upload_tta_v1.
+			const ttaEligible = imageSource instanceof File;
+			if (ttaEligible) {
+				const ttaEnabled = await isUploadTtaEnabled();
+				if (ttaEnabled) {
+					checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
+					try {
+						const { runUploadPipeline } = await import('./upload-pipeline');
+						const tta = await runUploadPipeline(workingBitmap, game);
+						ttaTelemetry = {
+							frames_processed: tta.framesProcessed,
+							consensus_reached: tta.consensusReached,
+							parallel_code: tta.parallelCode ?? null,
+							parallel_rule_fired: tta.parallelRuleFired,
+							per_frame_results: tta.perFrameResults,
+							augmentation_set_version: tta.augmentationSetVersion
+						};
+						checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
+							hit: tta.consensusReached,
+							frames: tta.framesProcessed,
+							confidence: tta.confidence
+						});
+
+						if (tta.consensusReached && tta.card) {
+							const ttaDecisionCtx: Record<string, unknown> = {
+								canonical_result: canonical.perTask,
+								canonical_ocr_strategy: canonical.ocrStrategy,
+								upload_tta: ttaTelemetry
+							};
+							const ttaResult: ScanResult = {
+								card_id: tta.card.id,
+								card: {
+									id: tta.card.id,
+									game_id: tta.card.game_id,
+									card_number: tta.card.card_number,
+									hero_name: tta.card.hero_name ?? undefined,
+									name: tta.card.name ?? tta.card.hero_name ?? '',
+									set_code: tta.card.set_code ?? '',
+									parallel: tta.card.parallel ?? undefined
+								} as unknown as import('$lib/types').Card,
+								scan_method: 'hash_cache' as ScanMethod,
+								confidence: tta.confidence,
+								processing_ms: Math.round(performance.now() - startTime),
+								// `tta.parallel` is ALWAYS a human-readable name (resolved
+								// through WONDERS_PARALLEL_NAMES in the pipeline). Safe
+								// to persist; never a short code.
+								parallel: tta.parallel,
+								game_id: tta.card.game_id,
+								liveConsensusReached,
+								liveVsCanonicalAgreed: null,
+								fallbackTierUsed: null,
+								winningTier: 'tier1_upload_tta',
+								decisionContext: ttaDecisionCtx
+							};
+							return finalize(ttaResult);
+						}
+						// TTA couldn't converge either — fall through to Haiku with
+						// canonical + TTA metadata attached.
+					} catch (err) {
+						checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
+							error: err instanceof Error ? err.message : String(err)
+						});
+						console.warn('[scan] Upload TTA failed, falling through to Tier 3:', err);
+					}
+				}
+			}
 		} catch (err) {
 			checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
 				error: err instanceof Error ? err.message : String(err)
@@ -872,6 +968,21 @@ export async function recognizeCard(
 		tier3Result.fallbackTierUsed = 'haiku';
 		tier3Result.liveConsensusReached = liveConsensusReached;
 		tier3Result.liveVsCanonicalAgreed = null;
+		// Preserve what canonical / TTA saw so we can debug which stage
+		// would have caught which card. Merged with anything Tier 3 already
+		// set on decisionContext.
+		if (canonicalTelemetry || ttaTelemetry) {
+			tier3Result.decisionContext = {
+				...(tier3Result.decisionContext ?? {}),
+				...(canonicalTelemetry
+					? {
+						canonical_result: canonicalTelemetry.perTask,
+						canonical_ocr_strategy: canonicalTelemetry.ocrStrategy
+					}
+					: {}),
+				...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {})
+			};
+		}
 	}
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, parallel=${tier3Result.parallel}`);
@@ -1052,6 +1163,22 @@ async function isLiveOCRTier1Enabled(): Promise<boolean> {
 	try {
 		const flagsModule = await import('$lib/stores/feature-flags.svelte');
 		return flagsModule.featureEnabled('live_ocr_tier1_v1')();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Session 2.1b gate. Returns true when uploaded images whose canonical
+ * Tier 1 pass fell below the confidence floor should be retried via
+ * test-time augmentation voting before falling through to Haiku.
+ * Depends on `live_ocr_tier1_v1` being on — the TTA path reuses the
+ * same PaddleOCR + ConsensusBuilder infrastructure.
+ */
+async function isUploadTtaEnabled(): Promise<boolean> {
+	try {
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		return flagsModule.featureEnabled('upload_tta_v1')();
 	} catch {
 		return false;
 	}
