@@ -6,7 +6,7 @@
  */
 
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
-import { VARIANT_FULL_NAME, normalizeVariant } from '$lib/data/variants';
+import { PARALLEL_FULL_NAME, normalizeParallel } from '$lib/data/parallels';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -33,9 +33,10 @@ export interface WhatnotExportCard {
 	// Image (Supabase public URL — NOT a blob URL)
 	image_url?: string | null;
 
-	// Phase 2.5: game and variant for cross-game listings
+	// Phase 2.5: game id for cross-game listings.
+	// (parallel is declared above — it's the human-readable DB name, e.g.
+	// "Paper", "Classic Foil", "Battlefoil".)
 	game_id?: string | null;
-	variant?: string | null;
 	metadata?: Record<string, unknown> | null;
 }
 
@@ -123,7 +124,6 @@ function buildWhatnotTitle(card: WhatnotExportCard): string {
 		weapon_type: card.weapon_type,
 		card_number: card.card_number,
 		game_id: card.game_id ?? null,
-		variant: card.variant ?? null,
 		metadata: card.metadata ?? null,
 	});
 }
@@ -156,14 +156,14 @@ function buildBobaWhatnotDescription(card: WhatnotExportCard, condition: string)
 function buildWondersWhatnotDescription(card: WhatnotExportCard, condition: string): string {
 	const meta = (card.metadata ?? {}) as Record<string, unknown>;
 	const setDisplay = (meta.set_name_display ?? meta.set_name ?? card.set_code ?? 'Wonders of The First') as string;
-	const variantName = VARIANT_FULL_NAME[normalizeVariant(card.variant)];
+	const parallelName = PARALLEL_FULL_NAME[normalizeParallel(card.parallel)];
 	const cardClass = typeof meta.card_class === 'string' ? meta.card_class : null;
 	const rarityText = card.rarity ? String(card.rarity).replace('_', ' ') : null;
 
 	const parts = [
 		`${card.name || 'Unknown'} - Wonders of The First`,
 		`Wonders of The First — ${setDisplay}`,
-		`Variant: ${variantName}`,
+		`Parallel: ${parallelName}`,
 		card.card_number ? `Collector Number: ${card.card_number}` : null,
 		rarityText ? `Rarity: ${rarityText}` : null,
 		cardClass ? `Class: ${cardClass}` : null,
@@ -178,9 +178,9 @@ function buildWondersWhatnotDescription(card: WhatnotExportCard, condition: stri
 function buildWhatnotSku(card: WhatnotExportCard): string {
 	const gameId = card.game_id || 'boba';
 	const prefix = gameId === 'wonders' ? 'WOTF' : 'BOBA';
-	const variant = normalizeVariant(card.variant);
-	const variantSuffix = variant === 'paper' ? '' : `-${variant.toUpperCase()}`;
-	return `${prefix}-${card.id.substring(0, 8)}${variantSuffix}`;
+	const parallel = normalizeParallel(card.parallel);
+	const parallelSuffix = parallel === 'paper' ? '' : `-${parallel.toUpperCase()}`;
+	return `${prefix}-${card.id.substring(0, 8)}${parallelSuffix}`;
 }
 
 // ── CSV Escaping ────────────────────────────────────────────

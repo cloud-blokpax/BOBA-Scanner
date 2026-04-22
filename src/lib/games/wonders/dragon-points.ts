@@ -13,8 +13,8 @@
  * they've qualified for Dragon Gold when they haven't.
  */
 
-import type { VariantCode } from '$lib/data/variants';
-import { normalizeVariant } from '$lib/data/variants';
+import type { ParallelCode } from '$lib/data/parallels';
+import { normalizeParallel } from '$lib/data/parallels';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -22,7 +22,9 @@ export type DragonRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'mythic';
 
 export interface DragonPointsInput {
 	rarity: string | null;
-	variant: string;
+	/** Parallel — accepts either a short code (`cf`) or a human-readable DB
+	 *  name (`Classic Foil`). Internally normalized to the short code. */
+	parallel: string;
 	year: number | null;
 	card_class: string | null;
 	/** Derived flag — true when card_class contains "Stoneseeker" (3× multiplier). */
@@ -46,10 +48,10 @@ export interface DragonPointsResult {
 }
 
 /**
- * Subset of VariantCode representing foil variants eligible for Dragon Points.
+ * Subset of ParallelCode representing foil parallels eligible for Dragon Points.
  * Paper is explicitly excluded — it earns zero points by design.
  */
-type FoilVariant = Exclude<VariantCode, 'paper'>;
+type FoilParallel = Exclude<ParallelCode, 'paper'>;
 
 // ── Hardcoded fallback base table ────────────────────────────
 // The admin config table (dragon_points_config) overrides these at runtime
@@ -57,7 +59,7 @@ type FoilVariant = Exclude<VariantCode, 'paper'>;
 // gaps, the calculator falls back to these values so it always produces
 // a defensible result.
 
-const DEFAULT_BASE_TABLE: Record<DragonRarity, Record<FoilVariant, number>> = {
+const DEFAULT_BASE_TABLE: Record<DragonRarity, Record<FoilParallel, number>> = {
 	common:   { cf: 1, ff: 2,  ocm: 10, sf: 100 },
 	uncommon: { cf: 2, ff: 3,  ocm: 15, sf: 150 },
 	rare:     { cf: 3, ff: 4,  ocm: 20, sf: 200 },
@@ -77,14 +79,14 @@ const DEFAULT_CLASS_MULTIPLIER = 3.0;
 // calculator reads via getEffectiveConfig() at call time so admin
 // edits take effect immediately for all callers.
 
-let _baseTable: Record<DragonRarity, Record<FoilVariant, number>> = DEFAULT_BASE_TABLE;
+let _baseTable: Record<DragonRarity, Record<FoilParallel, number>> = DEFAULT_BASE_TABLE;
 let _freshnessYear: number = DEFAULT_FRESHNESS_YEAR;
 let _freshnessMultiplier: number = DEFAULT_FRESHNESS_MULTIPLIER;
 let _classMultiplier: number = DEFAULT_CLASS_MULTIPLIER;
 
 export interface DragonPointsConfigOverrides {
 	/** Partial override — keys that aren't provided keep the hardcoded defaults. */
-	baseTable?: Partial<Record<DragonRarity, Partial<Record<FoilVariant, number>>>>;
+	baseTable?: Partial<Record<DragonRarity, Partial<Record<FoilParallel, number>>>>;
 	freshnessYear?: number;
 	freshnessMultiplier?: number;
 	classMultiplier?: number;
@@ -105,14 +107,14 @@ export function setDragonPointsConfig(overrides: DragonPointsConfigOverrides | n
 	}
 	// Deep-merge base table so admin config can override just one cell.
 	if (overrides.baseTable) {
-		const merged: Record<DragonRarity, Record<FoilVariant, number>> = JSON.parse(
+		const merged: Record<DragonRarity, Record<FoilParallel, number>> = JSON.parse(
 			JSON.stringify(DEFAULT_BASE_TABLE)
 		);
 		for (const [rarity, row] of Object.entries(overrides.baseTable)) {
 			if (!isDragonRarity(rarity) || !row) continue;
-			for (const [variant, value] of Object.entries(row)) {
+			for (const [parallel, value] of Object.entries(row)) {
 				if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-					merged[rarity][variant as FoilVariant] = value;
+					merged[rarity][parallel as FoilParallel] = value;
 				}
 			}
 		}
@@ -159,13 +161,13 @@ export function calculateDragonPoints(input: DragonPointsInput): DragonPointsRes
 		final: 0,
 	};
 
-	// Rule 1: Paper variants earn zero points — the system exists to reward foils.
-	const variant = normalizeVariant(input.variant);
-	if (variant === 'paper') {
+	// Rule 1: Paper parallels earn zero points — the system exists to reward foils.
+	const parallel = normalizeParallel(input.parallel);
+	if (parallel === 'paper') {
 		return {
 			points: 0,
 			breakdown: emptyBreakdown,
-			disqualification_reason: 'Paper variant earns no Dragon Points',
+			disqualification_reason: 'Paper parallel earns no Dragon Points',
 		};
 	}
 
@@ -211,9 +213,9 @@ export function calculateDragonPoints(input: DragonPointsInput): DragonPointsRes
 	}
 
 	// ── Compute: base → freshness → class multiplier → floor ──
-	// (variant is guaranteed to be a foil here — paper was rejected in Rule 1)
+	// (parallel is guaranteed to be a foil here — paper was rejected in Rule 1)
 	// Reads runtime config so admin overrides take effect immediately.
-	const base = _baseTable[rawRarity][variant as FoilVariant];
+	const base = _baseTable[rawRarity][parallel as FoilParallel];
 
 	// Freshness bonus: default 35% over base for 2026 cards
 	const isFresh = input.year === _freshnessYear;

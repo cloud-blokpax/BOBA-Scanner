@@ -20,6 +20,9 @@ interface DraftRequest {
 	heroName: string;
 	cardNumber: string;
 	setCode: string;
+	/** The card's parallel name (human-readable, e.g. "Battlefoil",
+	 *  "Classic Foil"). Mirrors cards.parallel — listings are written with
+	 *  this value, not the legacy short codes. */
 	parallel: string | null;
 	weaponType: string | null;
 	power: number | null;
@@ -33,7 +36,6 @@ interface DraftRequest {
 	description: string | null;
 	forceNew?: boolean;
 	gameId?: 'boba' | 'wonders';
-	variant?: 'paper' | 'cf' | 'ff' | 'ocm' | 'sf';
 	metadata?: Record<string, unknown> | null;
 	// Listing options
 	bestOffer?: boolean;
@@ -128,9 +130,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const gameId = body.gameId || 'boba';
-	const variant = body.variant || 'paper';
 	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid gameId');
-	if (!['paper', 'cf', 'ff', 'ocm', 'sf'].includes(variant)) throw error(400, 'Invalid variant');
+	// `parallel` is the human-readable card parallel name from cards.parallel
+	// (e.g. "Battlefoil" for BoBA foils, "Classic Foil" for Wonders). Defaults
+	// to "Paper" so existing callers that don't set it keep working.
+	const parallel = body.parallel || 'Paper';
+	const isFoilParallel = parallel.toLowerCase() !== 'paper';
 
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
@@ -172,11 +177,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		hero_name: heroName,
 		name: heroName,
 		athlete_name: body.athleteName ?? null,
-		parallel: body.parallel ?? null,
+		parallel,
 		weapon_type: body.weaponType ?? null,
 		card_number: cardNumber,
 		game_id: gameId,
-		variant,
 		metadata: body.metadata ?? null,
 	});
 
@@ -188,15 +192,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				hero_name: heroName,
 				name: heroName,
 				card_number: cardNumber,
-				parallel: body.parallel,
+				parallel,
 				weapon_type: body.weaponType,
 				athlete_name: body.athleteName,
 				game_id: gameId,
-				variant,
 				metadata: body.metadata ?? null,
 			});
 			const descriptionForTemplate = body.description || (gameId === 'wonders'
-				? buildWondersDescription(cardForTemplate, body.condition || 'Near Mint', variant)
+				? buildWondersDescription(cardForTemplate, body.condition || 'Near Mint', parallel)
 				: buildBobaDescription(cardForTemplate, body.condition || 'Near Mint', heroName || 'Unknown'));
 
 			const { error: insertErr } = await adminClient.from('listing_templates').insert({
@@ -212,10 +215,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				hero_name: heroName || null,
 				card_number: cardNumber || null,
 				set_code: body.setCode || null,
-				parallel: body.parallel || null,
+				parallel,
 				weapon_type: body.weaponType || null,
 				game_id: gameId,
-				variant,
 				// Session 2.1a: originating scan for provenance (schema added via MCP).
 				scan_id: body.scanId || null,
 				created_at: new Date().toISOString()
@@ -241,17 +243,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			hero_name: heroName,
 			name: heroName,
 			card_number: cardNumber,
-			parallel: body.parallel,
+			parallel,
 			weapon_type: body.weaponType,
 			athlete_name: body.athleteName,
 			game_id: gameId,
-			variant,
 			metadata: body.metadata ?? null,
 		});
 		const htmlDescription = body.description
 			? plainTextToHtml(body.description)
 			: (gameId === 'wonders'
-					? buildWondersDescription(cardForListing, body.condition || 'Near Mint', variant)
+					? buildWondersDescription(cardForListing, body.condition || 'Near Mint', parallel)
 					: buildBobaDescription(cardForListing, body.condition || 'Near Mint', heroName || 'Unknown'));
 
 		const aspects = gameId === 'wonders'
@@ -261,7 +262,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					'Game': ['Wonders of The First'],
 					'Card Manufacturer': ['Wonders of The First'],
 					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-					...(variant !== 'paper' ? { 'Parallel/Variety': [variant.toUpperCase()] } : {}),
+					...(isFoilParallel ? { 'Parallel/Variety': [parallel] } : {}),
 				}
 			: {
 					'Card Name': [heroName || 'Unknown'],
@@ -270,7 +271,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					'Game': ['Bo Jackson Battle Arena'],
 					'Card Manufacturer': ['Bo Jackson Battle Arena'],
 					...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-					...(body.parallel ? { 'Parallel/Variety': [body.parallel] } : {}),
+					...(isFoilParallel ? { 'Parallel/Variety': [parallel] } : {}),
 					...(body.athleteName ? { 'Player/Athlete': [body.athleteName] } : {})
 				};
 

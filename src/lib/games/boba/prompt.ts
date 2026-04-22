@@ -22,13 +22,12 @@ export const BOBA_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 			card_number: { type: 'string', description: 'Exact text from BOTTOM-LEFT. Paper cards are numeric only (e.g. "130"). Parallel cards are PREFIX-NUMBER (e.g. "BF-108"). Null if unreadable.' },
 			power: { type: 'number', description: 'Large number from TOP-RIGHT corner. Only hero cards have this. Null for play cards.' },
 			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
-			variant: { type: 'string', enum: ['base', 'paper', 'foil', 'battlefoil', 'inspired_ink', 'rad', 'blizzard', 'grandmas_linoleum', 'bubblegum', 'color', 'mixtape', 'miami_ice', 'fire_tracks', 'silver', 'headliner', 'cyber', 'grillin', 'power_glove', 'alt', 'other_parallel'], description: 'Card variant/parallel type. Use paper for standard numeric-only cards. Use other_parallel if the parallel is identifiable but not in this list — describe it in the parallel field.' },
-			parallel: { type: 'string', description: 'Specific parallel name if identifiable, or null' },
+			parallel: { type: 'string', description: 'Card parallel/treatment name. Use "paper" for standard numeric-only cards. Otherwise return the specific parallel descriptor that matches the card_number prefix (e.g. "battlefoil", "rad", "blizzard"). The server maps these to the canonical DB name from cards.parallel.' },
 			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null. Only hero cards have weapons.' },
 			confidence: { type: 'number', description: '0.0 to 1.0' },
 			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection' }
 		},
-		required: ['card_type', 'card_name', 'confidence', 'rarity', 'variant']
+		required: ['card_type', 'card_name', 'confidence', 'rarity', 'parallel']
 	}
 };
 
@@ -61,7 +60,7 @@ CRITICAL INSTRUCTIONS FOR READING ANY CARD:
    - Do NOT use the power value (top right) as the card number.
 3. CARD NAME: Read the large title text at the TOP of the card. For hero cards this is the hero name. For play cards this is the play name.
 4. POWER: ONLY for hero cards — read the number in the TOP RIGHT corner. For play cards, set to null.
-5. PARALLEL/VARIANT: Look for special treatments. Common parallels: Inspired Ink Battlefoil (BFA-), Metallic Inspired Ink (MBFA-), 80's Rad Battlefoil (RAD-), Grandma's Linoleum Battlefoil (GBF-/GLBF-), Blizzard Battlefoil (BLBF-), Color Battlefoil (CBF-), Bubblegum Battlefoil (BGBF-), Mixtape Battlefoil (MIX-), Miami Ice Battlefoil (MI-), Fire Tracks Battlefoil (FT-), Silver (SBF-), Headliner (HBF-), Cyber (CYB-), Grillin' (GRILL-), Power Glove (PG-), Alt Art (ALT-). If the card has no special treatment (no prefix on card number), it is a standard paper card. Set variant to the matching enum value, or other_parallel if it doesn't match.
+5. PARALLEL: Look for special treatments. Common parallels: Inspired Ink Battlefoil (BFA-), Metallic Inspired Ink (MBFA-), 80's Rad Battlefoil (RAD-), Grandma's Linoleum Battlefoil (GBF-/GLBF-), Blizzard Battlefoil (BLBF-), Color Battlefoil (CBF-), Bubblegum Battlefoil (BGBF-), Mixtape Battlefoil (MIX-), Miami Ice Battlefoil (MI-), Fire Tracks Battlefoil (FT-), Silver (SBF-), Headliner (HBF-), Cyber (CYB-), Grillin' (GRILL-), Power Glove (PG-), Alt Art (ALT-). If the card has no special treatment (no prefix on card number), it is a standard paper card. Set parallel="paper" or the specific descriptor matching the prefix.
 
 If a field is unclear, return null rather than guessing.`;
 
@@ -81,8 +80,8 @@ export const BOBA_USER_PROMPT = `<task>Identify this BoBA trading card. Read EAC
 <weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1, Alt=purple alternate art, Cyber=cyan/teal digital circuit</weapons>
 
 <examples>
-card_type="hero", card_number="130", card_name="Dart-Board", hero_name="Dart-Board", power=130, weapon_type="Steel", variant="paper" (paper card — numeric only, NO prefix)
-card_type="hero", card_number="BF-108", card_name="BoJax", hero_name="BoJax", power=200, weapon_type="Super", variant="battlefoil"
+card_type="hero", card_number="130", card_name="Dart-Board", hero_name="Dart-Board", power=130, weapon_type="Steel", parallel="paper" (paper card — numeric only, NO prefix)
+card_type="hero", card_number="BF-108", card_name="BoJax", hero_name="BoJax", power=200, weapon_type="Super", parallel="battlefoil"
 card_type="play", card_number="PL-46", card_name="Front Run", hero_name="", power=null
 card_type="bonus_play", card_number="BPL-12", card_name="Bonus Card Name", hero_name="", power=null
 card_type="hot_dog", card_number="HTD-5", card_name="Hot Dog Card Name", hero_name="", power=null

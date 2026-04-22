@@ -203,11 +203,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					console.error(`[deck/refresh-prices] play_price_cache upsert FAILED for ${cardId}:`, cacheError.message);
 				}
 			} else {
+				// Read parallel from cards.parallel (source of truth) — fall back
+				// to 'Paper'. The deck-refresh path operates on hero cards which
+				// are typically Paper, but BoBA foils (e.g. Battlefoils) need
+				// the rich parallel name to write to the right cache row.
+				const cardParallel = (card as { parallel?: string | null }).parallel ?? 'Paper';
 				const priceData = {
 					card_id: cardId,
 					source: 'ebay',
 					game_id: card.game_id || 'boba',
-					variant: 'paper',
+					parallel: cardParallel,
 					price_low: stats?.low ?? null,
 					price_mid: stats?.median ?? null,
 					price_high: stats?.high ?? null,
@@ -218,7 +223,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				};
 				const { error: cacheError } = await cacheClient
 					.from('price_cache')
-					.upsert(priceData, { onConflict: 'card_id,source,variant' });
+					.upsert(priceData, { onConflict: 'card_id,source,parallel' });
 				if (cacheError) {
 					console.error(`[deck/refresh-prices] price_cache upsert FAILED for ${cardId}:`, cacheError.message);
 				}

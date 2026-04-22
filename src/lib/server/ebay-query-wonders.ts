@@ -1,7 +1,7 @@
 /**
  * Server-side eBay search query builder + result filter for Wonders of The First.
  *
- * Tuned for the Wonders ecosystem: card name + set display + variant long-form
+ * Tuned for the Wonders ecosystem: card name + set display + parallel long-form
  * name + collector number. Uses quoted phrases to force eBay to match exact
  * strings, producing cleaner results than loose keyword search.
  *
@@ -11,16 +11,27 @@
 
 import type { EbayCardInfo } from '$lib/utils/ebay-title';
 
-// ── Variant → eBay search keyword mapping ────────────────────
+// ── Parallel name → eBay search keyword mapping ──────────────
 // Paper gets no keyword (base search). Foils get long-form names plus
-// alternative phrasings that real sellers use.
-const VARIANT_KEYWORDS: Record<string, string[]> = {
-	paper: [],
-	cf: ['"Classic Foil"'],
-	ff: ['"Formless Foil"', '"Borderless"'],
-	ocm: ['"Orbital Color Match"', '"OCM"'],
-	sf: ['"Stone Foil"', '"1/1"'],
+// alternative phrasings that real sellers use. Keys are the canonical
+// human-readable parallel names from the DB.
+const PARALLEL_KEYWORDS: Record<string, string[]> = {
+	'paper': [],
+	'classic foil': ['"Classic Foil"'],
+	'formless foil': ['"Formless Foil"', '"Borderless"'],
+	'orbital color match': ['"Orbital Color Match"', '"OCM"'],
+	'stonefoil': ['"Stonefoil"', '"1/1"'],
+	// Legacy short-code aliases for callers still passing them
+	'cf': ['"Classic Foil"'],
+	'ff': ['"Formless Foil"', '"Borderless"'],
+	'ocm': ['"Orbital Color Match"', '"OCM"'],
+	'sf': ['"Stonefoil"', '"1/1"'],
 };
+
+function keywordsFor(parallel: string | null | undefined): string[] {
+	const key = (parallel || 'paper').trim().toLowerCase();
+	return PARALLEL_KEYWORDS[key] || [];
+}
 
 // ── Common game names + rejection patterns ───────────────────
 const WONDERS_TITLE_TOKENS = ['WONDERS OF THE FIRST', 'WOTF'] as const;
@@ -33,7 +44,7 @@ const BULK_REJECT_TOKENS = ['LOT', 'COLLECTION', 'BULK', 'MIXED', 'RANDOM', 'BUN
  *   `"Bellator" "Wonders of The First" "Call of the Stones" "Classic Foil" "78/402"`
  *
  * Quoting forces exact-phrase matching. Sparse metadata (missing set display
- * or variant) gracefully drops those phrases — the query still anchors on
+ * or parallel) gracefully drops those phrases — the query still anchors on
  * the card name and game name at minimum.
  */
 export function buildWondersEbayQuery(card: EbayCardInfo): string {
@@ -48,11 +59,10 @@ export function buildWondersEbayQuery(card: EbayCardInfo): string {
 	const setDisplay = wondersSetDisplay(card.metadata);
 	if (setDisplay) parts.push(`"${setDisplay}"`);
 
-	const variant = (card.variant || 'paper').toLowerCase();
-	const variantKeywords = VARIANT_KEYWORDS[variant] || [];
-	if (variantKeywords.length > 0) {
+	const parallelKeywords = keywordsFor(card.parallel);
+	if (parallelKeywords.length > 0) {
 		// Use the first alternative; filter accepts all alternatives during post-filtering.
-		parts.push(variantKeywords[0]);
+		parts.push(parallelKeywords[0]);
 	}
 
 	const cardNum = (card.card_number || '').trim();
@@ -62,14 +72,14 @@ export function buildWondersEbayQuery(card: EbayCardInfo): string {
 }
 
 /**
- * Filter eBay item summaries to those matching a specific Wonders card+variant.
+ * Filter eBay item summaries to those matching a specific Wonders card+parallel.
  *
  * Rules (all required):
  *   - Title references Wonders ("Wonders of The First" OR "WoTF")
  *   - Title does NOT contain BoBA tokens (prevents cross-game contamination)
  *   - Title does NOT suggest a multi-card lot (prevents bulk-price false positives)
  *   - Title contains the card name OR the collector number
- *   - For foil variants, title contains at least one of that variant's keywords
+ *   - For foil parallels, title contains at least one of that parallel's keywords
  */
 export function filterRelevantWondersListings<T extends { title?: string }>(
 	items: T[],
@@ -77,8 +87,7 @@ export function filterRelevantWondersListings<T extends { title?: string }>(
 ): T[] {
 	const cardName = (card.name || card.hero_name || '').toUpperCase().trim();
 	const cardNum = (card.card_number || '').toUpperCase().trim();
-	const variant = (card.variant || 'paper').toLowerCase();
-	const variantKeywords = VARIANT_KEYWORDS[variant] || [];
+	const parallelKeywords = keywordsFor(card.parallel);
 
 	return items.filter((item) => {
 		if (!item.title) return false;
@@ -98,11 +107,11 @@ export function filterRelevantWondersListings<T extends { title?: string }>(
 		const matchesNumber = cardNum.length > 2 && t.replace(/[-\s]/g, '').includes(cardNum.replace(/[-\s]/g, ''));
 		if (!matchesName && !matchesNumber) return false;
 
-		// Variant gate: foils must show at least one matching keyword phrase.
+		// Parallel gate: foils must show at least one matching keyword phrase.
 		// Paper has no keyword requirement.
-		if (variantKeywords.length > 0) {
+		if (parallelKeywords.length > 0) {
 			// Strip quotes for substring matching (eBay titles don't preserve them)
-			const keywordPhrases = variantKeywords.map((k) => k.replace(/"/g, '').toUpperCase());
+			const keywordPhrases = parallelKeywords.map((k) => k.replace(/"/g, '').toUpperCase());
 			if (!keywordPhrases.some((kw) => t.includes(kw))) return false;
 		}
 

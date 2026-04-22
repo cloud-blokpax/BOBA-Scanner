@@ -24,32 +24,39 @@ export interface EbayCardInfo {
 	hero_name?: string | null;
 	name?: string | null;
 	athlete_name?: string | null;
+	/** Human-readable parallel name from cards.parallel (e.g. "Battlefoil",
+	 *  "Classic Foil"). Mirrors the DB. Used for title and search keywords. */
 	parallel?: string | null;
 	weapon_type?: string | null;
 	card_number?: string | null;
 	/** Phase 2.5: routes title/query builders to the right game format. */
 	game_id?: string | null;
-	/** Phase 2.5: physical variant (paper/cf/ff/ocm/sf). Omitted/paper stays silent. */
-	variant?: string | null;
 	/** Phase 2.5: Wonders-only, for title context. Falls back silently if missing. */
 	metadata?: Record<string, unknown> | null;
 }
 
 const SKIP_PARALLELS = new Set(['paper', 'base']);
 
-// ── Wonders variant name mapping (Phase 2.5) ──────────────────
-// Long-form names win searches — buyers type "Orbital Color Match", not "ocm".
-const WONDERS_VARIANT_TITLE: Record<string, string> = {
-	paper: '',             // omit entirely — base printings don't need a modifier
-	cf: 'Classic Foil',
-	ff: 'Formless Foil',
-	ocm: 'Orbital Color Match',
-	sf: 'Stone Foil',
+// ── Wonders parallel name mapping ─────────────────────────────
+// Maps short codes (legacy) AND human-readable DB names to the title-form
+// string. Long-form names win searches — buyers type "Orbital Color Match",
+// not "ocm".
+const WONDERS_PARALLEL_TITLE: Record<string, string> = {
+	'paper': '',                    // omit entirely
+	'classic foil': 'Classic Foil',
+	'formless foil': 'Formless Foil',
+	'orbital color match': 'Orbital Color Match',
+	'stonefoil': 'Stonefoil',
+	// Legacy short-code aliases
+	'cf': 'Classic Foil',
+	'ff': 'Formless Foil',
+	'ocm': 'Orbital Color Match',
+	'sf': 'Stonefoil',
 };
 
-function wondersVariantTitle(variant: string | null | undefined): string {
-	if (!variant) return '';
-	return WONDERS_VARIANT_TITLE[variant.toLowerCase()] ?? '';
+function wondersParallelTitle(parallel: string | null | undefined): string {
+	if (!parallel) return '';
+	return WONDERS_PARALLEL_TITLE[parallel.toLowerCase()] ?? '';
 }
 
 function wondersSetDisplay(metadata: Record<string, unknown> | null | undefined): string {
@@ -156,34 +163,34 @@ function buildWondersListingTitle(card: EbayCardInfo): string {
 	const MAX_LENGTH = 80;
 	const cardName = wondersCardName(card);
 	const setDisplay = wondersSetDisplay(card.metadata);
-	const variantName = wondersVariantTitle(card.variant);
+	const parallelName = wondersParallelTitle(card.parallel);
 	const cardNumber = (card.card_number || '').trim();
 
 	const assemble = (
 		name: string,
 		gameName: string,
 		set: string,
-		variant: string,
+		parallel: string,
 		number: string,
 	): string => {
 		const out: string[] = [];
 		if (name) out.push(name);
 		if (gameName) out.push(gameName);
 		if (set) out.push(set);
-		if (variant) out.push(variant);
+		if (parallel) out.push(parallel);
 		if (number) out.push(number);
 		return out.join(SEPARATOR);
 	};
 
 	// Full form first
-	let title = assemble(cardName, WONDERS_GAME_NAME, setDisplay, variantName, cardNumber);
+	let title = assemble(cardName, WONDERS_GAME_NAME, setDisplay, parallelName, cardNumber);
 	if (title.length <= MAX_LENGTH) return title;
 
 	// Step 1: drop set display name
-	title = assemble(cardName, WONDERS_GAME_NAME, '', variantName, cardNumber);
+	title = assemble(cardName, WONDERS_GAME_NAME, '', parallelName, cardNumber);
 	if (title.length <= MAX_LENGTH) return title;
 
-	// Step 2: drop variant (most painful — only if still over limit)
+	// Step 2: drop parallel (most painful — only if still over limit)
 	title = assemble(cardName, WONDERS_GAME_NAME, '', '', cardNumber);
 	if (title.length <= MAX_LENGTH) return title;
 
@@ -209,8 +216,8 @@ export function buildEbaySearchQuery(card: EbayCardInfo): string {
 		parts.push(WONDERS_GAME_NAME);
 		const setDisplay = wondersSetDisplay(card.metadata);
 		if (setDisplay) parts.push(setDisplay);
-		const variantName = wondersVariantTitle(card.variant);
-		if (variantName) parts.push(variantName);
+		const parallelName = wondersParallelTitle(card.parallel);
+		if (parallelName) parts.push(parallelName);
 		const cardNum = (card.card_number || '').trim();
 		if (cardNum) parts.push(cardNum);
 		return parts.join(SEPARATOR);
@@ -253,8 +260,8 @@ export function buildEbayApiQuery(card: EbayCardInfo): string {
 		const name = wondersCardName(card);
 		if (name) parts.push(name);
 		parts.push(WONDERS_GAME_NAME);
-		const variantName = wondersVariantTitle(card.variant);
-		if (variantName) parts.push(variantName);
+		const parallelName = wondersParallelTitle(card.parallel);
+		if (parallelName) parts.push(parallelName);
 		return parts.join(SEPARATOR);
 	}
 

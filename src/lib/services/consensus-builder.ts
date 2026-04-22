@@ -1,7 +1,7 @@
 /**
  * Per-session vote tallying for live OCR Tier 1.
  *
- * Each scan cycle emits votes (card_number, name, variant). Votes are
+ * Each scan cycle emits votes (card_number, name, parallel). Votes are
  * validated against the catalog-mirror shortlists (prefix matching,
  * Levenshtein-collapse to known names) and tallied. Consensus is reached
  * when agreement count + summed confidence clear the thresholds.
@@ -9,7 +9,7 @@
 
 import { getBobaPrefixes, getBobaHeroes, getWondersNames } from './catalog-mirror';
 
-export type TaskKind = 'card_number' | 'name' | 'variant';
+export type TaskKind = 'card_number' | 'name' | 'parallel';
 
 export interface Vote {
 	task: TaskKind;
@@ -31,7 +31,7 @@ export interface Consensus {
 	reachedThreshold: boolean;
 	cardNumber: TaskConsensus | null;
 	name: TaskConsensus | null;
-	variant: TaskConsensus | null;
+	parallel: TaskConsensus | null;
 	frameCount: number;
 }
 
@@ -49,7 +49,7 @@ export class ConsensusBuilder {
 	private game: 'boba' | 'wonders';
 	private cardNumberVotes: Map<string, Bucket>;
 	private nameVotes: Map<string, Bucket>;
-	private variantVotes: Map<string, Bucket>;
+	private parallelVotes: Map<string, Bucket>;
 	private frameCount = 0;
 
 	constructor(sessionId: number, game: 'boba' | 'wonders') {
@@ -57,7 +57,7 @@ export class ConsensusBuilder {
 		this.game = game;
 		this.cardNumberVotes = new Map();
 		this.nameVotes = new Map();
-		this.variantVotes = new Map();
+		this.parallelVotes = new Map();
 	}
 
 	addVote(vote: Vote): void {
@@ -69,8 +69,8 @@ export class ConsensusBuilder {
 		} else if (vote.task === 'name') {
 			const collapsed = this.collapseName(vote.rawValue);
 			if (collapsed) this.tally(this.nameVotes, collapsed, vote);
-		} else if (vote.task === 'variant') {
-			this.tally(this.variantVotes, vote.rawValue, vote);
+		} else if (vote.task === 'parallel') {
+			this.tally(this.parallelVotes, vote.rawValue, vote);
 		}
 	}
 
@@ -147,25 +147,25 @@ export class ConsensusBuilder {
 
 		const cn = pick(this.cardNumberVotes);
 		const nm = pick(this.nameVotes);
-		const vr = pick(this.variantVotes);
+		const pr = pick(this.parallelVotes);
 
 		const textReached = (t: TaskConsensus | null) =>
 			!!t && t.agreementCount >= MIN_AGREEMENT && t.summedConfidence >= MIN_SUMMED_CONFIDENCE;
-		const variantReached = (t: TaskConsensus | null) =>
+		const parallelReached = (t: TaskConsensus | null) =>
 			!!t && t.agreementCount >= MIN_AGREEMENT;
 
-		// Variant is only required for Wonders. BoBA's variant is baked into
+		// Parallel is only required for Wonders. BoBA's parallel is baked into
 		// card_number via prefix; the classifier doesn't run there.
-		const variantRequired = this.game === 'wonders';
+		const parallelRequired = this.game === 'wonders';
 		const reachedThreshold =
-			textReached(cn) && textReached(nm) && (!variantRequired || variantReached(vr));
+			textReached(cn) && textReached(nm) && (!parallelRequired || parallelReached(pr));
 
 		return {
 			sessionId: this.sessionId,
 			reachedThreshold,
 			cardNumber: cn,
 			name: nm,
-			variant: vr,
+			parallel: pr,
 			frameCount: this.frameCount
 		};
 	}

@@ -131,27 +131,24 @@
 
 	// ── Generated title & description (editable) ────────────
 	// game_id determines how the title and description get assembled.
-	// Wonders cards use their own field set (card name, variant, collector number)
+	// Wonders cards use their own field set (card name, parallel, collector number)
 	// instead of BoBA's hero/athlete/weapon fields.
 	const cardGameId = $derived(card.game_id || 'boba');
 	const isWondersListing = $derived(cardGameId === 'wonders');
 
-	// Variant isn't a field on Card — it's on CollectionItem and ScanResult.
-	// The caller may attach it informally; read defensively and default to 'paper'.
-	const cardVariant = $derived(
-		(card as Card & { variant?: string | null }).variant || 'paper'
-	);
+	// `parallel` (the local state) is the human-readable name from cards.parallel.
+	// Use it directly — no separate "variant" override needed.
+	const cardParallel = $derived(parallel || card.parallel || 'Paper');
 
 	function generateTitle(): string {
 		return buildEbayListingTitle({
 			hero_name: heroName,
 			name: heroName,
 			athlete_name: athleteName,
-			parallel: parallel || null,
+			parallel: cardParallel,
 			weapon_type: weaponType || null,
 			card_number: cardNumber || null,
 			game_id: cardGameId,
-			variant: cardVariant,
 			metadata: card.metadata ?? null,
 		});
 	}
@@ -163,7 +160,7 @@
 				|| (typeof meta.set_name === 'string' && meta.set_name)
 				|| setCode;
 			const typeLine = typeof meta.type_line === 'string' ? meta.type_line : '';
-			const variantName = cardVariant !== 'paper' ? cardVariant.toUpperCase() : '';
+			const parallelDisplay = cardParallel.toLowerCase() !== 'paper' ? cardParallel : '';
 			const lines = [
 				`Wonders of The First - ${heroName || 'Card'}`,
 				'',
@@ -171,7 +168,7 @@
 			if (cardNumber) lines.push(`Collector Number: ${cardNumber}`);
 			if (setDisplay) lines.push(`Set: ${setDisplay}`);
 			if (typeLine) lines.push(`Type: ${typeLine}`);
-			if (variantName) lines.push(`Variant: ${variantName}`);
+			if (parallelDisplay) lines.push(`Parallel: ${parallelDisplay}`);
 			if (power) lines.push(`Power: ${power}`);
 			lines.push(`Condition: ${condition}`);
 			if (notes) lines.push(`Notes: ${notes}`);
@@ -305,7 +302,7 @@
 					heroName,
 					cardNumber,
 					setCode,
-					parallel: parallel || null,
+					parallel: cardParallel,
 					weaponType: weaponType || null,
 					power: power ? parseInt(power) : null,
 					athleteName: athleteName || null,
@@ -318,7 +315,6 @@
 					description,
 					forceNew,
 					gameId: card.game_id || 'boba',
-					variant: (card as unknown as { variant?: string }).variant || 'paper',
 					metadata: card.metadata ?? null,
 					bestOffer,
 					autoAcceptPrice: autoAcceptPrice ? parseFloat(autoAcceptPrice) : null,

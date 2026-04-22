@@ -303,7 +303,7 @@ const EMBEDDING_JPEG_QUALITY = 0.9;
 export async function runTier1Embedding(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string) => Promise<void>,
+	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string, parallel?: string) => Promise<void>,
 	telemetry: Tier1Telemetry = emptyTier1Telemetry(),
 	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
@@ -385,7 +385,7 @@ export async function runTier1Embedding(
 
 		type MatchCandidate = {
 			card_id: string;
-			variant: string;
+			parallel: string;
 			similarity: number;
 			source: string;
 		};
@@ -457,14 +457,18 @@ export async function runTier1Embedding(
 		await emitTier1EmbeddingResult(await resolveScanId(scanIdPromise), telemetry, best);
 		emittedViaEmbedding = true;
 
+		// cards.parallel is the source of truth — prefer it over the hash-cache
+		// row's parallel (which should always agree but might be stale during
+		// the migration window).
+		const resolvedParallel = card.parallel ?? best.parallel ?? 'Paper';
 		return {
 			card_id: card.id,
 			card,
 			scan_method: 'hash_cache' as ScanMethod,
 			confidence: best.similarity,
 			processing_ms: 0,
-			variant: best.variant || 'paper',
-			variant_confidence: best.variant && best.variant !== 'paper' ? 1.0 : null
+			parallel: resolvedParallel,
+			parallel_confidence: resolvedParallel && resolvedParallel.toLowerCase() !== 'paper' ? 1.0 : null
 		};
 	} catch (err) {
 		telemetry.outcome = 'error';
@@ -489,7 +493,7 @@ async function emitTier1EmbeddingResult(
 	scanId: string | null,
 	t: Tier1Telemetry,
 	best:
-		| { card_id: string; variant: string; similarity: number; source: string }
+		| { card_id: string; parallel: string; similarity: number; source: string }
 		| null
 ): Promise<void> {
 	if (!scanId) return;
@@ -502,7 +506,7 @@ async function emitTier1EmbeddingResult(
 			top_match: best
 				? {
 						card_id: best.card_id,
-						variant: best.variant,
+						parallel: best.parallel,
 						similarity: best.similarity,
 						source: best.source
 					}
@@ -525,7 +529,7 @@ async function emitTier1EmbeddingResult(
 export async function runTier1(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string) => Promise<void>,
+	writeHashToAllLayers: (hash: string, cardId: string, confidence: number, bitmap?: ImageBitmap, gameId?: string, parallel?: string) => Promise<void>,
 	telemetry: Tier1Telemetry = emptyTier1Telemetry(),
 	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
@@ -537,7 +541,7 @@ export async function runTier1(
 		telemetry.queryDhash = hash;
 
 		// Layer 1: IndexedDB exact match (instant, free)
-		type CachedHashEntry = Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null };
+		type CachedHashEntry = Pick<HashCacheEntry, 'card_id' | 'confidence'> & { parallel?: string | null };
 		const idbEntry = await idb.getHash(hash) as CachedHashEntry | undefined;
 		if (idbEntry) {
 			telemetry.idbCacheHit = true;
@@ -557,37 +561,40 @@ export async function runTier1(
 				telemetry.winnerDhashDistance = 0;
 				telemetry.outcome = 'hit';
 				telemetry.latencyMs = Math.round(performance.now() - started);
+				// cards.parallel is the source of truth; fall back to the hash-
+				// cache row's parallel (migration safety) and finally to 'Paper'.
+				const parallel = card.parallel ?? idbEntry.parallel ?? 'Paper';
 				return {
 					card_id: card.id,
 					card,
 					scan_method: 'hash_cache',
 					confidence: idbEntry.confidence,
 					processing_ms: 0,
-					// Variant from the hash cache entry — the pipeline already recorded this
-					// variant the first time the card was scanned. Defaults to 'paper'.
-					variant: idbEntry.variant ?? 'paper',
-					variant_confidence: idbEntry.variant ? 1.0 : null,
+					parallel,
+					parallel_confidence: parallel && parallel.toLowerCase() !== 'paper' ? 1.0 : null,
 				};
 			}
 		}
 
 		// Layer 2: Supabase exact match (origin, <100ms)
 		const client = getSupabase();
-		let supaEntry: (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null }) | null = null;
+		let supaEntry: (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { parallel?: string | null }) | null = null;
 		if (client) {
 			const { data } = await client
-				.from('hash_cache').select('card_id, confidence, variant').eq('phash', hash).maybeSingle();
-			supaEntry = data as (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { variant?: string | null }) | null;
+				.from('hash_cache').select('card_id, confidence, parallel').eq('phash', hash).maybeSingle();
+			supaEntry = data as (Pick<HashCacheEntry, 'card_id' | 'confidence'> & { parallel?: string | null }) | null;
 		}
 
 		if (supaEntry) {
 			const card = getCardById(supaEntry.card_id) || await fetchCardById(supaEntry.card_id);
 			if (card) {
+				// Read parallel from cards.parallel — source of truth.
+				const parallel = card.parallel ?? supaEntry.parallel ?? 'Paper';
 				await idb.setHash({
 					phash: hash,
 					card_id: supaEntry.card_id,
 					confidence: supaEntry.confidence,
-					variant: supaEntry.variant ?? 'paper',
+					parallel,
 				});
 				telemetry.sbExactHit = true;
 				telemetry.winnerDhashDistance = 0;
@@ -599,8 +606,8 @@ export async function runTier1(
 					scan_method: 'hash_cache' as const,
 					confidence: supaEntry.confidence,
 					processing_ms: 0,
-					variant: supaEntry.variant ?? 'paper',
-					variant_confidence: supaEntry.variant ? 1.0 : null,
+					parallel,
+					parallel_confidence: parallel && parallel.toLowerCase() !== 'paper' ? 1.0 : null,
 				};
 			}
 		}
@@ -627,7 +634,7 @@ export async function runTier1(
 						card_id: string;
 						distance: number;
 						confidence: number | null;
-						variant?: string | null;
+						parallel?: string | null;
 						source?: string | null;
 					};
 					const untypedRpc = client.rpc as unknown as (
@@ -670,10 +677,11 @@ export async function runTier1(
 								// units carry more information per bit.
 								const adjustedConfidence =
 									(match.confidence ?? 1) * (1 - match.distance * 0.005);
-								const matchVariant = match.variant ?? 'paper';
+								// cards.parallel wins; fall back to the matching row's parallel.
+								const matchParallel = card.parallel ?? match.parallel ?? 'Paper';
 								console.debug(
 									`[scan:${ctx.traceId}:tier1] pHash-256 match: distance=${match.distance}, ` +
-										`runnerUp=${candidates[1]?.distance ?? 'n/a'}, card=${card.card_number}, variant=${matchVariant}`
+										`runnerUp=${candidates[1]?.distance ?? 'n/a'}, card=${card.card_number}, parallel=${matchParallel}`
 								);
 								await writeHashToAllLayers(
 									hash,
@@ -692,8 +700,8 @@ export async function runTier1(
 									scan_method: 'hash_cache' as const,
 									confidence: adjustedConfidence,
 									processing_ms: 0,
-									variant: matchVariant,
-									variant_confidence: matchVariant !== 'paper' ? 1.0 : null
+									parallel: matchParallel,
+									parallel_confidence: matchParallel.toLowerCase() !== 'paper' ? 1.0 : null
 								};
 							}
 						}
@@ -756,10 +764,10 @@ export async function runTier1(
 						const card = getCardById(match.card_id) || await fetchCardById(match.card_id);
 						if (card) {
 							const adjustedConfidence = match.confidence * (1 - match.distance * 0.015);
-							// Preserve variant from the existing hash_cache row on fuzzy match.
-							const matchVariant = (match as { variant?: string | null }).variant ?? 'paper';
+							// cards.parallel wins; fall back to the existing hash-cache row.
+							const matchParallel = card.parallel ?? (match as { parallel?: string | null }).parallel ?? 'Paper';
 							await writeHashToAllLayers(hash, match.card_id, adjustedConfidence, bitmap, ctx.gameHint);
-							console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}, variant=${matchVariant}`);
+							console.debug(`[scan:${ctx.traceId}:tier1] Fuzzy hash match: distance=${match.distance}, card=${card.card_number}, parallel=${matchParallel}`);
 							telemetry.sbFuzzyHit = true;
 							telemetry.winnerDhashDistance = match.distance;
 							telemetry.outcome = 'hit';
@@ -770,8 +778,8 @@ export async function runTier1(
 								scan_method: 'hash_cache' as const,
 								confidence: adjustedConfidence,
 								processing_ms: 0,
-								variant: matchVariant,
-								variant_confidence: matchVariant !== 'paper' ? 1.0 : null,
+								parallel: matchParallel,
+								parallel_confidence: matchParallel.toLowerCase() !== 'paper' ? 1.0 : null,
 							};
 						}
 					}
@@ -936,11 +944,13 @@ export async function runTier2(
 						const cardWithGame: Card = gameId
 							? { ...card, game_id: card.game_id || gameId }
 							: card;
-						// Tier 2 cannot visually detect variant. For Wonders, leave variant null
+						// Tier 2 cannot visually detect parallel. For Wonders, leave parallel null
 						// so the confirmation UI forces the user to choose (silent-miss protection).
-						// For BoBA, variant is baked into card_number → default to 'paper'.
+						// For BoBA, parallel is baked into card_number → use cards.parallel directly.
 						const resolvedGameId = cardWithGame.game_id || gameId || 'boba';
-						const tier2Variant = resolvedGameId === 'boba' ? 'paper' : null;
+						const tier2Parallel = resolvedGameId === 'boba'
+							? (cardWithGame.parallel ?? 'Paper')
+							: null;
 
 						telemetry.ocrTextRaw = ocrTextFragments.join(' | ');
 						telemetry.ocrMeanConfidence = ocrConfidences.length
@@ -957,8 +967,8 @@ export async function runTier2(
 							confidence: correctedNumber ? 0.95 : ocrResult.confidence / 100,
 							processing_ms: 0,
 							game_id: cardWithGame.game_id ?? null,
-							variant: tier2Variant,
-							variant_confidence: null, // null forces variant selector on Wonders
+							parallel: tier2Parallel,
+							parallel_confidence: null, // null forces parallel selector on Wonders
 							collector_number_confidence: ocrResult.confidence / 100,
 						};
 					}
@@ -1102,15 +1112,23 @@ export async function runTier3(
 		ctx.gameHint ||
 		'boba';
 
-	// ── Variant detection fields (Phase 2.5) ──────────────────
-	// Wonders: variant comes from the decision-tree field (paper|cf|ff|ocm|sf).
-	// BoBA: variant is baked into card_number via prefixes, so always 'paper'.
-	const claudeVariant: string | null =
-		(typeof result.card.variant === 'string' && result.card.variant.length > 0)
-			? result.card.variant
-			: null;
-	const variantConfidence: number | null =
-		typeof result.card.variant_confidence === 'number' ? result.card.variant_confidence : null;
+	// ── Parallel detection fields (Phase 2.5) ─────────────────
+	// The scan endpoint maps classifier short codes (cf/ff/ocm/sf) to the
+	// human-readable DB names before returning. We accept either `parallel`
+	// (current) or `variant` (legacy field name) to stay tolerant during
+	// the rolling rename.
+	const claudeParallel: string | null =
+		(typeof result.card.parallel === 'string' && result.card.parallel.length > 0)
+			? result.card.parallel
+			: (typeof result.card.variant === 'string' && result.card.variant.length > 0)
+				? result.card.variant
+				: null;
+	const parallelConfidence: number | null =
+		typeof result.card.parallel_confidence === 'number'
+			? result.card.parallel_confidence
+			: typeof result.card.variant_confidence === 'number'
+				? result.card.variant_confidence
+				: null;
 	const firstEditionStampDetected: boolean =
 		result.card.first_edition_stamp_detected === true;
 	const collectorNumberConfidence: number | null =
@@ -1121,7 +1139,7 @@ export async function runTier3(
 	console.debug(
 		`[scan:${ctx.traceId}:tier3] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", ` +
 		`hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}, ` +
-		`variant=${claudeVariant}, variant_conf=${variantConfidence}, stamp=${firstEditionStampDetected}, ` +
+		`parallel=${claudeParallel}, parallel_conf=${parallelConfidence}, stamp=${firstEditionStampDetected}, ` +
 		`cn_conf=${collectorNumberConfidence}`
 	);
 
@@ -1149,13 +1167,14 @@ export async function runTier3(
 		if (validated.warnings.length > 0) {
 			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
 		}
-		// Normalize variant: Wonders uses the new enum; BoBA always 'paper'.
-		// The scan endpoint already writes variant on cardData, but we guard
-		// here in case it's null (e.g., older API version or BoBA path).
-		const resolvedVariant =
-			claudeVariant ||
-			(detectedGameId === 'boba' ? 'paper' : null) ||
-			result.card.parallel ||
+		// Resolve parallel for DB write. cards.parallel is the source of truth —
+		// for BoBA it carries the rich parallel name (e.g. "Battlefoil") encoded
+		// from the prefix; for Wonders it'll be 'Paper' until the foil catalog
+		// expansion. Fall back to Claude's literal output, then 'Paper'.
+		const resolvedParallel =
+			mergedCard.parallel ||
+			claudeParallel ||
+			(detectedGameId === 'boba' ? 'Paper' : null) ||
 			null;
 		telemetry.claudeReturnedNameInCatalog = true;
 		telemetry.outcome = 'hit';
@@ -1166,8 +1185,8 @@ export async function runTier3(
 			scan_method: 'claude',
 			confidence: validated.confidence,
 			processing_ms: 0,
-			variant: resolvedVariant,
-			variant_confidence: variantConfidence,
+			parallel: resolvedParallel,
+			parallel_confidence: parallelConfidence,
 			first_edition_stamp_detected: firstEditionStampDetected,
 			collector_number_confidence: collectorNumberConfidence,
 			game_id: mergedCard.game_id ?? null,

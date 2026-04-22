@@ -11,7 +11,7 @@
 
 import { ocrRegion, isPaddleOCRReady } from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
-import { classifyWondersVariant } from './variant-classifier';
+import { classifyWondersParallel } from './parallel-classifier';
 import { ConsensusBuilder, type Consensus } from './consensus-builder';
 import { makeProbe, correlate, STABILITY_THRESHOLD } from './pixel-stability';
 
@@ -136,10 +136,10 @@ export class LiveOCRCoordinator {
 				bitmap.height
 			);
 
-			const [numRes, nameRes, variantRes] = await Promise.allSettled([
+			const [numRes, nameRes, parallelRes] = await Promise.allSettled([
 				ocrRegion(bitmap, cardNumberReg, { minWidth: 800 }),
 				ocrRegion(bitmap, nameReg, { minWidth: 1000 }),
-				this.game === 'wonders' ? classifyWondersVariant(bitmap) : Promise.resolve(null)
+				this.game === 'wonders' ? classifyWondersParallel(bitmap) : Promise.resolve(null)
 			]);
 
 			// Guard: session might have been invalidated while OCR was running
@@ -161,11 +161,13 @@ export class LiveOCRCoordinator {
 					sessionId: dispatchedSessionId
 				});
 			}
-			if (variantRes.status === 'fulfilled' && variantRes.value) {
+			if (parallelRes.status === 'fulfilled' && parallelRes.value) {
+				// Classifier emits a short code; mapping to the human-readable
+				// DB name happens at the write boundary (tier1-canonical.ts).
 				this.currentBuilder.addVote({
-					task: 'variant',
-					rawValue: variantRes.value.variant,
-					confidence: variantRes.value.confidence,
+					task: 'parallel',
+					rawValue: parallelRes.value.parallel,
+					confidence: parallelRes.value.confidence,
 					sessionId: dispatchedSessionId
 				});
 			}
@@ -177,7 +179,7 @@ export class LiveOCRCoordinator {
 				console.debug('[live-ocr] cycle', this.cyclesRun, {
 					cn: c.cardNumber?.value,
 					name: c.name?.value,
-					variant: c.variant?.value,
+					parallel: c.parallel?.value,
 					reached: c.reachedThreshold
 				});
 			}

@@ -53,9 +53,10 @@ export interface CollectionItem {
 	notes: string | null;
 	added_at: string;
 	scan_image_url?: string | null;
-	/** Physical variant for this copy. Part of the collection identity
-	 *  triple (user_id, card_id, variant). Defaults to 'paper'. */
-	variant?: string;
+	/** Physical parallel for this copy (human-readable name, e.g. "Classic Foil"
+	 *  for Wonders or "Battlefoil" for BoBA). Part of the collection identity
+	 *  triple (user_id, card_id, parallel). Defaults to 'Paper'. */
+	parallel?: string;
 	/** Game this collection entry belongs to ('boba', 'wonders'). */
 	game_id?: string;
 	card?: Card;
@@ -74,10 +75,12 @@ export interface ScanResult {
 	scan_method: ScanMethod;
 	confidence: number;
 	processing_ms: number;
-	variant?: string | null;
-	/** Confidence in variant detection (0.0-1.0). null when variant wasn't detected
+	/** Resolved parallel as a human-readable name (e.g. "Classic Foil"). Mirrors
+	 *  cards.parallel for the matched card. Ready for DB write. */
+	parallel?: string | null;
+	/** Confidence in parallel detection (0.0-1.0). null when parallel wasn't detected
 	 *  (e.g., Tier 2 OCR matches). Values below 0.75 trigger the foil multi-scan flow. */
-	variant_confidence?: number | null;
+	parallel_confidence?: number | null;
 	/** True when a 1st edition stamp is visible at the bottom-left of the card,
 	 *  distinct from the collector number. Paper cards never have this stamp. */
 	first_edition_stamp_detected?: boolean;
@@ -126,7 +129,7 @@ export interface ClaudeCardResponse {
 	card_number: string;
 	power: number | null;
 	rarity: CardRarity;
-	variant: string;
+	parallel: string;
 	weapon_type: string | null;
 	confidence: number;
 }

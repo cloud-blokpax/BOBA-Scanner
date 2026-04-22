@@ -202,7 +202,9 @@ export interface UpdateScanOutcomeInput {
 	winningTier: string;
 	finalCardId: string;
 	finalConfidence: number | null;
-	finalVariant: string | null;
+	/** Human-readable parallel name (e.g. "Classic Foil"). Mirrors cards.parallel
+	 *  for the matched card. */
+	finalParallel: string | null;
 	totalLatencyMs: number | null;
 	totalCostUsd: number | null;
 	userOverrode?: boolean;
@@ -647,7 +649,7 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 			winning_tier: input.winningTier,
 			final_card_id: input.finalCardId,
 			final_confidence: input.finalConfidence,
-			final_variant: input.finalVariant,
+			final_parallel: input.finalParallel,
 			total_latency_ms: input.totalLatencyMs,
 			total_cost_usd: input.totalCostUsd,
 			user_overrode: input.userOverrode ?? false,

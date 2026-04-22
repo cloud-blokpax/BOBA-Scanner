@@ -1,5 +1,5 @@
 /**
- * Rule-based Wonders variant classifier.
+ * Rule-based Wonders parallel classifier.
  *
  * Rules, in order (most-distinctive first):
  *   1. FF: no border (edge-density on perimeter ~ edge-density on center)
@@ -7,24 +7,30 @@
  *   3. CF: diagonal hatching in border (FFT-based, TODO v1.1)
  *   4. Default: paper
  *
- * SF (Stone Foil) visual signature not yet documented — flagged as 'unknown'
+ * SF (Stonefoil) visual signature not yet documented — flagged as 'unknown'
  * until a sample is available.
+ *
+ * IMPORTANT: This classifier outputs SHORT CODES ('cf', 'ff', 'ocm', 'sf',
+ * 'paper'). Short codes are internal-only. Every DB write path must map
+ * the code to a human-readable name via `toParallelName()` from
+ * `$lib/data/wonders-parallels` before persisting.
  */
 
 import { ocrRegion } from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
+import type { WondersParallelCode } from '$lib/data/wonders-parallels';
 
-export type WondersVariant = 'paper' | 'cf' | 'ff' | 'ocm' | 'sf' | 'unknown';
+export type WondersParallel = WondersParallelCode | 'unknown';
 
-export interface VariantResult {
-	variant: WondersVariant;
+export interface ParallelResult {
+	parallel: WondersParallel;
 	ruleFired: 'ff_no_border' | 'ocm_serial_detected' | 'cf_diagonal' | 'default_paper' | 'uncertain';
 	confidence: number;
 	evidence: Record<string, number | string | boolean>;
 }
 
-export async function classifyWondersVariant(bitmap: ImageBitmap): Promise<VariantResult> {
-	const evidence: VariantResult['evidence'] = {};
+export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<ParallelResult> {
+	const evidence: ParallelResult['evidence'] = {};
 
 	// Rule 1: FF detection via border edge-density ratio
 	const ffScore = await measureBorderVsCenterEdgeRatio(bitmap);
@@ -32,7 +38,7 @@ export async function classifyWondersVariant(bitmap: ImageBitmap): Promise<Varia
 	if (ffScore < 1.25) {
 		// Border doesn't differ much from center → art bleeds to edges → FF
 		return {
-			variant: 'ff',
+			parallel: 'ff',
 			ruleFired: 'ff_no_border',
 			confidence: Math.min(1, (1.4 - ffScore) * 2),
 			evidence
@@ -47,7 +53,7 @@ export async function classifyWondersVariant(bitmap: ImageBitmap): Promise<Varia
 		const match = serialOCR.text.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/);
 		if (match) {
 			return {
-				variant: 'ocm',
+				parallel: 'ocm',
 				ruleFired: 'ocm_serial_detected',
 				confidence: Math.min(1, serialOCR.confidence + 0.2),
 				evidence: { ...evidence, serial_parsed: `${match[1]}/${match[2]}` }
@@ -63,7 +69,7 @@ export async function classifyWondersVariant(bitmap: ImageBitmap): Promise<Varia
 
 	// Rule 4: default to paper
 	return {
-		variant: 'paper',
+		parallel: 'paper',
 		ruleFired: 'default_paper',
 		// Conservative — we didn't affirmatively detect paper, we ruled out FF/OCM.
 		confidence: 0.7,

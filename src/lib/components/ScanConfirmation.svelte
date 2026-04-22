@@ -9,8 +9,8 @@
 	import { trackScanMetric } from '$lib/services/error-tracking';
 	import type { ScanResult, Card } from '$lib/types';
 	import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
-	import { normalizeVariant, isFoilVariant, type VariantCode } from '$lib/data/variants';
-	import VariantSelector from '$lib/components/VariantSelector.svelte';
+	import { normalizeParallel, isFoilParallel, PARALLEL_FULL_NAME, type ParallelCode } from '$lib/data/parallels';
+	import ParallelSelector from '$lib/components/ParallelSelector.svelte';
 
 	import ScanCardImage from './scan-confirmation/ScanCardImage.svelte';
 	import ScanCardHeader from './scan-confirmation/ScanCardHeader.svelte';
@@ -154,54 +154,54 @@
 		return () => controller.abort();
 	});
 
-	// ── Variant state (Phase 2.5) ──────────────────────────
-	// For Wonders cards, variant is part of collection identity. When variant
+	// ── Parallel state (Phase 2.5) ─────────────────────────
+	// For Wonders cards, parallel is part of collection identity. When parallel
 	// confidence is low or null, the UI presents a selector and defers auto-add
-	// until the user confirms their variant choice.
-	const VARIANT_CONFIDENCE_THRESHOLD = 0.75;
+	// until the user confirms their parallel choice.
+	const PARALLEL_CONFIDENCE_THRESHOLD = 0.75;
 	const gameId = $derived(card?.game_id || activeResult.game_id || 'boba');
 	const isWondersCard = $derived(gameId === 'wonders');
-	const detectedVariant = $derived(normalizeVariant(activeResult.variant));
-	const variantConfidence = $derived(activeResult.variant_confidence ?? null);
+	const detectedParallel = $derived(normalizeParallel(activeResult.parallel));
+	const parallelConfidence = $derived(activeResult.parallel_confidence ?? null);
 
 	// Needs explicit user confirmation when:
 	//   - Wonders card
 	//   - multi_game_ui flag on
 	//   - confidence is null (Tier 2 silent-miss protection) OR below threshold
-	const needsVariantConfirmation = $derived(
+	const needsParallelConfirmation = $derived(
 		isWondersCard &&
 		multiGameEnabled() &&
-		(variantConfidence === null || variantConfidence < VARIANT_CONFIDENCE_THRESHOLD)
+		(parallelConfidence === null || parallelConfidence < PARALLEL_CONFIDENCE_THRESHOLD)
 	);
 
-	// User's current variant choice (starts at the detected value).
-	let userVariant = $state<VariantCode>('paper');
-	let variantAcknowledged = $state(false);
-	let variantSyncedForCardId: string | null = null;
+	// User's current parallel choice (starts at the detected value).
+	let userParallel = $state<ParallelCode>('paper');
+	let parallelAcknowledged = $state(false);
+	let parallelSyncedForCardId: string | null = null;
 	$effect(() => {
 		if (!card?.id) return;
-		if (card.id === variantSyncedForCardId) return;
-		variantSyncedForCardId = card.id;
-		userVariant = detectedVariant;
+		if (card.id === parallelSyncedForCardId) return;
+		parallelSyncedForCardId = card.id;
+		userParallel = detectedParallel;
 		// Auto-acknowledge if we don't need confirmation (high-confidence, BoBA, flag off)
-		variantAcknowledged = !needsVariantConfirmation;
+		parallelAcknowledged = !needsParallelConfirmation;
 	});
 
-	function handleVariantSelect(v: VariantCode) {
-		userVariant = v;
-		variantAcknowledged = true;
+	function handleParallelSelect(p: ParallelCode) {
+		userParallel = p;
+		parallelAcknowledged = true;
 	}
 
-	// Foil multi-scan soft prompt: fires only when the detected variant is a
-	// foil AND either variant_confidence or collector_number_confidence is low.
+	// Foil multi-scan soft prompt: fires only when the detected parallel is a
+	// foil AND either parallel_confidence or collector_number_confidence is low.
 	const collectorNumberConfidence = $derived(activeResult.collector_number_confidence ?? null);
 	const showFoilRescanPrompt = $derived(
 		isWondersCard &&
 		multiGameEnabled() &&
-		isFoilVariant(detectedVariant) &&
+		isFoilParallel(detectedParallel) &&
 		(
-			(variantConfidence !== null && variantConfidence < VARIANT_CONFIDENCE_THRESHOLD) ||
-			(collectorNumberConfidence !== null && collectorNumberConfidence < VARIANT_CONFIDENCE_THRESHOLD)
+			(parallelConfidence !== null && parallelConfidence < PARALLEL_CONFIDENCE_THRESHOLD) ||
+			(collectorNumberConfidence !== null && collectorNumberConfidence < PARALLEL_CONFIDENCE_THRESHOLD)
 		)
 	);
 
@@ -210,18 +210,25 @@
 		if (autoAddAttempted || adding || addSuccess) return;
 		if (!card?.id || !isAuthenticated) return;
 		if (activeResult.confidence < 0.7) return;
-		// Block auto-add when the user still needs to confirm variant (Wonders only).
-		if (needsVariantConfirmation && !variantAcknowledged) return;
+		// Block auto-add when the user still needs to confirm parallel (Wonders only).
+		if (needsParallelConfirmation && !parallelAcknowledged) return;
 		autoAddAttempted = true;
 		handleAdd();
 	});
+
+	// Resolve the human-readable parallel name for DB writes. Prefer
+	// cards.parallel (BoBA's source of truth); for Wonders fall back to the
+	// short-code → DB-name mapping for the user's confirmed selection.
+	const parallelForWrite = $derived(
+		card?.parallel ?? PARALLEL_FULL_NAME[userParallel] ?? 'Paper'
+	);
 
 	async function handleListOnEbay() {
 		if (!card || !priceData) return;
 		listingInProgress = true;
 		listingError = null;
 		try {
-			const template = generateListingTemplate(card, priceData, 'Near Mint', userVariant);
+			const template = generateListingTemplate(card, priceData, 'Near Mint', parallelForWrite);
 			const listingPrice = template.suggested_price || priceData.price_mid;
 			if (!listingPrice || listingPrice <= 0) {
 				listingError = 'No market data available — set a price in the Sell tab before listing.';
@@ -239,7 +246,7 @@
 					condition: template.condition,
 					scanImageUrl: getScanImageUrl(card.id),
 					gameId,
-					variant: userVariant
+					parallel: parallelForWrite
 				})
 			});
 			if (!res.ok) {
@@ -257,9 +264,9 @@
 	async function handleAdd() {
 		if (!card) return;
 		// Safety: don't persist a collection row until the user has confirmed
-		// variant (when confirmation is required). Auto-add effect already
+		// parallel (when confirmation is required). Auto-add effect already
 		// gates this, but a manual "Add" button click should also respect it.
-		if (needsVariantConfirmation && !variantAcknowledged) return;
+		if (needsParallelConfirmation && !parallelAcknowledged) return;
 		adding = true;
 		addError = null;
 		addSuccess = false;
@@ -275,18 +282,18 @@
 				undefined,
 				scanBlob,
 				gameId,
-				userVariant
+				parallelForWrite
 			);
-			// Phase 2.5: log the user's final variant choice alongside the detected one
-			// so we can audit misidentifications (user_confirmed_variant !== detected_variant).
+			// Phase 2.5: log the user's final parallel choice alongside the detected one
+			// so we can audit misidentifications (user_confirmed_parallel !== detected_parallel).
 			trackScanMetric({
-				event: 'variant_confirmed',
+				event: 'parallel_confirmed',
 				card_id: card.id,
 				game_id: gameId,
-				detected_variant: detectedVariant,
-				user_confirmed_variant: userVariant,
-				variant_confidence: variantConfidence,
-				needed_confirmation: needsVariantConfirmation,
+				detected_parallel: detectedParallel,
+				user_confirmed_parallel: parallelForWrite,
+				parallel_confidence: parallelConfidence,
+				needed_confirmation: needsParallelConfirmation,
 				tier: activeResult.scan_method,
 			});
 			addSuccess = true;
@@ -327,7 +334,7 @@
 					heroName={card.hero_name ?? null}
 					athleteName={card.athlete_name ?? null}
 					cardNumber={card.card_number ?? null}
-					parallel={card.parallel ?? activeResult.variant ?? null}
+					parallel={card.parallel ?? activeResult.parallel ?? null}
 					weaponType={card.weapon_type ?? null}
 					{isOwned}
 					{ownedCount}
@@ -344,18 +351,18 @@
 					{card}
 				/>
 
-				<!-- ── Variant confirmation (Wonders + low-confidence) ────────── -->
-				{#if needsVariantConfirmation}
-					<div class="variant-confirm-section">
-						<div class="variant-confirm-header">
-							<span class="variant-confirm-title">Confirm Variant</span>
-							{#if variantAcknowledged}
-								<span class="variant-confirm-check" aria-label="Confirmed">✓</span>
+				<!-- ── Parallel confirmation (Wonders + low-confidence) ──────── -->
+				{#if needsParallelConfirmation}
+					<div class="parallel-confirm-section">
+						<div class="parallel-confirm-header">
+							<span class="parallel-confirm-title">Confirm Parallel</span>
+							{#if parallelAcknowledged}
+								<span class="parallel-confirm-check" aria-label="Confirmed">✓</span>
 							{/if}
 						</div>
-						<VariantSelector
-							value={userVariant}
-							onSelect={handleVariantSelect}
+						<ParallelSelector
+							value={userParallel}
+							onSelect={handleParallelSelect}
 							size="sm"
 						/>
 					</div>
@@ -441,8 +448,8 @@
 								</div>
 							{/if}
 							<div class="detail-row">
-								<span class="detail-label">Parallel / Variant</span>
-								<span class="detail-value">{card.parallel ?? activeResult.variant ?? 'Base'}</span>
+								<span class="detail-label">Parallel</span>
+								<span class="detail-value">{card.parallel ?? activeResult.parallel ?? 'Base'}</span>
 							</div>
 							{#if card.power}
 								<div class="detail-row">
@@ -644,7 +651,7 @@
 	.detail-rarity.rarity-legendary { color: #F59E0B; }
 
 	/* ── Variant confirmation (Phase 2.5) ──────────────────── */
-	.variant-confirm-section {
+	.parallel-confirm-section {
 		margin: 0.75rem 1rem;
 		padding: 0.75rem;
 		border: 1px solid rgba(59, 130, 246, 0.3);
@@ -654,17 +661,17 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.variant-confirm-header {
+	.parallel-confirm-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 	}
-	.variant-confirm-title {
+	.parallel-confirm-title {
 		font-size: 0.85rem;
 		font-weight: 700;
 		color: var(--text-primary, #e2e8f0);
 	}
-	.variant-confirm-check {
+	.parallel-confirm-check {
 		font-size: 1rem;
 		color: #22c55e;
 		font-weight: 700;

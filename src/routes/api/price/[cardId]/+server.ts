@@ -26,13 +26,12 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 		throw error(400, 'Invalid card ID');
 	}
 
-	// Phase 2.5: price is keyed by (card_id, source, variant). Default to
-	// 'paper' for backward compat — existing callers that don't pass a
-	// variant get the Paper price (which is the only variant we have today
-	// for all existing rows).
-	const ALLOWED_VARIANTS = new Set(['paper', 'cf', 'ff', 'ocm', 'sf']);
-	const rawVariant = (url.searchParams.get('variant') || 'paper').toLowerCase();
-	const variant = ALLOWED_VARIANTS.has(rawVariant) ? rawVariant : 'paper';
+	// Phase 2.5: price is keyed by (card_id, source, parallel). The DB stores
+	// human-readable parallel names. Accept both the new `parallel` query param
+	// (preferred) and the legacy `variant` param for backward compat. Default
+	// to 'Paper' when omitted.
+	const rawParallel = (url.searchParams.get('parallel') || url.searchParams.get('variant') || 'Paper').trim();
+	const parallel = rawParallel.length > 0 ? rawParallel : 'Paper';
 
 	// Play cards use TEXT IDs (e.g., A---PL-1); hero cards use UUIDs.
 	// Detect early so we route to the correct cache table before the card lookup.
@@ -69,7 +68,7 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 
 	// Check price cache (4-hour freshness) — use service role to bypass RLS.
 	// Play cards use play_price_cache (TEXT key); heroes use price_cache (UUID key).
-	// Phase 2.5: price_cache is keyed by (card_id, source, variant).
+	// Phase 2.5: price_cache is keyed by (card_id, source, parallel).
 	const cacheTable = isPlayCard ? 'play_price_cache' : 'price_cache';
 	const cacheClient = getAdminClient() || locals.supabase;
 	let cacheQuery = cacheClient
@@ -77,10 +76,10 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 		.select('*')
 		.eq('card_id', cardId)
 		.eq('source', 'ebay');
-	// play_price_cache doesn't have a variant column (play cards are always 'paper');
-	// only filter by variant on the hero cards table.
+	// play_price_cache doesn't have a parallel column (play cards are always 'Paper');
+	// only filter by parallel on the hero cards table.
 	if (!isPlayCard) {
-		cacheQuery = (cacheQuery as unknown as { eq: (c: string, v: string) => typeof cacheQuery }).eq('variant', variant);
+		cacheQuery = (cacheQuery as unknown as { eq: (c: string, v: string) => typeof cacheQuery }).eq('parallel', parallel);
 	}
 	const { data: cachedRaw } = await cacheQuery.single();
 
@@ -180,8 +179,8 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 		const allStats = calculatePriceStats(allPrices);
 		const fixedStats = calculatePriceStats(fixedPrices);
 
-		// Phase 2.5: include variant on hero price_cache rows. Play cards are
-		// always paper — their cache table doesn't have a variant column.
+		// Phase 2.5: include parallel on hero price_cache rows. Play cards are
+		// always Paper — their cache table doesn't have a parallel column.
 		const priceData: Record<string, unknown> = {
 			card_id: cardId,
 			source: 'ebay',
@@ -197,16 +196,15 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 			confidence_score: allStats?.confidenceScore ?? 0,
 			fetched_at: new Date().toISOString()
 		};
-		if (!isPlayCard) priceData.variant = variant;
+		if (!isPlayCard) priceData.parallel = parallel;
 
 		// Update cache — use service role to bypass RLS.
 		// Play cards → play_price_cache (TEXT key), heroes → price_cache (UUID key).
-		// Hero price_cache PK is now (card_id, source, variant).
+		// Hero price_cache PK is now (card_id, source, parallel).
 		try {
 			const adminClient = getAdminClient();
 			if (!adminClient) throw new Error('Admin client unavailable for cache write');
-			const onConflictKey = isPlayCard ? 'card_id,source' : 'card_id,source,variant';
-			// Cast through unknown: generated types are stale (no `variant` column yet).
+			const onConflictKey = isPlayCard ? 'card_id,source' : 'card_id,source,parallel';
 			const { error: cacheError } = await (adminClient.from(cacheTable) as unknown as {
 				upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
 			}).upsert(priceData, { onConflict: onConflictKey });
@@ -233,8 +231,6 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 
 			const priceChanged = !lastEntry || lastEntry.price_mid !== (priceData.price_mid as number | null);
 			if (priceChanged) {
-				// Cast through unknown for the insert — priceData is Record<string, unknown>
-				// to carry variant, and the generated Supabase types don't know about it yet.
 				const historyRow: Record<string, unknown> = {
 					card_id: cardId,
 					source: 'ebay',
@@ -245,7 +241,7 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 					recorded_at: new Date().toISOString()
 				};
 				if (!isPlayCard) {
-					historyRow.variant = variant;
+					historyRow.parallel = parallel;
 					historyRow.game_id = card.game_id || 'boba';
 				}
 				const { error: historyError } = await (historyClient.from(historyTable) as unknown as {

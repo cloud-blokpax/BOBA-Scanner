@@ -78,18 +78,18 @@ export const MULTI_GAME_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 					'BoBA: common | uncommon | rare | ultra_rare | legendary. ' +
 					'Wonders: Common | Uncommon | Rare | Epic | Mythic | Promo | Token.'
 			},
-			variant: {
+			parallel: {
 				type: 'string',
-				enum: ['paper', 'cf', 'ff', 'ocm', 'sf', 'unknown'],
 				description:
-					'For Wonders cards, the detected physical treatment via the variant decision tree ' +
+					'For Wonders cards, the detected physical treatment via the parallel decision tree ' +
 					'(paper=solid border, cf=lined border no serial, ff=no border, ocm=lined border with X/YY serial, sf=lined border with 1/1 serial). ' +
-					'For BoBA cards, return "paper" — BoBA encodes variant in card_number, not as a separate attribute.'
+					'Return one of: paper | cf | ff | ocm | sf | unknown. ' +
+					'For BoBA cards, return the specific parallel name (e.g., "battlefoil", "rad", "blizzard") or "paper" for base cards. The server maps these to the canonical DB name from cards.parallel.'
 			},
-			variant_confidence: {
+			parallel_confidence: {
 				type: 'number',
 				description:
-					'Wonders only — confidence in variant detection, 0.0-1.0. Values below 0.75 trigger the foil multi-scan flow. ' +
+					'Wonders only — confidence in parallel detection, 0.0-1.0. Values below 0.75 trigger the foil multi-scan flow. ' +
 					'For BoBA, return 1.0.'
 			},
 			first_edition_stamp_detected: {
@@ -105,11 +105,10 @@ export const MULTI_GAME_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 					'Confidence specifically in the card_number / collector_number reading, 0.0-1.0. ' +
 					'Glare on foil cards can reduce this independently of overall scan confidence.'
 			},
-			parallel: { type: 'string', description: 'BoBA only — specific parallel name if identifiable.' },
 			confidence: { type: 'number', description: '0.0–1.0' },
 			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection, damaged_card, partial_occlusion, low_resolution.' }
 		},
-		required: ['game', 'card_name', 'card_number', 'confidence', 'variant', 'variant_confidence', 'collector_number_confidence']
+		required: ['game', 'card_name', 'card_number', 'confidence', 'parallel', 'parallel_confidence', 'collector_number_confidence']
 	}
 };
 
@@ -141,7 +140,7 @@ BoBA card details:
 - power = large number from TOP-RIGHT (heroes only)
 - weapon_type = Fire/Ice/Steel/Hex/Glow/Brawl/Gum/Super/Alt/Cyber
 - rarity = common/uncommon/rare/ultra_rare/legendary
-- variant = paper/battlefoil/rad/blizzard/etc.
+- parallel = paper/battlefoil/rad/blizzard/etc. (BoBA encodes parallel in card_number prefix; the server maps to the canonical DB name)
 
 Wonders card details:
 - card_name = TOP-LEFT title
@@ -152,34 +151,35 @@ Wonders card details:
 - card_type = "Wonder", "Item", "Spell", "Land", etc.
 - card_class = class/subtype after the card_type (e.g., "Airship Pirate")
 - rarity = Common/Uncommon/Rare/Epic/Mythic/Promo/Token
-- variant = paper/cf/ff/ocm/sf/unknown (see VARIANT DECISION TREE below)
+- parallel = paper/cf/ff/ocm/sf/unknown (see PARALLEL DECISION TREE below)
 - hierarchy = legendary/primary/secondary/token (from type line)
 - set_name = "Existence" / "Call of the Stones" / "2026 Prizes and Promos"
 
-BoBA variant handling:
-- For BoBA cards, always return variant="paper" and variant_confidence=1.0. BoBA's variant
-  is encoded in the card_number itself via prefixes (BF-, RAD-, etc.) — there is no
-  separate visual variant to detect. Return first_edition_stamp_detected=false.
+BoBA parallel handling:
+- For BoBA cards, return the parallel descriptor that matches the card_number prefix
+  (e.g., "battlefoil" for BF-, "rad" for RAD-, "paper" for numeric-only). The server
+  maps these to the rich human-readable DB name. Set parallel_confidence=1.0 and
+  first_edition_stamp_detected=false.
 
-WONDERS VARIANT DECISION TREE (apply in this order when game=wonders):
+WONDERS PARALLEL DECISION TREE (apply in this order when game=wonders):
 
 Step 1: Is there a border?
-  - NO (art bleeds to edge) → variant="ff", skip to Step 4
+  - NO (art bleeds to edge) → parallel="ff", skip to Step 4
   - YES → continue to Step 2
 
 Step 2: What is the border pattern?
-  - SOLID color → variant="paper", skip to Step 4
+  - SOLID color → parallel="paper", skip to Step 4
   - DIAGONAL LINED/HATCHED → continue to Step 3
 
 Step 3: Is there a serial number on the left side of the card?
-  - NO serial → variant="cf"
-  - Serial reads "1/1" → variant="sf"
-  - Serial reads anything else (e.g., "38/50", "12/100") → variant="ocm"
+  - NO serial → parallel="cf"
+  - Serial reads "1/1" → parallel="sf"
+  - Serial reads anything else (e.g., "38/50", "12/100") → parallel="ocm"
 
-Step 4: Report the detected variant in the "variant" field along with your
-  confidence in "variant_confidence". If any step of the decision tree was
+Step 4: Report the detected parallel in the "parallel" field along with your
+  confidence in "parallel_confidence". If any step of the decision tree was
   uncertain (glare obscured the border, serial unreadable, etc.), return
-  variant_confidence below 0.75 so the app can trigger a foil multi-scan.
+  parallel_confidence below 0.75 so the app can trigger a foil multi-scan.
 
 THE 1ST EDITION STAMP (WONDERS ONLY):
 
@@ -225,12 +225,12 @@ export const MULTI_GAME_USER_PROMPT = `<task>Identify this trading card. First d
 <wonders_prefixes>A1, AVA, BAA, CLA, EEA, KSA, P, T, TFA, XCA (plus plain numeric for Existence set)</wonders_prefixes>
 
 <examples>
-BoBA hero (paper): game="boba", card_name="Dart-Board", card_number="130", hero_name="Dart-Board", power="130", weapon_type="Steel", variant="paper", variant_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.95
-BoBA hero (battlefoil): game="boba", card_name="BoJax", card_number="BF-108", hero_name="BoJax", power="200", weapon_type="Super", variant="paper", parallel="battlefoil", variant_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.9
-Wonders Paper: game="wonders", card_name="Bellator", card_number="78/402", variant="paper", variant_confidence=0.95, first_edition_stamp_detected=false, collector_number_confidence=0.95
-Wonders OCM: game="wonders", card_name="Riley Stormrider", card_number="A1-205/402", power="4", cost="4", variant="ocm", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.85, serial_number="38/50", card_type="Primary Wonder", rarity="Rare"
-Wonders CF: game="wonders", card_name="Omnis Quantum", card_number="14/402", variant="cf", variant_confidence=0.88, first_edition_stamp_detected=true, collector_number_confidence=0.9
-Wonders FF promo: game="wonders", card_name="War Spirit", card_number="P-002", variant="ff", variant_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.95, rarity="Promo"
-Wonders Stone Foil (1/1): game="wonders", card_name="Bartokk the Charger", card_number="CLA-T1", variant="sf", variant_confidence=0.85, first_edition_stamp_detected=true, serial_number="1/1"
-Wonders Existence: game="wonders", card_name="(from card)", card_number="115", variant="paper", variant_confidence=0.9, first_edition_stamp_detected=false, collector_number_confidence=0.9, rarity="Common", set_name="Existence"
+BoBA hero (paper): game="boba", card_name="Dart-Board", card_number="130", hero_name="Dart-Board", power="130", weapon_type="Steel", parallel="paper", parallel_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.95
+BoBA hero (battlefoil): game="boba", card_name="BoJax", card_number="BF-108", hero_name="BoJax", power="200", weapon_type="Super", parallel="battlefoil", parallel_confidence=1.0, first_edition_stamp_detected=false, collector_number_confidence=0.9
+Wonders Paper: game="wonders", card_name="Bellator", card_number="78/402", parallel="paper", parallel_confidence=0.95, first_edition_stamp_detected=false, collector_number_confidence=0.95
+Wonders OCM: game="wonders", card_name="Riley Stormrider", card_number="A1-205/402", power="4", cost="4", parallel="ocm", parallel_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.85, serial_number="38/50", card_type="Primary Wonder", rarity="Rare"
+Wonders CF: game="wonders", card_name="Omnis Quantum", card_number="14/402", parallel="cf", parallel_confidence=0.88, first_edition_stamp_detected=true, collector_number_confidence=0.9
+Wonders FF promo: game="wonders", card_name="War Spirit", card_number="P-002", parallel="ff", parallel_confidence=0.9, first_edition_stamp_detected=true, collector_number_confidence=0.95, rarity="Promo"
+Wonders Stone Foil (1/1): game="wonders", card_name="Bartokk the Charger", card_number="CLA-T1", parallel="sf", parallel_confidence=0.85, first_edition_stamp_detected=true, serial_number="1/1"
+Wonders Existence: game="wonders", card_name="(from card)", card_number="115", parallel="paper", parallel_confidence=0.9, first_edition_stamp_detected=false, collector_number_confidence=0.9, rarity="Common", set_name="Existence"
 </examples>`;

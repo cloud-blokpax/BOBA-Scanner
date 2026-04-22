@@ -41,11 +41,14 @@
 		exporting = true;
 		try {
 			// Build export cards with prices. Whatnot pending items are currently
-			// BoBA-only (variant='paper'); the composite key lookup handles both.
+			// BoBA-only — the (card_id, parallel) composite key lookup handles
+			// per-card parallels (Battlefoil, etc.) and falls back to Paper.
 			const exportCards: WhatnotExportCard[] = [];
 			for (const p of pending) {
-				const variant = ((p as { variant?: string | null }).variant || 'paper').toLowerCase();
-				const priceData = prices.get(`${p.cardId}:${variant}`) ?? prices.get(`${p.cardId}:paper`);
+				// Source of truth: cards.parallel. Pending items don't carry their
+				// own parallel — read from the card directly.
+				const parallel = p.card.parallel || 'Paper';
+				const priceData = prices.get(`${p.cardId}:${parallel}`) ?? prices.get(`${p.cardId}:Paper`);
 				exportCards.push({
 					id: p.cardId,
 					hero_name: p.card.hero_name,
@@ -53,7 +56,7 @@
 					athlete_name: p.card.athlete_name,
 					card_number: p.card.card_number,
 					set_code: p.card.set_code,
-					parallel: p.card.parallel,
+					parallel,
 					weapon_type: p.card.weapon_type,
 					power: p.card.power,
 					rarity: p.card.rarity,
@@ -62,7 +65,6 @@
 					condition: p.condition,
 					image_url: p.imageUrl?.startsWith('https://') ? p.imageUrl : null,
 					game_id: (p.card as { game_id?: string | null }).game_id ?? null,
-					variant,
 					metadata: (p.card as { metadata?: Record<string, unknown> | null }).metadata ?? null,
 				});
 			}

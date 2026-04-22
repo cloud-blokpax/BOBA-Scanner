@@ -41,7 +41,7 @@ export async function captureCardImage(
 
 		const { data: card, error: cardErr } = await admin
 			.from('cards')
-			.select('image_url, updated_at')
+			.select('image_url, updated_at, parallel')
 			.eq('id', cardId)
 			.single();
 		if (cardErr || !card) return;
@@ -118,6 +118,8 @@ export async function captureCardImage(
 				computePHashFromBuffer(processed)
 			]);
 
+			// Read parallel from cards.parallel — source of truth.
+			const cardParallel = (card as { parallel?: string | null }).parallel ?? 'Paper';
 			const { data: inserted, error: hashErr } = await admin.rpc(
 				'upsert_hash_cache_v2',
 				{
@@ -125,7 +127,7 @@ export async function captureCardImage(
 					p_card_id: cardId,
 					p_phash_256: phash256,
 					p_game_id: 'boba',
-					p_variant: 'paper',
+					p_parallel: cardParallel,
 					p_source: 'ebay_seed',
 					p_confidence: 1.0
 				}

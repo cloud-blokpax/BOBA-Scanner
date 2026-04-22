@@ -22,7 +22,7 @@ import {
 	type DragonPointsConfigOverrides,
 } from './dragon-points';
 import type { DragonRarity } from './dragon-points';
-type FoilVariant = 'cf' | 'ff' | 'ocm' | 'sf';
+type FoilParallel = 'cf' | 'ff' | 'ocm' | 'sf';
 
 interface ConfigRow {
 	config_type: string;
@@ -33,16 +33,16 @@ interface ConfigRow {
 }
 
 const DRAGON_RARITIES: readonly DragonRarity[] = ['common', 'uncommon', 'rare', 'epic', 'mythic'];
-const FOIL_VARIANTS_LOCAL: readonly FoilVariant[] = ['cf', 'ff', 'ocm', 'sf'];
+const FOIL_PARALLELS_LOCAL: readonly FoilParallel[] = ['cf', 'ff', 'ocm', 'sf'];
 
-function parseBaseTableKey(key: string): { rarity: DragonRarity; variant: FoilVariant } | null {
-	// Format: "<rarity>_<variant>" (e.g., "mythic_sf").
+function parseBaseTableKey(key: string): { rarity: DragonRarity; parallel: FoilParallel } | null {
+	// Format: "<rarity>_<parallel>" (e.g., "mythic_sf").
 	const m = key.trim().toLowerCase().match(/^([a-z]+)_([a-z]+)$/);
 	if (!m) return null;
-	const [, rarity, variant] = m;
+	const [, rarity, parallel] = m;
 	if (!DRAGON_RARITIES.includes(rarity as DragonRarity)) return null;
-	if (!FOIL_VARIANTS_LOCAL.includes(variant as FoilVariant)) return null;
-	return { rarity: rarity as DragonRarity, variant: variant as FoilVariant };
+	if (!FOIL_PARALLELS_LOCAL.includes(parallel as FoilParallel)) return null;
+	return { rarity: rarity as DragonRarity, parallel: parallel as FoilParallel };
 }
 
 /** Shape raw DB rows into DragonPointsConfigOverrides. */
@@ -59,7 +59,7 @@ export function rowsToOverrides(rows: ConfigRow[]): DragonPointsConfigOverrides 
 				if (!Number.isFinite(points) || points < 0) continue;
 				if (!overrides.baseTable) overrides.baseTable = {};
 				if (!overrides.baseTable[parsed.rarity]) overrides.baseTable[parsed.rarity] = {};
-				overrides.baseTable[parsed.rarity]![parsed.variant] = points;
+				overrides.baseTable[parsed.rarity]![parsed.parallel] = points;
 				break;
 			}
 			case 'class_multiplier': {

@@ -47,7 +47,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			scan_id,
 			disputing_user_id,
 			proposed_card_id,
-			proposed_variant,
+			proposed_parallel,
 			reason_text,
 			revalidation_verdict,
 			revalidated_at,

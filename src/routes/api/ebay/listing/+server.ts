@@ -85,9 +85,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const scanId = (body.scanId as string) || null;
 
 	const gameId = (body.gameId as string) || 'boba';
-	const variant = (body.variant as string) || 'paper';
 	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid gameId');
-	if (!['paper', 'cf', 'ff', 'ocm', 'sf'].includes(variant)) throw error(400, 'Invalid variant');
+	// `parallel` is the human-readable card parallel name (e.g. "Battlefoil",
+	// "Classic Foil"). Mirrors cards.parallel and matches downstream price/
+	// hash/collection rows.
+	const effectiveParallel = parallel || 'Paper';
+	const isFoilParallel = effectiveParallel.toLowerCase() !== 'paper';
 
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Please reconnect your eBay account.');
@@ -113,10 +116,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				hero_name: heroName,
 				card_number: cardNumber,
 				set_code: setCode,
-				parallel,
+				parallel: effectiveParallel,
 				weapon_type: weaponType,
 				game_id: gameId,
-				variant,
 				scan_id: scanId,
 				created_at: new Date().toISOString()
 			} as never);
@@ -155,7 +157,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							'Game': ['Wonders of The First'],
 							'Card Manufacturer': ['Wonders of The First'],
 							...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-							...(variant !== 'paper' ? { 'Parallel/Variety': [variant.toUpperCase()] } : {})
+							...(isFoilParallel ? { 'Parallel/Variety': [effectiveParallel] } : {})
 						}
 						: {
 							'Card Name': [heroName || 'Unknown'],
@@ -164,7 +166,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							'Game': ['Bo Jackson Battle Arena'],
 							'Card Manufacturer': ['Bo Jackson Battle Arena'],
 							...(cardNumber ? { 'Card Number': [cardNumber] } : {}),
-							...(parallel ? { 'Parallel/Variety': [parallel] } : {})
+							...(isFoilParallel ? { 'Parallel/Variety': [effectiveParallel] } : {})
 						}
 				},
 				// All ungraded BoBA cards use USED_VERY_GOOD per eBay trading card category rules

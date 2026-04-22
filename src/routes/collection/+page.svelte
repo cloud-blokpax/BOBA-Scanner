@@ -13,10 +13,10 @@
 		loadCollection,
 		gameFilter,
 		setGameFilter,
-		variantFilter,
-		setVariantFilter
+		parallelFilter,
+		setParallelFilter
 	} from '$lib/stores/collection.svelte';
-	import { VARIANT_ABBREV, VARIANT_COLOR, FOIL_VARIANTS } from '$lib/data/variants';
+	import { PARALLEL_ABBREV, PARALLEL_COLOR, PARALLEL_FULL_NAME, FOIL_PARALLELS, normalizeParallel } from '$lib/data/parallels';
 	import { priceCache, getPrice } from '$lib/stores/prices.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
@@ -37,20 +37,26 @@
 
 	onMount(() => { loadCollection(); });
 
-	// Batch-fetch prices (Phase 2.5: fetch the user's actual variant per item
-	// so foil Wonders cards surface their foil price rather than defaulting to paper).
+	// Batch-fetch prices (Phase 2.5: fetch the user's actual parallel per item
+	// so foil cards surface their foil price rather than defaulting to paper).
 	let pricesFetchStarted = $state(false);
 	$effect(() => {
 		if (items.length === 0 || pricesFetchStarted) return;
 		pricesFetchStarted = true;
-		const pairs = items.map(i => ({ cardId: i.card_id, variant: (i.variant || 'paper').toLowerCase() }));
+		// Use cards.parallel as source of truth; fall back to the collection's
+		// own parallel value, then 'Paper'. The price store keys on the
+		// human-readable name to match the DB.
+		const pairs = items.map(i => ({
+			cardId: i.card_id,
+			parallel: i.card?.parallel || i.parallel || 'Paper'
+		}));
 		let active = 0;
 		let idx = 0;
 		function next() {
 			while (active < 3 && idx < pairs.length) {
-				const { cardId, variant } = pairs[idx++];
+				const { cardId, parallel } = pairs[idx++];
 				active++;
-				getPrice(cardId, variant).finally(() => { active--; next(); });
+				getPrice(cardId, parallel).finally(() => { active--; next(); });
 			}
 		}
 		next();
@@ -60,14 +66,14 @@
 	const prices = $derived(priceCache());
 
 	function cardValue(item: CollectionItem): number {
-		// Phase 2.5: price map is keyed by `${card_id}:${variant}`.
-		const variant = (item.variant || 'paper').toLowerCase();
-		const p = prices.get(`${item.card_id}:${variant}`);
+		// Phase 2.5: price map is keyed by `${card_id}:${parallel}`.
+		const parallel = item.card?.parallel || item.parallel || 'Paper';
+		const p = prices.get(`${item.card_id}:${parallel}`);
 		if (p?.price_mid != null) return p.price_mid;
-		// Fallback to the Paper price if variant-specific data hasn't been
+		// Fallback to the Paper price if parallel-specific data hasn't been
 		// harvested yet — keeps totals non-zero for foil collections until
-		// the variant-aware harvester catches up.
-		const paper = prices.get(`${item.card_id}:paper`);
+		// the parallel-aware harvester catches up.
+		const paper = prices.get(`${item.card_id}:Paper`);
 		return paper?.price_mid ?? 0;
 	}
 
@@ -196,59 +202,60 @@
 				{/each}
 			</div>
 
-			<!-- Variant filter (hidden when game filter is BoBA — BoBA is all paper) -->
+			<!-- Parallel filter (hidden when game filter is BoBA — BoBA's parallel is in card_number prefix) -->
 			{#if gameFilter() !== 'boba'}
 				{@const wondersPool = gameFilter() === 'wonders'
 					? allItems.filter((i) => (i.card?.game_id || 'boba') === 'wonders')
 					: allItems}
-				{@const paperCount = wondersPool.filter((i) => (i.variant || 'paper').toLowerCase() === 'paper').length}
-				{@const foilCount = wondersPool.filter((i) => (FOIL_VARIANTS as readonly string[]).includes((i.variant || 'paper').toLowerCase())).length}
-				<div class="variant-filter-bar" role="tablist" aria-label="Filter by variant">
+				{@const paperCount = wondersPool.filter((i) => normalizeParallel(i.parallel) === 'paper').length}
+				{@const foilCount = wondersPool.filter((i) => (FOIL_PARALLELS as readonly string[]).includes(normalizeParallel(i.parallel))).length}
+				<div class="parallel-filter-bar" role="tablist" aria-label="Filter by parallel">
 					<button
-						class="variant-filter-pill"
-						class:variant-filter-active={variantFilter() === 'all'}
-						onclick={() => setVariantFilter('all')}
+						class="parallel-filter-pill"
+						class:parallel-filter-active={parallelFilter() === 'all'}
+						onclick={() => setParallelFilter('all')}
 						role="tab"
-						aria-selected={variantFilter() === 'all'}
+						aria-selected={parallelFilter() === 'all'}
 					>
-						All Variants <span class="variant-filter-count">{wondersPool.length}</span>
+						All Parallels <span class="parallel-filter-count">{wondersPool.length}</span>
 					</button>
 					<button
-						class="variant-filter-pill"
-						class:variant-filter-active={variantFilter() === 'paper'}
-						class:variant-filter-empty={paperCount === 0}
-						data-variant="paper"
-						onclick={() => setVariantFilter('paper')}
+						class="parallel-filter-pill"
+						class:parallel-filter-active={parallelFilter() === 'paper'}
+						class:parallel-filter-empty={paperCount === 0}
+						data-parallel="paper"
+						onclick={() => setParallelFilter('paper')}
 						role="tab"
-						aria-selected={variantFilter() === 'paper'}
+						aria-selected={parallelFilter() === 'paper'}
 					>
-						Paper <span class="variant-filter-count">{paperCount}</span>
+						Paper <span class="parallel-filter-count">{paperCount}</span>
 					</button>
 					<button
-						class="variant-filter-pill"
-						class:variant-filter-active={variantFilter() === 'foils'}
-						class:variant-filter-empty={foilCount === 0}
-						data-variant="foils"
-						onclick={() => setVariantFilter('foils')}
+						class="parallel-filter-pill"
+						class:parallel-filter-active={parallelFilter() === 'foils'}
+						class:parallel-filter-empty={foilCount === 0}
+						data-parallel="foils"
+						onclick={() => setParallelFilter('foils')}
 						role="tab"
-						aria-selected={variantFilter() === 'foils'}
+						aria-selected={parallelFilter() === 'foils'}
 					>
-						Foils <span class="variant-filter-count">{foilCount}</span>
+						Foils <span class="parallel-filter-count">{foilCount}</span>
 					</button>
-					{#each FOIL_VARIANTS as code}
-						{@const count = wondersPool.filter((i) => (i.variant || 'paper').toLowerCase() === code).length}
-						{#if variantFilter() === code || variantFilter() === 'foils' || count > 0}
+					{#each FOIL_PARALLELS as code}
+						{@const count = wondersPool.filter((i) => normalizeParallel(i.parallel) === code).length}
+						{#if parallelFilter() === code || parallelFilter() === 'foils' || count > 0}
 							<button
-								class="variant-filter-pill variant-filter-pill-specific"
-								class:variant-filter-active={variantFilter() === code}
-								class:variant-filter-empty={count === 0}
-								data-variant={code}
-								style={`--variant-color: ${VARIANT_COLOR[code]}`}
-								onclick={() => setVariantFilter(code)}
+								class="parallel-filter-pill parallel-filter-pill-specific"
+								class:parallel-filter-active={parallelFilter() === code}
+								class:parallel-filter-empty={count === 0}
+								data-parallel={code}
+								style={`--parallel-color: ${PARALLEL_COLOR[code]}`}
+								onclick={() => setParallelFilter(code)}
 								role="tab"
-								aria-selected={variantFilter() === code}
+								aria-selected={parallelFilter() === code}
+								title={PARALLEL_FULL_NAME[code]}
 							>
-								{VARIANT_ABBREV[code]} <span class="variant-filter-count">{count}</span>
+								{PARALLEL_ABBREV[code]} <span class="parallel-filter-count">{count}</span>
 							</button>
 						{/if}
 					{/each}
@@ -469,16 +476,16 @@
 	.game-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
 
 	/* ── Variant filter bar (Phase 2.5, flag-gated, non-BoBA only) ── */
-	.variant-filter-bar {
+	.parallel-filter-bar {
 		display: flex;
 		gap: 5px;
 		padding: 0.25rem 1rem 0.5rem;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}
-	.variant-filter-bar::-webkit-scrollbar { display: none; }
+	.parallel-filter-bar::-webkit-scrollbar { display: none; }
 
-	.variant-filter-pill {
+	.parallel-filter-pill {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
@@ -494,16 +501,16 @@
 		white-space: nowrap;
 		transition: background 0.15s, color 0.15s, border-color 0.15s;
 	}
-	.variant-filter-pill:hover { background: var(--bg-hover, #182540); }
-	.variant-filter-active {
+	.parallel-filter-pill:hover { background: var(--bg-hover, #182540); }
+	.parallel-filter-active {
 		background: var(--bg-elevated, #121d34);
 		color: var(--text-primary, #e2e8f0);
 		border-color: var(--border-strong, rgba(148,163,184,0.3));
 	}
-	.variant-filter-pill-specific.variant-filter-active {
-		border-color: var(--variant-color);
-		color: var(--variant-color);
+	.parallel-filter-pill-specific.parallel-filter-active {
+		border-color: var(--parallel-color);
+		color: var(--parallel-color);
 	}
-	.variant-filter-empty { opacity: 0.5; }
-	.variant-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.66rem; }
+	.parallel-filter-empty { opacity: 0.5; }
+	.parallel-filter-count { opacity: 0.7; font-weight: 500; font-size: 0.66rem; }
 </style>
