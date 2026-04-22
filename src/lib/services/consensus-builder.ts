@@ -7,7 +7,12 @@
  * when agreement count + summed confidence clear the thresholds.
  */
 
-import { getBobaPrefixes, getBobaHeroes, getWondersNames } from './catalog-mirror';
+import {
+	getBobaPrefixes,
+	getBobaHeroes,
+	getWondersNames,
+	normalizeOcrName
+} from './catalog-mirror';
 
 export type TaskKind = 'card_number' | 'name' | 'parallel';
 
@@ -105,6 +110,14 @@ export class ConsensusBuilder {
 		return null;
 	}
 
+	/**
+	 * Collapse an OCR'd name to the nearest catalog entry.
+	 *
+	 * Handles the two empirically observed PaddleOCR quirks from Phase 2
+	 * validation, by applying `normalizeOcrName` to both sides:
+	 *   1. Space-drop in kerned title fonts ("CastOut" ↔ "Cast Out")
+	 *   2. 0↔o and 1↔l confusion in small digits inside names ("A-9o" ↔ "A-90")
+	 */
 	private collapseName(raw: string): string | null {
 		let shortlist: string[];
 		try {
@@ -112,11 +125,12 @@ export class ConsensusBuilder {
 		} catch {
 			return null;
 		}
-		const rawLower = raw.toLowerCase().trim();
-		if (!rawLower) return null;
+		if (!raw.trim()) return null;
+		const rawNorm = normalizeOcrName(raw);
+		if (!rawNorm) return null;
 		let best: { name: string; dist: number } | null = null;
 		for (const known of shortlist) {
-			const d = levenshtein(rawLower, known.toLowerCase());
+			const d = levenshtein(rawNorm, normalizeOcrName(known));
 			if (!best || d < best.dist) best = { name: known, dist: d };
 		}
 		if (best && best.dist <= Math.max(2, Math.floor(best.name.length * 0.15))) return best.name;
