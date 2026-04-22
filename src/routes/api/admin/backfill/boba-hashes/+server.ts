@@ -309,7 +309,42 @@ export const POST: RequestHandler = async ({ locals }) => {
 		status.processed += slice.length;
 	}
 
+	// Defensive early-stop: if everything we've ever processed was a skip
+	// (already in hash_cache, RPC returned inserted=false), the antijoin is
+	// producing already-hashed candidates and the loop will never naturally
+	// terminate. Treat the run as done so the auto-loop exits.
+	const allWorkWasSkipped =
+		status.processed > 0 &&
+		status.succeeded === 0 &&
+		status.fetch_failed === 0 &&
+		status.hash_failed === 0 &&
+		status.db_failed === 0;
+
+	if (allWorkWasSkipped) {
+		console.log(
+			`[backfill:boba] all ${status.processed} processed cards were skips — marking done`
+		);
+		status.completed = true;
+		status.completed_at = new Date().toISOString();
+		await redis.set(MUTEX_KEY, status, { ex: COMPLETED_TTL_SECONDS });
+		return json({ ok: true, done: true, status });
+	}
+
 	await redis.set(MUTEX_KEY, status, { ex: MUTEX_TTL_SECONDS });
 
 	return json({ ok: true, done: false, status });
+};
+
+/**
+ * DELETE /api/admin/backfill/boba-hashes
+ *
+ * Clears the Redis mutex so the next POST starts fresh. Use this when
+ * the displayed status has gone stale or wedged.
+ */
+export const DELETE: RequestHandler = async ({ locals }) => {
+	await requireAdmin(locals);
+	const redis = getRedis();
+	if (!redis) throw error(503, 'Redis not available');
+	await redis.del(MUTEX_KEY);
+	return json({ ok: true, reset: true });
 };

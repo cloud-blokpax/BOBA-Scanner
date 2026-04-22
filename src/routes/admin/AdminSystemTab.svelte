@@ -48,7 +48,12 @@
 
 	const bobaBackfillPercent = $derived(
 		bobaBackfillStatus && bobaBackfillStatus.total_cards > 0
-			? Math.round((bobaBackfillStatus.processed / bobaBackfillStatus.total_cards) * 100)
+			? Math.min(
+					100,
+					Math.round(
+						(bobaBackfillStatus.processed / bobaBackfillStatus.total_cards) * 100
+					)
+				)
 			: 0
 	);
 
@@ -143,6 +148,27 @@
 
 	function cancelBobaBackfill() {
 		bobaBackfillAutoRun = false;
+	}
+
+	async function resetBobaBackfill() {
+		if (!confirm('Reset BoBA backfill status? Clears the saved progress so the next start is a fresh run.')) return;
+		try {
+			const res = await fetch('/api/admin/backfill/boba-hashes', {
+				method: 'DELETE'
+			});
+			if (!res.ok) {
+				showToast(`Reset failed: HTTP ${res.status}`, 'x');
+				return;
+			}
+			bobaBackfillStatus = null;
+			bobaBackfillAutoRun = false;
+			showToast('Backfill status cleared', 'check');
+		} catch (err) {
+			showToast(
+				'Network error: ' + (err instanceof Error ? err.message : 'unknown'),
+				'x'
+			);
+		}
 	}
 
 	onMount(() => {
@@ -333,6 +359,11 @@
 			{#if bobaBackfillTriggering}
 				<button class="backfill-btn" onclick={cancelBobaBackfill}>
 					Stop after current batch
+				</button>
+			{/if}
+			{#if bobaBackfillStatus && !bobaBackfillTriggering}
+				<button class="backfill-btn" onclick={resetBobaBackfill}>
+					Reset
 				</button>
 			{/if}
 		</div>
