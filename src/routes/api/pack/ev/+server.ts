@@ -89,7 +89,7 @@ async function loadSnapshot(): Promise<CachedSnapshot> {
 			.from('price_cache')
 			.select('card_id, price_mid')
 			.eq('source', 'ebay')
-			.eq('variant', 'paper')
+			.eq('parallel', 'Paper')
 			.not('price_mid', 'is', null)
 			.range(offset, offset + BATCH - 1);
 		if (err) break;

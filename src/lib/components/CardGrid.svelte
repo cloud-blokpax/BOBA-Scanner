@@ -6,16 +6,16 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { getCardImageUrl } from '$lib/utils/image-url';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
-	import VariantBadge from '$lib/components/VariantBadge.svelte';
+	import ParallelBadge from '$lib/components/ParallelBadge.svelte';
 
 	const multiGameEnabled = featureEnabled('multi_game_ui');
 
-	/** Show a variant badge on the thumbnail for Wonders cards when the
-	 *  multi-game flag is on and the variant is something other than paper. */
-	function showVariantBadge(item: CollectionItem): boolean {
+	/** Show a parallel badge on the thumbnail for Wonders cards when the
+	 *  multi-game flag is on and the parallel is something other than Paper. */
+	function showParallelBadge(item: CollectionItem): boolean {
 		if (!multiGameEnabled()) return false;
 		if (item.card?.game_id !== 'wonders') return false;
-		const v = (item.variant || 'paper').toLowerCase();
+		const v = (item.parallel || 'Paper').toLowerCase();
 		return v !== 'paper'; // Paper thumbnails stay clean; only foils get a badge.
 	}
 
@@ -267,9 +267,9 @@
 									{:else}
 										<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
 									{/if}
-									{#if showVariantBadge(item)}
-										<div class="card-variant-overlay">
-											<VariantBadge variant={item.variant} size="sm" />
+									{#if showParallelBadge(item)}
+										<div class="card-parallel-overlay">
+											<ParallelBadge parallel={item.parallel} size="sm" />
 										</div>
 									{/if}
 									<div class="card-info">
@@ -297,9 +297,9 @@
 					{:else}
 						<div class="card-placeholder"><span class="card-emoji">🎴</span></div>
 					{/if}
-					{#if showVariantBadge(item)}
-						<div class="card-variant-overlay">
-							<VariantBadge variant={item.variant} size="sm" />
+					{#if showParallelBadge(item)}
+						<div class="card-parallel-overlay">
+							<ParallelBadge parallel={item.parallel} size="sm" />
 						</div>
 					{/if}
 					<div class="card-info">
@@ -601,7 +601,7 @@
 	}
 
 	/* ── Variant badge overlay (Phase 2.5, Wonders + multi-game flag) ── */
-	.card-variant-overlay {
+	.card-parallel-overlay {
 		position: absolute;
 		top: 4px;
 		left: 4px;

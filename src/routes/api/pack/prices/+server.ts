@@ -59,11 +59,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	const prices: Record<string, number> = {};
 
 	if (heroIds.length > 0) {
+		// Pack EV always uses Paper prices — packs are factory-fresh, never foil.
 		const { data, error: err } = await admin
 			.from('price_cache')
 			.select('card_id, price_mid')
 			.eq('source', 'ebay')
-			.eq('variant', 'paper')
+			.eq('parallel', 'Paper')
 			.in('card_id', heroIds)
 			.not('price_mid', 'is', null);
 		if (err) {

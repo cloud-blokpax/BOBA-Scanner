@@ -33,15 +33,15 @@ let _loading = $state(false);
 let _gameFilter = $state<'all' | string>('all');
 
 /**
- * Variant filter for the collection view (Phase 2.5).
- *   'all'   = all variants (default)
+ * Parallel filter for the collection view (Phase 2.5).
+ *   'all'   = all parallels (default)
  *   'paper' = paper only
- *   'foils' = all foil variants grouped (cf + ff + ocm + sf)
+ *   'foils' = all foil parallels grouped (cf + ff + ocm + sf)
  *   'cf' | 'ff' | 'ocm' | 'sf' = specific foil type
  * Only meaningful when gameFilter is 'all' or 'wonders' — BoBA
- * collections are all 'paper' so the filter is hidden for BoBA.
+ * collections are filtered by their per-card parallel name.
  */
-let _variantFilter = $state<'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'>('all');
+let _parallelFilter = $state<'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'>('all');
 
 // Track when items were last locally modified for sync conflict resolution
 const _localModifiedAt = new Map<string, number>();
@@ -61,30 +61,33 @@ export function clearLocalModifications(): void {
 // ── Public reactive accessors ──────────────────────────────────
 export function gameFilter(): 'all' | string { return _gameFilter; }
 export function setGameFilter(filter: 'all' | string): void { _gameFilter = filter; }
-export function variantFilter(): 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf' { return _variantFilter; }
-export function setVariantFilter(filter: 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'): void {
-	_variantFilter = filter;
+export function parallelFilter(): 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf' { return _parallelFilter; }
+export function setParallelFilter(filter: 'all' | 'paper' | 'foils' | 'cf' | 'ff' | 'ocm' | 'sf'): void {
+	_parallelFilter = filter;
 }
 
+import { normalizeParallel } from '$lib/data/parallels';
 const FOIL_SET: ReadonlySet<string> = new Set(['cf', 'ff', 'ocm', 'sf']);
 
-/** Returns items filtered by the current game AND variant filters. */
+/** Returns items filtered by the current game AND parallel filters. */
 export function collectionItems(): CollectionItem[] {
 	let out = _items;
 	if (_gameFilter !== 'all') {
 		out = out.filter(item => (item.card?.game_id || 'boba') === _gameFilter);
 	}
-	if (_variantFilter !== 'all') {
+	if (_parallelFilter !== 'all') {
 		out = out.filter(item => {
-			const v = (item.variant || 'paper').toLowerCase();
-			if (_variantFilter === 'paper') return v === 'paper';
-			if (_variantFilter === 'foils') return FOIL_SET.has(v);
-			return v === _variantFilter;
+			// item.parallel is a human-readable DB name; normalize to the
+			// short-code filter values for comparison.
+			const code = normalizeParallel(item.parallel);
+			if (_parallelFilter === 'paper') return code === 'paper';
+			if (_parallelFilter === 'foils') return FOIL_SET.has(code);
+			return code === _parallelFilter;
 		});
 	}
 	return out;
 }
-/** Returns all items regardless of game/variant filter (used by sync, counts, etc.) */
+/** Returns all items regardless of game/parallel filter (used by sync, counts, etc.) */
 export function allCollectionItems(): CollectionItem[] { return _items; }
 export function collectionLoading(): boolean { return _loading; }
 export function collectionCount(): number {
@@ -122,7 +125,7 @@ const _dragonPointsEntries = $derived.by<DragonPointsEntry[]>(() => {
 		const cardClass = typeof meta.card_class === 'string' ? meta.card_class : null;
 		const result = calculateDragonPoints({
 			rarity: card.rarity ?? null,
-			variant: item.variant || 'paper',
+			parallel: item.parallel || 'Paper',
 			year: card.year ?? null,
 			card_class: cardClass,
 		});
@@ -196,11 +199,11 @@ export async function addToCollection(
 	notes: string | null = null,
 	scanImageBlob?: Blob | null,
 	gameId: string = 'boba',
-	variant: string = 'paper'
+	parallel: string = 'Paper'
 ): Promise<void> {
-	// Lock key includes variant — a Paper and CF add of the same card_id+condition
+	// Lock key includes parallel — a Paper and CF add of the same card_id+condition
 	// must be allowed to proceed in parallel because they produce different rows.
-	const lockKey = `${cardId}:${condition}:${variant}`;
+	const lockKey = `${cardId}:${condition}:${parallel}`;
 
 	const existing = _addLocks.get(lockKey);
 	if (existing) {
@@ -208,7 +211,7 @@ export async function addToCollection(
 	}
 
 	const promise = (async () => {
-		const item = await upsertCollectionItem(cardId, condition, notes, gameId, variant);
+		const item = await upsertCollectionItem(cardId, condition, notes, gameId, parallel);
 		markLocallyModified(cardId);
 
 		// Upload scan image to Supabase Storage if provided (non-blocking)
@@ -218,9 +221,9 @@ export async function addToCollection(
 			});
 		}
 
-		// Match by (card_id, condition, variant) — variant makes Paper vs CF distinct.
+		// Match by (card_id, condition, parallel) — parallel makes Paper vs CF distinct.
 		const idx = _items.findIndex(
-			(i) => i.card_id === cardId && i.condition === condition && (i.variant || 'paper') === variant
+			(i) => i.card_id === cardId && i.condition === condition && (i.parallel || 'Paper') === parallel
 		);
 		if (idx >= 0) {
 			const next = [..._items];

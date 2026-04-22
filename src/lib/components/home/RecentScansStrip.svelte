@@ -37,7 +37,7 @@
 					outcome,
 					resolution:scan_resolutions!scan_id(
 						card_id,
-						variant,
+						parallel,
 						confirmed_at
 					),
 					tier_result:scan_tier_results!scan_id(
@@ -57,7 +57,7 @@
 			// Embedded selects return arrays. Take the first (most recent) resolution
 			// and the highest-confidence tier result per scan. Filter scans that
 			// never got a resolution — they're pending/abandoned.
-			type ResolutionRow = { card_id: string | null; variant: string | null; confirmed_at: string | null };
+			type ResolutionRow = { card_id: string | null; parallel: string | null; confirmed_at: string | null };
 			type TierRow = {
 				engine: string | null;
 				parsed_card_id: string | null;

@@ -1,51 +1,52 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { VARIANT_CODES, VARIANT_ABBREV, VARIANT_FULL_NAME, VARIANT_COLOR, type VariantCode } from '$lib/data/variants';
+	import { PARALLEL_CODES, PARALLEL_ABBREV, PARALLEL_FULL_NAME, PARALLEL_COLOR, type ParallelCode } from '$lib/data/parallels';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import type { Card } from '$lib/types';
 
 	let {
 		card,
-		currentVariant = 'paper',
-		onVariantChange,
+		currentParallel = 'paper',
+		onParallelChange,
 	}: {
 		card: Card;
-		currentVariant?: string;
-		onVariantChange?: (variant: VariantCode) => void;
+		currentParallel?: string;
+		onParallelChange?: (parallel: ParallelCode) => void;
 	} = $props();
 
-	interface VariantPriceState {
+	interface ParallelPriceState {
 		price: number | null;
 		isColdStart: boolean;
 		loading: boolean;
 		errorReason: string | null;
 	}
 
-	const initialState: Record<VariantCode, VariantPriceState> = {
+	const initialState: Record<ParallelCode, ParallelPriceState> = {
 		paper: { price: null, isColdStart: false, loading: true, errorReason: null },
 		cf: { price: null, isColdStart: false, loading: true, errorReason: null },
 		ff: { price: null, isColdStart: false, loading: true, errorReason: null },
 		ocm: { price: null, isColdStart: false, loading: true, errorReason: null },
 		sf: { price: null, isColdStart: false, loading: true, errorReason: null },
 	};
-	let prices = $state<Record<VariantCode, VariantPriceState>>(initialState);
+	let prices = $state<Record<ParallelCode, ParallelPriceState>>(initialState);
 
 	let lastCardId = '';
 
-	async function loadPrice(variant: VariantCode) {
+	async function loadPrice(parallel: ParallelCode) {
 		if (!card?.id) return;
-		prices[variant] = { ...prices[variant], loading: true };
+		prices[parallel] = { ...prices[parallel], loading: true };
 		try {
-			const result = await getPriceWithReason(card.id, variant);
+			// Pass the human-readable DB name to match the price_cache row.
+			const result = await getPriceWithReason(card.id, PARALLEL_FULL_NAME[parallel]);
 			const data = result.data as (typeof result.data & { confidence_cold_start?: boolean }) | null;
-			prices[variant] = {
+			prices[parallel] = {
 				price: data?.price_mid ?? null,
 				isColdStart: (data?.confidence_cold_start === true) || false,
 				loading: false,
 				errorReason: result.errorReason,
 			};
 		} catch {
-			prices[variant] = {
+			prices[parallel] = {
 				price: null,
 				isColdStart: false,
 				loading: false,
@@ -56,9 +57,9 @@
 
 	onMount(() => {
 		lastCardId = card?.id || '';
-		// Parallel fetch for all variants
-		for (const v of VARIANT_CODES) {
-			loadPrice(v);
+		// Parallel fetch for all parallels
+		for (const p of PARALLEL_CODES) {
+			loadPrice(p);
 		}
 	});
 
@@ -66,14 +67,14 @@
 	$effect(() => {
 		if (card?.id && card.id !== lastCardId) {
 			lastCardId = card.id;
-			for (const v of VARIANT_CODES) {
-				loadPrice(v);
+			for (const p of PARALLEL_CODES) {
+				loadPrice(p);
 			}
 		}
 	});
 
-	function handleSelect(variant: VariantCode) {
-		if (onVariantChange) onVariantChange(variant);
+	function handleSelect(parallel: ParallelCode) {
+		if (onParallelChange) onParallelChange(parallel);
 	}
 
 	function formatPrice(price: number | null): string {
@@ -82,32 +83,32 @@
 	}
 </script>
 
-<section class="wvpp">
-	<div class="wvpp-header">
-		<h3 class="wvpp-title">Prices by Variant</h3>
-		{#if prices[currentVariant as VariantCode]?.isColdStart}
-			<span class="wvpp-provisional-flag" title="Provisional — price will stabilize as more market data is harvested">
+<section class="wppp">
+	<div class="wppp-header">
+		<h3 class="wppp-title">Prices by Parallel</h3>
+		{#if prices[currentParallel as ParallelCode]?.isColdStart}
+			<span class="wppp-provisional-flag" title="Provisional — price will stabilize as more market data is harvested">
 				* Provisional
 			</span>
 		{/if}
 	</div>
 
-	<div class="wvpp-list" role="radiogroup" aria-label="Select variant to view">
-		{#each VARIANT_CODES as v}
-			{@const state = prices[v]}
+	<div class="wppp-list" role="radiogroup" aria-label="Select parallel to view">
+		{#each PARALLEL_CODES as p}
+			{@const state = prices[p]}
 			<button
 				type="button"
-				class="wvpp-row"
-				class:wvpp-row-active={currentVariant === v}
-				data-variant={v}
-				style={`--variant-color: ${VARIANT_COLOR[v]}`}
-				onclick={() => handleSelect(v)}
+				class="wppp-row"
+				class:wppp-row-active={currentParallel === p}
+				data-parallel={p}
+				style={`--parallel-color: ${PARALLEL_COLOR[p]}`}
+				onclick={() => handleSelect(p)}
 				role="radio"
-				aria-checked={currentVariant === v}
+				aria-checked={currentParallel === p}
 			>
-				<span class="wvpp-abbrev">{VARIANT_ABBREV[v]}</span>
-				<span class="wvpp-name">{VARIANT_FULL_NAME[v]}</span>
-				<span class="wvpp-price" class:wvpp-price-missing={state?.price === null && !state?.loading}>
+				<span class="wppp-abbrev">{PARALLEL_ABBREV[p]}</span>
+				<span class="wppp-name">{PARALLEL_FULL_NAME[p]}</span>
+				<span class="wppp-price" class:wppp-price-missing={state?.price === null && !state?.loading}>
 					{#if state?.loading}
 						…
 					{:else}
@@ -118,16 +119,16 @@
 		{/each}
 	</div>
 
-	{#if prices[currentVariant as VariantCode]?.isColdStart}
-		<p class="wvpp-note">
-			* Provisional price — the first few harvests of a new variant are
+	{#if prices[currentParallel as ParallelCode]?.isColdStart}
+		<p class="wppp-note">
+			* Provisional price — the first few harvests of a new parallel are
 			marked provisional. Prices stabilize as more market data comes in.
 		</p>
 	{/if}
 </section>
 
 <style>
-	.wvpp {
+	.wppp {
 		margin-top: 0.75rem;
 		padding: 0.75rem;
 		border: 1px solid var(--border, rgba(148,163,184,0.2));
@@ -135,19 +136,19 @@
 		background: var(--bg-surface, #0d1524);
 	}
 
-	.wvpp-header {
+	.wppp-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 0.5rem;
 	}
-	.wvpp-title {
+	.wppp-title {
 		font-size: 0.85rem;
 		font-weight: 700;
 		margin: 0;
 		color: var(--text-primary, #e2e8f0);
 	}
-	.wvpp-provisional-flag {
+	.wppp-provisional-flag {
 		font-size: 0.65rem;
 		font-weight: 700;
 		color: #f59e0b;
@@ -155,12 +156,12 @@
 		letter-spacing: 0.04em;
 	}
 
-	.wvpp-list {
+	.wppp-list {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
 	}
-	.wvpp-row {
+	.wppp-row {
 		display: grid;
 		grid-template-columns: 40px 1fr auto;
 		align-items: center;
@@ -176,36 +177,36 @@
 		cursor: pointer;
 		transition: background 0.12s, border-color 0.12s;
 	}
-	.wvpp-row:hover {
+	.wppp-row:hover {
 		background: var(--bg-elevated, #121d34);
 	}
-	.wvpp-row-active {
-		border-color: var(--variant-color);
-		background: color-mix(in srgb, var(--variant-color) 10%, var(--bg-surface, #0d1524));
+	.wppp-row-active {
+		border-color: var(--parallel-color);
+		background: color-mix(in srgb, var(--parallel-color) 10%, var(--bg-surface, #0d1524));
 	}
 
-	.wvpp-abbrev {
+	.wppp-abbrev {
 		text-align: center;
 		font-weight: 800;
-		color: var(--variant-color);
+		color: var(--parallel-color);
 		font-size: 0.75rem;
 	}
-	.wvpp-name {
+	.wppp-name {
 		color: var(--text-primary, #e2e8f0);
 	}
-	.wvpp-price {
+	.wppp-price {
 		font-weight: 700;
 		color: #10b981;
 		text-align: right;
 		white-space: nowrap;
 	}
-	.wvpp-price-missing {
+	.wppp-price-missing {
 		color: var(--text-muted, #475569);
 		font-weight: 500;
 		font-style: italic;
 	}
 
-	.wvpp-note {
+	.wppp-note {
 		margin: 0.5rem 0 0;
 		font-size: 0.7rem;
 		color: var(--text-muted, #475569);

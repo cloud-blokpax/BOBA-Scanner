@@ -1,29 +1,32 @@
 <script lang="ts">
 	import { calculateDragonPoints } from '$lib/games/wonders/dragon-points';
+	import { normalizeParallel } from '$lib/data/parallels';
 	import type { Card } from '$lib/types';
 
 	let {
 		card,
-		variant = 'paper',
+		parallel = 'paper',
 	}: {
 		card: Card;
-		/** The variant being viewed — drives the Dragon Points calculation. */
-		variant?: string;
+		/** The parallel being viewed — drives the Dragon Points calculation.
+		 *  Accepts either a short code (`cf`) or a human-readable DB name. */
+		parallel?: string;
 	} = $props();
 
 	const meta = $derived((card.metadata ?? {}) as Record<string, unknown>);
 	const cardClass = $derived(typeof meta.card_class === 'string' ? meta.card_class : null);
+	const normalized = $derived(normalizeParallel(parallel));
 
 	const result = $derived(
 		calculateDragonPoints({
 			rarity: card.rarity ?? null,
-			variant,
+			parallel: normalized,
 			year: card.year ?? null,
 			card_class: cardClass,
 		})
 	);
 
-	const isPaper = $derived(variant === 'paper');
+	const isPaper = $derived(normalized === 'paper');
 	let expanded = $state(false);
 </script>
 
@@ -43,13 +46,13 @@
 	</button>
 
 	{#if isPaper}
-		<p class="dp-disqualified">Paper variant — not eligible for Dragon Points</p>
+		<p class="dp-disqualified">Paper parallel — not eligible for Dragon Points</p>
 	{:else if result.disqualification_reason}
 		<p class="dp-disqualified">{result.disqualification_reason}</p>
 	{:else if expanded}
 		<div class="dp-breakdown">
 			<dl>
-				<dt>Base ({card.rarity} {variant.toUpperCase()})</dt>
+				<dt>Base ({card.rarity} {normalized.toUpperCase()})</dt>
 				<dd>{result.breakdown.base}</dd>
 				{#if result.breakdown.freshness_bonus > 0}
 					<dt>Freshness bonus (2026, +35%)</dt>

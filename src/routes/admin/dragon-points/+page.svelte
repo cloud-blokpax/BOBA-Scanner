@@ -18,14 +18,14 @@
 	}
 
 	type DragonRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'mythic';
-	type FoilVariant = 'cf' | 'ff' | 'ocm' | 'sf';
+	type FoilParallel = 'cf' | 'ff' | 'ocm' | 'sf';
 	const RARITIES: DragonRarity[] = ['common', 'uncommon', 'rare', 'epic', 'mythic'];
-	const VARIANTS: FoilVariant[] = ['cf', 'ff', 'ocm', 'sf'];
-	const VARIANT_LABELS: Record<FoilVariant, string> = {
+	const PARALLELS: FoilParallel[] = ['cf', 'ff', 'ocm', 'sf'];
+	const PARALLEL_LABELS: Record<FoilParallel, string> = {
 		cf: 'Classic Foil',
 		ff: 'Formless Foil',
 		ocm: 'Orbital Color Match',
-		sf: 'Stone Foil',
+		sf: 'Stonefoil',
 	};
 
 	let loading = $state(true);
@@ -33,7 +33,7 @@
 	let configRows = $state<ConfigRow[]>([]);
 
 	// Editable grid state — starts from hardcoded defaults, overridden by DB.
-	let baseTable = $state<Record<DragonRarity, Record<FoilVariant, number>>>(
+	let baseTable = $state<Record<DragonRarity, Record<FoilParallel, number>>>(
 		JSON.parse(JSON.stringify(DRAGON_POINTS_CONFIG.baseTable))
 	);
 	// Explicit `number` cast — DRAGON_POINTS_CONFIG fields have literal types (`as const`)
@@ -74,7 +74,7 @@
 
 	onMount(loadConfig);
 
-	async function saveCell(rarity: DragonRarity, variant: FoilVariant, value: number) {
+	async function saveCell(rarity: DragonRarity, variant: FoilParallel, value: number) {
 		if (!Number.isFinite(value) || value < 0) {
 			showToast('Value must be a non-negative number', 'x');
 			return;
@@ -88,11 +88,11 @@
 					config_type: 'base_table',
 					key: `${rarity}_${variant}`,
 					value: { points: value },
-					description: `${rarity} × ${VARIANT_LABELS[variant]}`,
+					description: `${rarity} × ${PARALLEL_LABELS[variant]}`,
 				}),
 			});
 			if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-			showToast(`Saved ${rarity} × ${VARIANT_LABELS[variant]} = ${value}`, 'check');
+			showToast(`Saved ${rarity} × ${PARALLEL_LABELS[variant]} = ${value}`, 'check');
 			await loadConfig();
 		} catch (err) {
 			console.error('[admin/dragon-points] save failed:', err);
@@ -195,15 +195,15 @@
 	</header>
 
 	<section class="dp-admin-section">
-		<h2>Base Point Table (rarity × variant)</h2>
+		<h2>Base Point Table (rarity × parallel)</h2>
 		<p class="dp-admin-hint">Click a cell value to edit. Save commits to the DB.</p>
 		<div class="dp-table-wrap">
 			<table class="dp-table">
 				<thead>
 					<tr>
 						<th></th>
-						{#each VARIANTS as v}
-							<th>{VARIANT_LABELS[v]}</th>
+						{#each PARALLELS as p}
+							<th>{PARALLEL_LABELS[p]}</th>
 						{/each}
 					</tr>
 				</thead>
@@ -211,7 +211,7 @@
 					{#each RARITIES as r}
 						<tr>
 							<th>{r}</th>
-							{#each VARIANTS as v}
+							{#each PARALLELS as v}
 								{@const row = findRow('base_table', `${r}_${v}`)}
 								<td class:dp-overridden={!!row}>
 									<input
@@ -219,7 +219,7 @@
 										min="0"
 										step="1"
 										bind:value={baseTable[r][v]}
-										aria-label={`${r} ${VARIANT_LABELS[v]}`}
+										aria-label={`${r} ${PARALLEL_LABELS[v]}`}
 									/>
 									<button
 										type="button"

@@ -568,7 +568,9 @@ export async function recognizeCard(
 							// returns a valid UUID (validated upstream).
 							finalCardId: final.card_id!,
 							finalConfidence: final.confidence ?? null,
-							finalVariant: final.variant ?? null,
+							// final_parallel mirrors cards.parallel — the source of truth.
+							// Falls back to the result's parallel field, then null.
+							finalParallel: final.card?.parallel ?? final.parallel ?? null,
 							totalLatencyMs: final.processing_ms ?? null,
 							totalCostUsd,
 							liveConsensusReached: final.liveConsensusReached ?? null,
@@ -604,12 +606,12 @@ export async function recognizeCard(
 			ms: final.processing_ms,
 			cardNumber: final.card?.card_number ?? null,
 			negativeCacheHit: final.failReason?.includes('not yet in database') ?? false,
-			// Phase 2.5: variant diagnostics so we can audit misidentifications.
-			// `user_confirmed_variant` is recorded separately at collection-add time
+			// Phase 2.5: parallel diagnostics so we can audit misidentifications.
+			// `user_confirmed_parallel` is recorded separately at collection-add time
 			// (see addToCollection) because that's where the user's final choice lives.
 			game_id: final.game_id ?? null,
-			detected_variant: final.variant ?? null,
-			variant_confidence: final.variant_confidence ?? null,
+			detected_parallel: final.parallel ?? null,
+			parallel_confidence: final.parallel_confidence ?? null,
 			collector_number_confidence: final.collector_number_confidence ?? null,
 			first_edition_stamp_detected: final.first_edition_stamp_detected ?? false
 		});
@@ -726,12 +728,13 @@ export async function recognizeCard(
 		if (tier2Result) {
 			const hash = await getImageWorker().computeDHash(workingBitmap);
 			const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
-			// Tier 2 can't detect variant visually. Default to 'paper' in the hash
-			// cache — the Tier 2 confirmation UI forces the user to choose variant
-			// before the collection entry is created, so the collection row records
-			// the truth regardless of what the hash cache says.
-			const hashVariant = tier2Result.variant || 'paper';
-			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, workingBitmap, hashGameId, hashVariant);
+			// Tier 2 can't detect parallel visually. Read from the matched card —
+			// cards.parallel is the source of truth. The Tier 2 confirmation UI
+			// forces the user to choose parallel before the collection entry is
+			// created, so the collection row records the truth regardless of
+			// what the hash cache says.
+			const hashParallel = tier2Result.card?.parallel ?? tier2Result.parallel ?? 'Paper';
+			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, workingBitmap, hashGameId, hashParallel);
 			return finalize(tier2Result);
 		}
 	} else {
@@ -753,7 +756,7 @@ export async function recognizeCard(
 	}
 
 	// ── TIER 1 canonical PaddleOCR (Session 2.1a) ───────────
-	// Local OCR + rule-based variant classifier. Runs between the existing
+	// Local OCR + rule-based parallel classifier. Runs between the existing
 	// Tier 2 (Tesseract) and Tier 3 (Claude). Gated by live_ocr_tier1_v1 so
 	// the old Haiku-first behavior stays intact when the flag is off.
 	const liveOCREnabled = await isLiveOCRTier1Enabled();
@@ -763,16 +766,22 @@ export async function recognizeCard(
 		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
 		try {
 			const { runCanonicalTier1 } = await import('./tier1-canonical');
+			const { toParallelName } = await import('$lib/data/wonders-parallels');
 			const game = (gameHint === 'wonders' ? 'wonders' : 'boba') as 'boba' | 'wonders';
 			const canonical = await runCanonicalTier1(workingBitmap, game);
 
 			const liveSnap = options?.liveConsensusSnapshot ?? null;
 			const live = liveSnap?.consensus ?? null;
+			// Live consensus emits classifier short codes; canonical.parallel is
+			// already the human-readable DB name. Map before comparing.
+			const liveParallelName = live?.parallel?.value
+				? toParallelName(live.parallel.value)
+				: null;
 			const liveAgreed = !!(
 				live?.reachedThreshold &&
 				live.cardNumber?.value === canonical.cardNumber &&
 				live.name?.value === canonical.name &&
-				(game === 'boba' || live.variant?.value === canonical.variant)
+				(game === 'boba' || liveParallelName === canonical.parallel)
 			);
 			const TIER1_CONFIDENCE_FLOOR = 0.6;
 
@@ -788,7 +797,7 @@ export async function recognizeCard(
 				if (live) {
 					if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
 					if (live.name?.value !== canonical.name) divergent.push('name');
-					if (game === 'wonders' && live.variant?.value !== canonical.variant) divergent.push('variant');
+					if (game === 'wonders' && liveParallelName !== canonical.parallel) divergent.push('parallel');
 				}
 				const decisionCtx: Record<string, unknown> = {
 					live_session: liveSnap,
@@ -816,7 +825,7 @@ export async function recognizeCard(
 					scan_method: 'hash_cache' as ScanMethod,
 					confidence: canonical.confidence,
 					processing_ms: Math.round(performance.now() - startTime),
-					variant: canonical.variant,
+					parallel: canonical.parallel,
 					game_id: canonical.card.game_id,
 					liveConsensusReached,
 					liveVsCanonicalAgreed: liveAgreed,
@@ -864,13 +873,13 @@ export async function recognizeCard(
 		tier3Result.liveVsCanonicalAgreed = null;
 	}
 	if (tier3Result) {
-		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
+		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, parallel=${tier3Result.parallel}`);
 		const hash = await getImageWorker().computeDHash(workingBitmap);
 		const hashGameId = tier3Result.card?.game_id || tier3Result.game_id || gameHint || 'boba';
-		// Tier 3 variant comes from Claude's decision-tree output. Default to
-		// 'paper' only if null (e.g., BoBA cards where variant is baked into card_number).
-		const hashVariant = tier3Result.variant || 'paper';
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, workingBitmap, hashGameId, hashVariant);
+		// Tier 3 parallel comes from cards.parallel (the source of truth for the
+		// matched card) — fall back to the result's parallel field, then 'Paper'.
+		const hashParallel = tier3Result.card?.parallel ?? tier3Result.parallel ?? 'Paper';
+		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, workingBitmap, hashGameId, hashParallel);
 
 		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
 		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
@@ -894,7 +903,7 @@ async function writeHashToAllLayers(
 	confidence: number,
 	bitmap?: ImageBitmap,
 	gameId: string = 'boba',
-	variant: string = 'paper'
+	parallel: string = 'Paper'
 ): Promise<void> {
 	// Compute pHash if bitmap is available (for enhanced matching)
 	let phash256: string | null = null;
@@ -908,7 +917,7 @@ async function writeHashToAllLayers(
 
 	// Layer 1: IndexedDB
 	try {
-		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, variant, ...(phash256 ? { phash_256: phash256 } : {}) });
+		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, parallel, ...(phash256 ? { phash_256: phash256 } : {}) });
 	} catch (err) {
 		console.debug('[scan] IDB hash write failed:', err);
 	}
@@ -918,12 +927,12 @@ async function writeHashToAllLayers(
 		try {
 			const client = getSupabase();
 			if (client) {
-				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string; p_variant: string } = {
+				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string; p_parallel: string } = {
 					p_phash: hash,
 					p_card_id: cardId,
 					p_confidence: confidence,
 					p_game_id: gameId,
-					p_variant: variant,
+					p_parallel: parallel,
 				};
 				if (phash256) rpcArgs.p_phash_256 = phash256;
 				const { error: rpcErr } = await client.rpc('upsert_hash_cache', rpcArgs);

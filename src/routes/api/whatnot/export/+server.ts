@@ -87,26 +87,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	};
 	const cardRows = cards as unknown as CardRow[];
 
-	// Fetch prices — include variant to disambiguate Paper vs Foil prices.
+	// Fetch prices — include parallel to disambiguate Paper vs Foil prices.
 	const { data: prices } = await supabase
 		.from('price_cache')
-		.select('card_id, price_mid, variant' as '*')
+		.select('card_id, price_mid, parallel' as '*')
 		.in('card_id', cardIds);
 
-	type PriceRow = { card_id: string; price_mid: number | null; variant: string | null };
+	type PriceRow = { card_id: string; price_mid: number | null; parallel: string | null };
 	const priceMap = new Map<string, number | null>();
 	for (const p of (prices || []) as unknown as PriceRow[]) {
-		priceMap.set(`${p.card_id}:${p.variant || 'paper'}`, p.price_mid);
+		priceMap.set(`${p.card_id}:${p.parallel || 'Paper'}`, p.price_mid);
 	}
 
-	// Fetch collection data (quantity, condition, variant)
+	// Fetch collection data (quantity, condition, parallel)
 	const { data: collection } = await supabase
 		.from('collections')
-		.select('card_id, quantity, condition, variant' as '*')
+		.select('card_id, quantity, condition, parallel' as '*')
 		.eq('user_id', user.id)
 		.in('card_id', cardIds);
 
-	type CollectionRow = { card_id: string; quantity: number; condition: string; variant?: string | null };
+	type CollectionRow = { card_id: string; quantity: number; condition: string; parallel?: string | null };
 	const collectionMap = new Map(
 		((collection || []) as unknown as CollectionRow[]).map((c) => [c.card_id, c])
 	);
@@ -132,18 +132,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Assemble export data
 	const exportCards: WhatnotExportCard[] = cardRows.map((card) => {
 		const col = collectionMap.get(card.id);
-		const variant = col?.variant || 'paper';
-		// Price lookup: match the user's owned variant (fallback to paper if
-		// no variant-specific row exists yet — harvester hasn't caught up).
-		const variantPrice = priceMap.get(`${card.id}:${variant}`);
-		const paperPrice = priceMap.get(`${card.id}:paper`);
+		// Prefer the owned parallel; fall back to cards.parallel (source of truth)
+		// then 'Paper'. Pricing keys must match what the harvester writes.
+		const parallel = col?.parallel || (card as unknown as { parallel?: string | null }).parallel || 'Paper';
+		// Price lookup: match the user's owned parallel (fallback to Paper if
+		// no parallel-specific row exists yet — harvester hasn't caught up).
+		const parallelPrice = priceMap.get(`${card.id}:${parallel}`);
+		const paperPrice = priceMap.get(`${card.id}:Paper`);
 		return {
 			...card,
-			price_mid: variantPrice ?? paperPrice ?? null,
+			price_mid: parallelPrice ?? paperPrice ?? null,
 			quantity: col?.quantity || 1,
 			condition: col?.condition || 'near_mint',
 			image_url: imageMap.get(card.id) || null,
-			variant,
+			parallel,
 		};
 	});
 

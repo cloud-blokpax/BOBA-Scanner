@@ -322,40 +322,14 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 // ── SQL-based candidate selection ───────────────────────────
 // Single Postgres function replaces four in-memory priority passes.
-// Avoids the Supabase JS client's 1,000-row default limit that
-// caused the harvester to stall after ~1,000 cards.
 //
-// Phase 2.5 note: the RPC should be updated in Supabase to return
-// `(id, variant, ...)` pairs drawn from the union of variants seen in
-// active `collections` and `listing_templates` rows for each card, plus
-// `'paper'` as a baseline. Until the SQL update is applied, the RPC
-// returns cards without a variant column — we default to 'paper' below
-// so existing behavior is preserved. Adding the column to the RPC is
-// backward-compatible: TypeScript reads `row.variant ?? 'paper'`.
-//
-// Proposed SQL (run once in Supabase SQL Editor):
-//
-//   CREATE OR REPLACE FUNCTION get_harvest_candidates(
-//     p_run_id text, p_limit int, p_game_id text DEFAULT 'boba'
-//   ) RETURNS TABLE (
-//     id text, variant text, hero_name text, name text, card_number text,
-//     athlete_name text, parallel text, weapon_type text, priority int
-//   ) LANGUAGE sql AS $$
-//     WITH active_variants AS (
-//       SELECT c.card_id, c.variant FROM collections c
-//         JOIN cards ON c.card_id = cards.id WHERE cards.game_id = p_game_id
-//       UNION
-//       SELECT lt.card_id, lt.variant FROM listing_templates lt
-//         JOIN cards ON lt.card_id = cards.id WHERE cards.game_id = p_game_id
-//       UNION
-//       SELECT cards.id, 'paper' FROM cards WHERE cards.game_id = p_game_id
-//     )
-//     SELECT cards.id::text, av.variant, cards.hero_name, cards.name, ...
-//     FROM active_variants av JOIN cards ON av.card_id = cards.id
-//     LEFT JOIN price_cache pc ON pc.card_id = cards.id AND pc.variant = av.variant
-//     WHERE ... (priority logic by staleness, same as before)
-//     LIMIT p_limit;
-//   $$;
+// Phase 2.5 note: the RPC returns `(id, parallel, ...)` pairs drawn from
+// the union of parallels seen in active `collections` and
+// `listing_templates` rows for each card, plus `cards.parallel` as the
+// baseline. The `card_parallel_name` column carries the rich per-card
+// parallel name from cards.parallel; the `parallel` column carries the
+// downstream value (which equals `card_parallel_name` for BoBA after the
+// 2.1a.4/5 backfill).
 
 interface CardCandidate {
 	id: string;
@@ -363,11 +337,13 @@ interface CardCandidate {
 	name: string | null;
 	card_number: string | null;
 	athlete_name: string | null;
-	parallel: string | null;
+	/** cards.parallel — the rich per-card parallel name (e.g. "Battlefoil"). */
+	card_parallel_name?: string | null;
 	weapon_type: string | null;
 	priority: number;
-	/** Phase 2.5: variant to harvest. 'paper' default for backward compat. */
-	variant?: string | null;
+	/** Downstream parallel column value. For BoBA equals card_parallel_name
+	 *  (post-backfill); for Wonders is the active foil parallel name. */
+	parallel?: string | null;
 	/** Phase 3: game_id routes to the right query builder (BoBA vs Wonders). */
 	game_id?: string | null;
 	/** Phase 3: metadata used by the Wonders query builder for set display name. */
@@ -395,10 +371,15 @@ async function getNextCandidates(
 		return [];
 	}
 
-	// Normalize: default variant to 'paper' and tag game_id on each candidate
-	// so downstream refreshCardPrice() routes to the right query builder.
+	// Normalize: default parallel to cards.parallel (or 'Paper') and tag
+	// game_id on each candidate so downstream refreshCardPrice() routes to
+	// the right query builder.
 	const raw = (data as unknown as CardCandidate[]) || [];
-	return raw.map((r) => ({ ...r, variant: r.variant || 'paper', game_id: r.game_id || gameId }));
+	return raw.map((r) => ({
+		...r,
+		parallel: r.parallel || r.card_parallel_name || 'Paper',
+		game_id: r.game_id || gameId
+	}));
 }
 
 /**
@@ -436,11 +417,11 @@ async function refreshCardPrice(
 	chainDepth: number,
 	confidenceThreshold: number
 ): Promise<RefreshResult> {
-	// Phase 2.5 / 3: the harvester operates on (card_id, variant) pairs and
+	// Phase 2.5 / 3: the harvester operates on (card_id, parallel) pairs and
 	// dispatches query/filter builders by game_id. BoBA uses ebay-query.ts;
-	// Wonders uses ebay-query-wonders.ts (quoted phrases + variant keywords
+	// Wonders uses ebay-query-wonders.ts (quoted phrases + parallel keywords
 	// + cross-game contamination rejection).
-	const variant = card.variant || 'paper';
+	const parallel = card.parallel || card.card_parallel_name || 'Paper';
 	const gameId = (card.game_id || 'boba').toLowerCase();
 	const isWonders = gameId === 'wonders';
 	// Build the EbayCardInfo shape the Wonders query builder expects.
@@ -448,7 +429,7 @@ async function refreshCardPrice(
 		hero_name: card.hero_name,
 		name: card.name,
 		card_number: card.card_number,
-		variant,
+		parallel,
 		game_id: 'wonders' as const,
 		metadata: card.metadata ?? null,
 	};
@@ -462,7 +443,7 @@ async function refreshCardPrice(
 		if (count === 1) await redis.expire(key, 86400);
 	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
 
-	// Fetch previous price for delta tracking (variant-scoped)
+	// Fetch previous price for delta tracking (parallel-scoped)
 	let previousMid: number | null = null;
 	let isNewPrice = false;
 	try {
@@ -471,7 +452,7 @@ async function refreshCardPrice(
 			.select('price_mid')
 			.eq('card_id', card.id)
 			.eq('source', 'ebay')
-			.eq('variant', variant)
+			.eq('parallel', parallel)
 			.maybeSingle();
 
 		if (cached) {
@@ -554,7 +535,7 @@ async function refreshCardPrice(
 			adjustedConfidence = adjustedConfidence * 0.6 + avgTitleScore * 0.4;
 		}
 
-		// Cold-start: new (card_id, variant) pairs are provisional for their first
+		// Cold-start: new (card_id, parallel) pairs are provisional for their first
 		// few harvests. The UI shows provisional prices with an asterisk + tooltip.
 		// Uses isNewPrice (no prior price_cache row) as the signal.
 		const coldStart = isWonders && isNewPrice;
@@ -562,7 +543,7 @@ async function refreshCardPrice(
 		const priceData: Record<string, unknown> = {
 			card_id: card.id,
 			source: 'ebay',
-			variant,
+			parallel,
 			game_id: card.game_id || 'boba',
 			price_low: allStats?.low ?? null,
 			price_mid: allStats?.median ?? null,
@@ -594,10 +575,10 @@ async function refreshCardPrice(
 				buy_now_low: null,
 				buy_now_mid: null,
 			};
-		// Upsert key is (card_id, source, variant) — cast because generated types are stale.
+		// Upsert key is (card_id, source, parallel).
 		const { error: cacheError } = await (admin.from('price_cache') as unknown as {
 			upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
-		}).upsert(cachePayload, { onConflict: 'card_id,source,variant' });
+		}).upsert(cachePayload, { onConflict: 'card_id,source,parallel' });
 		if (cacheError) {
 			console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
 		}
@@ -610,7 +591,7 @@ async function refreshCardPrice(
 			const historyRow: Record<string, unknown> = {
 				card_id: card.id,
 				source: 'ebay',
-				variant,
+				parallel,
 				game_id: card.game_id || 'boba',
 				price_low: priceData.price_low,
 				price_mid: priceData.price_mid,
@@ -646,9 +627,9 @@ async function refreshCardPrice(
 				hero_name: card.hero_name,
 				card_name: card.name,
 				card_number: card.card_number,
-				// Phase 3: tag the harvest log row with game + variant.
+				// Phase 3: tag the harvest log row with game + parallel.
 				game_id: card.game_id || 'boba',
-				variant,
+				parallel,
 				search_query: query,
 				ebay_results_raw: ebayResultsRaw,
 				auction_count: auctionItems.length,
@@ -872,10 +853,10 @@ function buildLogEntry(
 		hero_name: card.hero_name,
 		card_name: card.name,
 		card_number: card.card_number,
-		// Phase 3: tag the harvest log row with game + variant so admin dashboards
+		// Phase 3: tag the harvest log row with game + parallel so admin dashboards
 		// can distinguish BoBA harvests from Wonders harvests.
 		game_id: card.game_id || 'boba',
-		variant: card.variant || 'paper',
+		parallel: card.parallel || card.card_parallel_name || 'Paper',
 		search_query: query,
 		ebay_results_raw: 0,
 		auction_count: 0,

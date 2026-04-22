@@ -10,35 +10,37 @@ export interface PriceResult {
 	errorReason: string | null;
 }
 
-// Key is `${cardId}:${variant}` so Paper and CF prices don't collide.
+// Key is `${cardId}:${parallel}` so Paper and CF prices don't collide.
+// `parallel` is the human-readable name (e.g. "Paper", "Classic Foil") so
+// the keyspace matches the database.
 let _priceCache = $state<Map<string, PriceData>>(new Map());
 
 export function priceCache(): Map<string, PriceData> { return _priceCache; }
 
-function cacheKey(cardId: string, variant: string): string {
-	return `${cardId}:${variant}`;
+function cacheKey(cardId: string, parallel: string): string {
+	return `${cardId}:${parallel}`;
 }
 
 /** Return cached price_mid for a card ID, or null if not yet fetched. No API call triggered.
- *  Defaults to the Paper price — existing callers that don't specify a variant keep working. */
-export function getCachedPriceMid(cardId: string, variant: string = 'paper'): number | null {
-	const entry = _priceCache.get(cacheKey(cardId, variant));
+ *  Defaults to the Paper price — existing callers that don't specify a parallel keep working. */
+export function getCachedPriceMid(cardId: string, parallel: string = 'Paper'): number | null {
+	const entry = _priceCache.get(cacheKey(cardId, parallel));
 	return entry?.price_mid ?? null;
 }
 
 const inflightRequests = new Map<string, Promise<PriceResult>>();
 
-export async function getPrice(cardId: string, variant: string = 'paper'): Promise<PriceData | null> {
-	const result = await getPriceWithReason(cardId, variant);
+export async function getPrice(cardId: string, parallel: string = 'Paper'): Promise<PriceData | null> {
+	const result = await getPriceWithReason(cardId, parallel);
 	return result.data;
 }
 
-export async function getPriceWithReason(cardId: string, variant: string = 'paper'): Promise<PriceResult> {
-	const key = cacheKey(cardId, variant);
+export async function getPriceWithReason(cardId: string, parallel: string = 'Paper'): Promise<PriceResult> {
+	const key = cacheKey(cardId, parallel);
 	const inflight = inflightRequests.get(key);
 	if (inflight) return inflight;
 
-	const promise = _fetchPrice(cardId, variant);
+	const promise = _fetchPrice(cardId, parallel);
 	inflightRequests.set(key, promise);
 	try {
 		return await promise;
@@ -47,12 +49,13 @@ export async function getPriceWithReason(cardId: string, variant: string = 'pape
 	}
 }
 
-async function _fetchPrice(cardId: string, variant: string): Promise<PriceResult> {
-	const key = cacheKey(cardId, variant);
+async function _fetchPrice(cardId: string, parallel: string): Promise<PriceResult> {
+	const key = cacheKey(cardId, parallel);
+	const isPaper = parallel === 'Paper' || parallel.toLowerCase() === 'paper';
 	try {
 		// IDB price store is keyed by card_id only — we can reuse it only for
-		// the Paper variant. Non-Paper variants skip IDB and always go network.
-		if (variant === 'paper') {
+		// the Paper parallel. Non-Paper parallels skip IDB and always go network.
+		if (isPaper) {
 			const cached = await idb.getPrice(cardId, 14400_000);
 			if (cached) {
 				const priceData = cached as PriceData;
@@ -67,9 +70,9 @@ async function _fetchPrice(cardId: string, variant: string): Promise<PriceResult
 	}
 
 	try {
-		const url = variant === 'paper'
+		const url = isPaper
 			? `/api/price/${cardId}`
-			: `/api/price/${cardId}?variant=${encodeURIComponent(variant)}`;
+			: `/api/price/${cardId}?parallel=${encodeURIComponent(parallel)}`;
 		const response = await fetch(url);
 		if (!response.ok) {
 			const body = await response.json().catch(() => ({}));
@@ -80,7 +83,7 @@ async function _fetchPrice(cardId: string, variant: string): Promise<PriceResult
 		const priceData = (await response.json()) as PriceData;
 
 		try {
-			if (variant === 'paper') await idb.setPrice(priceData);
+			if (isPaper) await idb.setPrice(priceData);
 		} catch (err) {
 			console.debug('[prices] IDB cache write failed:', err);
 		}

@@ -55,7 +55,7 @@ type BackfillStatus = {
 	admin_id: string | null;
 };
 
-type BobaCard = { id: string; image_url: string };
+type BobaCard = { id: string; image_url: string; parallel: string | null };
 
 /**
  * PostgREST caps `.select()` at 1,000 rows by default. Once BoBA hash_cache
@@ -109,7 +109,7 @@ async function fetchAllBobaCardsWithImages(
 		const from = p * PAGE;
 		const { data, error: err } = await admin
 			.from('cards')
-			.select('id, image_url')
+			.select('id, image_url, parallel')
 			.eq('game_id', 'boba')
 			.not('image_url', 'is', null)
 			.order('updated_at', { ascending: false })
@@ -300,6 +300,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 			return;
 		}
 
+		// Read parallel from cards.parallel — source of truth. Defaults to
+		// 'Paper' when missing on the row.
+		const cardParallel = card.parallel ?? 'Paper';
 		const { data: inserted, error: rpcErr } = await adminRef.rpc(
 			// Cast around the generated Database type until it catches up
 			// with upsert_hash_cache_v2 signature.
@@ -309,7 +312,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 				p_card_id: card.id,
 				p_phash_256: pHash256,
 				p_game_id: 'boba',
-				p_variant: 'paper',
+				p_parallel: cardParallel,
 				p_source: 'ebay_seed',
 				p_confidence: 1.0
 			} as never

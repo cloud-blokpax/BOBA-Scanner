@@ -203,6 +203,10 @@ export const POST: RequestHandler = async ({ locals }) => {
 			return;
 		}
 
+		// Read parallel from the matched card row — cards.parallel is the
+		// source of truth (defaults to 'Paper' for the Wonders catalog today).
+		const cardWithParallel = card as { parallel?: string | null };
+		const cardParallel = cardWithParallel.parallel ?? 'Paper';
 		const { error: upErr } = await adminRef
 			.from('hash_cache')
 			.upsert(
@@ -214,7 +218,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 					scan_count: 1,
 					last_seen: new Date().toISOString(),
 					game_id: 'wonders',
-					variant: 'paper',
+					parallel: cardParallel,
 					source: 'official_seed'
 				} as never,
 				{ onConflict: 'phash', ignoreDuplicates: true }

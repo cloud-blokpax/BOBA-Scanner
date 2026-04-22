@@ -7,10 +7,10 @@
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
-	import VariantBadge from '$lib/components/VariantBadge.svelte';
+	import ParallelBadge from '$lib/components/ParallelBadge.svelte';
 	import DragonPointsCard from '$lib/components/DragonPointsCard.svelte';
-	import WondersVariantPricePanel from '$lib/components/WondersVariantPricePanel.svelte';
-	import type { VariantCode } from '$lib/data/variants';
+	import WondersParallelPricePanel from '$lib/components/WondersParallelPricePanel.svelte';
+	import type { ParallelCode } from '$lib/data/parallels';
 	import type { CollectionItem } from '$lib/types';
 	import type { ActionReturn } from 'svelte/action';
 
@@ -41,16 +41,17 @@
 		onClose: () => void;
 	} = $props();
 
-	// ── Phase 3: variant preview state for Wonders ───────────────
-	// Defaults to the owned variant; user can preview pricing for other variants
-	// via the WondersVariantPricePanel without changing what's in their collection.
-	let viewedVariant = $state<VariantCode>('paper');
-	let lastItemIdForVariant = '';
+	// ── Phase 3: parallel preview state for Wonders ──────────────
+	// Defaults to the owned parallel; user can preview pricing for other parallels
+	// via the WondersParallelPricePanel without changing what's in their collection.
+	import { normalizeParallel } from '$lib/data/parallels';
+	let viewedParallel = $state<ParallelCode>('paper');
+	let lastItemIdForParallel = '';
 	$effect(() => {
 		const id = item?.id || '';
-		if (id !== lastItemIdForVariant) {
-			lastItemIdForVariant = id;
-			viewedVariant = ((item?.variant || 'paper') as VariantCode);
+		if (id !== lastItemIdForParallel) {
+			lastItemIdForParallel = id;
+			viewedParallel = normalizeParallel(item?.parallel);
 		}
 	});
 
@@ -202,9 +203,9 @@
 						{#if card?.set_code}
 							<span class="meta-tag">{card.set_code}</span>
 						{/if}
-						<!-- Wonders variant badge (Phase 2.5, multi-game flag) -->
-						{#if isWonders && multiGameEnabled() && item?.variant}
-							<VariantBadge variant={item.variant} size="sm" showName />
+						<!-- Wonders parallel badge (Phase 2.5, multi-game flag) -->
+						{#if isWonders && multiGameEnabled() && item?.parallel}
+							<ParallelBadge parallel={item.parallel} size="sm" showName />
 						{/if}
 						{#if card?.parallel}
 							<span class="meta-tag parallel">{card.parallel}</span>
@@ -251,18 +252,18 @@
 							</div>
 						{/if}
 
-						<!-- Variant price panel (Phase 3, Step 3.5) — switch to preview other variant prices -->
+						<!-- Parallel price panel (Phase 3, Step 3.5) — switch to preview other parallel prices -->
 						{#if multiGameEnabled() && card}
-							<WondersVariantPricePanel
+							<WondersParallelPricePanel
 								{card}
-								currentVariant={viewedVariant}
-								onVariantChange={(v) => (viewedVariant = v)}
+								currentParallel={viewedParallel}
+								onParallelChange={(p) => (viewedParallel = p)}
 							/>
 						{/if}
 
-						<!-- Dragon Points (Phase 3, Step 3.2) — reacts to the currently viewed variant -->
+						<!-- Dragon Points (Phase 3, Step 3.2) — reacts to the currently viewed parallel -->
 						{#if multiGameEnabled() && card}
-							<DragonPointsCard {card} variant={viewedVariant} />
+							<DragonPointsCard {card} parallel={viewedParallel} />
 						{/if}
 					{/if}
 

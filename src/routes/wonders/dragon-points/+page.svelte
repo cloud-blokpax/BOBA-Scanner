@@ -8,10 +8,10 @@
 		collectionLoading,
 	} from '$lib/stores/collection.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
-	import VariantBadge from '$lib/components/VariantBadge.svelte';
+	import ParallelBadge from '$lib/components/ParallelBadge.svelte';
 	import { DRAGON_POINTS_CONFIG } from '$lib/games/wonders/dragon-points';
 	import { loadDragonPointsConfig } from '$lib/games/wonders/dragon-points-config';
-	import { FOIL_VARIANTS, VARIANT_ABBREV, VARIANT_COLOR, type VariantCode } from '$lib/data/variants';
+	import { FOIL_PARALLELS, PARALLEL_ABBREV, PARALLEL_COLOR, normalizeParallel, type ParallelCode } from '$lib/data/parallels';
 
 	const multiGameEnabled = featureEnabled('multi_game_ui');
 
@@ -28,17 +28,17 @@
 	const remaining = $derived(Math.max(0, threshold - total));
 	const hasQualified = $derived(total >= threshold);
 
-	// Per-variant breakdown (quantity-weighted points per foil variant)
-	const perVariantPoints = $derived.by<Record<VariantCode, number>>(() => {
-		const tally = { paper: 0, cf: 0, ff: 0, ocm: 0, sf: 0 } as Record<VariantCode, number>;
+	// Per-parallel breakdown (quantity-weighted points per foil parallel)
+	const perParallelPoints = $derived.by<Record<ParallelCode, number>>(() => {
+		const tally = { paper: 0, cf: 0, ff: 0, ocm: 0, sf: 0 } as Record<ParallelCode, number>;
 		for (const e of entries) {
-			const v = (e.item.variant || 'paper') as VariantCode;
-			tally[v] = (tally[v] || 0) + e.totalForItem;
+			const code = normalizeParallel(e.item.parallel);
+			tally[code] = (tally[code] || 0) + e.totalForItem;
 		}
 		return tally;
 	});
-	const maxVariantPoints = $derived(
-		Math.max(1, ...FOIL_VARIANTS.map((v) => perVariantPoints[v] || 0))
+	const maxParallelPoints = $derived(
+		Math.max(1, ...FOIL_PARALLELS.map((p) => perParallelPoints[p] || 0))
 	);
 
 	// Top-earning foils list (quantity-weighted)
@@ -140,22 +140,22 @@
 		</header>
 
 		<section class="dp-section">
-			<h2 class="dp-section-title">By Variant</h2>
-			<div class="dp-variant-bars">
-				{#each FOIL_VARIANTS as code}
-					{@const points = perVariantPoints[code] || 0}
-					{@const barWidth = (points / maxVariantPoints) * 100}
-					<div class="dp-variant-row" data-variant={code}>
-						<span class="dp-variant-abbrev" style={`color: ${VARIANT_COLOR[code]}`}>
-							{VARIANT_ABBREV[code]}
+			<h2 class="dp-section-title">By Parallel</h2>
+			<div class="dp-parallel-bars">
+				{#each FOIL_PARALLELS as code}
+					{@const points = perParallelPoints[code] || 0}
+					{@const barWidth = (points / maxParallelPoints) * 100}
+					<div class="dp-parallel-row" data-parallel={code}>
+						<span class="dp-parallel-abbrev" style={`color: ${PARALLEL_COLOR[code]}`}>
+							{PARALLEL_ABBREV[code]}
 						</span>
-						<div class="dp-variant-bar-track">
+						<div class="dp-parallel-bar-track">
 							<div
-								class="dp-variant-bar-fill"
-								style={`width: ${barWidth}%; background: ${VARIANT_COLOR[code]}`}
+								class="dp-parallel-bar-fill"
+								style={`width: ${barWidth}%; background: ${PARALLEL_COLOR[code]}`}
 							></div>
 						</div>
-						<span class="dp-variant-points">{points.toLocaleString()}</span>
+						<span class="dp-parallel-points">{points.toLocaleString()}</span>
 					</div>
 				{/each}
 			</div>
@@ -189,7 +189,7 @@
 						<li class="dp-entry" data-card-id={e.item.card?.id}>
 							<a href={`/collection?focus=${e.item.card?.id}`} class="dp-entry-link">
 								<span class="dp-entry-name">{e.item.card?.name || 'Unknown'}</span>
-								<VariantBadge variant={e.item.variant} size="sm" />
+								<ParallelBadge parallel={e.item.parallel} size="sm" />
 								<span class="dp-entry-rarity">{e.item.card?.rarity || ''}</span>
 								<span class="dp-entry-points">{e.totalForItem.toLocaleString()}</span>
 							</a>
@@ -312,31 +312,31 @@
 	}
 
 	/* ── Variant bars ─────────────────────────────── */
-	.dp-variant-bars { display: flex; flex-direction: column; gap: 8px; }
-	.dp-variant-row {
+	.dp-parallel-bars { display: flex; flex-direction: column; gap: 8px; }
+	.dp-parallel-row {
 		display: grid;
 		grid-template-columns: 46px 1fr auto;
 		align-items: center;
 		gap: 8px;
 	}
-	.dp-variant-abbrev {
+	.dp-parallel-abbrev {
 		font-weight: 800;
 		font-size: 0.85rem;
 		text-align: center;
 	}
-	.dp-variant-bar-track {
+	.dp-parallel-bar-track {
 		height: 14px;
 		border-radius: 7px;
 		background: var(--bg-elevated, #121d34);
 		overflow: hidden;
 	}
-	.dp-variant-bar-fill {
+	.dp-parallel-bar-fill {
 		height: 100%;
 		border-radius: 7px;
 		transition: width 0.6s ease-out;
 		min-width: 2px;
 	}
-	.dp-variant-points {
+	.dp-parallel-points {
 		font-size: 0.8rem;
 		font-weight: 700;
 		color: var(--text-primary, #e2e8f0);

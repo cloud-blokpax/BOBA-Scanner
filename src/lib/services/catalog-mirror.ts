@@ -19,9 +19,9 @@ export interface MirrorCard {
 	card_number: string;
 	hero_name: string | null; // BoBA
 	name: string | null; // Wonders
+	/** Source-of-truth parallel from cards.parallel (human-readable name). */
 	parallel: string | null;
 	set_code: string | null;
-	variant: string | null;
 }
 
 let _db: IDBPDatabase | null = null;
@@ -73,7 +73,7 @@ export async function warmCatalog(force = false): Promise<void> {
 
 			const { data, error } = await client
 				.from('cards')
-				.select('id, game_id, card_number, hero_name, name, parallel, set_code, variant')
+				.select('id, game_id, card_number, hero_name, name, parallel, set_code')
 				.in('game_id', ['boba', 'wonders']);
 
 			if (error || !data) {

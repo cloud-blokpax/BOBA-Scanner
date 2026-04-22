@@ -184,7 +184,7 @@ export interface Database {
 					engine_version: string;
 					raw_output: Record<string, unknown>;
 					parsed_card_id: string | null;
-					parsed_variant: string | null;
+					parsed_parallel: string | null;
 					parsed_confidence: number | null;
 					latency_ms: number | null;
 					cost_usd: number | null;
@@ -219,7 +219,7 @@ export interface Database {
 					scan_id: string;
 					user_id: string;
 					card_id: string | null;
-					variant: string;
+					parallel: string;
 					consensus_score: number | null;
 					tier_agreement_bits: number | null;
 					confirmed_at: string | null;
@@ -235,7 +235,7 @@ export interface Database {
 					scan_id: string;
 					user_id: string;
 					card_id?: string | null;
-					variant?: string;
+					parallel?: string;
 					consensus_score?: number | null;
 					tier_agreement_bits?: number | null;
 					confirmed_at?: string | null;
@@ -256,7 +256,7 @@ export interface Database {
 					scan_id: string;
 					disputing_user_id: string;
 					proposed_card_id: string | null;
-					proposed_variant: string | null;
+					proposed_parallel: string | null;
 					reason_text: string | null;
 					revalidation_raw: Record<string, unknown> | null;
 					revalidation_verdict: string | null;
@@ -274,7 +274,7 @@ export interface Database {
 					scan_id: string;
 					disputing_user_id: string;
 					proposed_card_id?: string | null;
-					proposed_variant?: string | null;
+					proposed_parallel?: string | null;
 					reason_text?: string | null;
 					revalidation_raw?: Record<string, unknown> | null;
 					revalidation_verdict?: string | null;
@@ -304,7 +304,7 @@ export interface Database {
 					listings_count: number | null;
 					fetched_at: string;
 					game_id: string;
-					variant: string;
+					parallel: string;
 				};
 				Insert: {
 					card_id: string;
@@ -320,7 +320,7 @@ export interface Database {
 					listings_count?: number | null;
 					fetched_at?: string;
 					game_id?: string;
-					variant?: string;
+					parallel?: string;
 				};
 				Update: Partial<Database['public']['Tables']['price_cache']['Insert']>;
 				Relationships: [];
@@ -626,7 +626,6 @@ export interface Database {
 					sold_price: number | null;
 					ebay_offer_id: string | null;
 					game_id: string;
-					variant: string;
 					created_at: string;
 					updated_at: string | null;
 				};
@@ -652,7 +651,6 @@ export interface Database {
 					sold_price?: number | null;
 					ebay_offer_id?: string | null;
 					game_id?: string;
-					variant?: string;
 					updated_at?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['listing_templates']['Insert']>;
@@ -1300,7 +1298,7 @@ export interface Database {
 					p_card_id: string;
 					p_phash_256?: string | null;
 					p_game_id?: string;
-					p_variant?: string;
+					p_parallel?: string;
 					p_source?: 'ebay_seed' | 'official_seed' | 'user_scan' | 'consensus' | 'claude_confirmed' | 'admin';
 					p_confidence?: number;
 				};
@@ -1350,7 +1348,7 @@ export interface Database {
 			};
 			get_play_harvest_candidates: {
 				Args: { p_limit: number };
-				Returns: Array<{ id: string; hero_name: string | null; name: string; card_number: string; athlete_name: string | null; parallel: string | null; weapon_type: string | null; priority: number }>;
+				Returns: Array<{ id: string; hero_name: string | null; name: string; card_number: string; athlete_name: string | null; card_parallel_name: string | null; weapon_type: string | null; parallel: string | null; priority: number }>;
 			};
 			get_harvest_summary: {
 				Args: { p_run_id: string };

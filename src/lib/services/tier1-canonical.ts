@@ -8,20 +8,27 @@
 
 import { initPaddleOCR, ocrRegion } from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
-import { classifyWondersVariant } from './variant-classifier';
+import { classifyWondersParallel } from './parallel-classifier';
 import { ConsensusBuilder } from './consensus-builder';
 import { lookupCard, type MirrorCard } from './catalog-mirror';
+import { toParallelName } from '$lib/data/wonders-parallels';
 
 export interface CanonicalResult {
 	card: MirrorCard | null;
 	cardNumber: string | null;
 	name: string | null;
-	variant: string | null;
+	/** Resolved parallel as a human-readable name (e.g. "Classic Foil"). Ready
+	 *  for DB write — never the classifier's short code. Null when no parallel
+	 *  was determinable. */
+	parallel: string | null;
 	confidence: number;
 	perTask: {
 		cardNumber: { raw: string; confidence: number; validated: string | null };
 		name: { raw: string; confidence: number; collapsed: string | null };
-		variant?: { value: string; confidence: number; ruleFired: string };
+		/** Telemetry for the parallel decision. `code` is the classifier short
+		 *  code (e.g. "cf"); `value` is the human-readable name persisted to
+		 *  the DB (e.g. "Classic Foil"). */
+		parallel?: { code: string; value: string; confidence: number; ruleFired: string };
 	};
 }
 
@@ -39,10 +46,10 @@ export async function runCanonicalTier1(
 		bitmap.height
 	);
 
-	const [numRes, nameRes, variantRes] = await Promise.allSettled([
+	const [numRes, nameRes, parallelRes] = await Promise.allSettled([
 		ocrRegion(bitmap, cardNumberReg, { minWidth: 800 }),
 		ocrRegion(bitmap, nameReg, { minWidth: 1000 }),
-		game === 'wonders' ? classifyWondersVariant(bitmap) : Promise.resolve(null)
+		game === 'wonders' ? classifyWondersParallel(bitmap) : Promise.resolve(null)
 	]);
 
 	// Use ConsensusBuilder for validation pipeline even though it's one vote each.
@@ -63,11 +70,11 @@ export async function runCanonicalTier1(
 			sessionId: 1
 		});
 	}
-	if (variantRes.status === 'fulfilled' && variantRes.value) {
+	if (parallelRes.status === 'fulfilled' && parallelRes.value) {
 		builder.addVote({
-			task: 'variant',
-			rawValue: variantRes.value.variant,
-			confidence: variantRes.value.confidence,
+			task: 'parallel',
+			rawValue: parallelRes.value.parallel,
+			confidence: parallelRes.value.confidence,
 			sessionId: 1
 		});
 	}
@@ -76,7 +83,6 @@ export async function runCanonicalTier1(
 	const consensus = builder.getConsensus();
 	const cardNumber = consensus.cardNumber?.value || null;
 	const name = consensus.name?.value || null;
-	const variant = consensus.variant?.value || (game === 'boba' ? null : 'paper');
 
 	let card: MirrorCard | null = null;
 	if (cardNumber && name) {
@@ -87,11 +93,24 @@ export async function runCanonicalTier1(
 		}
 	}
 
+	// Resolve the parallel for DB write. cards.parallel is the source of truth
+	// for BoBA (encoded into card_number prefix). For Wonders, map the
+	// classifier short code to the human-readable DB name.
+	let parallel: string | null = null;
+	if (game === 'boba' && card) {
+		parallel = card.parallel ?? 'Paper';
+	} else if (game === 'wonders') {
+		const liveCode = parallelRes.status === 'fulfilled' && parallelRes.value
+			? parallelRes.value.parallel
+			: null;
+		parallel = toParallelName(liveCode) ?? 'Paper';
+	}
+
 	return {
 		card,
 		cardNumber,
 		name,
-		variant,
+		parallel,
 		confidence: Math.min(
 			consensus.cardNumber?.summedConfidence ?? 0,
 			consensus.name?.summedConfidence ?? 0
@@ -107,12 +126,13 @@ export async function runCanonicalTier1(
 				confidence: nameRes.status === 'fulfilled' ? nameRes.value.confidence : 0,
 				collapsed: name
 			},
-			...(variantRes.status === 'fulfilled' && variantRes.value
+			...(parallelRes.status === 'fulfilled' && parallelRes.value
 				? {
-						variant: {
-							value: variantRes.value.variant,
-							confidence: variantRes.value.confidence,
-							ruleFired: variantRes.value.ruleFired
+						parallel: {
+							code: parallelRes.value.parallel,
+							value: toParallelName(parallelRes.value.parallel) ?? '',
+							confidence: parallelRes.value.confidence,
+							ruleFired: parallelRes.value.ruleFired
 						}
 					}
 				: {})

@@ -335,7 +335,7 @@ export function crossValidateCardResult(
 
 			if (heroSearchResults.length > 1) {
 				warnings.push(
-					`Multiple variants found for "${ai.heroName}". User should verify card number.`
+					`Multiple parallels found for "${ai.heroName}". User should verify card number.`
 				);
 			}
 
