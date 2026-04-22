@@ -9,6 +9,7 @@
 	import { initScanner, setScannerActive, resetScanner } from '$lib/stores/scanner.svelte';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
+	const binderModeEnabled = featureEnabled('binder_mode_v1');
 	import { ALL_GAMES } from '$lib/games/all-games';
 	import type { ScanResult } from '$lib/types';
 
@@ -203,9 +204,15 @@
 				<BatchScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
 			{/await}
 		{:else if scanMode === 'binder'}
-			{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
-				<BinderScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
-			{/await}
+			{#if binderModeEnabled()}
+				{#await import('$lib/components/BinderLiveScanner.svelte') then { default: BinderLiveScanner }}
+					<BinderLiveScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} {gameHint} />
+				{/await}
+			{:else}
+				{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
+					<BinderScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
+				{/await}
+			{/if}
 		{:else if scanMode === 'roll'}
 			{#await import('$lib/components/CameraRollImport.svelte') then { default: CameraRollImport }}
 				<CameraRollImport {isAuthenticated} {gameHint} onClose={() => { scanMode = 'single'; }} />
