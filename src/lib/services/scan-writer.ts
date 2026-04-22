@@ -206,6 +206,14 @@ export interface UpdateScanOutcomeInput {
 	totalLatencyMs: number | null;
 	totalCostUsd: number | null;
 	userOverrode?: boolean;
+	// Session 2.1a live-OCR telemetry (schema applied via MCP).
+	liveConsensusReached?: boolean | null;
+	liveVsCanonicalAgreed?: boolean | null;
+	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
+	/** Optional replacement for decision_context JSONB. Merges with the
+	 *  baseline context set on insert (threshold values). Callers should
+	 *  include the baseline keys too if they want to preserve them. */
+	decisionContext?: Record<string, unknown> | null;
 }
 
 export interface RecordClaudeResponseInput {
@@ -635,18 +643,31 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 	if (!client) return;
 
 	try {
+		const updates: Record<string, unknown> = {
+			winning_tier: input.winningTier,
+			final_card_id: input.finalCardId,
+			final_confidence: input.finalConfidence,
+			final_variant: input.finalVariant,
+			total_latency_ms: input.totalLatencyMs,
+			total_cost_usd: input.totalCostUsd,
+			user_overrode: input.userOverrode ?? false,
+			outcome: 'resolved'
+		};
+		if (input.liveConsensusReached !== undefined) {
+			updates.live_consensus_reached = input.liveConsensusReached;
+		}
+		if (input.liveVsCanonicalAgreed !== undefined) {
+			updates.live_vs_canonical_agreed = input.liveVsCanonicalAgreed;
+		}
+		if (input.fallbackTierUsed !== undefined) {
+			updates.fallback_tier_used = input.fallbackTierUsed;
+		}
+		if (input.decisionContext) {
+			updates.decision_context = input.decisionContext;
+		}
 		const { error } = await client
 			.from('scans')
-			.update({
-				winning_tier: input.winningTier,
-				final_card_id: input.finalCardId,
-				final_confidence: input.finalConfidence,
-				final_variant: input.finalVariant,
-				total_latency_ms: input.totalLatencyMs,
-				total_cost_usd: input.totalCostUsd,
-				user_overrode: input.userOverrode ?? false,
-				outcome: 'resolved'
-			})
+			.update(updates)
 			.eq('id', input.scanId);
 		if (error) {
 			logFailure('updateScanOutcome', error, { scanId: input.scanId });

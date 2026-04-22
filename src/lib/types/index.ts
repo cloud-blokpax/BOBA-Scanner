@@ -96,6 +96,17 @@ export interface ScanResult {
 	validationWarnings?: string[];
 	/** Promise resolving to a listing-quality JPEG blob (only available client-side after scan) */
 	_listingImagePromise?: Promise<Blob | null>;
+	/** Session 2.1a: live-OCR consensus reached threshold before shutter. */
+	liveConsensusReached?: boolean | null;
+	/** Session 2.1a: live consensus agreed with canonical OCR result (null when
+	 *  canonical itself was uncertain or no live session ran). */
+	liveVsCanonicalAgreed?: boolean | null;
+	/** Session 2.1a: which fallback tier produced this result (null when the
+	 *  local PaddleOCR Tier 1 path was sufficient). */
+	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
+	/** Session 2.1a: decision context (live session snapshot, canonical OCR,
+	 *  live-vs-canonical divergence). Merged into scans.decision_context. */
+	decisionContext?: Record<string, unknown>;
 }
 
 export interface ScanPipelineState {

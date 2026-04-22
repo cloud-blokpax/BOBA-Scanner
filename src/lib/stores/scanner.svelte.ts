@@ -67,6 +67,11 @@ export async function scanImage(
 		alignmentStateAtCapture?: 'no_card' | 'partial' | 'ready' | null;
 		/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
 		viewfinder?: { x: number; y: number; width: number; height: number } | null;
+		/** Session 2.1a: pre-shutter live-OCR consensus snapshot, used as a hint
+		 *  in the Tier 1 canonical path. */
+		liveConsensusSnapshot?:
+			| import('$lib/services/live-ocr-coordinator').LiveOCRSnapshot
+			| null;
 	},
 	generation?: number
 ): Promise<ScanResult | null> {

@@ -20,7 +20,8 @@
 		foilStep,
 		foilCapturesNeeded,
 		foilGuidance,
-		cameraError
+		cameraError,
+		onAlignmentStateChanged
 	}: {
 		alignmentState?: AlignmentState;
 		bracketAnimClass: string;
@@ -39,7 +40,14 @@
 		foilCapturesNeeded: number;
 		foilGuidance: string[];
 		cameraError: string | null;
+		onAlignmentStateChanged?: (state: AlignmentState) => void;
 	} = $props();
+
+	// Forward alignment transitions to the parent so the live-OCR coordinator
+	// can start/stop sessions in sync with the viewfinder's readiness.
+	$effect(() => {
+		onAlignmentStateChanged?.(alignmentState);
+	});
 
 	const bracketColor = $derived(
 		alignmentState === 'ready'

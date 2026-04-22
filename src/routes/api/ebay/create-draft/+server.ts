@@ -41,6 +41,8 @@ interface DraftRequest {
 	autoDeclinePrice?: number | null;
 	packageWeightOz?: number | null;
 	listingDuration?: string | null;
+	// Session 2.1a: originating scan for provenance.
+	scanId?: string | null;
 }
 
 /** Adapt a DraftRequest to the Card-like shape the description builders expect. */
@@ -214,8 +216,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				weapon_type: body.weaponType || null,
 				game_id: gameId,
 				variant,
+				// Session 2.1a: originating scan for provenance (schema added via MCP).
+				scan_id: body.scanId || null,
 				created_at: new Date().toISOString()
-			});
+			} as never);
 			if (insertErr) {
 				console.error('[ebay/create-draft] Template save FAILED:', insertErr.message, insertErr.details, insertErr.hint);
 			} else {

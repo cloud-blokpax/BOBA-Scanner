@@ -83,6 +83,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'live_ocr_tier1_v1',
+		display_name: 'Live OCR Tier 1 (PaddleOCR)',
+		description: 'Replaces Claude Haiku as primary recognition path with local PaddleOCR + voting consensus from continuous live OCR. Haiku remains as a fallback when confidence is below the floor.',
+		icon: '👁️',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 
