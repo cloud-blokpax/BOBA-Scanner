@@ -4,6 +4,15 @@
  * so first-scan-ever has the model ready but users who never scan pay nothing.
  */
 
+// Loaded from jsdelivr's ESM CDN at runtime instead of bundled. The package
+// transitively pulls in @techstark/opencv-js (~10MB) + onnxruntime-web, which
+// blew past the CI bundle-size budget when bundled. CSP already allows
+// https://cdn.jsdelivr.net for both script-src and connect-src.
+// The `/* @vite-ignore */` tells Vite not to analyze the URL so the CDN
+// module stays out of our client bundle entirely.
+const OCR_BROWSER_CDN_URL =
+	'https://cdn.jsdelivr.net/npm/@gutenye/ocr-browser@1.4.8/+esm';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,9 +33,8 @@ export async function initPaddleOCR(): Promise<void> {
 	}
 	_initStartedAt = performance.now();
 	_initPromise = (async () => {
-		// Dynamic import keeps the package out of the initial bundle.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const mod: any = await import('@gutenye/ocr-browser');
+		const mod: any = await import(/* @vite-ignore */ OCR_BROWSER_CDN_URL);
 		const OcrClient = mod.OcrClient || mod.default?.OcrClient || mod.default;
 		if (!OcrClient) throw new Error('PaddleOCR: OcrClient export not found');
 		_client = await OcrClient.create();
