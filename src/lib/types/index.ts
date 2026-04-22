@@ -110,6 +110,12 @@ export interface ScanResult {
 	/** Session 2.1a: decision context (live session snapshot, canonical OCR,
 	 *  live-vs-canonical divergence). Merged into scans.decision_context. */
 	decisionContext?: Record<string, unknown>;
+	/** Session 2.1b: explicit override for the `winning_tier` column. When
+	 *  set, recognition.finalize() writes this value instead of deriving one
+	 *  from `scan_method`. Used by the upload-TTA fallback so telemetry can
+	 *  distinguish 'tier1_local_ocr' (canonical won) from
+	 *  'tier1_upload_tta' (canonical failed, TTA rescued). */
+	winningTier?: string | null;
 }
 
 export interface ScanPipelineState {
