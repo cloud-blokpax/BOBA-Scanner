@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { captureFrame } from '$lib/services/camera';
 	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
@@ -58,6 +58,12 @@
 	let revealedCard = $state<Card | null>(null);
 	let blurWarning = $state(false);
 	let glareRegions = $state<Array<{ x: number; y: number; w: number; h: number }>>([]);
+
+	// Latest downsampled video frame for the live OCR coordinator. Updated by
+	// the analysis loop; distinct from the high-res capture bitmap used at
+	// shutter. Owned here so we can close the last bitmap before replacing it.
+	let latestVideoFrameBitmap: ImageBitmap | null = null;
+	let frameSamplerTimer: ReturnType<typeof setInterval> | null = null;
 
 	let showFirstRunGuide = $state(false);
 
@@ -180,6 +186,20 @@
 	let _cleanupVisibility: (() => void) | null = null;
 
 	onMount(async () => {
+		// Warm live-OCR infrastructure lazily so we never block the camera prompt.
+		// PaddleOCR pulls ~15MB of ONNX; catalog mirror pulls a compact card list.
+		void (async () => {
+			try {
+				const [{ initPaddleOCR }, { warmCatalog }] = await Promise.all([
+					import('$lib/services/paddle-ocr'),
+					import('$lib/services/catalog-mirror')
+				]);
+				await Promise.allSettled([initPaddleOCR(), warmCatalog()]);
+			} catch (err) {
+				console.debug('[Scanner] Live-OCR warm failed (non-fatal):', err);
+			}
+		})();
+
 		if (videoEl) {
 			try {
 				await camera.initCamera(videoEl, onCameraReady);
@@ -198,14 +218,65 @@
 			}
 		}
 
+		// Sample a downsampled live frame at 2fps so the live-OCR coordinator
+		// always has a fresh bitmap to probe. Cheap — runs whether or not the
+		// coordinator is active; the coordinator decides when to consume.
+		frameSamplerTimer = setInterval(async () => {
+			if (!videoEl || videoEl.paused || videoEl.readyState < 2) return;
+			if (videoEl.videoWidth <= 0 || videoEl.videoHeight <= 0) return;
+			try {
+				const next = await createImageBitmap(videoEl, {
+					resizeWidth: 500,
+					resizeHeight: 700,
+					resizeQuality: 'medium'
+				});
+				if (latestVideoFrameBitmap) latestVideoFrameBitmap.close();
+				latestVideoFrameBitmap = next;
+			} catch {
+				// ignore — transient decode errors are fine
+			}
+		}, 500);
+
 		_cleanupVisibility = camera.setupVisibilityHandler(
 			videoEl!,
 			() => {
 				phase = 'idle';
 				analysis.start();
 			},
-			() => { analysis.stop(); }
+			() => {
+				analysis.stop();
+				// Stop live OCR when the tab hides so we don't burn OCR on a
+				// backgrounded camera feed.
+				import('$lib/services/live-ocr-coordinator').then(({ liveOCRCoordinator }) => {
+					liveOCRCoordinator.onVisibilityHidden();
+				});
+			}
 		);
+	});
+
+	function handleAlignmentStateChanged(state: 'no_card' | 'partial' | 'ready') {
+		import('$lib/services/live-ocr-coordinator').then(({ liveOCRCoordinator }) => {
+			liveOCRCoordinator.configure({
+				// Auto-detect defaults the coordinator to 'boba'; explicit gameHint wins.
+				game: gameHint === 'wonders' ? 'wonders' : 'boba',
+				getBitmap: () => latestVideoFrameBitmap
+			});
+			liveOCRCoordinator.onAlignmentChanged(state);
+		});
+	}
+
+	onDestroy(() => {
+		if (frameSamplerTimer) {
+			clearInterval(frameSamplerTimer);
+			frameSamplerTimer = null;
+		}
+		if (latestVideoFrameBitmap) {
+			latestVideoFrameBitmap.close();
+			latestVideoFrameBitmap = null;
+		}
+		import('$lib/services/live-ocr-coordinator').then(({ liveOCRCoordinator }) => {
+			liveOCRCoordinator.reset();
+		});
 	});
 
 	$effect(() => {
@@ -336,6 +407,21 @@
 			const croppedUrl = cropRegion ? cropFrame(videoEl, cropRegion) : null;
 			const imageUrl = croppedUrl ?? bitmapToDataUrl(rawBitmap);
 
+			// Probe live-OCR coordinator for a pre-computed consensus. If the
+			// current session has already reached threshold, the recognition
+			// pipeline uses it as a hint; otherwise we run the full canonical
+			// path from scratch.
+			let preConsensus:
+				| import('$lib/services/live-ocr-coordinator').LiveOCRSnapshot
+				| null = null;
+			try {
+				const { liveOCRCoordinator } = await import('$lib/services/live-ocr-coordinator');
+				const snap = liveOCRCoordinator.snapshot();
+				if (snap.consensus?.reachedThreshold) preConsensus = snap;
+			} catch {
+				// Ignore — recognition falls through to canonical-only path.
+			}
+
 			const myGen = startNewScan();
 			let scanResult;
 			try {
@@ -345,7 +431,8 @@
 					cropRegion,
 					gameHint,
 					alignmentStateAtCapture: alignmentAtCapture,
-					viewfinder: viewfinder ?? null
+					viewfinder: viewfinder ?? null,
+					liveConsensusSnapshot: preConsensus
 				}, myGen);
 			} finally {
 				// scanImage took ownership of croppedBitmap; null the local
@@ -482,6 +569,7 @@
 			foilCapturesNeeded={FOIL_CAPTURES_NEEDED}
 			foilGuidance={FOIL_GUIDANCE}
 			cameraError={camera.cameraError}
+			onAlignmentStateChanged={handleAlignmentStateChanged}
 		/>
 
 		<!-- AR Price Overlay -->

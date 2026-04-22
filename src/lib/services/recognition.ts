@@ -299,6 +299,11 @@ export async function recognizeCard(
 		gameHint?: string | null;
 		alignmentStateAtCapture?: 'no_card' | 'partial' | 'ready' | null;
 		viewfinder?: { x: number; y: number; width: number; height: number } | null;
+		/** Session 2.1a: pre-shutter live-OCR consensus, used as a hint by the
+		 *  local PaddleOCR Tier 1 path. */
+		liveConsensusSnapshot?:
+			| import('./live-ocr-coordinator').LiveOCRSnapshot
+			| null;
 	}
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
@@ -553,6 +558,9 @@ export async function recognizeCard(
 								? (tier3Tel.llmInputTokens * 1.0 + tier3Tel.llmOutputTokens * 5.0) / 1_000_000
 								: 0;
 						const totalCostUsd = tier3CostUsd > 0 ? tier3CostUsd : null;
+						const mergedDecisionCtx = final.decisionContext
+							? { ...buildDecisionContext(), ...final.decisionContext }
+							: null;
 						void writerUpdateScanOutcome({
 							scanId,
 							winningTier: winningTierFromResult(final),
@@ -562,7 +570,11 @@ export async function recognizeCard(
 							finalConfidence: final.confidence ?? null,
 							finalVariant: final.variant ?? null,
 							totalLatencyMs: final.processing_ms ?? null,
-							totalCostUsd
+							totalCostUsd,
+							liveConsensusReached: final.liveConsensusReached ?? null,
+							liveVsCanonicalAgreed: final.liveVsCanonicalAgreed ?? null,
+							fallbackTierUsed: final.fallbackTierUsed ?? null,
+							decisionContext: mergedDecisionCtx
 						});
 						// Preserve the persona increment from the old logScanToSupabaseNew path.
 						const client = getSupabase();
@@ -740,6 +752,89 @@ export async function recognizeCard(
 		});
 	}
 
+	// ── TIER 1 canonical PaddleOCR (Session 2.1a) ───────────
+	// Local OCR + rule-based variant classifier. Runs between the existing
+	// Tier 2 (Tesseract) and Tier 3 (Claude). Gated by live_ocr_tier1_v1 so
+	// the old Haiku-first behavior stays intact when the flag is off.
+	const liveOCREnabled = await isLiveOCRTier1Enabled();
+	let liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
+	if (liveOCREnabled) {
+		onTierChange?.(3); // reuse tier3 UI state for OCR-in-progress
+		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
+		try {
+			const { runCanonicalTier1 } = await import('./tier1-canonical');
+			const game = (gameHint === 'wonders' ? 'wonders' : 'boba') as 'boba' | 'wonders';
+			const canonical = await runCanonicalTier1(workingBitmap, game);
+
+			const liveSnap = options?.liveConsensusSnapshot ?? null;
+			const live = liveSnap?.consensus ?? null;
+			const liveAgreed = !!(
+				live?.reachedThreshold &&
+				live.cardNumber?.value === canonical.cardNumber &&
+				live.name?.value === canonical.name &&
+				(game === 'boba' || live.variant?.value === canonical.variant)
+			);
+			const TIER1_CONFIDENCE_FLOOR = 0.6;
+
+			checkpoint(traceId, 'tier1_canonical:done', performance.now() - startTime, {
+				hit: !!canonical.card,
+				confidence: canonical.confidence,
+				live_reached: liveConsensusReached,
+				live_agreed: liveAgreed
+			});
+
+			if (canonical.card && canonical.confidence >= TIER1_CONFIDENCE_FLOOR) {
+				const divergent: string[] = [];
+				if (live) {
+					if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
+					if (live.name?.value !== canonical.name) divergent.push('name');
+					if (game === 'wonders' && live.variant?.value !== canonical.variant) divergent.push('variant');
+				}
+				const decisionCtx: Record<string, unknown> = {
+					live_session: liveSnap,
+					canonical_result: canonical.perTask,
+					live_vs_canonical: {
+						live_ran: !!live,
+						agreed: liveAgreed,
+						divergent_fields: live ? divergent : null
+					}
+				};
+				const tier1Result: ScanResult = {
+					card_id: canonical.card.id,
+					card: {
+						// Map MirrorCard fields onto the Card shape the UI expects.
+						// Any missing fields (power, rarity, etc.) will be filled in
+						// later by downstream consumers reading from the card DB.
+						id: canonical.card.id,
+						game_id: canonical.card.game_id,
+						card_number: canonical.card.card_number,
+						hero_name: canonical.card.hero_name ?? undefined,
+						name: canonical.card.name ?? canonical.card.hero_name ?? '',
+						set_code: canonical.card.set_code ?? '',
+						parallel: canonical.card.parallel ?? undefined
+					} as unknown as import('$lib/types').Card,
+					scan_method: 'hash_cache' as ScanMethod,
+					confidence: canonical.confidence,
+					processing_ms: Math.round(performance.now() - startTime),
+					variant: canonical.variant,
+					game_id: canonical.card.game_id,
+					liveConsensusReached,
+					liveVsCanonicalAgreed: liveAgreed,
+					fallbackTierUsed: null,
+					decisionContext: decisionCtx
+				};
+				return finalize(tier1Result);
+			}
+			// Below confidence floor — fall through to Tier 3 Haiku.
+			ctx.lastTier3FailReason = null;
+		} catch (err) {
+			checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
+				error: err instanceof Error ? err.message : String(err)
+			});
+			console.warn('[scan] Tier 1 canonical failed, falling through to Tier 3:', err);
+		}
+	}
+
 	// ── TIER 3: Claude API ──────────────────────────────────
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
 	onTierChange?.(3);
@@ -760,6 +855,13 @@ export async function recognizeCard(
 			error: err instanceof Error ? err.message : String(err)
 		});
 		console.warn('[scan] Tier 3 threw:', err);
+	}
+	if (tier3Result && liveOCREnabled) {
+		// Tag the Haiku-fallback telemetry fields so analytics can split
+		// flag-on-and-tier3-rescued vs flag-off runs.
+		tier3Result.fallbackTierUsed = 'haiku';
+		tier3Result.liveConsensusReached = liveConsensusReached;
+		tier3Result.liveVsCanonicalAgreed = null;
 	}
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, variant=${tier3Result.variant}`);
@@ -926,6 +1028,20 @@ async function isEmbeddingTier1Enabled(): Promise<boolean> {
 	try {
 		const flagsModule = await import('$lib/stores/feature-flags.svelte');
 		return flagsModule.featureEnabled('embedding_tier1')();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Session 2.1a gate. Returns true when Tier 1 should run the local
+ * PaddleOCR canonical path (with live-OCR voting hint). When off, the
+ * legacy Claude-Haiku-first behavior is preserved exactly.
+ */
+async function isLiveOCRTier1Enabled(): Promise<boolean> {
+	try {
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		return flagsModule.featureEnabled('live_ocr_tier1_v1')();
 	} catch {
 		return false;
 	}

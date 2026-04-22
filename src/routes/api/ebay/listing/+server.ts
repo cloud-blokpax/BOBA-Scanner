@@ -81,6 +81,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const setCode = (body.setCode as string) || null;
 	const parallel = (body.parallel as string) || null;
 	const weaponType = (body.weaponType as string) || null;
+	// Session 2.1a: originating scan for provenance (schema added via MCP).
+	const scanId = (body.scanId as string) || null;
 
 	const gameId = (body.gameId as string) || 'boba';
 	const variant = (body.variant as string) || 'paper';
@@ -115,8 +117,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				weapon_type: weaponType,
 				game_id: gameId,
 				variant,
+				scan_id: scanId,
 				created_at: new Date().toISOString()
-			});
+			} as never);
 			// Phase 5A: passive persona tracking. Fire-and-forget.
 			// Use the user-scoped client (locals.supabase), NOT adminClient,
 			// so the RPC's auth.uid() resolves to the real user.
