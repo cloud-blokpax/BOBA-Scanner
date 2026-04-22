@@ -105,6 +105,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'binder_mode_v1',
+		display_name: 'Binder Mode (Full-Page Grid Scan)',
+		description: 'Scan a full binder page at once. User selects 2×2, 3×3, or 4×4 grid; each non-blank cell runs an independent live-OCR session with its own consensus. At shutter, each cell canonicalizes through the same PaddleOCR pipeline as single-card scans and is persisted as a child of one parent binder scan row.',
+		icon: '🗂️',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 
