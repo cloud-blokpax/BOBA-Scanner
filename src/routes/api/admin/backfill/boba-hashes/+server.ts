@@ -57,6 +57,37 @@ type BackfillStatus = {
 
 type BobaCard = { id: string; image_url: string };
 
+/**
+ * PostgREST caps `.select()` at 1,000 rows by default. Once BoBA hash_cache
+ * exceeded that, the antijoin was silently reading a truncated set and
+ * re-queueing already-hashed cards (RPC reported them as collisions →
+ * skipped count climbed while succeeded stayed at zero). Paginate
+ * explicitly with .range() until we've seen the full set.
+ */
+async function fetchAllHashedBobaIds(
+	admin: ReturnType<typeof getAdminClient>
+): Promise<Set<string>> {
+	if (!admin) throw new Error('admin client required');
+	const PAGE = 1000;
+	const all = new Set<string>();
+	let from = 0;
+	for (;;) {
+		const { data, error: err } = await admin
+			.from('hash_cache')
+			.select('card_id')
+			.eq('game_id', 'boba')
+			.range(from, from + PAGE - 1);
+		if (err) throw new Error(err.message);
+		const page = data ?? [];
+		for (const row of page) {
+			if (row.card_id) all.add(row.card_id);
+		}
+		if (page.length < PAGE) break;
+		from += PAGE;
+	}
+	return all;
+}
+
 async function fetchImageBuffer(url: string): Promise<Buffer> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
@@ -92,8 +123,8 @@ export const POST: RequestHandler = async ({ locals }) => {
 		);
 	} else {
 		// Fresh run — count BoBA cards that still need hashing (image_url set,
-		// no hash_cache row yet). Two simple queries + JS antijoin; dataset is
-		// ~1,300 rows so payload stays tiny.
+		// no hash_cache row yet). Paginate hash_cache; default 1k cap would
+		// silently truncate and inflate the remaining count.
 		const { data: cardsWithImages, error: cardsErr } = await admin
 			.from('cards')
 			.select('id')
@@ -101,13 +132,16 @@ export const POST: RequestHandler = async ({ locals }) => {
 			.not('image_url', 'is', null);
 		if (cardsErr) throw error(500, `Count query failed: ${cardsErr.message}`);
 
-		const { data: hashed, error: hashErr } = await admin
-			.from('hash_cache')
-			.select('card_id')
-			.eq('game_id', 'boba');
-		if (hashErr) throw error(500, `Hash count query failed: ${hashErr.message}`);
+		let hashedSet: Set<string>;
+		try {
+			hashedSet = await fetchAllHashedBobaIds(admin);
+		} catch (err) {
+			throw error(
+				500,
+				`Hash count query failed: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
 
-		const hashedSet = new Set((hashed ?? []).map((r) => r.card_id));
 		const remaining = (cardsWithImages ?? []).filter(
 			(r) => !hashedSet.has(r.id)
 		).length;
@@ -136,8 +170,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 		});
 	}
 
-	// Load the next batch via the same JS antijoin. Both queries remain small
-	// enough at ~1.3k rows that we don't need a server-side RPC.
+	// Load the next batch. Candidates query uses explicit .limit(20_000) so
+	// we see the full BoBA card set (BoBA has ~17k cards total). Hashed set
+	// must be paginated — see fetchAllHashedBobaIds().
 	const { data: candidates, error: candErr } = await admin
 		.from('cards')
 		.select('id, image_url')
@@ -147,13 +182,16 @@ export const POST: RequestHandler = async ({ locals }) => {
 		.limit(20_000);
 	if (candErr) throw error(500, `Batch query failed: ${candErr.message}`);
 
-	const { data: alreadyHashed, error: hashErr2 } = await admin
-		.from('hash_cache')
-		.select('card_id')
-		.eq('game_id', 'boba');
-	if (hashErr2) throw error(500, `Hash query failed: ${hashErr2.message}`);
+	let alreadyHashedSet: Set<string>;
+	try {
+		alreadyHashedSet = await fetchAllHashedBobaIds(admin);
+	} catch (err) {
+		throw error(
+			500,
+			`Hash query failed: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
 
-	const alreadyHashedSet = new Set((alreadyHashed ?? []).map((r) => r.card_id));
 	const batch = ((candidates ?? []) as BobaCard[])
 		.filter((c) => !alreadyHashedSet.has(c.id))
 		.slice(0, BATCH_SIZE);
