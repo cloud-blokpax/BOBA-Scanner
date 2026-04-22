@@ -137,21 +137,23 @@ export class BinderCoordinator {
 			if (cell.cyclesRun >= MAX_CYCLES) continue;
 			if (cell.builder?.getConsensus().reachedThreshold) continue;
 
-			const cellBitmap = await extractCellBitmap(frame, cell.region);
-
-			// Blank check on first visit. Fail-open — uncertain stays non-blank.
-			if (cell.cyclesRun === 0) {
-				const blank = await isCellBlank(cellBitmap);
-				if (blank) {
-					cell.isBlank = true;
-					cellBitmap.close();
-					continue;
-				}
-			}
-
+			// CRITICAL: extract INSIDE the work closure, not out here. If the
+			// pool supersedes this job (next cycle fires before this one gets
+			// its worker slot), the work function never runs and the bitmap
+			// would leak. Doing extraction inside the closure makes supersede
+			// side-effect-free.
 			this.pool
 				.submit(key, async () => {
+					const cellBitmap = await extractCellBitmap(frame, cell.region);
 					try {
+						// Blank check on first visit. Fail-open — uncertain stays non-blank.
+						if (cell.cyclesRun === 0) {
+							const blank = await isCellBlank(cellBitmap);
+							if (blank) {
+								cell.isBlank = true;
+								return;
+							}
+						}
 						await this.processCellFrame(cell, cellBitmap);
 					} finally {
 						cellBitmap.close();

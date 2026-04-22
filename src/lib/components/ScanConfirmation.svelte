@@ -481,7 +481,15 @@
 							</div>
 							<div class="detail-row">
 								<span class="detail-label">Match Method</span>
-								<span class="detail-value">{activeResult.scan_method === 'hash_cache' ? 'Instant (cached)' : activeResult.scan_method === 'tesseract' ? 'OCR Match' : activeResult.scan_method === 'claude' ? 'AI Identified' : activeResult.scan_method === 'manual' ? 'Manual Search' : activeResult.scan_method}</span>
+								<span class="detail-value">{
+									activeResult.scan_method === 'hash_cache' ? 'Instant (cached)'
+									: activeResult.scan_method === 'local_ocr' ? 'Local OCR'
+									: activeResult.scan_method === 'upload_tta' ? 'Multi-frame OCR'
+									: activeResult.scan_method === 'tesseract' ? 'OCR Match'
+									: activeResult.scan_method === 'claude' ? 'AI Identified'
+									: activeResult.scan_method === 'manual' ? 'Manual Search'
+									: activeResult.scan_method
+								}</span>
 							</div>
 							{#if activeResult.validationMethod}
 								<div class="detail-row">

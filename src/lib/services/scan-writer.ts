@@ -26,6 +26,7 @@
 import { getSupabase } from '$lib/services/supabase';
 import { PIPELINE_VERSION } from '$lib/services/pipeline-version';
 import { userId } from '$lib/stores/auth.svelte';
+import { coerceHumanReadableParallel } from '$lib/data/wonders-parallels';
 
 /**
  * Session 1.2: schema bump signal for the enriched scans-row shape. Every
@@ -645,11 +646,20 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 	if (!client) return;
 
 	try {
+		// Defensive coercion at the persistence boundary. In a healthy
+		// pipeline every parallel reaching this point is already human-readable;
+		// this exists to turn a short-code leak into a logged warning + correct
+		// value rather than a silently-corrupt DB row. See
+		// `$lib/data/wonders-parallels.ts` for the canonical mapping.
+		const safeParallel = coerceHumanReadableParallel(
+			input.finalParallel,
+			'scan-writer/updateScanOutcome'
+		);
 		const updates: Record<string, unknown> = {
 			winning_tier: input.winningTier,
 			final_card_id: input.finalCardId,
 			final_confidence: input.finalConfidence,
-			final_parallel: input.finalParallel,
+			final_parallel: safeParallel,
 			total_latency_ms: input.totalLatencyMs,
 			total_cost_usd: input.totalCostUsd,
 			user_overrode: input.userOverrode ?? false,

@@ -21,9 +21,24 @@ export interface ViewfinderRect {
 	height: number;
 }
 
-/** Canonical crop dimensions. 500×700 ≈ card aspect 0.714, large enough for hash/embedding. */
-export const CANONICAL_CROP_WIDTH = 500;
-export const CANONICAL_CROP_HEIGHT = 700;
+/**
+ * Canonical crop dimensions. 1500×2100 preserves the 5:7 card aspect and
+ * gives Tier 1 canonical PaddleOCR enough resolution to match the 2400px
+ * validation target from Phase 2.1a (full-frame fallback scales at most
+ * 1.14× from this source). Region OCR with minWidth 800 sees a 675px-wide
+ * card-number strip — effectively a 1.19× resize, not the 3.56× upscale it
+ * was doing at 500×700.
+ *
+ * Hash and embedding tiers resize internally to 9×8 / 32×32 / DINOv2 input
+ * sizes, so this change is a no-op for them.
+ *
+ * On cameras capped at 1280×720 (older Android), this means the OCR path
+ * receives a mild upscale from the viewfinder crop. Still strictly better
+ * than the pre-change behavior where the 500×700 canonical was upscaled
+ * again inside region OCR.
+ */
+export const CANONICAL_CROP_WIDTH = 1500;
+export const CANONICAL_CROP_HEIGHT = 2100;
 
 /**
  * Crop the bitmap to the viewfinder region and resize to canonical dimensions.

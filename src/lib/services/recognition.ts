@@ -216,6 +216,8 @@ function winningTierFromResult(result: ScanResult): string {
 	if (result.winningTier) return result.winningTier;
 	switch (result.scan_method) {
 		case 'hash_cache': return 'tier1_hash';
+		case 'local_ocr': return 'tier1_local_ocr';
+		case 'upload_tta': return 'tier1_upload_tta';
 		case 'tesseract': return 'tier2_ocr';
 		case 'claude': return 'tier3_claude';
 		case 'manual':
@@ -845,7 +847,7 @@ export async function recognizeCard(
 						set_code: canonical.card.set_code ?? '',
 						parallel: canonical.card.parallel ?? undefined
 					} as unknown as import('$lib/types').Card,
-					scan_method: 'hash_cache' as ScanMethod,
+					scan_method: 'local_ocr',
 					confidence: canonical.confidence,
 					processing_ms: Math.round(performance.now() - startTime),
 					parallel: canonical.parallel,
@@ -907,7 +909,7 @@ export async function recognizeCard(
 									set_code: tta.card.set_code ?? '',
 									parallel: tta.card.parallel ?? undefined
 								} as unknown as import('$lib/types').Card,
-								scan_method: 'hash_cache' as ScanMethod,
+								scan_method: 'upload_tta',
 								confidence: tta.confidence,
 								processing_ms: Math.round(performance.now() - startTime),
 								// `tta.parallel` is ALWAYS a human-readable name (resolved

@@ -64,7 +64,13 @@ export interface CollectionItem {
 
 // ── Scan Types ──────────────────────────────────────────────────
 
-export type ScanMethod = 'hash_cache' | 'tesseract' | 'claude' | 'manual';
+export type ScanMethod =
+	| 'hash_cache'
+	| 'tesseract'
+	| 'claude'
+	| 'manual'
+	| 'local_ocr'   // Phase 2.1a — canonical PaddleOCR win
+	| 'upload_tta'; // Phase 2.1b — upload test-time-augmentation win
 
 export type ValidationMethod = 'exact_match' | 'fuzzy_match' | 'name_only_fallback' | 'unvalidated';
 

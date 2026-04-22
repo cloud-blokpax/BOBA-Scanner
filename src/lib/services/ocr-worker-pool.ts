@@ -65,9 +65,24 @@ export class OCRWorkerPool {
 				.catch((e) => job.reject(e))
 				.finally(() => {
 					this.inFlight--;
+					// Clean up the last-job pointer only if it still references
+					// THIS job. A newer submit may have replaced the entry while
+					// we were running — in that case, leave the newer pointer
+					// alone.
+					const cellKey = this.findCellKeyForJob(job);
+					if (cellKey !== null && this.lastJobByCell.get(cellKey) === job) {
+						this.lastJobByCell.delete(cellKey);
+					}
 					this.drain();
 				});
 		}
+	}
+
+	private findCellKeyForJob(job: OCRJob<unknown>): string | null {
+		for (const [k, v] of this.lastJobByCell) {
+			if (v === job) return k;
+		}
+		return null;
 	}
 
 	pause(): void {
