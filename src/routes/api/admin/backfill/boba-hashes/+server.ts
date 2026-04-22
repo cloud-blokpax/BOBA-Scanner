@@ -88,6 +88,40 @@ async function fetchAllHashedBobaIds(
 	return all;
 }
 
+/**
+ * Same pagination pattern as fetchAllHashedBobaIds, but for the `cards`
+ * candidates side. PostgREST silently caps `.select()` at 1,000 rows
+ * regardless of `.limit()`, which previously left BoBA cards in positions
+ * 1001+ of the `updated_at DESC` ordering invisible to the endpoint.
+ *
+ * Safety cap at 5 pages (5,000 rows) — more than the entire BoBA image
+ * catalog is expected to grow to. If coverage ever approaches that,
+ * revisit with a server-side RPC (the Session 1.1.1c Wonders pattern).
+ */
+async function fetchAllBobaCardsWithImages(
+	admin: ReturnType<typeof getAdminClient>
+): Promise<BobaCard[]> {
+	if (!admin) throw new Error('admin client required');
+	const PAGE = 1000;
+	const MAX_PAGES = 5;
+	const all: BobaCard[] = [];
+	for (let p = 0; p < MAX_PAGES; p++) {
+		const from = p * PAGE;
+		const { data, error: err } = await admin
+			.from('cards')
+			.select('id, image_url')
+			.eq('game_id', 'boba')
+			.not('image_url', 'is', null)
+			.order('updated_at', { ascending: false })
+			.range(from, from + PAGE - 1);
+		if (err) throw new Error(err.message);
+		const page = (data ?? []) as BobaCard[];
+		all.push(...page);
+		if (page.length < PAGE) break;
+	}
+	return all;
+}
+
 async function fetchImageBuffer(url: string): Promise<Buffer> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
@@ -123,14 +157,17 @@ export const POST: RequestHandler = async ({ locals }) => {
 		);
 	} else {
 		// Fresh run — count BoBA cards that still need hashing (image_url set,
-		// no hash_cache row yet). Paginate hash_cache; default 1k cap would
-		// silently truncate and inflate the remaining count.
-		const { data: cardsWithImages, error: cardsErr } = await admin
-			.from('cards')
-			.select('id')
-			.eq('game_id', 'boba')
-			.not('image_url', 'is', null);
-		if (cardsErr) throw error(500, `Count query failed: ${cardsErr.message}`);
+		// no hash_cache row yet). Both sides paginated to avoid the
+		// PostgREST 1k-row implicit cap.
+		let cardsWithImages: BobaCard[];
+		try {
+			cardsWithImages = await fetchAllBobaCardsWithImages(admin);
+		} catch (err) {
+			throw error(
+				500,
+				`Count query failed: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
 
 		let hashedSet: Set<string>;
 		try {
@@ -142,7 +179,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 			);
 		}
 
-		const remaining = (cardsWithImages ?? []).filter(
+		const remaining = cardsWithImages.filter(
 			(r) => !hashedSet.has(r.id)
 		).length;
 
@@ -170,17 +207,17 @@ export const POST: RequestHandler = async ({ locals }) => {
 		});
 	}
 
-	// Load the next batch. Candidates query uses explicit .limit(20_000) so
-	// we see the full BoBA card set (BoBA has ~17k cards total). Hashed set
-	// must be paginated — see fetchAllHashedBobaIds().
-	const { data: candidates, error: candErr } = await admin
-		.from('cards')
-		.select('id, image_url')
-		.eq('game_id', 'boba')
-		.not('image_url', 'is', null)
-		.order('updated_at', { ascending: false })
-		.limit(20_000);
-	if (candErr) throw error(500, `Batch query failed: ${candErr.message}`);
+	// Load the next batch. Both sides paginated — .limit() alone cannot
+	// override PostgREST's implicit 1k-row cap.
+	let candidates: BobaCard[];
+	try {
+		candidates = await fetchAllBobaCardsWithImages(admin);
+	} catch (err) {
+		throw error(
+			500,
+			`Batch query failed: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
 
 	let alreadyHashedSet: Set<string>;
 	try {
@@ -192,7 +229,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 		);
 	}
 
-	const batch = ((candidates ?? []) as BobaCard[])
+	const batch = candidates
 		.filter((c) => !alreadyHashedSet.has(c.id))
 		.slice(0, BATCH_SIZE);
 
