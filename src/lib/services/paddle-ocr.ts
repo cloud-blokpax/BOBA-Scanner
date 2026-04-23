@@ -4,14 +4,23 @@
  * so first-scan-ever has the model ready but users who never scan pay nothing.
  */
 
-// Loaded from jsdelivr's ESM CDN at runtime instead of bundled. The package
-// transitively pulls in @techstark/opencv-js (~10MB) + onnxruntime-web, which
-// blew past the CI bundle-size budget when bundled. CSP already allows
-// https://cdn.jsdelivr.net for both script-src and connect-src.
-// The `/* @vite-ignore */` tells Vite not to analyze the URL so the CDN
-// module stays out of our client bundle entirely.
-const OCR_BROWSER_CDN_URL =
-	'https://cdn.jsdelivr.net/npm/@gutenye/ocr-browser@1.4.8/+esm';
+// Loaded via Vite's dynamic import of the npm package. Previously this
+// came from jsdelivr's `+esm` CDN to "stay out of the bundle" — but
+// strict ESM engines (current Safari, newer Chromium) refuse to link
+// that CDN bundle because it combines `export *` + `export {default}`
+// against a CJS-origin dependency. The link-phase error surfaces as
+// "Importing binding name 'default' cannot be resolved by star export
+// entries" and fires inside `await import(CDN_URL)` itself, before any
+// of our code runs.
+//
+// The bundled path fixes this at build time — Vite/Rollup rewrite the
+// offending re-export pattern into named bindings that every engine
+// can link. The transitive opencv-js and onnxruntime-web get chunk-
+// split by Rollup, lazy-loaded on first OCR use, so the net user-
+// facing cost (~15MB first-ever OCR) is unchanged. Only the shape of
+// the dependency graph changes.
+//
+// `@gutenye/ocr-browser` is declared in package.json dependencies.
 
 // ONNX model assets served from our own /static directory so we don't
 // depend on a CDN chain for the heavy weights. One-time ~15MB cold load
@@ -42,14 +51,12 @@ export async function initPaddleOCR(): Promise<void> {
 	}
 	_initStartedAt = performance.now();
 	_initPromise = (async () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const mod: any = await import(/* @vite-ignore */ OCR_BROWSER_CDN_URL);
+		// Dynamic import (no `@vite-ignore`) so Vite chunk-splits the package
+		// and its transitive opencv-js/onnxruntime-web dependencies into a
+		// lazy-loaded chunk. User pays ~15MB of cold load on first OCR only.
+		const mod = await import('@gutenye/ocr-browser');
 		// Package's documented API is a default export with a static
 		// `.create(options)` method. See npm/@gutenye/ocr-browser README.
-		// A single clean read — no optional-chain fallback chain — because
-		// re-accessing the default binding through the CDN module's combined
-		// `export *` + `export {default}` re-export throws on stricter ESM
-		// engines (Safari iOS 17+).
 		const Ocr = mod.default;
 		if (!Ocr || typeof Ocr.create !== 'function') {
 			throw new Error(
