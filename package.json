@@ -47,7 +47,6 @@
     "seedrandom": "^3.0.5",
     "sharp": "^0.34.5",
     "ssim.js": "^3.5.0",
-    "svelte": "^5.53.10",
-    "tesseract.js": "^7.0.0"
+    "svelte": "^5.53.10"
   }
 }

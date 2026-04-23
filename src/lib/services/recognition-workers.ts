@@ -1,14 +1,12 @@
 /**
  * Recognition Worker Management
  *
- * Manages the image processing Web Worker (Comlink proxy) and OCR
- * initialization lifecycle. Extracted from recognition.ts to isolate
- * worker state and provide a clean API for the recognition pipeline.
+ * Manages the image processing Web Worker (Comlink proxy) lifecycle.
+ * Extracted from recognition.ts to isolate worker state and provide a
+ * clean API for the recognition pipeline.
  */
 
 import * as Comlink from 'comlink';
-import { initOcr } from '$lib/services/ocr';
-import { loadCorrectionsFromIdb } from '$lib/services/scan-learning';
 import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 
 // ── Worker Type ────────────────────────────────────────────
@@ -52,8 +50,6 @@ export type ImageWorkerProxy = Comlink.Remote<{
 
 let imageWorker: ImageWorkerProxy | null = null;
 let _workerInitPromise: Promise<void> | null = null;
-let _ocrAvailable = false;
-let _ocrRetryAttempted = false;
 let _initFailCount = 0;
 const MAX_INIT_RETRIES = 3;
 
@@ -68,26 +64,6 @@ export function getImageWorker(): ImageWorkerProxy {
 		throw new Error('Image worker not initialized. Call initWorkers() first.');
 	}
 	return imageWorker;
-}
-
-/** Whether OCR (Tesseract) is available for Tier 2 scanning. */
-export function isOcrAvailable(): boolean {
-	return _ocrAvailable;
-}
-
-/** Whether an OCR retry has already been attempted this session. */
-export function wasOcrRetryAttempted(): boolean {
-	return _ocrRetryAttempted;
-}
-
-/** Mark that an OCR retry has been attempted (prevents duplicate retries). */
-export function markOcrRetryAttempted(): void {
-	_ocrRetryAttempted = true;
-}
-
-/** Mark OCR as available (used after successful retry). */
-export function markOcrAvailable(): void {
-	_ocrAvailable = true;
 }
 
 /** Reset the worker failure counter so navigation acts as a retry. */
@@ -125,26 +101,6 @@ export async function initWorkers(): Promise<void> {
 				console.error('[scan] Worker constructor failed:', err);
 				throw err;
 			}
-		}
-
-		// Load OCR corrections into memory for synchronous lookups.
-		// Awaited so corrections are available before the first scan.
-		await loadCorrectionsFromIdb().catch((err) => console.warn('[scan] Failed to load OCR corrections from IDB:', err));
-
-		// Initialize Tesseract OCR with a timeout — if it fails, Tier 2 is
-		// skipped gracefully and we fall through to Tier 3 (Claude API).
-		try {
-			await Promise.race([
-				initOcr(),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('OCR init timed out')), 15000)
-				)
-			]);
-			_ocrAvailable = true;
-			console.debug('[scan] Tesseract OCR initialized successfully');
-		} catch (err) {
-			_ocrAvailable = false;
-			console.warn('[scan] Tesseract OCR failed to initialize — Tier 2 disabled:', err);
 		}
 	})();
 
