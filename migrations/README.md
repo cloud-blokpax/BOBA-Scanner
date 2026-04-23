@@ -19,6 +19,7 @@ migration — check them in with the code change that depends on them.
 | 9 | `009_phase2_feature_flag_seeds.sql` | Session 2.1a / 2.1b / 2.2. Seed `live_ocr_tier1_v1`, `upload_tta_v1`, `binder_mode_v1` rows in `feature_flags`. |
 | 10 | `010_retire_legacy_tier_results.sql` | Session 2.5 followup. Tag pre-2.5 `scan_tier_results` rows with retirement metadata in the `extras` jsonb column + create `scan_tier_results_live` filtering view. Column name corrected in session 2.8. |
 | 11 | `011_sunset_legacy_flag_rows.sql` | Session 2.8. Drop `scan_pipeline_trace`, delete zombie `embedding_tier1` / `new_scan_pipeline` rows from `feature_flags` + `user_feature_overrides`, delete orphaned `system_settings.app_name` row. Captures the 2.4 + 2.6 post-deploy SQL that was MCP-only. |
+| 12 | `012_phase_2_telemetry_rpc.sql` | Session 2.9. Aggregate read-only RPC `phase_2_telemetry(window_interval)` returning all admin dashboard sections as jsonb. Consumed by `/api/admin/phase-2-telemetry`. |
 
 ### Phase 2 deploy ordering (applied via Supabase MCP pre-deploy)
 

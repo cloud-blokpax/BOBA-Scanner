@@ -1554,6 +1554,10 @@ export interface Database {
 				Args: { p_days?: number };
 				Returns: Array<{ trend_date: string; scan_count: number; signup_count: number; error_count: number }>;
 			};
+			phase_2_telemetry: {
+				Args: { window_interval: string };
+				Returns: Record<string, unknown>;
+			};
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
