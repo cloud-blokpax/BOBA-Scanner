@@ -22,24 +22,6 @@ export interface BinderScanResult {
 	childScanIds: string[];
 }
 
-// Narrow untyped facade — the database.ts types predate binder mode.
-interface UntypedBuilder {
-	insert(row: Record<string, unknown> | Record<string, unknown>[]): {
-		select(cols: string): {
-			single(): Promise<{ data: { id: string } | null; error: { message: string } | null }>;
-		} & Promise<{ data: { id: string }[] | null; error: { message: string } | null }>;
-	};
-}
-
-interface UntypedClient {
-	from(table: string): UntypedBuilder;
-}
-
-function untyped(): UntypedClient | null {
-	const client = getSupabase();
-	return client as unknown as UntypedClient | null;
-}
-
 /**
  * Regression guard wrapper: the actual assertion lives in
  * `$lib/data/wonders-parallels` (`assertHumanReadableParallel`). We wrap it
@@ -56,7 +38,7 @@ export async function persistBinderScan(opts: {
 	parentPhotoPath: string | null;
 	cellResults: FinalizedCell[];
 }): Promise<BinderScanResult | null> {
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return null;
 
 	const sessionId = await getOrOpenActiveSession({ gameId: opts.gameId });
@@ -112,7 +94,7 @@ export async function persistBinderScan(opts: {
 		live_consensus_reached: c.liveConsensusReached,
 		live_vs_canonical_agreed: c.liveVsCanonicalAgreed,
 		fallback_tier_used: c.fallbackTierUsed,
-		outcome: c.cardId ? 'resolved' : 'pending',
+		outcome: (c.cardId ? 'resolved' : 'pending') as 'resolved' | 'pending',
 		pipeline_version: PIPELINE_VERSION,
 		capture_context: {
 			binder_cell_row: c.row,

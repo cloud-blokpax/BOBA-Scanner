@@ -6,6 +6,11 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { getSupabase } from './supabase';
+import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
+
+// Re-exported from a side-effect-free module so unit tests can import
+// the pure helpers without pulling IDB + Supabase transitively.
+export { normalizeOcrName, levenshtein };
 
 const DB_NAME = 'card-scanner-catalog';
 const DB_VERSION = 1;
@@ -182,37 +187,6 @@ export async function lookupCardByCardNumberFuzzy(
 	const catalogName = (game === 'boba' ? best.card.hero_name : best.card.name) || '';
 	const threshold = Math.max(2, Math.floor(catalogName.length * 0.2));
 	return best.dist <= threshold ? best.card : null;
-}
-
-/**
- * Normalize OCR artifacts observed in Phase 2 validation:
- *  - Space drops between kerned title words ("CastOut" vs "Cast Out")
- *  - 0 ↔ o and 1 ↔ l confusion in mixed-content names ("A-9o" vs "A-90")
- * Both sides of a comparison must pass through this normalizer. Applied
- * symmetrically, it is distance-preserving for any genuine character
- * difference and eliminates these two systematic quirks.
- */
-export function normalizeOcrName(s: string): string {
-	return s
-		.toLowerCase()
-		.replace(/\s+/g, '')
-		.replace(/o/g, '0')
-		.replace(/l/g, '1');
-}
-
-function levenshtein(a: string, b: string): number {
-	if (!a.length) return b.length;
-	if (!b.length) return a.length;
-	const m: number[][] = [];
-	for (let i = 0; i <= b.length; i++) m[i] = [i];
-	for (let j = 0; j <= a.length; j++) m[0][j] = j;
-	for (let i = 1; i <= b.length; i++) {
-		for (let j = 1; j <= a.length; j++) {
-			const cost = a[j - 1] === b[i - 1] ? 0 : 1;
-			m[i][j] = Math.min(m[i - 1][j] + 1, m[i][j - 1] + 1, m[i - 1][j - 1] + cost);
-		}
-	}
-	return m[b.length][a.length];
 }
 
 export function catalogWarmedAt(): number | null {

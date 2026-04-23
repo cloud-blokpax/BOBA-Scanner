@@ -46,6 +46,24 @@ export interface ParallelResult {
 	evidence: Record<string, number | string | boolean>;
 }
 
+/**
+ * Pure rule helpers exposed for unit tests. classifyWondersParallel
+ * wraps these with the impure bitmap-access pieces (edge-density
+ * measurement, OCR call). Each returns the classifier short code if the
+ * rule fires, or null if it doesn't.
+ */
+export function matchOCMSerial(ocrText: string): string | null {
+	const textUpper = ocrText.toUpperCase();
+	const ocmMatch = textUpper.match(/\b(\d{1,3})\s*\/\s*99\b/);
+	return ocmMatch ? `${ocmMatch[1]}/99` : null;
+}
+
+export function matchOneOfOne(ocrText: string): boolean {
+	const textUpper = ocrText.toUpperCase();
+	const textNoSpace = textUpper.replace(/\s+/g, '');
+	return /ONE\s*(?:OF\s*)?ONE/.test(textUpper) || /ONEONE/.test(textNoSpace);
+}
+
 export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<ParallelResult> {
 	const evidence: ParallelResult['evidence'] = {};
 
@@ -74,14 +92,11 @@ export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<Para
 		evidence.full_frame_ocr_error = String(err);
 	}
 
-	const textUpper = fullFrameText.toUpperCase();
-	const textNoSpace = textUpper.replace(/\s+/g, '');
-
 	// Rule 2: OCM — left-edge "NN/99" serial.
 	// Validated on Cast Out OCM: OCR read "66/99" at conf 0.97.
-	const ocmMatch = textUpper.match(/\b(\d{1,3})\s*\/\s*99\b/);
-	if (ocmMatch) {
-		evidence.ocm_serial = `${ocmMatch[1]}/99`;
+	const ocmSerial = matchOCMSerial(fullFrameText);
+	if (ocmSerial) {
+		evidence.ocm_serial = ocmSerial;
 		return {
 			parallel: 'ocm',
 			ruleFired: 'ocm_serial_detected',
@@ -94,7 +109,7 @@ export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<Para
 	// Validated on Cast Out Stonefoil: OCR read "ONEONE" at conf 0.99 — the
 	// middle "OF" is consistently dropped in the gold-on-black kerned text,
 	// so the regex accepts both forms.
-	if (/ONE\s*(?:OF\s*)?ONE/.test(textUpper) || /ONEONE/.test(textNoSpace)) {
+	if (matchOneOfOne(fullFrameText)) {
 		evidence.one_of_one_detected = true;
 		return {
 			parallel: 'sf',
