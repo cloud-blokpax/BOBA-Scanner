@@ -5,7 +5,12 @@
 -- sections as one jsonb. SECURITY DEFINER with explicit search_path
 -- pinning; window_interval is allow-listed inside the function.
 --
--- Idempotent via CREATE OR REPLACE.
+-- The HAVING clause on ocrRegionAgreement omits games with zero
+-- live-consensus rows so the dashboard's length === 0 empty-state
+-- guard trips correctly on pre-flag-flip state.
+--
+-- Idempotent via CREATE OR REPLACE. Prod is already at this version
+-- (applied via MCP during session 2.9, patched in session 2.10).
 
 BEGIN;
 
@@ -16,15 +21,18 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  since_ts timestamptz := NOW() - window_interval::interval;
+  since_ts timestamptz;
   result jsonb;
 BEGIN
   -- Allow-list the interval input as a defense-in-depth guard. The
   -- endpoint already allow-lists the window string, but this keeps
-  -- the RPC safe against direct calls.
+  -- the RPC safe against direct calls. Run BEFORE since_ts assignment
+  -- so a bogus input raises our message, not a raw cast error.
   IF window_interval NOT IN ('24 hours', '7 days', '30 days') THEN
     RAISE EXCEPTION 'invalid window_interval: %', window_interval;
   END IF;
+
+  since_ts := NOW() - window_interval::interval;
 
   SELECT jsonb_build_object(
     'pipelineMix', (
@@ -69,6 +77,7 @@ BEGIN
         WHERE created_at > since_ts
           AND capture_source = 'camera_live'
         GROUP BY game_id
+        HAVING COUNT(*) FILTER (WHERE live_consensus_reached IS TRUE) > 0
       ) t
     ),
     'binderCellFallback', (
