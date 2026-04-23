@@ -5,7 +5,7 @@
  * logic that converts messy OCR text into clean card numbers.
  */
 import { describe, it, expect } from 'vitest';
-import { extractCardNumber } from '../src/lib/utils/extract-card-number';
+import { extractCardNumber } from '../src/lib/games/boba/extract';
 
 describe('extractCardNumber', () => {
 	it('extracts standard card numbers (PREFIX-NNN)', () => {

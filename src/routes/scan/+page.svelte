@@ -209,9 +209,15 @@
 					<BinderLiveScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} {gameHint} />
 				{/await}
 			{:else}
-				{#await import('$lib/components/BinderScanner.svelte') then { default: BinderScanner }}
-					<BinderScanner onClose={() => { scanMode = 'single'; }} {isAuthenticated} />
-				{/await}
+				<div class="scan-pro-gate">
+					<div class="scan-pro-gate-icon">🗂️</div>
+					<h3>Binder mode unavailable</h3>
+					<p>
+						Binder scanning is currently disabled for your account. Use
+						single-card mode to scan cards one at a time.
+					</p>
+					<button class="scan-pro-cancel" onclick={() => { scanMode = 'single'; }}>Back to Single</button>
+				</div>
 			{/if}
 		{:else if scanMode === 'roll'}
 			{#await import('$lib/components/CameraRollImport.svelte') then { default: CameraRollImport }}

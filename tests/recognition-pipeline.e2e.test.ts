@@ -109,7 +109,6 @@ vi.mock('$lib/stores/tags', () => ({
 vi.mock('$lib/data/boba-config', () => ({
 	BOBA_SCAN_CONFIG: {
 		quality: 0.85,
-		ocrConfidenceThreshold: 30,
 		blurThreshold: 100,
 		maxUploadSize: 1024,
 		aiCostPerScan: 0.003,
@@ -120,7 +119,6 @@ vi.mock('$lib/data/boba-config', () => ({
 	BOBA_PIPELINE_CONFIG: {
 		referenceImageMinVariance: 150,
 		maxOcrCorrections: 500,
-		ocrWorkerRestartInterval: 50,
 		referenceImageMaxDimension: 800,
 		referenceImageMinConfidence: 0.8,
 		hashFuzzyMaxDistance: 5,

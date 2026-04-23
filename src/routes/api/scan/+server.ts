@@ -24,6 +24,7 @@ import {
 	MULTI_GAME_USER_PROMPT
 } from '$lib/games/multi-game-prompt';
 import { isValidGameId, getAllGameConfigs } from '$lib/games/resolver';
+import { normalizeParallelForServer } from '$lib/data/wonders-parallels';
 import type { RequestHandler } from './$types';
 
 /**
@@ -256,26 +257,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		if (!cardData.parallel && cardData.foil_treatment) {
 			cardData.parallel = cardData.foil_treatment;
 		}
-		// Map Wonders short codes (cf/ff/ocm/sf) and legacy long-form aliases
-		// (classic_foil/formless_foil/stone_foil) to the human-readable DB
-		// names. Anything already in human-readable form passes through.
-		// BoBA values like "battlefoil"/"rad" pass through unchanged — the
-		// downstream cards.parallel lookup fixes them to canonical names.
+		// Normalize Wonders parallel output from Claude. Handles short codes
+		// (cf/ff/ocm/sf), snake_case aliases (classic_foil, stone_foil, etc.),
+		// and passes BoBA values (battlefoil, rad, …) through unchanged.
+		// Canonical mapping lives in $lib/data/wonders-parallels.
 		if (typeof cardData.parallel === 'string') {
-			const parallelMap: Record<string, string> = {
-				paper: 'Paper',
-				cf: 'Classic Foil',
-				ff: 'Formless Foil',
-				ocm: 'Orbital Color Match',
-				sf: 'Stonefoil',
-				classic_foil: 'Classic Foil',
-				formless_foil: 'Formless Foil',
-				stone_foil: 'Stonefoil',
-				stonefoil: 'Stonefoil',
-				'orbital_color_match': 'Orbital Color Match'
-			};
-			const lower = cardData.parallel.toLowerCase();
-			if (parallelMap[lower]) cardData.parallel = parallelMap[lower];
+			cardData.parallel = normalizeParallelForServer(cardData.parallel);
 		}
 
 		// Annotate game_id on the payload so Tier 3 can route correctly.
