@@ -10,9 +10,9 @@
 import {
 	getBobaPrefixes,
 	getBobaHeroes,
-	getWondersNames,
-	normalizeOcrName
+	getWondersNames
 } from './catalog-mirror';
+import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
 
 export type TaskKind = 'card_number' | 'name' | 'parallel';
 
@@ -206,17 +206,3 @@ export class ConsensusBuilder {
 	}
 }
 
-function levenshtein(a: string, b: string): number {
-	if (!a.length) return b.length;
-	if (!b.length) return a.length;
-	const m: number[][] = [];
-	for (let i = 0; i <= b.length; i++) m[i] = [i];
-	for (let j = 0; j <= a.length; j++) m[0][j] = j;
-	for (let i = 1; i <= b.length; i++) {
-		for (let j = 1; j <= a.length; j++) {
-			const cost = a[j - 1] === b[i - 1] ? 0 : 1;
-			m[i][j] = Math.min(m[i - 1][j] + 1, m[i][j - 1] + 1, m[i - 1][j - 1] + cost);
-		}
-	}
-	return m[b.length][a.length];
-}

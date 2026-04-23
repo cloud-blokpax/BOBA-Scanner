@@ -11,7 +11,7 @@
     "generate:card-seed": "node scripts/generate-card-seed.js",
     "seed:embeddings": "tsx scripts/seed-card-embeddings.ts",
     "backfill:boba-hashes": "tsx scripts/backfill-boba-hashes.ts",
-    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.generated.ts"
+    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.ts"
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",

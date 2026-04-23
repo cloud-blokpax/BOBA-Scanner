@@ -15,12 +15,6 @@
  *
  * Uses the authenticated user's Supabase client (not service_role), so
  * the RLS policies shipped in Phase 0.1 enforce ownership and shape.
- *
- * Database types (src/lib/types/database.ts) still reflect the pre-0.1
- * scans shape and don't include scan_sessions / scan_tier_results. Until
- * Session 0.5 regenerates them, this file uses a narrow untyped client
- * facade (`untyped()`) to bypass the stale typings. The runtime payloads
- * match the new 0.1 schema; only the compile-time types lag.
  */
 
 import { getSupabase } from '$lib/services/supabase';
@@ -228,32 +222,6 @@ export interface RecordClaudeResponseInput {
 	anthropicRequestId?: string | null;
 }
 
-// ---------- Untyped client facade ----------
-
-/**
- * Minimal shape for the tables this writer touches. Removed in Session 0.5
- * when database.ts is regenerated against the current Supabase schema.
- */
-interface UntypedBuilder {
-	insert(row: Record<string, unknown>): {
-		select(cols: string): {
-			single(): Promise<{ data: { id: string } | null; error: { message: string } | null }>;
-		};
-	} & Promise<{ error: { message: string } | null }>;
-	update(updates: Record<string, unknown>): {
-		eq(column: string, value: string): Promise<{ error: { message: string } | null }>;
-	};
-}
-
-interface UntypedClient {
-	from(table: string): UntypedBuilder;
-}
-
-function untyped(): UntypedClient | null {
-	const client = getSupabase();
-	return client as unknown as UntypedClient | null;
-}
-
 // ---------- Module-level session cache ----------
 
 let _activeSessionId: string | null = null;
@@ -356,7 +324,7 @@ export async function getOrOpenActiveSession(
 	const uid = userId();
 	if (!uid) return null; // anonymous scans don't persist in Phase 0.3
 
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return null;
 
 	try {
@@ -415,7 +383,7 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 	const uid = userId();
 	if (!uid) return null;
 
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return null;
 
 	try {
@@ -515,7 +483,7 @@ export async function recordTierResult(input: RecordTierResultInput): Promise<st
 	const uid = userId();
 	if (!uid) return null;
 
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return null;
 
 	try {
@@ -599,7 +567,7 @@ export async function recordClaudeResponse(
 	const uid = userId();
 	if (!uid) return;
 
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return;
 
 	try {
@@ -642,7 +610,7 @@ export async function recordClaudeResponse(
  * Add new values via ALTER TYPE migration before using them here.
  */
 export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<void> {
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return;
 
 	try {
@@ -694,7 +662,7 @@ export async function closeSession(sessionId?: string): Promise<void> {
 	const targetId = sessionId ?? _activeSessionId;
 	if (!targetId) return;
 
-	const client = untyped();
+	const client = getSupabase();
 	if (!client) return;
 
 	try {
@@ -747,9 +715,9 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 		}
 
 		// Patch the scans row with the storage path + size.
-		const untypedClient = untyped();
-		if (!untypedClient) return;
-		const { error: updateErr } = await untypedClient
+		const patchClient = getSupabase();
+		if (!patchClient) return;
+		const { error: updateErr } = await patchClient
 			.from('scans')
 			.update({
 				photo_storage_path: path,

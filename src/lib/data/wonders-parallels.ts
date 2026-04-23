@@ -65,6 +65,12 @@ export function assertHumanReadableParallel(
 	context: string
 ): void {
 	if (!parallel) return;
+	// Valid DB names pass through. "Paper" overlaps case-insensitively with
+	// the short code "paper" — the DB-name check must come first so the
+	// capitalized DB value is not falsely flagged as a short-code leak.
+	if ((WONDERS_PARALLEL_NAME_TO_CODE as Record<string, WondersParallelCode>)[parallel]) {
+		return;
+	}
 	if (/^(paper|cf|ff|ocm|sf|unknown)$/i.test(parallel)) {
 		throw new Error(
 			`Short parallel code leaked at ${context}: parallel="${parallel}". ` +
