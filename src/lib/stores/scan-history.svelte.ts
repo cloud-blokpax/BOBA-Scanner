@@ -20,7 +20,7 @@ export interface ScanHistoryEntry {
 	heroName: string | null;
 	imageUrl: string | null;
 	cardId?: string | null;
-	method: 'hash_cache' | 'tesseract' | 'claude' | 'manual' | 'unknown';
+	method: 'hash_cache' | 'tesseract' | 'claude' | 'manual' | 'local_ocr' | 'upload_tta' | 'unknown';
 	confidence: number;
 	success: boolean;
 	processingMs: number;

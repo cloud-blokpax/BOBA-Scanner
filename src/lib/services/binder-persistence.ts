@@ -15,6 +15,7 @@ import { getSupabase } from './supabase';
 import { getOrOpenActiveSession } from './scan-writer';
 import { PIPELINE_VERSION } from './pipeline-version';
 import type { FinalizedCell } from './binder-capture-finalize';
+import { assertHumanReadableParallel as assertShared } from '$lib/data/wonders-parallels';
 
 export interface BinderScanResult {
 	parentScanId: string;
@@ -40,18 +41,12 @@ function untyped(): UntypedClient | null {
 }
 
 /**
- * Regression guard: if a short classifier code leaks through to the
- * persistence boundary, raise loudly rather than corrupt the DB.
+ * Regression guard wrapper: the actual assertion lives in
+ * `$lib/data/wonders-parallels` (`assertHumanReadableParallel`). We wrap it
+ * so binder callers get the row/col context baked into the error message.
  */
 function assertHumanReadableParallel(row: number, col: number, parallel: string | null): void {
-	if (!parallel) return;
-	if (/^(paper|cf|ff|ocm|sf|unknown)$/i.test(parallel)) {
-		throw new Error(
-			`Short parallel code leaked into persistBinderScan: cell (${row},${col}) parallel=${parallel}. ` +
-				`Expected human-readable name from WONDERS_PARALLEL_NAMES. ` +
-				`Fix: ensure finalizeBinderCapture maps classifier output before passing to persistence.`
-		);
-	}
+	assertShared(parallel, `persistBinderScan cell(${row},${col}) final_parallel`);
 }
 
 export async function persistBinderScan(opts: {

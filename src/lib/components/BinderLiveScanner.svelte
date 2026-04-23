@@ -7,7 +7,12 @@
 		type FinalizedCell
 	} from '$lib/services/binder-capture-finalize';
 	import { persistBinderScan } from '$lib/services/binder-persistence';
-	import { extractCellBitmap, estimateCellResolution, type GridSize } from '$lib/services/cell-extractor';
+	import {
+		extractCellBitmap,
+		estimateCellResolution,
+		computeCellRegions,
+		type GridSize
+	} from '$lib/services/cell-extractor';
 	import { recognizeCard } from '$lib/services/recognition';
 	import { userId } from '$lib/stores/auth.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
@@ -239,12 +244,21 @@
 			for (const cell of cellResults) {
 				if (cell.fallbackTierUsed === 'haiku' && !cell.cardId) {
 					try {
-						const cellBitmap = await extractCellBitmap(highResBitmap, {
-							row: cell.row,
-							col: cell.col,
-							gridSize,
-							...cellRegionFromGrid(highResBitmap, gridSize, cell.row, cell.col)
-						});
+						// Use the same region math the canonical pass used at shutter,
+						// so Haiku's cell bitmap is byte-identical to what canonical saw.
+						const allRegions = computeCellRegions(
+							highResBitmap.width,
+							highResBitmap.height,
+							gridSize
+						);
+						const region = allRegions.find(
+							(r) => r.row === cell.row && r.col === cell.col
+						);
+						if (!region) {
+							console.debug('[BinderLiveScanner] No region match for cell', cell.row, cell.col);
+							continue;
+						}
+						const cellBitmap = await extractCellBitmap(highResBitmap, region);
 						try {
 							const haiku = await recognizeCard(cellBitmap, undefined, {
 								isAuthenticated,
@@ -304,31 +318,6 @@
 		} finally {
 			highResBitmap?.close();
 		}
-	}
-
-	/**
-	 * Helper: recompute a single cell's pixel rect from the full frame at
-	 * shutter time. Used when we need to re-extract a cell bitmap for the
-	 * Haiku fallback path after `finalizeBinderCapture` has already closed
-	 * its original copy.
-	 */
-	function cellRegionFromGrid(
-		source: ImageBitmap,
-		size: GridSize,
-		row: number,
-		col: number
-	): { x: number; y: number; w: number; h: number } {
-		const rows = size === '2x2' ? 2 : size === '4x4' ? 4 : 3;
-		const cols = rows;
-		const inset = Math.floor(Math.min(source.width, source.height) * 0.02);
-		const cellW = Math.floor((source.width - 2 * inset) / cols);
-		const cellH = Math.floor((source.height - 2 * inset) / rows);
-		return {
-			x: inset + col * cellW,
-			y: inset + row * cellH,
-			w: cellW,
-			h: cellH
-		};
 	}
 
 	function handleReviewClose() {
