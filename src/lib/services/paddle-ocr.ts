@@ -13,6 +13,15 @@
 const OCR_BROWSER_CDN_URL =
 	'https://cdn.jsdelivr.net/npm/@gutenye/ocr-browser@1.4.8/+esm';
 
+// ONNX model assets served from our own /static directory so we don't
+// depend on a CDN chain for the heavy weights. One-time ~15MB cold load
+// per user, then browser-cached. Files committed under static/models/.
+const PADDLE_MODEL_CONFIG = {
+	detectionPath: '/models/ch_PP-OCRv4_det_infer.onnx',
+	recognitionPath: '/models/ch_PP-OCRv4_rec_infer.onnx',
+	dictionaryPath: '/models/ppocr_keys_v1.txt'
+} as const;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,9 +44,21 @@ export async function initPaddleOCR(): Promise<void> {
 	_initPromise = (async () => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const mod: any = await import(/* @vite-ignore */ OCR_BROWSER_CDN_URL);
-		const OcrClient = mod.OcrClient || mod.default?.OcrClient || mod.default;
-		if (!OcrClient) throw new Error('PaddleOCR: OcrClient export not found');
-		_client = await OcrClient.create();
+		// Package's documented API is a default export with a static
+		// `.create(options)` method. See npm/@gutenye/ocr-browser README.
+		// A single clean read — no optional-chain fallback chain — because
+		// re-accessing the default binding through the CDN module's combined
+		// `export *` + `export {default}` re-export throws on stricter ESM
+		// engines (Safari iOS 17+).
+		const Ocr = mod.default;
+		if (!Ocr || typeof Ocr.create !== 'function') {
+			throw new Error(
+				'[paddle-ocr] module default export missing `create`; ' +
+					'CDN module shape unexpected. Got keys: ' +
+					Object.keys(mod ?? {}).join(', ')
+			);
+		}
+		_client = await Ocr.create({ models: PADDLE_MODEL_CONFIG });
 		console.debug(
 			'[paddle-ocr] initialized in',
 			(performance.now() - _initStartedAt!).toFixed(0),
