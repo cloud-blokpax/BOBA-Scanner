@@ -17,15 +17,17 @@ migration — check them in with the code change that depends on them.
 | 7 | `007_listing_templates_scan_id.sql` | Session 2.1a. Add `scan_id uuid REFERENCES scans(id) ON DELETE SET NULL` + partial index to `listing_templates`. |
 | 8 | `008_binder_parent_scan_id.sql` | Session 2.2. Add `parent_scan_id` self-reference to `scans` + extend `capture_source` CHECK to include `binder_live_cell`. |
 | 9 | `009_phase2_feature_flag_seeds.sql` | Session 2.1a / 2.1b / 2.2. Seed `live_ocr_tier1_v1`, `upload_tta_v1`, `binder_mode_v1` rows in `feature_flags`. |
-| 10 | `010_retire_legacy_tier_results.sql` | Session 2.5 followup. Tag pre-2.5 `scan_tier_results` rows with retirement metadata + create `scan_tier_results_live` filtering view. |
+| 10 | `010_retire_legacy_tier_results.sql` | Session 2.5 followup. Tag pre-2.5 `scan_tier_results` rows with retirement metadata in the `extras` jsonb column + create `scan_tier_results_live` filtering view. Column name corrected in session 2.8. |
+| 11 | `011_sunset_legacy_flag_rows.sql` | Session 2.8. Drop `scan_pipeline_trace`, delete zombie `embedding_tier1` / `new_scan_pipeline` rows from `feature_flags` + `user_feature_overrides`, delete orphaned `system_settings.app_name` row. Captures the 2.4 + 2.6 post-deploy SQL that was MCP-only. |
 
 ### Phase 2 deploy ordering (applied via Supabase MCP pre-deploy)
 
 Migrations 6–9 were applied *before* their respective code deploys
 (sessions 2.1a, 2.1a, 2.2, 2.1a/b/2.2) so the columns existed before the
-writer referenced them. Migration 10 was spec'd in 2.5 but not executed
-there; a fresh branch applying `/migrations/` in order lands it during
-bootstrap. On the shared prod DB it's a no-op after the hand-apply.
+writer referenced them. Migrations 10 and 11 were applied directly to prod
+via MCP during sessions 2.4 / 2.5 / 2.6; a fresh branch applying
+`/migrations/` in order lands them during bootstrap. On the shared prod DB
+both are no-ops after the hand-apply.
 
 ### Deploy order
 

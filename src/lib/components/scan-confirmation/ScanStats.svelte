@@ -20,6 +20,8 @@
 	function methodLabel(method: string): string {
 		switch (method) {
 			case 'hash_cache': return 'Instant (cached)';
+			case 'local_ocr': return 'Local OCR';
+			case 'upload_tta': return 'Multi-frame OCR';
 			case 'tesseract': return 'OCR Match';
 			case 'claude': return 'AI Identified';
 			case 'manual': return 'Manual Search';
