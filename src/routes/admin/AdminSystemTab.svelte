@@ -176,26 +176,6 @@
 		refreshBobaBackfillStatus();
 	});
 
-	// ── Scan pipeline diagnostic (Phase 1 / Session 1.1.1d) ──
-	let diagResult = $state<unknown>(null);
-	let diagRunning = $state(false);
-
-	async function runScanPipelineDiag() {
-		if (diagRunning) return;
-		diagRunning = true;
-		diagResult = null;
-		try {
-			const res = await fetch('/api/admin/diag/scan-pipeline');
-			diagResult = await res.json();
-		} catch (err) {
-			diagResult = {
-				verdict: 'network_error',
-				error: err instanceof Error ? err.message : String(err)
-			};
-		}
-		diagRunning = false;
-	}
-
 	async function doExport(type: string) {
 		exporting = type;
 		try {
@@ -397,35 +377,6 @@
 		{/if}
 	</div>
 
-	<!-- Scan Pipeline Diagnostic (Phase 1 / Session 1.1.1d) -->
-	<div class="section">
-		<h3 class="section-title">Scan Pipeline Diagnostic</h3>
-		<p class="section-desc">
-			Tests whether authenticated scans can write to the new-pipeline tables.
-			Creates throwaway <code>scan_sessions</code> / <code>scans</code> /
-			<code>scan_tier_results</code> rows using your own client, then cleans
-			them up via service-role cascade delete. No side effects on real data.
-		</p>
-		<div class="diag-controls">
-			<button
-				class="diag-btn"
-				onclick={runScanPipelineDiag}
-				disabled={diagRunning}
-			>
-				{diagRunning ? 'Running…' : 'Diagnose scan pipeline'}
-			</button>
-		</div>
-
-		{#if diagResult}
-			{@const dr = diagResult as { verdict?: string }}
-			<div class="diag-result">
-				<div class="diag-verdict">
-					Verdict: <code>{dr.verdict ?? 'unknown'}</code>
-				</div>
-				<pre class="diag-json">{JSON.stringify(diagResult, null, 2)}</pre>
-			</div>
-		{/if}
-	</div>
 
 	<!-- Quick DB Info -->
 	<div class="section">
@@ -655,56 +606,4 @@
 	.backfill-warn { color: var(--warning); }
 	.backfill-err { color: var(--danger); }
 	.backfill-done { color: var(--success); font-weight: 600; }
-
-	/* Diagnostic */
-	.diag-controls {
-		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.diag-btn {
-		padding: 0.5rem 1rem;
-		border-radius: 8px;
-		border: 1px solid var(--border);
-		background: var(--bg-surface);
-		color: var(--text-primary);
-		font-size: 0.85rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s;
-	}
-
-	.diag-btn:hover:not(:disabled) {
-		border-color: var(--gold);
-		color: var(--gold);
-	}
-
-	.diag-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.diag-result {
-		margin-top: 0.5rem;
-	}
-
-	.diag-verdict {
-		font-size: 0.85rem;
-		font-weight: 600;
-		margin-bottom: 0.5rem;
-		color: var(--text-secondary);
-	}
-
-	.diag-json {
-		background: rgba(0, 0, 0, 0.3);
-		padding: 0.75rem;
-		border-radius: 6px;
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-		overflow-x: auto;
-		white-space: pre-wrap;
-		word-break: break-all;
-		max-height: 480px;
-	}
 </style>

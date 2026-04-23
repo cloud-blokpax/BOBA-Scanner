@@ -63,28 +63,6 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_admin: true
 	},
 	{
-		feature_key: 'new_scan_pipeline',
-		display_name: 'New Scan Pipeline (Phase 0.3+)',
-		description: 'Routes scan telemetry through the new scan_sessions / scans / scan_tier_results tables. Admin-only during Phase 1 evaluation.',
-		icon: '📸',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: false,
-		enabled_for_pro: false,
-		enabled_for_admin: true
-	},
-	{
-		feature_key: 'embedding_tier1',
-		display_name: 'Embedding-based Tier 1 (DINOv2)',
-		description: 'Replaces pHash Tier 1 with DINOv2 vision embeddings for nearest-neighbor card matching. Admin-only until measured on real traffic.',
-		icon: '🧠',
-		enabled_globally: false,
-		enabled_for_guest: false,
-		enabled_for_authenticated: false,
-		enabled_for_pro: false,
-		enabled_for_admin: true
-	},
-	{
 		feature_key: 'live_ocr_tier1_v1',
 		display_name: 'Live OCR Tier 1 (PaddleOCR)',
 		description: 'Replaces Claude Haiku as primary recognition path with local PaddleOCR + voting consensus from continuous live OCR. Haiku remains as a fallback when confidence is below the floor.',

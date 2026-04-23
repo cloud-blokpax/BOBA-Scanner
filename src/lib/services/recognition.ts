@@ -210,42 +210,6 @@ function winningTierFromResult(result: ScanResult): string {
 }
 
 /**
- * LEGACY — writes to the dropped pre-0.1 `scans` table shape.
- * Retained only as a rollback path while `new_scan_pipeline` flag is off.
- * Remove entirely in Phase 1 once new writer has baked for 48h.
- */
-async function logScanToSupabaseLegacy(result: ScanResult): Promise<void> {
-	const uid = userId();
-	if (!uid || !result.card_id) return;
-
-	const client = getSupabase();
-	if (!client) return;
-
-	try {
-		// TODO: migrate to new scan schema (Phase 1) — this legacy path writes to
-		// columns that no longer exist post-0.1. Retained until new_scan_pipeline
-		// flag is default-on for 48h, then delete this function entirely.
-		const { error: scanError } = await client.from('scans').insert({
-			user_id: uid,
-			card_id: result.card_id,
-			hero_name: result.card?.hero_name ?? null,
-			card_number: result.card?.card_number ?? null,
-			scan_method: result.scan_method ?? 'unknown',
-			confidence: result.confidence ?? null,
-			processing_ms: result.processing_ms ?? null,
-			game_id: result.game_id || 'boba'
-		} as never);
-		if (scanError) {
-			console.error('[scan] Supabase scan log FAILED:', scanError.message);
-		}
-		// Phase 5A: passive persona tracking. Fire-and-forget.
-		incrementPersona(client, 'collector');
-	} catch (err) {
-		console.error('[scan] Supabase scan log exception:', err);
-	}
-}
-
-/**
  * Clone an ImageBitmap by drawing it to an OffscreenCanvas and transferring
  * back out. Used at the Comlink boundary so main-thread bitmap ownership
  * survives regardless of Comlink's auto-transfer semantics for ImageBitmap.
@@ -437,16 +401,12 @@ export async function recognizeCard(
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
-	// The flag check + scan row INSERT run in parallel with tier execution.
-	// If the flag is off (legacy path), scanIdPromise resolves to null and
-	// no tier_results are emitted — finalize() falls back to legacy write.
-	const newPipelineEnabledPromise = isNewScanPipelineEnabled();
+	// scanIdPromise runs in parallel with tier execution; tier3-claude and
+	// recognition-tiers both tolerate a null resolution (unauthenticated
+	// scan, or openScanRow failure). Flag gating removed in session 2.10 —
+	// unified on the single scan-writer path.
 	const scanIdPromise: Promise<string | null> = userId()
-		? newPipelineEnabledPromise
-			.then((enabled) => {
-				if (!enabled) return null;
-				return openScanRow(bitmap, imageSource, scanWriteExtras, gameHint);
-			})
+		? openScanRow(bitmap, imageSource, scanWriteExtras, gameHint)
 			.catch((err) => {
 				console.debug(`[scan:${traceId}] openScanRow failed:`, err);
 				return null;
@@ -503,78 +463,51 @@ export async function recognizeCard(
 			processingMs: final.processing_ms
 		});
 
-		// Persist to Supabase for cross-device consistency (non-blocking)
-		// Feature-flagged dual-write: new pipeline when enabled, legacy otherwise.
-		// Both paths are fire-and-forget; neither affects scan completion.
-		//
-		// Session 1.1.1f: two telemetry writes so we can see from MCP what
-		// actually happens. Throwaway — delete after bug is identified.
+		// Persist to Supabase for cross-device consistency (non-blocking).
+		// Single unified path through scan-writer — legacy dual-write and
+		// its telemetry helpers removed in session 2.10.
 		if (final.card_id) {
-			void newPipelineEnabledPromise.then(async (enabled) => {
-				// Telemetry 1: what did the flag check return?
-				void traceScanPipeline('flag_check_result', {
-					enabled,
-					card_id: final.card_id,
-					game_id: final.game_id ?? null,
-					scan_method: final.scan_method ?? null,
-					trace_id: traceId
-				});
+			// Fire the persona increment for every logged-in scan with a card_id,
+			// independent of whether the scan row INSERT succeeded. Mirrors the
+			// pre-2.10 legacy-path guarantee.
+			const client = getSupabase();
+			if (client) incrementPersona(client, 'collector');
 
-				if (enabled) {
-					// Telemetry 2: we're about to update the scan outcome
-					void traceScanPipeline('writer_entry', {
-						branch: 'new',
-						card_id: final.card_id,
-						trace_id: traceId
-					});
-					const scanId = await scanIdPromise;
-					if (scanId) {
-						// Sum per-tier costs into total_cost_usd. Tiers 1 and 2 are
-						// free (hash lookup + local OCR). Tier 3 cost duplicates the
-						// per-row calc in emitTier3Result — fine for now; fold into
-						// a shared helper in the AI Gateway session.
-						const tier3CostUsd =
-							tier3Tel.llmInputTokens !== null && tier3Tel.llmOutputTokens !== null
-								? (tier3Tel.llmInputTokens * 1.0 + tier3Tel.llmOutputTokens * 5.0) / 1_000_000
-								: 0;
-						const totalCostUsd = tier3CostUsd > 0 ? tier3CostUsd : null;
-						const mergedDecisionCtx = final.decisionContext
-							? { ...buildDecisionContext(), ...final.decisionContext }
-							: null;
-						void writerUpdateScanOutcome({
-							scanId,
-							winningTier: winningTierFromResult(final),
-							// string; Postgres casts to uuid. Assumes recognize-card
-							// returns a valid UUID (validated upstream).
-							finalCardId: final.card_id!,
-							finalConfidence: final.confidence ?? null,
-							// final_parallel mirrors cards.parallel — the source of truth.
-							// Falls back to the result's parallel field, then null.
-							finalParallel: final.card?.parallel ?? final.parallel ?? null,
-							totalLatencyMs: final.processing_ms ?? null,
-							totalCostUsd,
-							liveConsensusReached: final.liveConsensusReached ?? null,
-							liveVsCanonicalAgreed: final.liveVsCanonicalAgreed ?? null,
-							fallbackTierUsed: final.fallbackTierUsed ?? null,
-							decisionContext: mergedDecisionCtx
-						});
-						// Preserve the persona increment from the old logScanToSupabaseNew path.
-						const client = getSupabase();
-						if (client) incrementPersona(client, 'collector');
-					}
-				} else {
-					void traceScanPipeline('writer_entry', {
-						branch: 'legacy',
-						card_id: final.card_id,
-						trace_id: traceId
-					});
-					logScanToSupabaseLegacy(final);
-				}
-			}).catch((err) => {
-				void traceScanPipeline('flag_check_threw', {
-					error: err instanceof Error ? err.message : String(err),
-					trace_id: traceId
+			void scanIdPromise.then((scanId) => {
+				if (!scanId) return;
+
+				// Sum per-tier costs into total_cost_usd. Tiers 1 and 2 are
+				// free (hash lookup + local OCR). Tier 3 cost duplicates the
+				// per-row calc in emitTier3Result — fine for now; fold into
+				// a shared helper in the AI Gateway session.
+				const tier3CostUsd =
+					tier3Tel.llmInputTokens !== null && tier3Tel.llmOutputTokens !== null
+						? (tier3Tel.llmInputTokens * 1.0 + tier3Tel.llmOutputTokens * 5.0) / 1_000_000
+						: 0;
+				const totalCostUsd = tier3CostUsd > 0 ? tier3CostUsd : null;
+				const mergedDecisionCtx = final.decisionContext
+					? { ...buildDecisionContext(), ...final.decisionContext }
+					: null;
+
+				void writerUpdateScanOutcome({
+					scanId,
+					winningTier: winningTierFromResult(final),
+					// string; Postgres casts to uuid. Assumes recognize-card
+					// returns a valid UUID (validated upstream).
+					finalCardId: final.card_id!,
+					finalConfidence: final.confidence ?? null,
+					// final_parallel mirrors cards.parallel — the source of truth.
+					// Falls back to the result's parallel field, then null.
+					finalParallel: final.card?.parallel ?? final.parallel ?? null,
+					totalLatencyMs: final.processing_ms ?? null,
+					totalCostUsd,
+					liveConsensusReached: final.liveConsensusReached ?? null,
+					liveVsCanonicalAgreed: final.liveVsCanonicalAgreed ?? null,
+					fallbackTierUsed: final.fallbackTierUsed ?? null,
+					decisionContext: mergedDecisionCtx
 				});
+			}).catch((err) => {
+				console.debug(`[scan:${traceId}] scan outcome update failed:`, err);
 			});
 		}
 
@@ -924,30 +857,9 @@ async function normalizeToBlob(
 }
 
 /**
- * Session 1.1.1f telemetry helper. Writes a row to scan_pipeline_trace
- * from the browser's authenticated client so MCP can read what happened
- * inside the scan path. Throwaway — delete after pipeline debugging done.
- */
-async function traceScanPipeline(
-	eventName: string,
-	eventData: Record<string, unknown>
-): Promise<void> {
-	try {
-		const client = getSupabase();
-		if (!client) return;
-		await client.from('scan_pipeline_trace').insert({
-			event_name: eventName,
-			event_data: eventData
-		} as never);
-	} catch {
-		// Swallow — telemetry failure must never break a scan
-	}
-}
-
-/**
  * Session 2.1a gate. Returns true when Tier 1 should run the local
  * PaddleOCR canonical path (with live-OCR voting hint). When off, the
- * legacy Claude-Haiku-first behavior is preserved exactly.
+ * Claude-Haiku-first behavior is preserved exactly.
  */
 async function isLiveOCRTier1Enabled(): Promise<boolean> {
 	try {
@@ -970,41 +882,6 @@ async function isUploadTtaEnabled(): Promise<boolean> {
 		const flagsModule = await import('$lib/stores/feature-flags.svelte');
 		return flagsModule.featureEnabled('upload_tta_v1')();
 	} catch {
-		return false;
-	}
-}
-
-/**
- * Phase 0.3 rollout flag. Returns true when the new scan-writer should run.
- * Default off until admin-verified; flip for authenticated users in Phase 1.
- */
-async function isNewScanPipelineEnabled(): Promise<boolean> {
-	try {
-		// Lazy dynamic import to avoid a potential circular dependency with
-		// feature-flags (which imports Supabase, also imported by scan-writer).
-		const flagsModule = await import('$lib/stores/feature-flags.svelte');
-		const { featureEnabled, getUserProfile } = flagsModule;
-		const authModule = await import('$lib/stores/auth.svelte');
-
-		const result = featureEnabled('new_scan_pipeline')();
-
-		// Session 1.1.1g telemetry: capture what the store sees when flag returns false.
-		// Throwaway — remove in next session after bug is identified.
-		if (!result) {
-			void traceScanPipeline('flag_resolver_state', {
-				flag_result: result,
-				user_present: authModule.user() !== null,
-				user_id: authModule.userId(),
-				profile: getUserProfile ? getUserProfile() : 'getUserProfile_not_exported',
-				flag_definition_present: !!(flagsModule as unknown as { _featureFlags?: unknown })._featureFlags
-			});
-		}
-
-		return result;
-	} catch (err) {
-		void traceScanPipeline('flag_check_threw', {
-			error: err instanceof Error ? err.message : String(err)
-		});
 		return false;
 	}
 }
