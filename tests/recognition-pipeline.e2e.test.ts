@@ -1,8 +1,15 @@
 /**
- * End-to-end tests for the three-tier recognition pipeline.
+ * End-to-end tests for the recognition pipeline.
  *
- * Tests the full flow from recognizeCard() through all tiers
+ * Tests the full flow from recognizeCard() through Tier 3 Claude
  * with mocked workers, IDB, and network calls.
+ *
+ * NOTE (Session 2.5): The Tier 1 (pHash) and Tier 2 (Tesseract) paths
+ * were removed in this session. Tests below cover the surviving Tier 3
+ * (Claude) path and worker resilience. Phase 2 (live OCR / upload TTA /
+ * binder) coverage lands in session 2.7 as pure-function unit tests
+ * against ConsensusBuilder, classifyWondersParallel, normalizeOcrName,
+ * and lookupCardByCardNumberFuzzy.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
@@ -91,18 +98,6 @@ vi.mock('$lib/services/parallel-config', () => ({
 	getParallelRarity: vi.fn().mockReturnValue(null)
 }));
 
-vi.mock('$lib/services/ocr', () => ({
-	initOcr: vi.fn(),
-	recognizeText: vi.fn().mockResolvedValue({ text: '', confidence: 0, words: [] }),
-	terminateOcr: vi.fn()
-}));
-
-vi.mock('$lib/services/scan-learning', () => ({
-	checkCorrection: vi.fn().mockReturnValue(null),
-	recordCorrection: vi.fn(),
-	loadCorrectionsFromIdb: vi.fn().mockResolvedValue(undefined)
-}));
-
 vi.mock('$lib/stores/scan-history', () => ({
 	addToScanHistory: vi.fn()
 }));
@@ -112,7 +107,6 @@ vi.mock('$lib/stores/tags', () => ({
 }));
 
 vi.mock('$lib/data/boba-config', () => ({
-	BOBA_OCR_REGIONS: [{ x: 0, y: 0.84, w: 0.35, h: 0.13, label: 'test' }],
 	BOBA_SCAN_CONFIG: {
 		quality: 0.85,
 		ocrConfidenceThreshold: 30,
@@ -196,39 +190,14 @@ describe('Recognition Pipeline E2E', () => {
 			expect(result.card_id).toBeNull();
 			expect(result.card).toBeNull();
 			expect(result.failReason).toContain('blurry');
-			// Should not have attempted hash lookup
-			expect(mockImageWorker.computeDHash).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('Tier 1: Hash Cache', () => {
-		it('returns cached card when hash matches in IDB', async () => {
-			mockIdb.getHash.mockResolvedValue({ card_id: 'card-bf108', confidence: 0.95 });
-
-			const blob = new Blob(['test'], { type: 'image/jpeg' });
-			const result = await recognizeCard(blob);
-
-			expect(result.card_id).toBe('card-bf108');
-			expect(result.card?.name).toBe('Bo Jackson');
-			expect(result.scan_method).toBe('hash_cache');
-			expect(result.confidence).toBe(0.95);
-			// Should NOT have called fetch (Tier 3)
+			// Blur rejection returns early — confirm the tier-3 network call
+			// never ran, which is the one remaining downstream step.
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
-
-		it('calls tier change callback with tier 1', async () => {
-			mockIdb.getHash.mockResolvedValue({ card_id: 'card-bf108', confidence: 0.9 });
-
-			const onTierChange = vi.fn();
-			const blob = new Blob(['test'], { type: 'image/jpeg' });
-			await recognizeCard(blob, onTierChange);
-
-			expect(onTierChange).toHaveBeenCalledWith(1);
-		});
 	});
 
-	describe('Tier 3: Claude API fallback', () => {
-		it('falls through to Tier 3 when hash cache misses', async () => {
+	describe('Tier 3: Claude API', () => {
+		it('identifies a card via Tier 3 when called', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue({
 				ok: true,
@@ -312,36 +281,10 @@ describe('Recognition Pipeline E2E', () => {
 			expect(result.failReason).toContain('not found in database');
 		});
 
-		it('caches hash after successful Tier 3 identification', async () => {
-			mockIdb.getHash.mockResolvedValue(undefined);
-			mockFetch.mockResolvedValue({
-				ok: true,
-				json: () => Promise.resolve({
-					success: true,
-					card: {
-						card_number: 'PL-46',
-						hero_name: 'Speed Demon',
-						confidence: 0.88
-					}
-				}),
-				text: () => Promise.resolve('')
-			});
-
-			const blob = new Blob(['test'], { type: 'image/jpeg' });
-			await recognizeCard(blob);
-
-			// Should have written hash to IDB
-			expect(mockIdb.setHash).toHaveBeenCalledWith(
-				expect.objectContaining({
-					phash: 'abcdef1234567890',
-					card_id: 'card-pl46'
-				})
-			);
-		});
 	});
 
 	describe('tier progression callbacks', () => {
-		it('notifies tier 1 then tier 3 on cache miss', async () => {
+		it('notifies tier 3 when Claude is invoked', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue({
 				ok: true,
@@ -353,60 +296,8 @@ describe('Recognition Pipeline E2E', () => {
 			const blob = new Blob(['test'], { type: 'image/jpeg' });
 			await recognizeCard(blob, onTierChange);
 
-			expect(onTierChange).toHaveBeenCalledWith(1);
 			expect(onTierChange).toHaveBeenCalledWith(3);
 		});
-	});
-});
-
-describe('concurrent scans', () => {
-	it('handles multiple concurrent recognizeCard calls without interference', async () => {
-		// Simulate two concurrent scans — both should complete independently
-		mockIdb.getHash
-			.mockResolvedValueOnce({ card_id: 'card-bf108', confidence: 0.95 })
-			.mockResolvedValueOnce({ card_id: 'card-pl46', confidence: 0.88 });
-
-		const blob1 = new Blob(['test1'], { type: 'image/jpeg' });
-		const blob2 = new Blob(['test2'], { type: 'image/jpeg' });
-
-		const [result1, result2] = await Promise.all([
-			recognizeCard(blob1),
-			recognizeCard(blob2)
-		]);
-
-		expect(result1.card_id).toBe('card-bf108');
-		expect(result2.card_id).toBe('card-pl46');
-		// Each scan should have its own result — no cross-contamination
-		expect(result1.card?.name).toBe('Bo Jackson');
-		expect(result2.card?.name).toBe('Speed Demon');
-	});
-
-	it('concurrent scans with different tier outcomes do not interfere', async () => {
-		// First scan: hash cache hit (Tier 1)
-		// Second scan: cache miss → Tier 3
-		mockIdb.getHash
-			.mockResolvedValueOnce({ card_id: 'card-bf108', confidence: 0.95 })
-			.mockResolvedValueOnce(undefined);
-
-		mockFetch.mockResolvedValue({
-			ok: true,
-			json: () => Promise.resolve({
-				success: true,
-				card: { card_number: 'PL-46', hero_name: 'Speed Demon', confidence: 0.9 }
-			}),
-			text: () => Promise.resolve('')
-		});
-
-		const blob1 = new Blob(['test1'], { type: 'image/jpeg' });
-		const blob2 = new Blob(['test2'], { type: 'image/jpeg' });
-
-		const [result1, result2] = await Promise.all([
-			recognizeCard(blob1),
-			recognizeCard(blob2)
-		]);
-
-		expect(result1.scan_method).toBe('hash_cache');
-		expect(result2.scan_method).toBe('claude');
 	});
 });
 

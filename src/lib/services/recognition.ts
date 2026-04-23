@@ -1,19 +1,22 @@
 /**
- * Three-Tier Recognition Pipeline — Orchestrator
+ * Recognition Pipeline — Orchestrator
  *
- * Coordinates the three recognition tiers (hash, OCR, Claude AI),
- * manages the scan lifecycle, and handles cache writeback.
+ * Runs the Phase 2 canonical local-OCR path (Tier 1) with an optional
+ * upload TTA voting stage for File inputs, falling back to Claude Haiku
+ * (Tier 3) when neither can clear the confidence floor.
+ *
+ * The legacy pHash hash-cache (Tier 1) and Tesseract OCR (Tier 2) paths
+ * were retired in Session 2.5. `hash_cache` rows written before that
+ * session remain in place and continue to serve the AR overlay and the
+ * image-harvester; this orchestrator no longer writes to them.
  *
  * Tier functions live in recognition-tiers.ts.
  * Cross-validation logic lives in recognition-validation.ts.
  * Worker management lives in recognition-workers.ts.
  */
 
-import { idb } from './idb';
 import { loadCardDatabase } from './card-db';
 import { getSupabase } from './supabase';
-import { recordCorrection } from '$lib/services/scan-learning';
-import { initOcr } from '$lib/services/ocr';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
@@ -24,21 +27,11 @@ import type { ScanResult, ScanMethod } from '$lib/types';
 import { createThumbnailDataUrl, createListingImageBlob } from './scan-image-utils';
 import {
 	getImageWorker,
-	initWorkers,
-	isOcrAvailable,
-	wasOcrRetryAttempted,
-	markOcrRetryAttempted,
-	markOcrAvailable
+	initWorkers
 } from './recognition-workers';
 import {
-	runTier1,
-	runTier1Embedding,
-	runTier2,
 	runTier3,
-	emptyTier1Telemetry,
-	emptyTier2Telemetry,
 	emptyTier3Telemetry,
-	emitTier2Result,
 	type ScanContext
 } from './recognition-tiers';
 import { incrementPersona } from './persona';
@@ -68,10 +61,6 @@ function buildDecisionContext() {
 
 // Re-export for backward compatibility
 export { analyzeFrame, checkImageQuality, computeFrameHash, computeHammingDistance, compositeForFoilMode, resetWorkerFailCount, initWorkers } from './recognition-workers';
-export { disableFuzzyHashRpc, isFuzzyHashRpcDisabled } from './recognition-tiers';
-
-/** Circuit breaker: disable upsert hash cache RPC for the session if it fails once */
-let _upsertHashRpcDisabled = false;
 
 /**
  * Shape of the extra telemetry captured inside `recognizeCard()` at
@@ -104,8 +93,6 @@ interface ScanWriteExtras {
 	alignmentStateAtCapture: 'no_card' | 'partial' | 'ready' | null;
 	/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
 	viewfinder: { x: number; y: number; width: number; height: number } | null;
-	/** Which Tier 1 path ran for this scan (Session 1.6). */
-	tier1Engine: 'phash' | 'embedding';
 }
 
 /**
@@ -159,15 +146,12 @@ async function openScanRow(
 		// Session 1.5 capture-context: viewfinder-alignment telemetry. Stored
 		// in capture_context JSONB so Tier 1 hit rate can be segmented by
 		// alignment quality at the moment of shutter.
-		// Session 1.6 adds tier1_engine so hit-rate views can split
-		// embedding runs from pHash runs.
 		captureContext: {
 			alignment_state_at_capture: extras.alignmentStateAtCapture,
 			viewfinder_x: extras.viewfinder?.x ?? null,
 			viewfinder_y: extras.viewfinder?.y ?? null,
 			viewfinder_width: extras.viewfinder?.width ?? null,
-			viewfinder_height: extras.viewfinder?.height ?? null,
-			tier1_engine: extras.tier1Engine
+			viewfinder_height: extras.viewfinder?.height ?? null
 		},
 
 		// Capture source identity
@@ -353,7 +337,7 @@ export async function recognizeCard(
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded (games=${isAutoDetect ? 'auto' : gameHint}).`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const ctx: ScanContext = { traceId, lastOcrReading: null, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
+	const ctx: ScanContext = { traceId, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
 
 	// Convert to ImageBitmap for worker transfer
 	const ownsBitmap = !(imageSource instanceof ImageBitmap);
@@ -441,13 +425,6 @@ export async function recognizeCard(
 		};
 	}
 
-	// ── Tier 1 engine selection (Session 1.6) ──────────────
-	// Resolved before openScanRow so capture_context.tier1_engine is written
-	// at INSERT time. The flag is read once per scan so a mid-scan flag flip
-	// doesn't split the telemetry for this scan across engines.
-	const embeddingTier1Enabled = await isEmbeddingTier1Enabled().catch(() => false);
-	const tier1Engine: 'phash' | 'embedding' = embeddingTier1Enabled ? 'embedding' : 'phash';
-
 	const scanWriteExtras: ScanWriteExtras = {
 		telemetry: shutterTelemetry,
 		exif: shutterExif,
@@ -456,8 +433,7 @@ export async function recognizeCard(
 		photoHeight: bitmap.height,
 		captureSource,
 		alignmentStateAtCapture: options?.alignmentStateAtCapture ?? null,
-		viewfinder: options?.viewfinder ?? null,
-		tier1Engine
+		viewfinder: options?.viewfinder ?? null
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
@@ -496,10 +472,8 @@ export async function recognizeCard(
 	}
 
 	// Declared here (not at each tier's run site) so finalize() can close over
-	// them on every exit path — including early Tier 1/offline returns that
-	// happen before Tier 2/3 would otherwise be declared.
-	const tier1Tel = emptyTier1Telemetry();
-	const tier2Tel = emptyTier2Telemetry();
+	// it on every exit path — including offline returns that happen before
+	// Tier 3 would otherwise be declared.
 	const tier3Tel = emptyTier3Telemetry();
 
 	// Helper to record scan result to history and auto-tag before returning
@@ -622,6 +596,31 @@ export async function recognizeCard(
 			first_edition_stamp_detected: final.first_edition_stamp_detected ?? false
 		});
 
+		// Reference image competition — auto-submit high-confidence scans as
+		// candidate reference images. Moved here from the deleted
+		// writeHashToAllLayers. Server-side RPC handles "beat the champion"
+		// atomic logic. Bitmap work happens synchronously so the network
+		// upload can be fire-and-forget without racing the bitmap close.
+		if (
+			final.card_id &&
+			bitmap instanceof ImageBitmap &&
+			final.confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence
+		) {
+			void (async () => {
+				try {
+					const worker = getImageWorker();
+					const uploadBlob = await worker.resizeForUpload(bitmap, 800);
+					const { variance: blurVariance } = await worker.checkBlurry(bitmap, 100);
+					if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
+						submitReferenceImage(final.card_id!, final.confidence, uploadBlob, blurVariance)
+							.catch((err) => console.debug('[scan] Reference image submission failed:', err));
+					}
+				} catch (err) {
+					console.debug('[scan] Reference image preparation failed:', err);
+				}
+			})();
+		}
+
 		// Auto-tag card with its parallel name
 		if (final.card?.parallel && final.card_id) {
 			import('$lib/stores/tags.svelte').then(({ addTag }) => {
@@ -630,39 +629,6 @@ export async function recognizeCard(
 		}
 
 		return final;
-	}
-
-	// ── TIER 1: Hash or Embedding Lookup ─────────────────────
-	// All tiers operate on `workingBitmap`, which is the viewfinder-cropped
-	// canonical 500×700 frame produced by Scanner.svelte's capture flow.
-	// Session 1.6: gated by 'embedding_tier1' — if enabled, DINOv2-based
-	// nearest-neighbor replaces pHash. pHash remains the default.
-	onTierChange?.(1);
-	console.debug(`[scan] Starting Tier 1 (${tier1Engine}) lookup...`);
-	checkpoint(traceId, 'tier1:start', performance.now() - startTime, { engine: tier1Engine });
-	let tier1Result: ScanResult | null = null;
-	try {
-		tier1Result = tier1Engine === 'embedding'
-			? await runTier1Embedding(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise)
-			: await runTier1(workingBitmap, ctx, writeHashToAllLayers, tier1Tel, scanIdPromise);
-		checkpoint(traceId, 'tier1:done', performance.now() - startTime, {
-			hit: tier1Result !== null,
-			outcome: tier1Tel.outcome,
-			engine: tier1Engine
-		});
-		if (tier1Result) {
-			console.debug(`[scan] Tier 1 (${tier1Engine}) HIT: card_id=${tier1Result.card_id}, card=${tier1Result.card?.card_number}, confidence=${tier1Result.confidence}`);
-		} else {
-			console.debug(`[scan] Tier 1 (${tier1Engine}) MISS`);
-		}
-	} catch (err) {
-		checkpoint(traceId, 'tier1:threw', performance.now() - startTime, {
-			error: err instanceof Error ? err.message : String(err)
-		});
-		console.warn(`[scan:${ctx.traceId}] Tier 1 failed, falling through:`, err);
-	}
-	if (tier1Result) {
-		return finalize(tier1Result);
 	}
 
 	// ── Offline handling: queue for later if no network ──────
@@ -686,85 +652,9 @@ export async function recognizeCard(
 		});
 	}
 
-	// ── TIER 2: OCR + Fuzzy Match ────────────────────────────
-	// One-time retry if OCR failed during initial setup.
-	// Set the flag BEFORE the await to prevent concurrent scans from both retrying.
-	if (!isOcrAvailable() && !wasOcrRetryAttempted() && navigator.onLine) {
-		markOcrRetryAttempted();
-		try {
-			await Promise.race([
-				initOcr(),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('OCR retry timed out')), 10000)
-				)
-			]);
-			markOcrAvailable();
-			console.debug('[scan] Tesseract OCR initialized on retry');
-		} catch (err) {
-			console.warn('[scan] Tesseract OCR retry failed — Tier 2 remains disabled:', err);
-		}
-	}
-
-	if (isOcrAvailable()) {
-		onTierChange?.(2);
-		console.debug('[scan] Starting Tier 2: OCR card number extraction...');
-		checkpoint(traceId, 'tier2:start', performance.now() - startTime);
-		let tier2Result: ScanResult | null = null;
-		try {
-			// No outer race: Tier 2's per-region OCR calls already use withTimeout
-			// against a TIER2_BUDGET_MS budget that early-exits when exhausted.
-			// runTier2 emits its scan_tier_results row inside try/finally now.
-			tier2Result = await runTier2(workingBitmap, ctx, tier2Tel, scanIdPromise);
-			checkpoint(traceId, 'tier2:done', performance.now() - startTime, {
-				hit: tier2Result !== null,
-				outcome: tier2Tel.outcome
-			});
-			if (tier2Result) {
-				console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}`);
-			} else {
-				console.debug('[scan] Tier 2 MISS: OCR could not match a card number');
-			}
-		} catch (err) {
-			checkpoint(traceId, 'tier2:threw', performance.now() - startTime, {
-				error: err instanceof Error ? err.message : String(err)
-			});
-			// OCR failure is non-fatal — fall through to Tier 3
-			console.warn('[scan] Tier 2 error (falling through to Tier 3):', err);
-		}
-		if (tier2Result) {
-			const hash = await getImageWorker().computeDHash(workingBitmap);
-			const hashGameId = tier2Result.card?.game_id || tier2Result.game_id || gameHint || 'boba';
-			// Tier 2 can't detect parallel visually. Read from the matched card —
-			// cards.parallel is the source of truth. The Tier 2 confirmation UI
-			// forces the user to choose parallel before the collection entry is
-			// created, so the collection row records the truth regardless of
-			// what the hash cache says.
-			const hashParallel = tier2Result.card?.parallel ?? tier2Result.parallel ?? 'Paper';
-			await writeHashToAllLayers(hash, tier2Result.card_id!, tier2Result.confidence, workingBitmap, hashGameId, hashParallel);
-			return finalize(tier2Result);
-		}
-	} else {
-		// runTier2 isn't called in the OCR-unavailable path, so emit the skip row
-		// from out here. Inside-tier emit is the rule for runTier1/2/3 invocations;
-		// this is the lone exception where the tier function itself never runs.
-		console.debug('[scan] Tier 2 skipped: OCR not available');
-		tier2Tel.attempted = false;
-		tier2Tel.skipReason = 'ocr_unavailable';
-		tier2Tel.outcome = 'skipped';
-		void scanIdPromise.then(async (sid) => {
-			if (!sid) return;
-			try {
-				await emitTier2Result(sid, tier2Tel);
-			} catch (err) {
-				console.debug('[scan] Tier 2 skip emit failed:', err);
-			}
-		});
-	}
-
 	// ── TIER 1 canonical PaddleOCR (Session 2.1a) ───────────
-	// Local OCR + rule-based parallel classifier. Runs between the existing
-	// Tier 2 (Tesseract) and Tier 3 (Claude). Gated by live_ocr_tier1_v1 so
-	// the old Haiku-first behavior stays intact when the flag is off.
+	// Local OCR + rule-based parallel classifier. Runs before Tier 3 (Claude).
+	// Gated by live_ocr_tier1_v1; when off, scans fall straight through to Haiku.
 	const liveOCREnabled = await isLiveOCRTier1Enabled();
 	let liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
 	// Shared across canonical + TTA telemetry so fallback Haiku rows still
@@ -988,17 +878,6 @@ export async function recognizeCard(
 	}
 	if (tier3Result) {
 		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, parallel=${tier3Result.parallel}`);
-		const hash = await getImageWorker().computeDHash(workingBitmap);
-		const hashGameId = tier3Result.card?.game_id || tier3Result.game_id || gameHint || 'boba';
-		// Tier 3 parallel comes from cards.parallel (the source of truth for the
-		// matched card) — fall back to the result's parallel field, then 'Paper'.
-		const hashParallel = tier3Result.card?.parallel ?? tier3Result.parallel ?? 'Paper';
-		await writeHashToAllLayers(hash, tier3Result.card_id!, tier3Result.confidence, workingBitmap, hashGameId, hashParallel);
-
-		// Record correction: Tier 2 read something but couldn't match; Tier 3 found the right card.
-		if (tier3Result.card_id && tier3Result.card?.card_number && ctx.lastOcrReading) {
-			recordCorrection(ctx.lastOcrReading, tier3Result.card.card_number, 'ai');
-		}
 		return finalize(tier3Result);
 	}
 	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
@@ -1008,83 +887,6 @@ export async function recognizeCard(
 }
 
 
-
-// ── Cache Writeback ─────────────────────────────────────────
-
-async function writeHashToAllLayers(
-	hash: string,
-	cardId: string,
-	confidence: number,
-	bitmap?: ImageBitmap,
-	gameId: string = 'boba',
-	parallel: string = 'Paper'
-): Promise<void> {
-	// Compute pHash if bitmap is available (for enhanced matching)
-	let phash256: string | null = null;
-	if (bitmap) {
-		try {
-			phash256 = await getImageWorker().computePHash(bitmap, 16);
-		} catch (err) {
-			console.debug('[scan] pHash computation failed:', err);
-		}
-	}
-
-	// Layer 1: IndexedDB
-	try {
-		await idb.setHash({ phash: hash, card_id: cardId, confidence, game_id: gameId, parallel, ...(phash256 ? { phash_256: phash256 } : {}) });
-	} catch (err) {
-		console.debug('[scan] IDB hash write failed:', err);
-	}
-
-	// Layer 3: Supabase (atomic scan_count increment via RPC)
-	if (!_upsertHashRpcDisabled) {
-		try {
-			const client = getSupabase();
-			if (client) {
-				const rpcArgs: { p_phash: string; p_card_id: string; p_confidence: number; p_phash_256?: string; p_game_id: string; p_parallel: string } = {
-					p_phash: hash,
-					p_card_id: cardId,
-					p_confidence: confidence,
-					p_game_id: gameId,
-					p_parallel: parallel,
-				};
-				if (phash256) rpcArgs.p_phash_256 = phash256;
-				const { error: rpcErr } = await client.rpc('upsert_hash_cache', rpcArgs);
-				if (rpcErr) {
-					console.debug('[scan] Supabase hash writeback RPC error:', rpcErr.message);
-					_upsertHashRpcDisabled = true;
-				}
-			}
-		} catch (err) {
-			console.debug('[scan] Supabase hash writeback failed:', err);
-		}
-	}
-
-	// Layer 4: Reference image competition
-	// Automatically submit high-confidence scans as candidate reference images.
-	// The server-side RPC handles the atomic "beat the champion" logic.
-	// This runs in the background — it never blocks the scan result.
-	//
-	// IMPORTANT: We must do the bitmap work (resize + blur check) SYNCHRONOUSLY
-	// before this function returns, because the caller will close the bitmap
-	// in a finally block. Only the network upload is fire-and-forget.
-	if (bitmap && confidence >= BOBA_PIPELINE_CONFIG.referenceImageMinConfidence) {
-		try {
-			// Do bitmap operations NOW, before the caller closes the bitmap
-			const worker = getImageWorker();
-			const uploadBlob = await worker.resizeForUpload(bitmap, 800);
-			const { variance: blurVariance } = await worker.checkBlurry(bitmap, 100);
-
-			// Only the network submission is fire-and-forget
-			if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
-				submitReferenceImage(cardId, confidence, uploadBlob, blurVariance)
-					.catch(err => console.debug('[scan] Reference image submission failed:', err));
-			}
-		} catch (err) {
-			console.debug('[scan] Reference image preparation failed:', err);
-		}
-	}
-}
 
 /**
  * Coerce any recognition input shape into a Blob suitable for upload.
@@ -1139,20 +941,6 @@ async function traceScanPipeline(
 		} as never);
 	} catch {
 		// Swallow — telemetry failure must never break a scan
-	}
-}
-
-/**
- * Session 1.6 gate. Returns true when Tier 1 should run the DINOv2
- * embedding path instead of pHash. Admin-only at launch; widen after
- * measuring real-traffic hit rate via tier1_hit_rate_v1.
- */
-async function isEmbeddingTier1Enabled(): Promise<boolean> {
-	try {
-		const flagsModule = await import('$lib/stores/feature-flags.svelte');
-		return flagsModule.featureEnabled('embedding_tier1')();
-	} catch {
-		return false;
 	}
 }
 

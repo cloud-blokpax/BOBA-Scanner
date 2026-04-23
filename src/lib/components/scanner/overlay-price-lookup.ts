@@ -6,7 +6,14 @@
  * before the user even captures the card.
  */
 
-import { isFuzzyHashRpcDisabled, disableFuzzyHashRpc } from '$lib/services/recognition';
+// ── Fuzzy-hash RPC circuit breaker ──────────────────────────
+// If find_similar_hash ever returns an error we disable further
+// calls for the life of the tab. The AR overlay is best-effort —
+// never bother the Supabase connection with a repeatedly-failing
+// RPC just to find out it still fails.
+let _fuzzyHashRpcDisabled = false;
+function isFuzzyHashRpcDisabled(): boolean { return _fuzzyHashRpcDisabled; }
+function disableFuzzyHashRpc(): void { _fuzzyHashRpcDisabled = true; }
 
 export interface OverlayData {
 	cardName: string;
