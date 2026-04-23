@@ -6,30 +6,12 @@
  * (Wonders, future Game 3) implement this interface and register in the resolver.
  */
 
-// ── OCR Region ─────────────────────────────────────────────────
-
-/** A rectangular region on the card image where OCR should look for text. */
-export interface OcrRegion {
-	/** Fractional X offset from left (0.0–1.0) */
-	x: number;
-	/** Fractional Y offset from top (0.0–1.0) */
-	y: number;
-	/** Fractional width (0.0–1.0) */
-	w: number;
-	/** Fractional height (0.0–1.0) */
-	h: number;
-	/** Human-readable label for debugging */
-	label: string;
-}
-
 // ── Scan Config ────────────────────────────────────────────────
 
 /** Image quality and safety limits for the scan pipeline. */
 export interface ScanConfig {
 	/** JPEG quality for capture (0.0–1.0) */
 	quality: number;
-	/** Minimum Tesseract confidence to accept OCR result */
-	ocrConfidenceThreshold: number;
 	/** Laplacian variance threshold for blur detection */
 	blurThreshold: number;
 	/** Max image dimension sent to Claude (px) */
@@ -52,8 +34,6 @@ export interface PipelineConfig {
 	referenceImageMinVariance: number;
 	/** Max OCR corrections stored in local learning cache */
 	maxOcrCorrections: number;
-	/** Tesseract worker restart interval (recognitions before restart) */
-	ocrWorkerRestartInterval: number;
 	/** Reference image resize max dimension (px) */
 	referenceImageMaxDimension: number;
 	/** Minimum confidence to submit a reference image */
@@ -104,15 +84,10 @@ export interface GameConfig {
 	/** Emoji or icon for quick visual identification */
 	icon: string;
 
-	// ── Card Number Extraction (Tier 2 — OCR) ──────────────────
-	/** Known card number prefixes for this game (e.g., 'BF', 'PL', 'HTD') */
-	knownPrefixes: ReadonlySet<string>;
-	/** Extract a card number from raw OCR text. Returns null if no match. */
+	// ── Card Number Extraction ─────────────────────────────────
+	/** Extract a card number from raw OCR text. Returns null if no match.
+	 *  Still used by /api/scan/+server.ts for post-Claude game-id detection. */
 	extractCardNumber: (text: string) => string | null;
-
-	// ── OCR Regions ────────────────────────────────────────────
-	/** Regions on the card image where OCR should look for card numbers/text */
-	ocrRegions: readonly OcrRegion[];
 
 	// ── Config Bundles ─────────────────────────────────────────
 	/** Scan quality and safety limits */

@@ -49,24 +49,6 @@ describe('Architecture — GameConfig invariants', () => {
 		}
 	});
 
-	it('every registered game has a non-empty ocrRegions array', async () => {
-		const configs = await getAllGameConfigs();
-		for (const c of configs) {
-			expect(
-				c.ocrRegions.length,
-				`${c.id} must have at least one OCR region`
-			).toBeGreaterThan(0);
-			for (const region of c.ocrRegions) {
-				expect(region.x).toBeGreaterThanOrEqual(0);
-				expect(region.y).toBeGreaterThanOrEqual(0);
-				expect(region.w).toBeGreaterThan(0);
-				expect(region.h).toBeGreaterThan(0);
-				expect(region.x + region.w).toBeLessThanOrEqual(1.001); // allow tiny float rounding
-				expect(region.y + region.h).toBeLessThanOrEqual(1.001);
-			}
-		}
-	});
-
 	it('every registered game provides an extractCardNumber function', async () => {
 		const configs = await getAllGameConfigs();
 		for (const c of configs) {

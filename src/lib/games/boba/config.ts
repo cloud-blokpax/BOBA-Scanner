@@ -10,11 +10,10 @@
  */
 
 import type { GameConfig } from '../types';
-import { KNOWN_PREFIXES, extractCardNumber } from './extract';
+import { extractCardNumber } from './extract';
 import { bobaTheme } from './theme';
 import { bobaNavItems, bobaProtectedRoutes } from './nav';
 import {
-	BOBA_OCR_REGIONS,
 	BOBA_SCAN_CONFIG,
 	BOBA_PIPELINE_CONFIG,
 } from '$lib/data/boba-config';
@@ -26,12 +25,8 @@ const bobaConfig: GameConfig = {
 	shortName: 'BoBA',
 	icon: '🏈',
 
-	// ── Card Number Extraction (Tier 2) ────────────────────────
-	knownPrefixes: KNOWN_PREFIXES,
+	// ── Card Number Extraction ─────────────────────────────────
 	extractCardNumber,
-
-	// ── OCR Regions ────────────────────────────────────────────
-	ocrRegions: BOBA_OCR_REGIONS,
 
 	// ── Config Bundles ─────────────────────────────────────────
 	scanConfig: BOBA_SCAN_CONFIG,

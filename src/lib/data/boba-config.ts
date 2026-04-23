@@ -5,15 +5,8 @@
  * Used by the recognition pipeline and UI components.
  */
 
-export const BOBA_OCR_REGIONS = [
-	{ x: 0.01, y: 0.84, w: 0.35, h: 0.13, label: 'bottom-left' },
-	{ x: 0.60, y: 0.84, w: 0.35, h: 0.13, label: 'bottom-right' },
-	{ x: 0.0, y: 0.80, w: 1.0, h: 0.18, label: 'full-strip' }
-] as const;
-
 export const BOBA_SCAN_CONFIG = {
 	quality: 0.85,
-	ocrConfidenceThreshold: 30,
 	blurThreshold: 25, // Lowered from 35 — mobile cameras with slight motion were failing auto-detect
 	maxUploadSize: 1024,
 	aiCostPerScan: 0.003,
@@ -31,8 +24,6 @@ export const BOBA_PIPELINE_CONFIG = {
 	referenceImageMinVariance: 150,
 	/** Max OCR corrections stored in local learning cache */
 	maxOcrCorrections: 500,
-	/** Tesseract worker restart interval (recognitions before restart) */
-	ocrWorkerRestartInterval: 50,
 	/** Reference image resize max dimension */
 	referenceImageMaxDimension: 800,
 	/** Minimum confidence to submit a reference image */

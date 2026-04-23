@@ -94,3 +94,46 @@ export function coerceHumanReadableParallel(
 	}
 	return parallel;
 }
+
+/**
+ * Aliases Claude may emit that need normalizing to human-readable names.
+ *
+ * The classifier short codes (`cf`, `ff`, `ocm`, `sf`, `paper`) are already
+ * covered by `WONDERS_PARALLEL_CODE_TO_NAME`. These additional entries
+ * handle Claude's occasional long-form variants:
+ *
+ *   - 'classic_foil' / 'formless_foil' / 'stone_foil' — snake_case from
+ *     older tool-use prompts. Kept here so we don't have to retrain Claude
+ *     to match one canonical spelling.
+ *   - 'stonefoil' — lowercase canonical (Stonefoil is one word).
+ *   - 'orbital_color_match' — snake_case of the full name.
+ *
+ * BoBA values (e.g. "battlefoil", "rad") pass through unchanged — the
+ * downstream `cards.parallel` lookup fixes them to canonical names via
+ * prefix-derivation on ingest.
+ */
+const WONDERS_PARALLEL_ALIASES: Record<string, WondersParallelName> = {
+	classic_foil: 'Classic Foil',
+	formless_foil: 'Formless Foil',
+	stone_foil: 'Stonefoil',
+	stonefoil: 'Stonefoil',
+	orbital_color_match: 'Orbital Color Match'
+};
+
+/**
+ * Normalize an arbitrary parallel string (short code, long-form alias, or
+ * anything else) to a human-readable name if possible, or pass through
+ * unchanged.
+ *
+ * Used at the /api/scan Tier 3 boundary where Claude's output needs to be
+ * coerced before the payload reaches the client. Client-side code uses
+ * `toParallelName` + `coerceHumanReadableParallel` directly.
+ */
+export function normalizeParallelForServer(input: string): string {
+	const lower = input.toLowerCase();
+	return (
+		WONDERS_PARALLEL_CODE_TO_NAME[lower as WondersParallelCode] ??
+		WONDERS_PARALLEL_ALIASES[lower] ??
+		input
+	);
+}

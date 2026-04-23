@@ -42,7 +42,6 @@ export type ImageWorkerProxy = Comlink.Remote<{
 		interiorVariance: number;
 		phash256: string;
 	}>;
-	preprocessForOCR: (bitmap: ImageBitmap, region: { x: number; y: number; w: number; h: number }) => Promise<Blob>;
 	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
 }>;
 

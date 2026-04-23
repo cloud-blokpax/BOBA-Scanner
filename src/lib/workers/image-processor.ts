@@ -10,7 +10,6 @@
  *   - resizeForUpload(imageBitmap, maxDimension) → Blob
  *   - checkBlurry(imageBitmap, threshold) → { isBlurry, variance }
  *   - checkGlare / analyzeCardPresence / computeQualitySignals
- *   - preprocessForOCR(imageBitmap, region) → Blob
  *   - compositeMinPixel(bitmaps[]) → ImageBitmap
  */
 import * as Comlink from 'comlink';
