@@ -1014,10 +1014,11 @@ Wonders cards use a separate query builder (`ebay-query-wonders.ts`) that quotes
 
 ### Documentation
 
-- **CLAUDE.md is the single source of truth** for all project documentation, architecture, schema, conventions, and reference material
-- **Separate docs are allowed** for multi-game architecture guides: `docs/adding-a-new-game.md` and `docs/game-audit.md` are maintained alongside CLAUDE.md
-- **Only other exceptions**: root `README.md` (GitHub landing page — keep minimal, point to CLAUDE.md), `.env.example`, and `.claude/CONTEXT.md` (locked decisions for Claude Code)
-- When making changes that affect architecture, database schema, conventions, or project structure, update CLAUDE.md as part of the same change
+- **CLAUDE.md is the single source of truth** for all project documentation, architecture, schema, conventions, and reference material.
+- **Separate docs are allowed** for canonical references: `docs/adding-a-new-game.md` (game integration checklist), `docs/game-audit.md` (multi-game architecture notes), and `docs/phase-2-telemetry.md` (Phase 2 scan telemetry SQL drilldowns). These are maintained alongside CLAUDE.md — any change that affects them should update CLAUDE.md's reference list in the same PR.
+- **Other exceptions**: root `README.md` (GitHub landing page — keep minimal, point to CLAUDE.md), `.env.example`, and `.claude/CONTEXT.md` (locked decisions for Claude Code).
+- **Update CLAUDE.md in the same PR** whenever a change affects architecture, database schema, conventions, or project structure. This was not consistently enforced during the Phase 2 arc, which produced a six-chunk rewrite effort in April 2026 to catch up. Don't let that happen again.
+- **Drift-prone sections.** The Database Schema and Services listings are the two sections where drift happens fastest and costs the most. If an automated drift check lands (CI script that greps CLAUDE.md for deleted-file references and fails the build), treat those two sections as auto-generatable from Supabase introspection + `ls src/lib/services/` and stop hand-maintaining the listings.
 
 ### Code Style
 
@@ -1030,11 +1031,27 @@ Wonders cards use a separate query builder (`ebay-query-wonders.ts`) that quotes
 
 ### Multi-Game Conventions
 
-- **Default game_id = 'boba'** for all new code paths that don't explicitly specify a game
-- **NEVER** move BoBA columns (`hero_name`, `weapon_type`, etc.) into `metadata` JSONB
-- **ALWAYS** use backward-compatible re-exports when moving code so existing imports don't break
-- **Game-specific code** lives in `src/lib/games/{gameId}/` modules, NOT in shared services
-- **GameConfig.cardIdTool** must be named `identify_card` — the scan endpoint hardcodes this
+- **Default `game_id = 'boba'`** for all new code paths that don't explicitly specify a game. Every `game_id` column in the DB defaults to `'boba'` for backward compatibility with pre-Phase-3 code.
+- **NEVER** move BoBA columns (`hero_name`, `weapon_type`, `athlete_name`, `battle_zone`) into `metadata` JSONB. These are first-class columns by design. Wonders-specific fields (`cost`, `hierarchy`, `card_class`, `orbitals`, etc.) live in `metadata` OR in the `wotf_cards` table (1:1 join on `cards.id`).
+- **ALWAYS** use backward-compatible re-exports when moving code so existing imports don't break. The Phase 2 arc's guiding principle was "replace implementation, preserve API" — same module exports, same call signatures, different internals. Zero consumer changes.
+- **Game-specific code** lives in `src/lib/games/{gameId}/` modules, NOT in shared services. Each game exports a `GameConfig` via `resolver.ts` lazy-load.
+- **`GameConfig.cardIdTool`** must be named `identify_card` — the scan endpoint hardcodes this tool name for all games. Don't rename.
+
+### Parallel Naming
+
+This was the biggest drift class in the Phase 2 arc and is worth calling out explicitly.
+
+- **Column name is `parallel`, not `variant`.** The column was renamed across 11 tables in Phase 2 (`cards`, `card_embeddings`, `collections`, `hash_cache`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`, `variant_harvest_seed`, `wonders_cards_full`). Zero tables have a `variant` column — any code referencing `variant` is either dead or wrong. (The lone exception: `wotf_cards.variant_type` in the Wonders reference table, which is distinct from the parallel system.)
+- **Stored values are full names.** BoBA parallels use human-readable names (`'Paper'`, `'Battlefoil'`, `'Silver Battlefoil'`, etc.). Wonders parallels use title-cased full names (`'Paper'`, `'Classic Foil'`, `'Formless Foil'`, `'Orbital Color Match'`, `'Stonefoil'`). The Wonders parallel classifier emits short codes (`paper/cf/ff/ocm/sf`) which are mapped to full names before DB write — short codes are never persisted.
+- **No CHECK constraint on parallel values.** Free-text column. BoBA has 49 parallel names; Wonders has 5. They coexist in the same column with no union constraint — game separation happens via `game_id`, not via a parallel enum.
+- **`(card_number, name, parallel)` is the unique key** for identifying a card row in both games. Recognition pipeline consumers can assume this is unique.
+
+### Schema Changes
+
+- **MCP-first.** Schema DDL is applied via Supabase MCP (`apply_migration` for DDL, `execute_sql` for one-off data ops). Committed files in `/migrations/` are the canonical history — any MCP-applied change must ALSO land as a migration file in the same PR, or a fresh Supabase branch will drift from prod.
+- **Never "SQL Editor + apply later."** Jimmy's workflow is phone-only; MCP is the actual path. References to "Supabase SQL Editor" in older docs predate this and should be treated as outdated.
+- **Deploy order: SQL migrations first, then code.** Code that reads a new column will 500 if the column doesn't exist yet; the reverse is always safe.
+- **Drift check.** Post-deploy, run the drift-check queries at the end of the Database Schema section. Should always return `0/0`.
 
 ### API Route Patterns
 
@@ -1046,9 +1063,13 @@ Wonders cards use a separate query builder (`ebay-query-wonders.ts`) that quotes
 
 ### Services Architecture
 
-- **Supabase is optional**: The `supabase` export uses a Proxy that throws if not configured. New code should use `getSupabase()` which returns `null` when unconfigured.
-- **Graceful degradation**: All services handle the case where external dependencies (Supabase, Redis, eBay) are unavailable
-- **Web Workers via Comlink**: Image processing and OCR run in dedicated workers, exposed as typed async interfaces via Comlink
+- **Supabase is optional.** The `supabase` export uses a Proxy that throws if not configured. New code should use `getSupabase()` which returns `null` when unconfigured and handle the null case gracefully.
+- **Graceful degradation.** All services handle the case where external dependencies (Supabase, Redis, eBay) are unavailable. In-memory fallbacks exist for rate limiting and pricing.
+- **Web Workers via Comlink.** Image processing and OCR run in dedicated workers exposed as typed async interfaces via Comlink.
+- **Scan writer is the single owner of `scans` row lifecycle.** `scan-writer.ts` owns `openScanRow` → `recordScan` → `updateScanOutcome`. No other code writes directly to the `scans` table. This invariant makes telemetry correct — if another path writes, `scans.outcome` can diverge from the scanner state and corrupt Phase 2 dashboards silently.
+- **Catalog mirror pattern.** `catalog-mirror.ts` maintains a client-side `(game_id, card_number, name)` → `card_id` index loaded from IndexedDB with Supabase refresh. All Tier 1 consumers go through this instead of hitting Supabase directly — makes scanning work offline and keeps the hot path at <5ms.
+- **Consensus builder is source-agnostic.** `consensus-builder.ts` consumes "frames" without caring where they come from (real temporal live-camera frames, synthetic TTA frames, binder-cell frames). Per-source thresholds are configured at the call site; the builder itself just counts votes.
+- **Feature flags gate new paths.** Every new scan pipeline addition is gated behind a `feature_flags` row (`live_ocr_tier1_v1`, `upload_tta_v1`, `binder_mode_v1`). Default is `enabled_for_admin: true`; production rollout flips `enabled_globally` or tier-specific booleans via the admin Features tab. See the recognition pipeline section for the three active flags.
 
 ### Security
 
@@ -1092,8 +1113,10 @@ Follow the 6-step checklist in `docs/adding-a-new-game.md`:
 
 ### Modifying the card database
 
-1. Add/update cards directly in Supabase (the `cards` table)
-1. Optionally, update a local `card-database.json` and run `npm run generate:card-seed` to regenerate the SQL seed
+1. Apply the DML via Supabase MCP `execute_sql` (preferred) or `apply_migration` if the change is DDL. Never instruct a user to go through the Supabase SQL Editor manually — MCP is the actual workflow.
+2. If the change adds/removes cards (not just updates), also update the local `card-database.json` and run `npm run generate:card-seed` to keep the committed SQL seed in sync. The seed is what rebuilds a fresh Supabase branch.
+3. Verify via drift-check queries at the end of the Database Schema section. Expected result: `0/0`.
+4. If the change introduces a new column or table, update CLAUDE.md's Database Schema section in the same PR (see Documentation convention above).
 
 ### Working with the recognition pipeline
 
@@ -1145,3 +1168,33 @@ All three default to `enabled_for_admin: true` in `FEATURE_DEFINITIONS` (`src/li
 1. Name convention: `<module>.test.ts` (unit), `<module>.integration.test.ts` (integration), `<module>.e2e.test.ts` (E2E)
 1. Mock external dependencies (sharp, Anthropic, Supabase, Redis) using `vi.mock()`
 1. Run with `npm test` or `npm run test:watch`
+
+### Adding a scan pipeline capture mode
+
+Tier 1 currently has four modes (live camera / canonical / upload TTA / binder). Adding a fifth is non-trivial because all four consume the same consensus builder. Checklist:
+
+1. Create a coordinator service in `src/lib/services/<mode-name>-coordinator.ts` — owns the capture loop specific to the mode.
+2. Capture produces "frames" in the consensus-builder's expected shape (`{ cardNumberText, nameText, confidence, source }`).
+3. Each frame calls `consensus-builder.ts` via the same public interface as existing modes.
+4. Persistent scan row creation goes through `scan-writer.ts` — do not write to `scans` directly.
+5. Add telemetry checkpoints via `scan-checkpoint.ts` for each major stage of the mode (capture, OCR, consensus, finalize).
+6. Add a feature flag row in the migration that adds the service (`enabled_for_admin: true` by default).
+7. Add the mode to the Recognition Pipeline section of CLAUDE.md.
+
+### Adding a new service
+
+1. Pick the right directory:
+   - `src/lib/services/` — client-side services called from components or other services.
+   - `src/lib/server/` — server-only code (never imported from client).
+   - `src/lib/games/{gameId}/` — game-specific logic (OCR regions, extractors, prompts).
+2. Follow the "Replace implementation, preserve API" principle if the new service supersedes an existing one — same exports, same signatures, different internals.
+3. If the service has external dependencies (Supabase, Redis, eBay), handle the null/unconfigured case gracefully.
+4. Add the service to the CLAUDE.md Project Structure tree in the same PR, under the appropriate responsibility group.
+
+### Adding a feature flag
+
+1. Add an entry to `FEATURE_DEFINITIONS` in `src/lib/stores/feature-flags.svelte.ts`. Include `feature_key`, `display_name`, `description`, `icon`, and the default per-tier booleans.
+2. Add a migration file that seeds the row into the `feature_flags` table. Pattern: `INSERT ... ON CONFLICT DO NOTHING` so re-application is idempotent.
+3. Gate the feature in code via `featureEnabled('<flag_key>')()` from `$lib/stores/feature-flags.svelte.ts`.
+4. Default to `enabled_for_admin: true` only — wider rollout happens later via the admin Features tab.
+5. Once the flag is universally on, plan a sunset PR that removes the gating code and the `FEATURE_DEFINITIONS` entry (but leaves the `feature_flags` row so the admin tab retains visibility into the historical toggle).
