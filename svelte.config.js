@@ -11,7 +11,27 @@ const config = {
 		csp: {
 			directives: {
 				'default-src': ['self'],
-				'script-src': ['self', 'strict-dynamic', 'wasm-unsafe-eval', 'https://accounts.google.com', 'https://cdn.jsdelivr.net'],
+				// 'unsafe-eval' is required by onnxruntime-web (the WASM runtime used
+				// by @gutenye/ocr-browser). Its init path compiles kernel functions
+				// via `new Function(...)`, which 'wasm-unsafe-eval' does NOT cover —
+				// `wasm-unsafe-eval` only allows WebAssembly.compile/instantiate.
+				// Session 2.14 traced a "Refused to evaluate a string as JavaScript"
+				// CSP error on every Tier 1 scan attempt (checkpoint stage
+				// `tier1_canonical:threw`) to this gap.
+				//
+				// Tradeoff: adding 'unsafe-eval' widens the XSS attack surface — a
+				// self-hosted script could now execute eval(userInput). The practical
+				// risk is bounded by the other CSP guardrails ('self' + nonce +
+				// strict-dynamic prevent arbitrary inline/external scripts from
+				// loading in the first place), but it's a real regression vs the
+				// prior CSP-only-allows-wasm-eval posture.
+				//
+				// Alternatives rejected: trusted-types-eval needs the whole Trusted
+				// Types infra, switching ONNX backend needs a package upgrade or
+				// vendor fork, worker-isolation doesn't inherit a different CSP.
+				// This is the one-line fix; pick a better long-term strategy when
+				// ONNX Runtime Web v2 drops the JIT path (roadmapped, no ETA).
+				'script-src': ['self', 'strict-dynamic', 'wasm-unsafe-eval', 'unsafe-eval', 'https://accounts.google.com', 'https://cdn.jsdelivr.net'],
 				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
 				'font-src': ['self', 'https://fonts.gstatic.com'],
 				'img-src': ['self', 'blob:', 'data:', 'https://*.supabase.co', 'https://lh3.googleusercontent.com', 'https://storage.googleapis.com', 'https://*.carde.io'],
