@@ -69,6 +69,16 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const authHeader = request.headers.get('authorization');
 	const cronSecret = env.CRON_SECRET;
 	if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+		// Log attempted-access context for post-hoc investigation.
+		// Session 2.13 observed seven rapid 401s (possibly external scraper,
+		// possibly stale QStash schedule); without UA we couldn't tell which.
+		// Does NOT rate-limit — just logs. Safe to spam, cheap to capture.
+		console.warn('[harvest] Unauthorized request', {
+			userAgent: request.headers.get('user-agent') ?? 'none',
+			forwardedFor: request.headers.get('x-forwarded-for') ?? 'none',
+			hasAuthHeader: Boolean(authHeader),
+			authPrefix: authHeader ? authHeader.slice(0, 7) : 'none'
+		});
 		throw error(401, 'Unauthorized');
 	}
 
