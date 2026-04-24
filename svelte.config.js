@@ -8,29 +8,25 @@ const config = {
 		adapter: adapter({
 			runtime: 'nodejs22.x'
 		}),
+		// CSP NOTES:
+		// - `strict-dynamic` in script-src OVERRIDES the allowlist entries
+		//   (`'self'`, `https://accounts.google.com`, `https://cdn.jsdelivr.net`).
+		//   Per CSP3 spec: when strict-dynamic is present, browsers ignore
+		//   host-source allowlists. Scripts are trusted only via nonce
+		//   propagation (SvelteKit auto-generates per-request nonces).
+		//   The allowlist entries are left in place as defense-in-depth
+		//   for CSP1/CSP2 browsers that don't support strict-dynamic.
+		// - `wasm-unsafe-eval` permits WebAssembly.compile/instantiate
+		//   (needed for ONNX Runtime's wasm backend used by PaddleOCR).
+		// - `unsafe-eval` permits `new Function(...)` / `eval()` (needed
+		//   for ONNX Runtime's JIT kernel compilation, added in Session 2.14).
+		//   Per spec, unsafe-eval supersedes wasm-unsafe-eval.
+		// - `cdn.jsdelivr.net` was originally for the OCR package; Session
+		//   2.12 moved it to a bundled npm import. Left in place as a
+		//   belt-and-suspenders allowlist (harmless under strict-dynamic).
 		csp: {
 			directives: {
 				'default-src': ['self'],
-				// 'unsafe-eval' is required by onnxruntime-web (the WASM runtime used
-				// by @gutenye/ocr-browser). Its init path compiles kernel functions
-				// via `new Function(...)`, which 'wasm-unsafe-eval' does NOT cover —
-				// `wasm-unsafe-eval` only allows WebAssembly.compile/instantiate.
-				// Session 2.14 traced a "Refused to evaluate a string as JavaScript"
-				// CSP error on every Tier 1 scan attempt (checkpoint stage
-				// `tier1_canonical:threw`) to this gap.
-				//
-				// Tradeoff: adding 'unsafe-eval' widens the XSS attack surface — a
-				// self-hosted script could now execute eval(userInput). The practical
-				// risk is bounded by the other CSP guardrails ('self' + nonce +
-				// strict-dynamic prevent arbitrary inline/external scripts from
-				// loading in the first place), but it's a real regression vs the
-				// prior CSP-only-allows-wasm-eval posture.
-				//
-				// Alternatives rejected: trusted-types-eval needs the whole Trusted
-				// Types infra, switching ONNX backend needs a package upgrade or
-				// vendor fork, worker-isolation doesn't inherit a different CSP.
-				// This is the one-line fix; pick a better long-term strategy when
-				// ONNX Runtime Web v2 drops the JIT path (roadmapped, no ETA).
 				'script-src': ['self', 'strict-dynamic', 'wasm-unsafe-eval', 'unsafe-eval', 'https://accounts.google.com', 'https://cdn.jsdelivr.net'],
 				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
 				'font-src': ['self', 'https://fonts.gstatic.com'],
