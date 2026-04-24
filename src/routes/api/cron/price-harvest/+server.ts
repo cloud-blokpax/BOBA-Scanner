@@ -149,6 +149,13 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		: 52000;
 	// Reserve 8s for logging + chain fire
 	const processingCutoff = maxProcessingMs - 8000;
+	// Reserve ~12s of the processing window for the play card pass so it
+	// isn't time-starved by the hero loop. Heroes must stop at heroCutoff
+	// to leave room for 5 plays × ~2s each + CARD_DELAY_MS margin.
+	// Session 2.12 reserved the eBay call budget but left the time budget
+	// shared; session 2.13 carves a dedicated time slice for plays.
+	const PLAY_TIME_RESERVE_MS = 12000;
+	const heroCutoff = processingCutoff - PLAY_TIME_RESERVE_MS;
 
 	const startTime = Date.now();
 	let processed = 0;
@@ -158,8 +165,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const harvestLogs: Record<string, unknown>[] = [];
 
 	for (let i = 0; i < candidates.length; i++) {
-		// Stop before timeout to leave room for logging + chain fire
-		if (Date.now() - startTime > processingCutoff) break;
+		// Stop before timeout to leave room for logging + chain fire,
+		// and to preserve the PLAY_TIME_RESERVE_MS slice for plays.
+		if (Date.now() - startTime > heroCutoff) break;
 
 		// If eBay is actively throttling us, stop this link.
 		// The chain continues — next link will try fresh after a brief gap.
