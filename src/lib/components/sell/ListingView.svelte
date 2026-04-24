@@ -671,6 +671,7 @@
 						onclick={() => { bestOffer = !bestOffer; }}
 						role="switch"
 						aria-checked={bestOffer}
+						aria-label="Toggle Best Offer"
 					>
 						<span class="stl-toggle-knob"></span>
 					</button>
