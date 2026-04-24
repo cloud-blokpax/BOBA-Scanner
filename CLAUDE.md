@@ -68,15 +68,17 @@ Direct dependencies (from `package.json`). Versions pinned at minor ranges via `
 ## Commands
 
 ```bash
-npm run dev          # Start dev server (Vite)
-npm run build        # Production build
-npm run preview      # Preview production build locally
-npm run check        # TypeScript + Svelte type checking
-npm run check:watch  # Type checking in watch mode
-npm test             # Run tests (vitest)
-npm run test:watch   # Tests in watch mode
-npm run generate:card-seed  # Generate SQL seed from card-database.json
-npm run db:types     # Generate TypeScript types from Supabase schema
+npm run dev                   # Start dev server (Vite)
+npm run build                 # Production build (includes svelte-kit sync)
+npm run preview               # Preview production build locally
+npm run check                 # TypeScript + Svelte type checking
+npm run check:watch           # Type checking in watch mode
+npm test                      # Run tests (vitest)
+npm run test:watch            # Tests in watch mode
+npm run generate:card-seed    # Generate SQL seed from card-database.json
+npm run db:types              # Generate TypeScript types from Supabase schema
+npm run seed:embeddings       # Seed DINOv2 embeddings into card_embeddings (uses scripts/seed-card-embeddings.ts)
+npm run backfill:boba-hashes  # Backfill pHash entries for BoBA catalog (uses scripts/backfill-boba-hashes.ts)
 ```
 
 ## Project Structure
@@ -144,6 +146,7 @@ Card-Scanner/
 │   │   │   ├── AdminCardsTab.svelte # Card health: pricing stats, misidentification queue
 │   │   │   ├── AdminCardPrices.svelte # Card price details panel
 │   │   │   ├── AdminScansTab.svelte # Scan analytics: metrics, sparkline, hourly heatmap
+│   │   │   ├── AdminPhase2Tab.svelte # Phase 2 telemetry: OCR agreement rates, tier distribution, fallback usage (added 2.9)
 │   │   │   ├── AdminEbayTab.svelte  # eBay quota gauge, price freshness, harvest trigger
 │   │   │   ├── AdminFeaturesTab.svelte # Feature flag management
 │   │   │   ├── AdminChangelogTab.svelte # CRUD for changelog entries
@@ -503,17 +506,25 @@ Card-Scanner/
 │   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline
 ├── docs/
 │   ├── adding-a-new-game.md        # Guide for adding a third game (6-step checklist)
-│   └── game-audit.md               # Multi-game architecture audit findings
+│   ├── game-audit.md               # Multi-game architecture audit findings
+│   └── phase-2-telemetry.md        # Canonical SQL reference for Phase 2 scan telemetry (added 2.9)
 ├── .claude/
 │   └── CONTEXT.md                  # Claude Code locked decisions and constraints
 ├── src/service-worker.ts            # SvelteKit service worker (differentiated caching)
 ├── static/
 │   ├── manifest.json               # PWA manifest
 │   ├── version.json                # App version metadata
-│   └── robots.txt                  # Disallow all crawlers
+│   ├── robots.txt                  # Disallow all crawlers
+│   └── models/                     # Bundled ONNX models for PaddleOCR (~15MB): ch_PP-OCRv4_det_infer.onnx + ch_PP-OCRv4_rec_infer.onnx + ppocr_keys_v1.txt
 ├── scripts/
 │   ├── generate-card-seed.js       # Generate SQL seed from card-database.json
-│   └── json-to-card-seed.js        # JSON to SQL seed conversion utility
+│   ├── json-to-card-seed.js        # JSON → SQL seed conversion utility
+│   ├── seed-card-embeddings.ts     # Seed DINOv2-base image embeddings into card_embeddings (via match_card_embedding RPC)
+│   ├── backfill-boba-hashes.ts     # Backfill pHash + dHash for BoBA catalog cards missing hash_cache entries
+│   ├── carde-image-backfill.ts     # Backfill card images from Carde.io (historical — note: Carde.io is no longer used for matching per Session 2.5)
+│   ├── download-carde-images.ts    # Download reference images from Carde.io (legacy utility, not in active use)
+│   ├── generate-hash-fixtures.mjs  # Regenerate the tests/fixtures/hash-parity/ image set from catalog sources
+│   └── import-st-data.ts           # Import external pricing intelligence data into scraping_test table
 ├── middleware.ts                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
 ├── svelte.config.js                # SvelteKit config (Vercel adapter, path aliases, CSP)
 ├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers as ES modules)
@@ -648,9 +659,11 @@ Plus a `handleError` handler for structured error logging.
 
 The test suite uses Vitest with three tiers:
 
-- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`
-- **Integration tests**: `api-price`, `api-scan`, `api-grade` — test API routes with mocked dependencies
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`, `blank-cell-detector.test.ts`, `consensus-builder.test.ts`, `dragon-points.test.ts`, `hash-parity.test.ts`, `normalize-ocr-name.test.ts`, `parallel-classifier-rules.test.ts`, `wonders-parallels.test.ts`
+- **Integration tests**: `api-price.integration.test.ts`, `api-scan.integration.test.ts`, `api-grade.integration.test.ts` — test API routes with mocked dependencies
 - **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
+- **Architecture tests** (`tests/architecture/`): `multi-game-prompt.test.ts`, `param-matcher.test.ts`, `resolver.test.ts` — guard invariants about the multi-game system that can't be enforced by types alone
+- **Fixtures** (`tests/fixtures/`): `hash-parity/` contains 10 reference card images used by `hash-parity.test.ts` to verify dHash/pHash computation is stable across code changes
 
 Testing patterns:
 
@@ -663,9 +676,9 @@ Testing patterns:
 
 Estimated module coverage is ~30%. Key untested areas by priority:
 
-1. **Critical business logic**: `idb.ts` (IndexedDB offline storage), `collection-service.ts` (collection mutations with Supabase + IDB fallback)
+1. **Critical business logic**: `idb.ts` (IndexedDB offline storage), `collection-service.ts` (collection mutations with Supabase + IDB fallback), `scan-writer.ts` (single owner of scan row lifecycle — wrong writes corrupt telemetry silently)
 2. **Security & utilities**: `utils/index.ts` (`escapeHtml` is XSS-critical), `middleware.ts` (bot-blocking regex), `api/upload` (CDR/EXIF stripping)
-3. **Feature quality**: `scan-learning.ts` (OCR corrections), `export-templates.ts` (CSV escaping), `ebay.ts` (URL building, price calc)
+3. **Feature quality**: `community-corrections.ts` (OCR corrections — replaced scan-learning.ts in 2.5), `export-templates.ts` (CSV escaping), `ebay.ts` (URL building, price calc), `consensus-builder.ts` edge cases (ambiguous frames, tie-breaking)
 4. **Nice to have**: Store pure logic (collection locking, flag evaluation), `error-tracking.ts`, `version.svelte.ts`, `listing-generator.ts`
 
 ### What NOT to Test (Low ROI)
@@ -674,6 +687,7 @@ Estimated module coverage is ~30%. Key untested areas by priority:
 - **Web Workers** — require Canvas/ImageBitmap browser APIs; tested implicitly via recognition pipeline E2E tests
 - **Static data files** — configuration, not logic
 - **`supabase.ts`** — thin client init; tested implicitly by integration tests
+- **PaddleOCR engine internals** — `@gutenye/ocr-browser` owns the OCR quality; test what we do WITH the output (`consensus-builder`, `parallel-classifier`, `normalize-ocr-name`) not the OCR itself
 
 ## Database Schema
 
