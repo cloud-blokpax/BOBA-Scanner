@@ -234,7 +234,15 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// the refresh window, so the reserved slots yield back naturally.
 	// No hard change to total eBay call cost — the extra 5 plays per
 	// run are still bounded by the 5000/day quota check at the top.
-	if (!noChain && consecutive429s < 3) {
+	// Session 2.14: removed `!noChain &&` from this guard. The `noChain` header
+	// is set by the QStash wrapper (qstash-harvest/+server.ts:79) to prevent
+	// the cron endpoint from self-chaining another QStash link — that intent
+	// is correctly enforced at the chain-fire block below (line ~290). It was
+	// NEVER meant to gate the play card pass. Because every production run is
+	// QStash-triggered, `noChain` was always true in prod, and the play pass
+	// was always skipped — explaining 0 rows in play_price_cache despite 2.12's
+	// eBay call budget floor and 2.13's time budget carve-out both landing.
+	if (consecutive429s < 3) {
 		let playUsed = 0;
 		try {
 			const PLAY_FLOOR = 5;
