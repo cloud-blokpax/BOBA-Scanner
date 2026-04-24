@@ -262,31 +262,34 @@ Card-Scanner/
 │   │   │       ├── theme.ts        # Placeholder theme
 │   │   │       └── nav.ts          # Placeholder navigation
 │   │   ├── components/
-│   │   │   ├── Scanner.svelte      # Single-card scanner component
+│   │   │   ├── Scanner.svelte      # Single-card scanner (entry point for scan page)
 │   │   │   ├── BatchScanner.svelte # Multi-card batch scanning
-│   │   │   ├── BinderScanner.svelte# Binder page scanning
-│   │   │   ├── CameraRollImport.svelte # Import cards from camera roll
-│   │   │   ├── ScanConfirmation.svelte # Scan result confirmation UI
-│   │   │   ├── ScanEffects.svelte  # Visual effects for scanning
-│   │   │   ├── ScannerErrorBoundary.svelte # Error boundary for scanner components
+│   │   │   ├── BinderLiveScanner.svelte   # Phase 2 binder grid live scanner (2x2/3x3/4x4 cells)
+│   │   │   ├── BinderViewfinder.svelte    # Camera viewfinder for binder capture
+│   │   │   ├── BinderReview.svelte        # Post-capture binder review + per-cell correction
+│   │   │   ├── CameraRollImport.svelte    # Import cards from camera roll (upload pipeline)
+│   │   │   ├── ScanConfirmation.svelte    # Scan result confirmation UI
+│   │   │   ├── ScanEffects.svelte         # Visual effects during scanning
+│   │   │   ├── ScannerErrorBoundary.svelte # Error boundary wrapping scanner
 │   │   │   ├── CardDetail.svelte   # Card detail view
 │   │   │   ├── CardGrid.svelte     # Grid display for card collections
-│   │   │   ├── CardCorrection.svelte # Manual correction UI
-│   │   │   ├── CardFlipReveal.svelte # Card flip/reveal animation
+│   │   │   ├── CardCorrection.svelte # Manual correction UI (post-scan override)
+│   │   │   ├── CardFlipReveal.svelte # Card flip/reveal animation (pack simulator)
 │   │   │   ├── CategoryTabs.svelte  # Reusable category tab navigation
 │   │   │   ├── OptimizedCardImage.svelte # Optimized image display with lazy loading
 │   │   │   ├── PriceDisplay.svelte # Price information display
-│   │   │   ├── PriceTrends.svelte  # Price trend charts (premium)
+│   │   │   ├── PriceTrends.svelte  # Price trend charts (Pro feature)
 │   │   │   ├── SkeletonCardGrid.svelte # Loading skeleton for card grids
 │   │   │   ├── GoProModal.svelte   # Pro subscription upgrade modal
 │   │   │   ├── AffiliateNotice.svelte # Affiliate disclosure notice
+│   │   │   ├── BoBAOnlyBanner.svelte  # "This is BoBA-only" banner on Wonders-incompatible pages
 │   │   │   ├── CloseButton.svelte  # Reusable close/dismiss button
 │   │   │   ├── Toast.svelte        # Toast notification component
 │   │   │   ├── UpdateBanner.svelte # App version update banner
 │   │   │   ├── DragonPointsCard.svelte # Wonders dragon points display card
-│   │   │   ├── VariantBadge.svelte # Wonders variant badge (paper/foil indicator)
-│   │   │   ├── VariantSelector.svelte # Wonders variant picker
-│   │   │   ├── WondersVariantPricePanel.svelte # Wonders variant-specific pricing
+│   │   │   ├── ParallelBadge.svelte # Parallel badge (replaces VariantBadge — Phase 2 rename)
+│   │   │   ├── ParallelSelector.svelte # Parallel picker (replaces VariantSelector — Phase 2 rename)
+│   │   │   ├── WondersParallelPricePanel.svelte # Wonders parallel-specific pricing (replaces WondersVariantPricePanel)
 │   │   │   ├── scan-confirmation/  # Scan confirmation sub-components
 │   │   │   │   ├── ScanActions.svelte
 │   │   │   │   ├── ScanCardHeader.svelte
@@ -356,19 +359,21 @@ Card-Scanner/
 │   │   │       ├── PlayTable.svelte     # Play card data table
 │   │   │       └── war-room-constants.ts # War room configuration
 │   │   ├── data/
-│   │   │   ├── play-cards.json     # Play card database (409 cards across 4 releases: Alpha, Griffey, Alpha Update, Alpha Blast — with DBS values and hot dog costs)
-│   │   │   ├── boba-config.ts      # OCR regions, scan config, rate limits
+│   │   │   ├── play-cards.json     # Play card database raw data (409 cards across 4 releases: Alpha, Griffey, Alpha Update, Alpha Blast)
+│   │   │   ├── play-cards.ts       # Typed loader for play-cards.json (derives type/number from card_number, strips " - htd" suffix)
+│   │   │   ├── boba-config.ts      # OCR regions, scan config, rate limits (BoBA-specific)
 │   │   │   ├── boba-weapons.ts     # Weapon hierarchy with rarity and tier rankings
-│   │   │   ├── boba-parallels.ts   # All parallel/treatment types with Madness unlock eligibility
-│   │   │   ├── boba-dbs-scores.ts  # DBS point values for all Play cards (409 entries, maintained manually)
+│   │   │   ├── boba-parallels.ts   # BoBA parallel types + Madness unlock eligibility (49 entries)
+│   │   │   ├── boba-dbs-scores.ts  # DBS point values for Play cards (409 entries, maintained manually)
+│   │   │   ├── parallels.ts        # Shared parallel utilities — short codes, full names, colors, grouping (used by ScanConfirmation, CardDetail, listing pipelines)
+│   │   │   ├── wonders-parallels.ts # Wonders-specific short-code↔full-name mappings (paper/cf/ff/ocm/sf → Paper/Classic Foil/Formless Foil/Orbital Color Match/Stonefoil)
+│   │   │   ├── parallel-prefixes.ts # Parallel-prefix → parallel-name map (e.g. BF- → Battlefoil, SBF- → Silver Battlefoil) — BoBA-specific
 │   │   │   ├── tournament-formats.ts # Machine-readable rules for all 21 competitive format variants
 │   │   │   ├── combo-engines.ts    # Combo detection engines for playbook analysis
 │   │   │   ├── pack-defaults.ts    # Default pack configurations for pack simulator
 │   │   │   ├── play-categories.ts  # Play card category/tag taxonomy
 │   │   │   ├── playbook-archetypes.ts # Playbook archetype definitions for AI-assisted deck building
-│   │   │   ├── category-tabs.ts    # Category tab configuration
-│   │   │   ├── parallel-prefixes.ts # Parallel name prefix mappings
-│   │   │   └── variants.ts         # Wonders variant system (Paper, Classic Foil, Formless Foil, Orbital Color Match, Stone Foil)
+│   │   │   └── category-tabs.ts    # Category tab configuration
 │   │   ├── server/
 │   │   │   ├── admin-guard.ts      # Admin authorization guard for API endpoints
 │   │   │   ├── anthropic.ts        # Anthropic Claude client singleton
@@ -386,39 +391,72 @@ Card-Scanner/
 │   │   │   ├── supabase-admin.ts   # Supabase admin/service-role client
 │   │   │   └── validate.ts         # Request validation helpers
 │   │   ├── services/
-│   │   │   ├── recognition.ts      # Three-tier recognition pipeline orchestrator
-│   │   │   ├── recognition-tiers.ts # Tier 1/2/3 implementation functions (game-aware)
-│   │   │   ├── recognition-validation.ts # Cross-validation logic for scan results
-│   │   │   ├── recognition-workers.ts # Web Worker lifecycle management
-│   │   │   ├── card-db.ts          # Card database: load, index, search, fuzzy match
-│   │   │   ├── card-db-search.ts   # Card database search utilities
-│   │   │   ├── ocr.ts              # OCR service layer
-│   │   │   ├── supabase.ts         # Browser Supabase client (optional, null-safe)
-│   │   │   ├── camera.ts           # Camera access and capture
-│   │   │   ├── idb.ts              # IndexedDB wrapper (cards, hashes, collections, prices)
-│   │   │   ├── sync.ts             # Collection sync (IDB ↔ Supabase)
-│   │   │   ├── collection-service.ts # Collection business logic
-│   │   │   ├── deck-validator.ts   # Deck building rules validation
-│   │   │   ├── deck-service.ts     # Deck business logic (format defaults, deck stats)
-│   │   │   ├── deck-gap-finder.ts  # Analyzes deck gaps and selects cards for price refresh
-│   │   │   ├── playbook-engine.ts  # Playbook analysis engine (combos, draw consistency, HD flow)
-│   │   │   ├── card-cropper.ts     # Card region cropping for analysis
-│   │   │   ├── pack-simulator.ts   # Deterministic pack opening simulation
-│   │   │   ├── badges.ts           # Client-side badge award helper with toast notifications
-│   │   │   ├── community-corrections.ts # Community-verified OCR correction mappings
-│   │   │   ├── reference-images.ts # Reference image handling and leaderboard
-│   │   │   ├── ebay.ts             # eBay client-side price fetching
-│   │   │   ├── listing-generator.ts# eBay listing template generation (game-aware titles/descriptions)
-│   │   │   ├── whatnot-export.ts   # Whatnot CSV export service
-│   │   │   ├── parallel-config.ts  # Parallel/treatment configuration
-│   │   │   ├── scan-learning.ts    # Correction tracking for scan improvement
-│   │   │   ├── scan-image-utils.ts # Scan image utility functions
-│   │   │   ├── export-templates.ts # Export format definitions
-│   │   │   ├── dead-card-detector.ts # Dead card detection in playbooks
-│   │   │   ├── error-tracking.ts   # Client error reporting
-│   │   │   ├── version.svelte.ts   # Version checking (runes store)
-│   │   │   ├── app-name.ts         # App name service (reads system_settings.app_name)
-│   │   │   └── user-game-prefs.ts  # Multi-game user preference management
+│   │   │   │
+│   │   │   # Recognition pipeline — orchestrator + validation + workers
+│   │   │   ├── recognition.ts              # Two-tier pipeline orchestrator (entry: recognizeCard())
+│   │   │   ├── recognition-tiers.ts        # Tier 3 Claude Haiku dispatcher (Tier 1 modes dispatch independently)
+│   │   │   ├── recognition-validation.ts   # Cross-validation logic between tier outputs
+│   │   │   ├── recognition-workers.ts      # Web Worker lifecycle management
+│   │   │   │
+│   │   │   # Tier 1 local OCR — PaddleOCR engine + 4 capture modes + consensus
+│   │   │   ├── paddle-ocr.ts               # PaddleOCR engine wrapper (@gutenye/ocr-browser, lazy-loaded)
+│   │   │   ├── ocr-regions.ts              # Per-game OCR region configuration (card_number, name, variant zones)
+│   │   │   ├── ocr-worker-pool.ts          # Pool of OCR web workers (powers binder parallelism)
+│   │   │   ├── live-ocr-coordinator.ts     # Live camera Tier 1 coordinator (2fps during alignment-ready)
+│   │   │   ├── tier1-canonical.ts          # Canonical single-frame Tier 1 pass (used by live shutter + upload)
+│   │   │   ├── upload-pipeline.ts          # Upload Tier 1 (canonical first, TTA fallback if below floor)
+│   │   │   ├── upload-frame-generator.ts   # Synthetic frame augmentation for upload TTA voting
+│   │   │   ├── binder-coordinator.ts       # Binder grid Tier 1 coordinator (per-cell independent sessions)
+│   │   │   ├── cell-extractor.ts           # Extract individual card cells from binder grid image
+│   │   │   ├── blank-cell-detector.ts      # Detect empty cells in binder grid (skip OCR)
+│   │   │   ├── binder-capture-finalize.ts  # Finalize binder capture into per-cell scan rows
+│   │   │   ├── binder-persistence.ts       # Persist binder session state across navigation
+│   │   │   ├── consensus-builder.ts        # Aggregate OCR reads into single (card_number, name) tuple
+│   │   │   ├── parallel-classifier.ts      # Wonders parallel classifier (paper/cf/ff/ocm/sf from visual signals)
+│   │   │   ├── pixel-stability.ts          # Pixel-correlation check (~0.85 threshold — wire-crossing defense)
+│   │   │   ├── constrained-crop.ts         # Card-aspect-preserving crop helper
+│   │   │   │
+│   │   │   # Scan telemetry + writes (single owner of scan row lifecycle)
+│   │   │   ├── scan-writer.ts              # Single owner of scans table row writes (OpenScanRow → UpdateOutcome)
+│   │   │   ├── scan-telemetry.ts           # Scan telemetry capture (device, battery, quality signals)
+│   │   │   ├── scan-checkpoint.ts          # Per-stage trace writes to scan_pipeline_checkpoint
+│   │   │   ├── pipeline-version.ts         # Pipeline version pin (stamps scans.pipeline_version)
+│   │   │   ├── catalog-mirror.ts           # Client-side catalog mirror for (card_number, name) → card_id lookup
+│   │   │   ├── image-harvester.ts          # Opportunistic image harvesting from eBay listings (populates card_reference_images)
+│   │   │   │
+│   │   │   # Card data + search
+│   │   │   ├── card-db.ts                  # Card database: load, index, search, fuzzy match
+│   │   │   ├── card-db-search.ts           # Card database search utilities
+│   │   │   ├── card-cropper.ts             # Card region cropping for analysis
+│   │   │   │
+│   │   │   # Collections + decks + playbooks
+│   │   │   ├── collection-service.ts       # Collection business logic
+│   │   │   ├── deck-validator.ts           # Deck building rules validation
+│   │   │   ├── deck-service.ts             # Deck business logic (format defaults, deck stats)
+│   │   │   ├── deck-gap-finder.ts          # Analyzes deck gaps + selects cards for price refresh
+│   │   │   ├── playbook-engine.ts          # Playbook analysis engine (combos, draw consistency, HD flow)
+│   │   │   ├── dead-card-detector.ts       # Dead card detection in playbooks
+│   │   │   ├── pack-simulator.ts           # Deterministic pack opening simulation
+│   │   │   │
+│   │   │   # User + commerce
+│   │   │   ├── persona.ts                  # Persona weight update client (post-scan signal)
+│   │   │   ├── badges.ts                   # Client-side badge award helper with toast notifications
+│   │   │   ├── ebay.ts                     # eBay client-side price fetching
+│   │   │   ├── listing-generator.ts        # eBay listing template generation (game-aware titles/descriptions)
+│   │   │   ├── whatnot-export.ts           # Whatnot CSV export service
+│   │   │   ├── reference-images.ts         # Reference image handling + leaderboard
+│   │   │   ├── community-corrections.ts    # Community-verified OCR correction mappings
+│   │   │   │
+│   │   │   # Infrastructure + utilities
+│   │   │   ├── supabase.ts                 # Browser Supabase client (optional, null-safe via Proxy)
+│   │   │   ├── camera.ts                   # Camera access + capture
+│   │   │   ├── idb.ts                      # IndexedDB wrapper (cards, hashes, collections, prices)
+│   │   │   ├── sync.ts                     # Collection sync (IDB ↔ Supabase)
+│   │   │   ├── parallel-config.ts          # Parallel/treatment configuration
+│   │   │   ├── scan-image-utils.ts         # Scan image utility functions (thumbnail + listing image)
+│   │   │   ├── export-templates.ts         # Export format definitions (CSV, JSON)
+│   │   │   ├── error-tracking.ts           # Client error reporting
+│   │   │   └── version.svelte.ts           # Version checking (runes store)
 │   │   ├── stores/                 # All stores use .svelte.ts extension (Svelte 5 runes)
 │   │   │   ├── collection.svelte.ts    # Collection state store (game-filterable)
 │   │   │   ├── scanner.svelte.ts       # Scanner state store
@@ -439,8 +477,9 @@ Card-Scanner/
 │   │   │   └── pack-simulator.ts   # Pack simulator types
 │   │   ├── utils/
 │   │   │   ├── index.ts            # Shared utilities (escapeHtml, formatPrice, debounce)
-│   │   │   ├── extract-card-number.ts # OCR card number extraction logic (BoBA re-export)
 │   │   │   ├── fuzzy-match.ts      # Fuzzy string matching (Levenshtein distance)
+│   │   │   ├── normalize-ocr-name.ts # Phase 2 OCR name normalization (strip diacritics, collapse whitespace, apply hand-curated typo map)
+│   │   │   ├── exif.ts             # EXIF parsing helper (used by scan-telemetry for make/model/GPS-stripped)
 │   │   │   ├── haptics.ts          # Vibration/haptics patterns for mobile
 │   │   │   ├── ebay-title.ts       # eBay listing title generation (game-aware: BoBA vs Wonders)
 │   │   │   ├── image-url.ts        # Image URL generation and caching
