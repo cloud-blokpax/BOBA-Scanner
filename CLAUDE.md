@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Card Scanner (boba.cards) is an AI-powered **multi-game** trading card scanner and pricing platform. It uses a three-tier recognition pipeline (hash cache, OCR, Claude AI) to identify cards from photos, with most scans completing for free via client-side processing. The app is a mobile-first PWA built with SvelteKit and deployed on Vercel.
+Card Scanner (boba.cards) is an AI-powered **multi-game** trading card scanner and pricing platform. It uses a two-tier recognition pipeline — local PaddleOCR in four capture modes (Tier 1) with Claude Haiku as a confidence-gated fallback (Tier 3) — to identify cards at near-zero per-scan cost. The app is a mobile-first PWA built with SvelteKit and deployed on Vercel.
 
 **Supported games:**
 
@@ -479,15 +479,42 @@ src/lib/games/
 - Zero regression — every BoBA feature must work identically
 - Default `game_id = 'boba'` everywhere
 
-### Three-Tier Recognition Pipeline
+### Recognition Pipeline
 
-The core scanning feature uses a waterfall approach to minimize API costs:
+A two-tier waterfall designed for near-zero per-scan cost. Tier 1 runs entirely client-side via PaddleOCR (no API cost); Tier 3 Claude Haiku is reached only when Tier 1 can't clear the confidence floor.
 
-1. **Tier 1 — Hash Cache (Free, instant)**: Computes a perceptual hash (dHash) of the card image using a Web Worker, then checks IndexedDB and Supabase `hash_cache` for a match. Previously scanned cards are recognized in <50ms.
-1. **Tier 2 — OCR + Fuzzy Match (Free, ~1-3s)**: Tesseract.js extracts text from game-specific card regions (defined per `GameConfig.ocrRegions`). The extracted card number is fuzzy-matched against the local card database using Levenshtein distance. In auto-detect mode, all registered games' extractors are tried in registration order (BoBA first).
-1. **Tier 3 — Claude AI (~$0.002/scan)**: If Tiers 1-2 fail, the card image is sent to `POST /api/scan` where it's sanitized via sharp (EXIF stripping, pixel bomb protection, re-encoding) and sent to Claude Haiku with game-specific prompts and tool definitions. The `identify_card` tool name is hardcoded — all games must use it.
+#### Tier 1 — Local OCR (free, ~1–3 seconds)
 
-Pipeline code is split across four files: `recognition.ts` (orchestrator), `recognition-tiers.ts` (tier 1/2/3 logic), `recognition-validation.ts` (cross-validation), `recognition-workers.ts` (worker lifecycle).
+PaddleOCR via `@gutenye/ocr-browser`, bundled into a separate chunk that lazy-loads on scan page entry. Model assets (~15MB total: detection + recognition + dictionary) served from `static/models/` and cached at the edge. Multiple OCR reads are aggregated via `consensus-builder.ts` into a single `(card_number, name)` tuple, which is then matched against the card database.
+
+Four capture modes feed the same consensus builder:
+
+- **Live camera stream** — `live-ocr-coordinator.ts`. 2fps OCR passes during alignment-ready camera phase. 2-frame voting with 4-layer wire-crossing defense (alignment gating, monotonic session IDs, pixel correlation ~0.85, canonical captured frame wins). The shutter capture runs through the canonical path as verification.
+- **Canonical single frame** — `tier1-canonical.ts`. Single high-resolution PaddleOCR pass against a captured frame. Used by uploads and by live camera shutter.
+- **Upload TTA** — `upload-pipeline.ts` via `upload-frame-generator.ts`. Synthetic-frame voting: 5 augmented variants of a single uploaded image run through PaddleOCR, consensus builder aggregates. Fires only when canonical confidence is below the floor. Gated by `upload_tta_v1`.
+- **Binder grid** — `binder-coordinator.ts` via `cell-extractor.ts` + `blank-cell-detector.ts` + `ocr-worker-pool.ts`. Full-page scan of a 2×2 / 3×3 / 4×4 grid; each non-blank cell is its own independent live-OCR session sharing a worker pool. Gated by `binder_mode_v1`.
+
+All four modes produce the same telemetry shape and are matched against the catalog mirror (`catalog-mirror.ts`) via `(card_number, name)` lookup. Wonders cards additionally run through `parallel-classifier.ts` to resolve the foil variant (Paper / Classic Foil / Formless Foil / Orbital Color Match / Stonefoil) — BoBA parallels are encoded in the card number prefix, Wonders aren't.
+
+Tier 1 is gated by the `live_ocr_tier1_v1` feature flag. When off, scans fall straight through to Tier 3.
+
+#### Tier 3 — Claude Haiku fallback (~$0.002/scan, ~2–4 seconds)
+
+Reached when Tier 1 consensus confidence is below the floor, or when the flag is off. The card image is POSTed to `/api/scan`, sanitized via sharp (EXIF stripping, pixel bomb protection, re-encoding), and sent to Claude Haiku with the per-game prompt and tool definition. The `identify_card` tool name is hardcoded — every game's `GameConfig.cardIdTool` must use it. Currently <5% of scans reach Haiku in flag-on production.
+
+#### What's no longer in the pipeline
+
+Retired in Session 2.5:
+- **Hash cache Tier 1** (pHash lookup against IndexedDB + Supabase `hash_cache`). Not used for recognition anymore. The `hash_cache` table still exists — image-harvester and AR overlay still write/read it — but the recognition orchestrator never queries it.
+- **Tesseract Tier 2**. `tesseract.js` was removed from dependencies entirely. OCR is now exclusively PaddleOCR.
+
+Any CLAUDE.md or docs references to "Tier 2" or to the `hash/ocr/ai/manual` scan_method enum refer to pre-2.5 architecture and are inaccurate.
+
+#### Telemetry
+
+Every scan writes a row to `public.scans` with `winning_tier` ∈ `{tier1_local_ocr, tier3_claude, manual}` and `fallback_tier_used` ∈ `{NULL, 'none', 'haiku', 'sonnet', 'manual'}`. Detailed per-tier timing and confidence go into `scan_tier_results` (one row per tier attempted). Live-trace checkpoints go into `scan_pipeline_checkpoint` (per-stage elapsed_ms + extras jsonb). The admin Phase 2 tab surfaces aggregate trends; see `docs/phase-2-telemetry.md` for canonical SQL drilldowns.
+
+Pipeline code lives in five service files: `recognition.ts` (orchestrator), `recognition-tiers.ts` (two-tier dispatcher), `recognition-validation.ts` (cross-validation), `recognition-workers.ts` (worker lifecycle), plus the Tier 1 mode implementations named above.
 
 ### Card Database Loading
 
@@ -913,14 +940,47 @@ Follow the 6-step checklist in `docs/adding-a-new-game.md`:
 
 ### Working with the recognition pipeline
 
-- Game configs in `src/lib/games/{gameId}/` (OCR regions, extractors, prompts)
-- Pipeline orchestrator in `src/lib/services/recognition.ts`
-- Tier functions in `src/lib/services/recognition-tiers.ts`
-- Cross-validation in `src/lib/services/recognition-validation.ts`
-- Worker management in `src/lib/services/recognition-workers.ts`
-- Card matching in `src/lib/services/card-db.ts`
-- Fuzzy matching in `src/lib/utils/fuzzy-match.ts`
-- Image worker in `src/lib/workers/image-processor.ts`
+Pipeline entry point: `recognizeCard()` in `src/lib/services/recognition.ts`. All scanning-surface code (Scanner component, Binder component, upload path, camera-roll import) calls through it.
+
+Orchestrator and support:
+- Orchestrator: `src/lib/services/recognition.ts`
+- Tier dispatcher: `src/lib/services/recognition-tiers.ts` (Tier 3 Haiku only — Tier 1 modes dispatch independently)
+- Cross-validation: `src/lib/services/recognition-validation.ts`
+- Worker lifecycle: `src/lib/services/recognition-workers.ts`
+- Scan writer: `src/lib/services/scan-writer.ts` (single owner of the `scans` table row)
+- Checkpoint trace: `src/lib/services/scan-checkpoint.ts` (writes to `scan_pipeline_checkpoint`)
+
+Tier 1 local OCR (by mode):
+- Engine + init: `src/lib/services/paddle-ocr.ts`
+- Region configuration: `src/lib/services/ocr-regions.ts`
+- Live camera: `src/lib/services/live-ocr-coordinator.ts`
+- Canonical single frame: `src/lib/services/tier1-canonical.ts`
+- Upload TTA: `src/lib/services/upload-pipeline.ts` + `upload-frame-generator.ts`
+- Binder grid: `src/lib/services/binder-coordinator.ts` + `cell-extractor.ts` + `blank-cell-detector.ts` + `ocr-worker-pool.ts`
+- Consensus aggregation: `src/lib/services/consensus-builder.ts`
+- Parallel classification (Wonders only): `src/lib/services/parallel-classifier.ts`
+- Wire-crossing defense: `src/lib/services/pixel-stability.ts`
+
+Catalog and matching:
+- Catalog mirror (client-side): `src/lib/services/catalog-mirror.ts`
+- Card database: `src/lib/services/card-db.ts`, `src/lib/services/card-db-search.ts`
+- Fuzzy matching: `src/lib/utils/fuzzy-match.ts`
+- OCR name normalization: `src/lib/utils/normalize-ocr-name.ts`
+
+Game-specific config:
+- Per-game modules: `src/lib/games/{gameId}/` (OCR regions, extractors, prompts, theme, nav)
+- Extractors: `src/lib/games/{gameId}/extract.ts` — called by Tier 1 to parse card-number strings after OCR
+
+Image pre-processing:
+- Web worker: `src/lib/workers/image-processor.ts` (resize, blur detection, OCR preprocess)
+- Cropping: `src/lib/services/card-cropper.ts`, `src/lib/services/constrained-crop.ts`
+
+Feature flags gating the pipeline:
+- `live_ocr_tier1_v1` — master switch for Tier 1. When off, all scans go to Haiku.
+- `upload_tta_v1` — enables synthetic-frame voting for uploads. Requires `live_ocr_tier1_v1` on.
+- `binder_mode_v1` — enables the binder grid capture mode. Requires `live_ocr_tier1_v1` on.
+
+All three default to `enabled_for_admin: true` in `FEATURE_DEFINITIONS` (`src/lib/stores/feature-flags.svelte.ts`). Production settings live in the `feature_flags` table and can be changed via `/admin → Features`.
 
 ### Adding tests
 
