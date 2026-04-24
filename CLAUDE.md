@@ -14,28 +14,56 @@ Card Scanner (boba.cards) is an AI-powered **multi-game** trading card scanner a
 
 Game-specific behavior lives behind a `GameConfig` interface (`src/lib/games/types.ts`). Each game implements its own OCR regions, Claude prompts, eBay query builders, themes, and navigation. The resolver (`src/lib/games/resolver.ts`) lazy-loads and caches game modules.
 
-**App name:** Configurable via `system_settings.app_name` (default: "Card Scanner", legacy: "BOBA Scanner").
+**App name:** Currently "Card Scanner" (formerly "BOBA Scanner" — rebrand preceded the Wonders integration). Name is hardcoded in `app.html` and component strings; the old `system_settings.app_name` row was deleted in Session 2.6 along with the `app-name.ts` service. If the name needs to change again, it's a find/replace across the codebase, not a config update.
 
 ## Tech Stack
 
-- **Framework**: SvelteKit 2 (`@sveltejs/kit ^2.54.0`) with Svelte 5 (`^5.53.10`, runes mode: `$state`, `$derived`, `$props`)
-- **Language**: TypeScript ^5.9.3 (strict mode)
-- **Build Tool**: Vite ^7.3.1
-- **Deployment**: Vercel (adapter-vercel, Node.js 22.x runtime)
-- **Database**: Supabase (PostgreSQL + auth + realtime) — `@supabase/supabase-js ^2.99.1`, `@supabase/ssr ^0.9.0`
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for scanning, Sonnet for grading
-- **OCR**: Tesseract.js 7 (client-side, runs in Web Worker)
-- **Image Processing**: sharp ^0.34.5 (server-side CDR), Web Workers with Comlink ^4.4.2 (client-side)
-- **Computer Vision**: OpenCV.js (`@techstark/opencv-js ^4.12.0`) for card cropping and authenticity checks
-- **Image Comparison**: ssim.js ^3.5.0 for structural similarity in condition comparison
-- **Virtualization**: `@tanstack/svelte-virtual ^3.13.22` for long lists
-- **Rate Limiting**: Upstash Redis (`@upstash/redis ^1.36.4`, `@upstash/ratelimit ^2.0.8`) with in-memory fallback
-- **Pricing**: eBay Browse API + Seller API integration
-- **Caching**: IndexedDB (client), Supabase price_cache (server), Vercel edge (CDN)
-- **PWA**: Service Worker with differentiated caching strategies
-- **QR Codes**: qrcode ^1.5.4 (deck sharing/verification)
-- **Randomization**: seedrandom ^3.0.5 (deterministic pack simulation)
-- **Testing**: Vitest ^4.0.18
+Direct dependencies (from `package.json`). Versions pinned at minor ranges via `^`; update via `npm update` or explicit bumps.
+
+**Framework & build:**
+- SvelteKit 2 (`@sveltejs/kit ^2.54.0`) with Svelte 5 (`^5.53.10`) — runes mode exclusively (`$state`, `$derived`, `$props`, `$effect`).
+- TypeScript `^5.9.3` (strict mode).
+- Vite `^7.3.1`.
+- Deployed on Vercel via `@sveltejs/adapter-vercel ^6.3.3`, Node.js 22.x runtime.
+
+**Database & auth:**
+- Supabase (PostgreSQL + auth + realtime) — `@supabase/supabase-js ^2.99.1`, `@supabase/ssr ^0.9.0`.
+- Google OAuth via Supabase Auth.
+- eBay Seller OAuth (Authorization Code Grant, per-user).
+
+**AI & recognition:**
+- Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for Tier 3 card scanning, Sonnet for condition grading.
+- PaddleOCR via `@gutenye/ocr-browser ^1.4.8` — Tier 1 local OCR. Runs in browser via ONNX Runtime Web. Models (`ch_PP-OCRv4_det_infer.onnx` ~5MB, `ch_PP-OCRv4_rec_infer.onnx` ~10MB, `ppocr_keys_v1.txt` ~26KB) shipped in `static/models/`.
+- OpenCV (`@techstark/opencv-js`) is a transitive dependency of `@gutenye/ocr-browser` — NOT a direct dep. Don't import directly; go through the OCR browser wrapper.
+- Image embeddings use DINOv2-base (stored in Supabase `card_embeddings` as pgvector); seeded offline via `scripts/seed-card-embeddings.ts`.
+
+**Image processing:**
+- `sharp ^0.34.5` — server-side CDR (Content Disarm & Reconstruction: EXIF strip, pixel bomb protection, re-encode).
+- Web Workers via `comlink ^4.4.2` — client-side image preprocessing + OCR dispatch.
+- `exifreader ^4.38.1` — client-side EXIF inspection.
+- `ssim.js ^3.5.0` — structural similarity for condition comparison.
+- `idb ^8.0.3` — IndexedDB wrapper for cards/hashes/collections/prices.
+
+**Infrastructure:**
+- Upstash Redis (`@upstash/redis ^1.36.4`, `@upstash/ratelimit ^2.0.8`) — rate limiting + eBay API quota counter; in-memory fallback when Redis unavailable.
+- Upstash QStash (`@upstash/qstash ^2.10.1`) — scheduled webhook triggers for the price harvest cron. POSTs `/api/cron/qstash-harvest` every 5 minutes (QStash is the SINGLE trigger — `vercel.json` has no `crons` entry).
+- `@vercel/analytics ^2.0.1`, `@vercel/speed-insights ^2.0.0` — Vercel-hosted telemetry.
+
+**Pricing & commerce:**
+- eBay Browse API — public price discovery (via `ebay-auth.ts` app-token flow).
+- eBay Seller API — per-user listing creation, end-listing, sync (via `ebay-seller-auth.ts` Authorization Code Grant).
+
+**UI & UX:**
+- `@tanstack/svelte-virtual ^3.13.22` — virtualized lists (long collections, card grids).
+- `qrcode ^1.5.4` — deck-share QR generation + verification.
+- `seedrandom ^3.0.5` — deterministic pack-opening simulation.
+
+**Testing:**
+- `vitest ^4.0.18`, `svelte-check ^4.4.5`.
+
+**Removed in the Phase 2 arc (do not re-add without discussion):**
+- `tesseract.js` — replaced by PaddleOCR via `@gutenye/ocr-browser` in Session 2.5.
+- `@techstark/opencv-js` as direct dep — retained only as transitive through ocr-browser.
 
 ## Commands
 
@@ -525,19 +553,27 @@ The card database has a layered loading strategy (see `card-db.ts`):
 
 Cards are loaded with `game_id` awareness. Play card merging is gated on `_activeGameIds.includes('boba')` — play cards are a BoBA concept.
 
-### Wonders Variant System
+### Wonders Parallel System
 
-Wonders cards have a physical variant attribute (defined in `data/variants.ts`):
+Wonders cards have five physical parallels. Unlike BoBA where parallel is encoded in the card number prefix (e.g. `BF-` for Battlefoil), Wonders uses the same card number across parallels and distinguishes them as a separate column value.
 
-| Code | Name | Description |
-|------|------|-------------|
-| `paper` | Paper | Solid black border, matte |
-| `cf` | Classic Foil | Lined border, foil treatment |
-| `ff` | Formless Foil | Borderless bleed, foil |
-| `ocm` | Orbital Color Match | Lined border + serial number |
-| `sf` | Stone Foil | Like OCM but 1/1 rarity |
+| Short code | Stored value (DB) | Description |
+|-----------|-------------------|-------------|
+| `paper` | `'Paper'` | Solid black border, matte |
+| `cf` | `'Classic Foil'` | Lined border, foil treatment |
+| `ff` | `'Formless Foil'` | Borderless bleed, foil |
+| `ocm` | `'Orbital Color Match'` | Lined border + serial number |
+| `sf` | `'Stonefoil'` | Like OCM but 1/1 rarity |
 
-Variants are stored as a `variant` column (with CHECK constraint) on `collections`, `scans`, `hash_cache`, `price_cache`, `price_history`, `listing_templates`, and `price_harvest_log`. The `price_cache` PK is `(card_id, source, variant)` — a three-column composite.
+The parallel classifier (`src/lib/services/parallel-classifier.ts`) emits the short codes from OCR/image signals; these are mapped to the full stored names before DB write. Short codes are never persisted — always use the full name when querying or inserting. Free-text column, no CHECK constraint — BoBA's 49 parallel names and Wonders' 5 names coexist in the same `parallel` column across tables.
+
+**Column name.** `parallel TEXT` (default `'paper'` on most tables; default is literally the lowercase `'paper'` for historical reasons, even though Wonders rows store `'Paper'` title-cased). Present on 11 tables — see the Database Schema section for the full list.
+
+**Catalog state.** All 1,007 current Wonders card rows in `cards` have `parallel='Paper'`. The 5x catalog expansion (one row per parallel) is planned but not yet executed. When that lands, the `(card_number, name, parallel) → card_id` tuple becomes unique across the catalog; today, `(card_number, name)` is already unique because only Paper exists.
+
+**Why Wonders needs classification but BoBA doesn't.** BoBA encodes parallel in the card number (`BF-001-foo` is Battlefoil, `SBF-001-foo` is Silver Battlefoil) — reading the card number tells you the parallel directly. Wonders uses the same card number across parallels, so the scan pipeline must infer parallel from visual signals (border style, foil treatment, serial-number presence). `parallel-classifier.ts` handles this as part of the Tier 1 consensus; the result is written to `scans.final_parallel` and flows through to `collections.parallel` / `listing_templates.parallel`.
+
+**`wonders_cards_full` view.** A JOIN of `cards` (game_id='wonders') with `wotf_cards` on `id`. Query this instead of joining manually when you need both the shared card fields (name, parallel, set_code) and the Wonders-specific data (orbitals, dragon points, card class).
 
 ### Authentication
 
