@@ -602,68 +602,96 @@ Estimated module coverage is ~30%. Key untested areas by priority:
 
 ## Database Schema
 
-Schema changes are applied manually via the Supabase SQL Editor (no CLI, no automated migrations). This section is the canonical reference for the production database schema. Card seed data is generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo).
+Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute_sql` for one-off data ops). Committed migration files in `/migrations/` are the canonical history — prod and the migrations folder are kept in sync; fresh Supabase branches must converge to the same state when all migrations run in order. Card seed data is generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo).
 
-**Multi-game scoping**: The following tables have a `game_id TEXT DEFAULT 'boba'` column: `cards`, `collections`, `scans`, `hash_cache`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scraping_test`. Many also have a `variant TEXT DEFAULT 'paper'` column with CHECK constraint `(paper, cf, ff, ocm, sf)`.
+**Multi-game scoping.** `game_id TEXT DEFAULT 'boba'` is present on: `cards`, `collections`, `scans`, `hash_cache`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scan_sessions`, `scraping_test`. All queries that span multiple games must filter on `game_id` explicitly — defaulting to `'boba'` keeps pre-Phase-3 code working without changes.
+
+**Parallel column is the source of truth, not `variant`.** During the Phase 2 arc the `variant` column was renamed to `parallel` across every table that had it. `parallel TEXT` is present on 11 tables: `cards`, `card_embeddings`, `collections`, `hash_cache`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`, `variant_harvest_seed`, `wonders_cards_full` (view). Default value is `'paper'` on most; `cards.parallel` has no default (must be specified at insert). There are no CHECK constraints on parallel values — it's a free-text column so that BoBA's 49 parallel types and Wonders' 5 variants can coexist without a shared enum.
+
+**Wonders parallel names.** Stored as full human-readable strings: `'Paper'`, `'Classic Foil'`, `'Formless Foil'`, `'Orbital Color Match'`, `'Stonefoil'`. The parallel classifier emits short codes (`paper/cf/ff/ocm/sf`) which are mapped to these full names before DB write. All 1,007 current Wonders card rows have `parallel='Paper'` — the future 5x catalog expansion (one row per parallel) is tracked separately.
+
+**BoBA typos are canonical.** The card catalog preserves source-of-truth typos that OCR must match exactly: `'Stongboy'`, `'Crosbow'`, `'Cameleon'`, `'Laviathan'`, and both `'Cruze Control'` and `'Cruze-Control'` (Levenshtein 1 — fuzzy match hazard). Don't auto-correct these in code.
 
 #### Extensions
+
 - `uuid-ossp` — UUID generation
-- `pg_trgm` — Trigram search
+- `pg_trgm` — Trigram search (used by card name lookup)
+- `vector` (pgvector) — DINOv2-base embeddings for `card_embeddings` with HNSW indexes
 
 #### Tables — Users & Auth
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `users` | Auth + profile | `id` (UUID PK), `auth_user_id` (FK auth.users), `email`, `name`, `google_id`, `picture`, `discord_id`, `is_admin`, `is_pro`, `pro_until`, `is_member`, `member_until`, `is_organizer`, `persona` (JSONB), `nav_config` (JSONB), `active_theme_id`, `custom_theme` (JSONB), `can_invite` |
-| `donations` | Pro tier payments | `user_id`, `tier_key`, `tier_amount`, `payment_method`, `time_added` |
-| `user_badges` | Achievement badges | `user_id` (FK auth.users), `badge_key`, `badge_name`, `badge_description`, `badge_icon`, `earned_at` |
-| `user_feature_overrides` | Per-user feature toggles | `user_id`, `feature_key`, `enabled` — PK (user_id, feature_key) |
-| `user_game_prefs` | Multi-game preferences | `user_id` (UNIQUE, FK auth.users), `default_game`, `enabled_games` (TEXT[], default `{boba}`) |
-| `ebay_seller_tokens` | eBay OAuth creds (service_role only) | `user_id` (PK, FK auth.users), `access_token`, `refresh_token`, `ebay_username`, `scopes`, expiry timestamps |
+| `users` | Auth + profile | `id` (UUID PK), `auth_user_id` (UNIQUE, FK `auth.users`), `email` (UNIQUE), `google_id` (UNIQUE), `name`, `picture`, `discord_id`, `is_admin`, `is_pro`, `pro_until`, `is_member`, `member_until`, `is_organizer`, `persona` (JSONB default `{seller:0, collector:0.5, tournament:0, deck_builder:0}`), `nav_config` (JSONB), `active_theme_id`, `custom_theme` (JSONB), `can_invite`, `card_limit` (default 100), `api_calls_limit/used`, `cards_in_collection`, `last_reset_date` |
+| `pro_payments` | Pro tier payments (replaced `donations`) | `user_id` (FK users), `tier_key`, `tier_amount`, `payment_method`, recorded timestamps |
+| `subscribers` | Newsletter/update subscribers | `id` (PK), `user_id` (UNIQUE), subscription fields |
+| `user_badges` | Achievement badges | `user_id` (FK `auth.users`), `badge_key`, `badge_name`, `badge_description`, `badge_icon`, `earned_at` |
+| `user_feature_overrides` | Per-user feature toggles | PK `(user_id, feature_key)`, `enabled` |
+| `user_game_prefs` | Multi-game preferences (table retained; service deleted in 2.6) | `user_id` (UNIQUE, FK `auth.users`), `default_game`, `enabled_games` (TEXT[] default `{boba}`) |
+| `ebay_seller_tokens` | eBay OAuth creds (service_role only) | `user_id` (PK, FK `auth.users`), `access_token`, `refresh_token`, `ebay_username`, `scopes`, expiry timestamps |
 | `error_logs` | Client error reporting (service_role only) | `type`, `message`, `stack`, `url`, `user_agent`, `session_id` |
+| `_admin_shared_secrets` | Internal secret storage (service_role only) | Opaque — not used by app code directly |
 
-#### Tables — Cards & Collections
+#### Tables — Cards & Catalog
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `cards` | Unified card database (all games) | `id` (UUID PK), `name`, `hero_name`, `athlete_name`, `set_code`, `card_number`, `power`, `weapon_type`, `parallel`, `rarity`, `battle_zone`, `image_url`, `search_vector` (TSVECTOR), `game_id` (TEXT, default 'boba'), `metadata` (JSONB, default '{}'), `year` (INT), `card_id_legacy` (INT UNIQUE), `created_at`, `updated_at` |
-| `wotf_cards` | Wonders card reference data | `id` (UUID PK), `name`, `display_name`, `type_line`, `subtype`, `set_name`, `set_code`, `collector_number`, `normalized_name`, `image_path`, `artist`, `flavor_text`, `rules_text`, `rarity`, `card_class`, `hierarchy`, `lineage`, `faction`, `cost`, `power`, `dbs`, `orbital_cost` (JSONB), `orbitals` (JSONB), `is_core`, `is_landscape`, `card_copies_limit`, `reprint`, `traits`, `activate_on_1`, `ability_text_1`, `activate_on_2`, `ability_text_2`, `variant_type` (default 'paper') |
-| `play_cards` | BoBA Play/Hot Dog cards | `id` (TEXT PK), `card_number`, `name`, `release`, `type`, `number`, `hot_dog_cost`, `dbs`, `ability` |
-| `collections` | User card collections | `id` (UUID PK), `user_id` (FK auth.users), `card_id` (FK cards), `quantity`, `condition`, `notes`, `scan_image_url`, `game_id` (default 'boba'), `variant` (default 'paper', CHECK) |
-| `collections_v2` | Next-gen collection table (unused) | `id` (UUID PK), `user_id` (FK auth.users), `card_id` (FK cards), `quantity`, `condition`, `notes` |
-| `scans` | Image recognition results | `id` (UUID PK), `user_id` (FK auth.users), `card_id` (FK cards), `hero_name`, `card_number`, `scan_method`, `confidence`, `processing_ms`, `game_id` (default 'boba'), `variant` (default 'paper', CHECK) |
-| `hash_cache` | Perceptual hash cache | `phash` (TEXT PK), `card_id` (FK cards), `confidence`, `scan_count`, `phash_256`, `game_id` (default 'boba'), `variant` (default 'paper', CHECK) |
+| `cards` | Unified card database (all games) | `id` (UUID PK), `card_id_legacy` (INT UNIQUE), `name`, `hero_name`, `athlete_name`, `set_code`, `card_number`, `year`, `parallel`, `power`, `rarity`, `weapon_type`, `battle_zone`, `image_url`, `search_vector` (tsvector), `game_id` (default `'boba'`), `metadata` (JSONB default `{}`), `created_at`, `updated_at` |
+| `wotf_cards` | Wonders reference data (1:1 join with `cards` on `id` via `wonders_cards_full` view) | `id` (UUID PK, matches `cards.id`), `name`, `display_name`, `type_line`, `subtype`, `set_name/code`, `collector_number`, `normalized_name`, `image_path`, `artist`, `flavor_text`, `rules_text`, `rarity`, `reprint`, `card_copies_limit` (default 3), `is_landscape`, `orbital_cost` (JSONB), `orbitals` (JSONB), `hierarchy`, `dbs`, `power`, `cost`, `card_class`, `lineage`, `faction`, `is_core`, `traits`, `activate_on_1/2`, `ability_text_1/2`, `source_created/updated_at` |
+| `play_cards` | BoBA Play + Hot Dog cards | `id` (TEXT PK — e.g. `'A---PL-2'`), `card_number`, `name`, `release`, `type`, `number`, `hot_dog_cost`, `dbs`, `ability` |
 | `card_reference_images` | Reference image competition | `card_id` (TEXT PK), `image_path`, `phash`, `confidence`, `contributed_by`, `contributor_name`, `blur_variance`, `times_challenged`, `previous_confidence` |
-| `scan_metrics` | Aggregate scan performance | `scan_method`, `processing_time_ms`, `confidence`, `cache_hit`, `cache_layer` |
+| `card_embeddings` | DINOv2-base image embeddings for visual search | PK `(card_id, parallel, source, model_version)`, `embedding` (pgvector), `model_version` (default `'dinov2-base-v1'`), `confidence`, `created_at`, `created_by` |
 | `pack_configurations` | Pack simulator config | `box_type`, `set_code`, `display_name`, `slots` (JSONB), `packs_per_box`, `msrp_cents`, `is_active` |
+
+#### Tables — User Collections
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `collections` | Current collection table | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `quantity` (default 1), `condition` (default `'near_mint'`), `notes`, `scan_image_url`, `game_id` (default `'boba'`), `parallel` (default `'paper'`) |
+| `collections_v2` | Next-gen collection table (scaffolded, not used in app code) | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `quantity`, `condition`, `notes` |
+
+#### Tables — Scan Pipeline (Phase 1 + 2)
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `scan_sessions` | Device + browser + network context, one row per app session | `id` (UUID PK), `user_id`, `game_id`, `device_model`, `os_name/version`, `browser_name/version`, `app_version`, `viewport_width/height`, `device_memory_gb`, `network_type` + `net_effective_type/downlink_mbps/rtt_ms`, `capabilities` (JSONB), `battery_level/charging`, `is_pwa_standalone`, `page_session_age_ms`, `release_git_sha`, `started_at`, `ended_at`, `extras` (JSONB), `schema_version`, `created_at` |
+| `scans` | One row per scan attempt — the primary recognition result table | 63 columns covering: `id` (UUID PK), `session_id` (FK `scan_sessions`), `user_id`, `game_id`, photo metadata (`photo_storage_path`, `photo_thumbnail_path`, `photo_bytes/width/height/mime_type/sha256/aspect_ratio`), `parent_scan_id` (self-FK for binder children), `retake_chain_idx`, capture context (`capture_context` JSONB, `capture_source`, `camera_facing`, `torch_on`, `focus_mode`), device sensors (`device_orientation_beta/gamma`, `accel_magnitude`, `thermal_state`, `battery_level`), quality signals (`quality_signals` JSONB, `composite_quality`, `blur_laplacian_variance`, `luminance_mean/std`, `overexposed_pct`, `underexposed_pct`, `edge_density_canny`, `card_area_pct`, `perspective_skew_deg`, `quality_gate_passed`, `quality_gate_fail_reason`), EXIF (`exif_make/model/orientation/capture_at/software/gps_stripped`), resolution (`winning_tier` TEXT — `tier1_local_ocr`/`tier3_claude`/`manual`, `final_card_id`, `final_confidence`, `final_parallel`, `live_consensus_reached`, `live_vs_canonical_agreed`, `fallback_tier_used` CHECK `none\|haiku\|sonnet\|manual\|NULL`), timing/cost (`total_latency_ms`, `total_cost_usd`, `capture_latency_ms`), user action (`user_overrode`, `corrected_card_id`, `user_action`, `ms_to_user_action`), lifecycle (`outcome` enum `scan_outcome`, `pipeline_version`, `decision_context` JSONB, `photo_retention_until`, `extras`, `schema_version`, `captured_at`, `created_at`) |
+| `scan_tier_results` | One row per tier invocation within a scan (max 2: Tier 1 + optional Tier 3) | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `tier` (enum `scan_tier`), `engine` (enum `scan_engine`), `engine_version`, `raw_output` (JSONB), `parsed_card_id/parallel/confidence`, `latency_ms`, `cost_usd`, `errored`, `error_message/code`, OCR fields (`ocr_text_raw`, `ocr_mean_confidence`, `ocr_word_count`, `ocr_detected_card_number`, `ocr_orientation_deg`), LLM fields (`llm_model_requested/responded`, `llm_input/output/cache_creation/cache_read_tokens`, `llm_finish_reason`, `prompt_template_sha/version`, `pricing_table_version`, `claude_returned_name_in_catalog`), hash-match legacy fields from pre-2.5 (`query_dhash`, `query_phash_256`, `match_distance`, `winner_dhash/phash_distance`, `runner_up_margin_dhash`, `hash_match_count`, `idb_cache_hit`, `sb_exact/fuzzy_hit`), `topn_candidates` (JSONB), `outcome`, `skip_reason`, `extras`, `schema_version`, `ran_at`, `created_at` |
+| `scan_claude_responses` | Raw Claude Haiku responses for Tier 3 scans | PK `tier_result_id` (FK `scan_tier_results`) |
+| `scan_pipeline_checkpoint` | Per-stage trace (elapsed_ms + extras) for live pipeline debugging | `id` (BIGINT PK), `trace_id`, `user_id`, `stage`, `elapsed_ms`, `extras` (JSONB), `created_at` |
+| `scan_resolutions` | Consensus snapshot for confirmed scan outcomes | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `card_id`, `parallel` (default `'paper'`), `consensus_score`, `tier_agreement_bits`, `confirmed_at`, `confirmed_by`, `superseded_at`, `superseded_by`, `extras`, `schema_version` |
+| `scan_disputes` | User-reported incorrect scans | `id` (UUID PK), scan + card refs, dispute metadata |
+| `alignment_signal_telemetry` | Pre-capture alignment signal data (live camera) | `id` (PK) |
+| `hash_cache` | Perceptual hash cache — NO LONGER part of recognition pipeline; used only by image-harvester and AR overlay | `phash` (TEXT PK), `card_id` (FK `cards`), `confidence`, `scan_count`, `phash_256`, `game_id` (default `'boba'`), `parallel` (default `'paper'`), `source` (enum `hash_source`, default `'admin'`), `consensus_count`, `dispute_count`, `last_confirmed_at`, `superseded_at`, `extras` (JSONB), `schema_version`, `last_seen`, `created_at` |
 
 #### Tables — Pricing & Commerce
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `price_cache` | Current eBay prices | **PK: (`card_id`, `source`, `variant`)**. `price_low/mid/high`, `buy_now_low/mid`, `buy_now_count`, `filtered_count`, `confidence_score`, `fetched_at`, `game_id` (default 'boba') |
-| `play_price_cache` | Current prices for play cards | **PK: (`card_id` TEXT, `source`)**. `price_low/mid/high`, `buy_now_low/mid/count`, `filtered_count`, `confidence_score`, `fetched_at` |
-| `price_history` | Historical hero price tracking | `card_id` (UUID), `source`, `price_low/mid/high`, `listings_count`, `recorded_at`, `game_id`, `variant` |
-| `play_price_history` | Historical play price tracking | `card_id` (TEXT), `source`, `price_low/mid/high`, `listings_count`, `recorded_at` |
-| `price_harvest_log` | eBay harvest results | `run_id`, `chain_depth`, `priority` (1-4), `card_id`, `hero_name`, `card_name`, `card_number`, `search_query`, full eBay result data, `price_changed`, `threshold_rejected`, `duration_ms`, `game_id`, `variant` |
-| `listing_templates` | eBay listing drafts | `id` (UUID PK), `user_id`, `card_id` (FK cards), `title`, `description`, `price`, `suggested_price`, `condition`, `status` CHECK (`draft/pending/published/sold/ended/error`), `ebay_listing_id`, `ebay_offer_id`, `ebay_listing_url`, `sku`, `scan_image_url`, `image_url`, `hero_name`, `card_number`, `set_code`, `parallel`, `weapon_type`, `sold_at`, `sold_price`, `game_id`, `variant`, `error_message` |
-| `scraping_test` | External pricing intelligence | `id` (UUID PK), `card_id` (UUID UNIQUE, FK cards), `st_price/low/high`, `st_source_id`, `st_card_name`, `st_set_name`, `st_variant`, `st_rarity`, `st_image_url`, `st_raw_data` (JSONB), `st_updated`, `game_id` |
-| `ebay_api_log` | eBay quota tracking | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (running/quota_exhausted/no_cards_remaining/triggered_manual) |
+| `price_cache` | Current eBay prices for hero cards | **PK: `(card_id, source, parallel)`**. `price_low/mid/high`, `buy_now_low/mid/count`, `listings_count`, `filtered_count`, `confidence_score`, `confidence_cold_start`, `fetched_at`, `game_id` (default `'boba'`), `parallel` (default `'paper'`) |
+| `play_price_cache` | Current prices for play cards — separate table because `play_cards.id` is TEXT not UUID | **PK: `(card_id TEXT, source)`**. Same price columns as `price_cache`, minus parallel (plays have no parallels) |
+| `price_history` | Historical hero price tracking | `id` (UUID PK), `card_id` (UUID), `source`, `price_low/mid/high`, `listings_count`, `recorded_at`, `game_id`, `parallel` |
+| `play_price_history` | Historical play price tracking | `id` (UUID PK), `card_id` (TEXT), `source`, `price_low/mid/high`, `listings_count`, `recorded_at` |
+| `price_harvest_log` | Per-card harvest attempt log (heroes only — play harvests log to `play_price_cache.fetched_at`) | `id` (UUID PK), `run_id`, `chain_depth`, `priority` (1-4), `card_id`, `hero_name`, `card_name`, `card_number`, `search_query`, eBay result stats, pricing (`price_low/mid/high/mean`, `buy_now_*`, `confidence_score`, `buy_now_confidence`), deltas (`previous_mid`, `price_changed`, `price_delta/_pct`, `is_new_price`), `success`, `zero_results`, `threshold_rejected`, `error_message`, `duration_ms`, `game_id`, `parallel`, `confidence_cold_start`, `processed_at` |
+| `listing_templates` | eBay listing drafts (one per scan→listing) | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `scan_id` (UUID FK `scans`, added 2.1a), `title`, `description`, `suggested_price`, `price`, `condition` (default `'near_mint'`), `status` (CHECK `draft\|pending\|published\|sold\|ended\|error`), eBay fields (`ebay_listing_id`, `ebay_offer_id`, `ebay_listing_url`, `sku`), card denorm (`hero_name`, `card_number`, `set_code`, `parallel`, `weapon_type`), images (`scan_image_url`, `image_url`), sale tracking (`sold_at`, `sold_price`), `game_id` (default `'boba'`), `error_message`, timestamps |
+| `variant_harvest_seed` | Queue for cards that need parallel-specific price harvesting | PK `(card_id, parallel)`, `reason`, `created_at` |
+| `scraping_test` | External pricing intelligence (third-party lookup results) | `id` (UUID PK), `card_id` (UUID UNIQUE, FK `cards`), `st_price/low/high`, `st_source_id`, `st_card_name`, `st_set_name`, `st_variant`, `st_rarity`, `st_image_url`, `st_raw_data` (JSONB), `st_updated`, `game_id` |
+| `ebay_api_log` | eBay quota tracking (per harvest run) | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (`running`/`quota_exhausted`/`no_cards_remaining`/`triggered_manual`) |
 
 #### Tables — Tournaments
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `tournaments` | Tournament definitions | `creator_id` (FK users), `code` (UNIQUE), `name`, `format_id`, `description`, `venue`, `event_date`, `entry_fee`, `prize_pool`, `deck_type` CHECK (constructed/sealed), `max_players`, `submission_deadline`, `registration_closed`, `deadline_mode` (default 'manual'), `results_entered`, `results_entered_at`, `results_entered_by`, `max_heroes`, `max_plays`, `max_bonus`, `usage_count` |
+| `tournaments` | Tournament definitions | `creator_id` (FK users), `code` (UNIQUE), `name`, `format_id`, `description`, `venue`, `event_date`, `entry_fee`, `prize_pool`, `deck_type` CHECK (`constructed`/`sealed`), `max_players`, `submission_deadline`, `registration_closed`, `deadline_mode` (default `'manual'`), `results_entered`, `results_entered_at`, `results_entered_by`, `max_heroes`, `max_plays`, `max_bonus`, `usage_count` |
 | `tournament_registrations` | Player registrations | `tournament_id`, `user_id`, `email`, `name`, `discord_id`, `deck_csv` |
-| `deck_submissions` | Tournament deck submissions | `tournament_id`, `user_id`, `player_name`, `player_email`, `player_discord`, `hero_cards` (JSONB), `play_entries` (JSONB), `hot_dog_count`, `foil_hot_dog_count`, `format_id`, `format_name`, `is_valid`, `validation_violations` (JSONB), `validation_warnings` (JSONB), `validation_stats` (JSONB), `dbs_total`, `hero_count`, `total_power`, `avg_power`, `source_deck_id` (FK user_decks), `status` (submitted/locked/withdrawn), `verification_code` (UNIQUE), `locked_at` |
-| `tournament_results` | Organizer-entered results | `tournament_id`, `submission_id` (FK deck_submissions), `player_name`, `player_user_id`, `final_standing`, `placement_label`, `match_wins/losses/draws`, `entered_by` |
+| `deck_submissions` | Tournament deck submissions | `tournament_id`, `user_id`, `player_name`, `player_email`, `player_discord`, `hero_cards` (JSONB), `play_entries` (JSONB), `hot_dog_count`, `foil_hot_dog_count`, `format_id`, `format_name`, `is_valid`, `validation_violations` (JSONB), `validation_warnings` (JSONB), `validation_stats` (JSONB), `dbs_total`, `hero_count`, `total_power`, `avg_power`, `source_deck_id` (FK `user_decks`), `status` (`submitted`/`locked`/`withdrawn`), `verification_code` (UNIQUE), `locked_at` |
+| `tournament_results` | Organizer-entered results | `tournament_id`, `submission_id` (FK `deck_submissions`), `player_name`, `player_user_id`, `final_standing`, `placement_label`, `match_wins/losses/draws`, `entered_by` |
 
 #### Tables — Decks
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `user_decks` | Saved deck lists | `id` (UUID PK), `user_id` (FK auth.users), `name`, `format_id`, `hero_card_ids` (TEXT[]), `play_entries` (JSONB), `hot_dog_count`, `hero_deck_min/max`, `play_deck_size`, `bonus_plays_max`, `hot_dog_deck_size`, `dbs_cap`, `spec_power_cap`, `combined_power_cap`, `is_shared`, `is_custom_format`, `notes`, `last_edited_at` |
+| `user_decks` | Saved deck lists | `id` (UUID PK), `user_id` (FK `auth.users`), `name`, `format_id`, `hero_card_ids` (TEXT[]), `play_entries` (JSONB), `hot_dog_count`, `hero_deck_min/max`, `play_deck_size`, `bonus_plays_max`, `hot_dog_deck_size`, `dbs_cap`, `spec_power_cap`, `combined_power_cap`, `is_shared`, `is_custom_format`, `notes`, `last_edited_at` |
 | `deck_snapshots` | QR verification snapshots | `code` (UNIQUE), `user_id`, `deck_id`, `deck_name`, `format_id`, `format_name`, `is_valid`, `violations` (JSONB), `stats` (JSONB), `hero_cards` (JSONB), `play_cards` (JSONB), `player_name`, `locked_at` |
 | `deck_shop_refresh_log` | Deck shop refresh events | `user_id`, `card_count` |
 
@@ -671,64 +699,104 @@ Schema changes are applied manually via the Supabase SQL Editor (no CLI, no auto
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `dragon_points_config` | Wonders scoring config | **PK: (`config_type`, `key`)**. `config_type` CHECK (base_table/class_multiplier/year_bonus/bonus_card), `value` (JSONB), `description`, `updated_by` (FK auth.users) |
+| `dragon_points_config` | Wonders collection scoring config | **PK: `(config_type, key)`**. `config_type` CHECK (`base_table`/`class_multiplier`/`year_bonus`/`bonus_card`), `value` (JSONB), `description`, `updated_by` (FK `auth.users`) |
 
 #### Tables — System & Admin
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `system_settings` | Global app config | `key` (TEXT PK), `value` — seeds: maintenance_mode, max_daily_scans, app_version, app_name |
+| `system_settings` | Global app config | `key` (TEXT PK), `value` — seeds: `maintenance_mode`, `max_daily_scans`, `app_version`. The pre-2.6 `app_name` row was deleted — app name is now hardcoded in `app.html` and component strings. |
 | `app_config` | Application config | `key` (TEXT PK), `value` (JSONB), `description` |
-| `feature_flags` | Feature gating | `feature_key` (PK), `display_name`, `icon`, `enabled_globally`, `enabled_for_guest/authenticated/member/pro/admin` |
+| `feature_flags` | Feature gating | `feature_key` (PK), `display_name`, `description`, `icon`, `enabled_globally`, `enabled_for_guest/authenticated/member/pro/admin`, `updated_at` |
 | `api_call_logs` | API usage tracking | `user_id` (FK users), `call_type`, `success`, `error_message`, `cost`, `cards_processed` |
-| `scan_flags` | Wrong card reports | `user_id`, `scan_id`, `card_identified`, `card_suggested`, `image_url`, `status`, `notes`, `resolved_by`, `resolved_at` |
-| `changelog_entries` | What's new notifications | `title`, `body`, `published`, `is_notification`, `published_at`, `created_by` (FK auth.users) |
-| `admin_activity_log` | Admin audit trail | `admin_id` (FK auth.users), `action`, `entity_type`, `entity_id`, `details` (JSONB) |
+| `changelog_entries` | What's new notifications | `title`, `body`, `published`, `is_notification`, `published_at`, `created_by` (FK `auth.users`) |
+| `admin_activity_log` | Admin audit trail | `admin_id` (FK `auth.users`), `action`, `entity_type`, `entity_id`, `details` (JSONB) |
 | `parallel_rarity_config` | Parallel card rarity | `parallel_name` (UNIQUE), `rarity`, `sort_order`, `updated_by` (FK users) |
 
 #### RPC Functions
 
-| Function | Purpose |
-|----------|---------|
-| `find_similar_hash(query_hash, max_distance, p_game_id)` | Hamming distance fuzzy hash lookup (Tier 1 matching, game-scoped) |
-| `upsert_hash_cache()` | Atomic hash cache insert/update with scan_count increment |
-| `award_badge_if_new()` | Idempotent badge awarding |
-| `lookup_correction()` | Community OCR corrections (requires 3+ confirmations) |
-| `submit_correction()` | Submit a community OCR correction |
-| `increment_tournament_usage()` | Atomic tournament usage counter |
-| `increment_shared_deck_views()` | Atomic shared deck view counter |
-| `activate_pro(p_user_id, p_tier_key, p_tier_amount, p_payment_method, p_days)` | Pro activation with cooldown and day-based blocks |
-| `submit_reference_image(card_id, image_path, confidence, user_id, user_name, blur_variance)` | Atomic reference image submission with champion comparison |
-| `get_harvest_candidates(run_id, limit)` | SQL-based card selection for eBay price harvesting (priority 1-4) |
-| `get_play_harvest_candidates()` | Play card selection for eBay price harvesting |
-| `get_harvest_summary()` | Harvest run summary statistics |
-| `get_price_status_summary()` | Returns pricing coverage stats by card type |
-| `get_weekly_listing_count(p_user_id)` | Free-tier listing gate (3/week, Sunday reset) |
-| `get_card_price_details()` | Admin: detailed price analysis for a card |
-| `get_card_price_details_count()` | Admin: price details record count |
-| `get_daily_trends()` | Admin: daily trend aggregation |
-| `cleanup_old_records()` | Retention cleanup: purges old scan_metrics (90d), api_call_logs (90d), price_history (365d) |
-| `protect_privilege_columns()` | TRIGGER preventing non-service-role modification of is_admin, is_pro, pro_until |
+Recognition & catalog:
+- `find_similar_hash(query_hash, max_distance, p_game_id)` — Hamming-distance fuzzy pHash lookup (used only by AR overlay post-2.5; recognition pipeline no longer calls it)
+- `find_similar_phash_256(query_phash_256, max_distance, p_game_id, p_limit)` — same as above for 256-bit pHash variant
+- `upsert_hash_cache(p_phash, p_card_id, ...)` — legacy entrypoint, kept for backward compatibility
+- `upsert_hash_cache_v2(p_phash, p_card_id, p_phash_256, p_game_id, p_parallel, p_source, p_confidence)` — current entrypoint used by image-harvester
+- `match_card_embedding(query_embedding, target_game_id, top_k, min_similarity)` — pgvector similarity search against `card_embeddings`
+- `get_wonders_cards_to_seed(p_limit)` — feeds the DINOv2 embedding seeder script
+- `lookup_correction(p_ocr_reading)` — community OCR corrections (requires 3+ confirmations)
+- `submit_correction(p_ocr_reading, p_correct_card_number)` — submit a community correction
+
+User & collection:
+- `activate_pro(p_user_id, p_tier_key, p_tier_amount, p_payment_method, p_days)` — Pro activation with cooldown
+- `award_badge_if_new(p_user_id, p_badge_key, ...)` — idempotent badge awarding
+- `increment_persona(p_dimension)` — persona weight update (post-scan signal)
+- `check_monthly_reset()` — TRIGGER for api_calls_used monthly reset
+- `handle_new_user()` — TRIGGER seeding users row when auth.users row is inserted
+- `submit_reference_image(p_card_id, p_image_path, p_confidence, p_user_id, p_user_name, p_blur_variance)` — atomic reference image submission with champion comparison
+
+Tournaments & decks:
+- `increment_tournament_usage(tid)` — atomic tournament usage counter
+- `increment_shared_deck_views(deck_id)` — atomic shared deck view counter
+- `get_weekly_listing_count(p_user_id)` — free-tier listing gate (3/week, Sunday reset)
+
+Pricing & harvest:
+- `get_harvest_candidates(p_run_id, p_limit, p_game_id)` — per-game prioritized candidate selection (priority 1-4)
+- `get_play_harvest_candidates(p_limit)` — play card candidate selection (TEXT card_id)
+- `get_harvest_summary(p_run_id)` — harvest run summary statistics
+- `get_price_status_summary()` — pricing coverage stats by card type
+- `get_latest_harvest_per_card(p_card_ids)` — most recent harvest result per card
+
+Admin & maintenance:
+- `get_daily_trends(p_days)` — daily trend aggregation (default 14 days)
+- `refresh_scan_history_mvs()` — refresh scan history materialized views
+- `set_photo_retention_until()` — TRIGGER setting photo retention window on scan insert
+- `scan_pipeline_trace_set_user_id()` — TRIGGER (legacy — scan_pipeline_trace table was dropped in 2.6; trigger body is harmless)
+- `update_updated_at_column()` — generic TRIGGER for `updated_at`
+
+Phase 2 telemetry:
+- `phase_2_telemetry(window_interval)` — aggregate read-only dashboard RPC returning all ten Phase 2 telemetry sections as one JSONB payload. Powers the admin Phase 2 tab. Window parameter is allowlist-guarded inside the function.
+
+(Extensions like `pgvector` contribute many more functions — `cosine_distance`, `l2_distance`, vector arithmetic — not listed individually.)
 
 #### RLS Summary
 
-- **All tables** have RLS enabled
-- **Anon**: read-only access to public data (cards, prices, feature_flags, tournaments, deck_snapshots, pack_configurations)
-- **Authenticated**: read/write own data (collections, decks, scans, badges, submissions), read public data
-- **Service role**: full access — used for ebay_seller_tokens, error_logs, price_harvest_log, admin tables, and the `activate_pro` / `protect_privilege_columns` functions
+- **All tables** have RLS enabled.
+- **Anon**: read-only access to public data (`cards`, `price_cache`, `feature_flags`, `tournaments`, `deck_snapshots`, `pack_configurations`, `card_reference_images`).
+- **Authenticated**: read/write own data (`collections`, `user_decks`, `scans`, `scan_sessions`, `scan_tier_results`, `scan_resolutions`, `user_badges`, `deck_submissions`, `listing_templates`), read public data.
+- **Service role**: full access — used for `ebay_seller_tokens`, `error_logs`, `_admin_shared_secrets`, `price_harvest_log`, `play_price_cache`, admin tables, the `activate_pro` / `handle_new_user` / `check_monthly_reset` functions, and all cron/QStash writes.
 
-#### Key Constraints
+#### Key Constraints & Enums
 
-- `users`: valid email format, card_limit 0-10000, api_calls limits
-- `collections`: quantity > 0, condition enum (mint/near_mint/excellent/good/fair/poor), variant CHECK (paper/cf/ff/ocm/sf)
-- `cards`: power 0-500, set_code non-empty, name non-empty, game_id defaults to 'boba'
-- `hash_cache`: confidence 0-1, scan_count >= 0, variant CHECK
-- `price_cache`: prices non-negative, low <= mid <= high, PK is (card_id, source, variant)
-- `scans`: confidence 0-1, processing_ms >= 0, scan_method enum (hash/ocr/ai/manual), variant CHECK
-- `tournaments`: deck sizes positive, usage_count >= 0, deck_type CHECK (constructed/sealed)
-- `listing_templates`: status CHECK (draft/pending/published/sold/ended/error)
-- `user_decks`: deck sizes positive, dbs_cap/hot_dog_count >= 0
-- `dragon_points_config`: config_type CHECK (base_table/class_multiplier/year_bonus/bonus_card)
+- `users`: email UNIQUE, `google_id` UNIQUE, `auth_user_id` UNIQUE.
+- `cards`: `set_code` non-empty, `name` non-empty, `game_id` defaults to `'boba'`.
+- `collections`: `quantity` default 1, `condition` default `'near_mint'`, `parallel` default `'paper'`. No CHECK on parallel (free-text — see Wonders note at top of section).
+- `price_cache`: PK `(card_id, source, parallel)`. Numeric prices; no monotonicity constraint (low may exceed mid in sparse-listing edge cases; consumers filter on `confidence_score`).
+- `play_price_cache`: PK `(card_id, source)`. No `parallel` — plays don't vary by parallel.
+- `hash_cache`: PK `phash`. `source` is enum `hash_source`. `confidence_count`/`dispute_count` default 0.
+- `scans`: `outcome` is enum `scan_outcome`. `fallback_tier_used` CHECK `'none'\|'haiku'\|'sonnet'\|'manual'\|NULL`. `capture_source` CHECK includes `'camera_live'`, `'upload_library'`, `'camera_roll_import'`, `'binder_live_cell'`, `'manual'`.
+- `scan_tier_results`: `tier` is enum `scan_tier`. `engine` is enum `scan_engine`.
+- `listing_templates`: `status` CHECK `'draft'\|'pending'\|'published'\|'sold'\|'ended'\|'error'`. `scan_id` FK `scans(id)` ON DELETE SET NULL.
+- `tournaments`: `deck_type` CHECK `'constructed'\|'sealed'`.
+- `dragon_points_config`: `config_type` CHECK `'base_table'\|'class_multiplier'\|'year_bonus'\|'bonus_card'`.
+
+#### What the pre-2.5 schema docs got wrong (for anyone reading old code/commits)
+
+- **`scans.scan_method` enum (`hash/ocr/ai/manual`)** — the column was removed during Phase 1. `scans.winning_tier` is the current equivalent and takes different values (`tier1_local_ocr`/`tier3_claude`/`manual`).
+- **`scans.variant` CHECK** — column was renamed to `final_parallel`, CHECK was dropped during Phase 2 (parallel is now free-text).
+- **`collections.variant`** — column was renamed to `parallel`. Old `CHECK (paper/cf/ff/ocm/sf)` was dropped — Wonders variants are stored as full names, BoBA parallels are stored as named strings like `'Battlefoil'`.
+- **`donations` table** — replaced by `pro_payments`. Column semantics are similar; naming updated to reflect the product shift.
+- **`scan_pipeline_trace`** — dropped in Session 2.6. `scan_pipeline_checkpoint` is the current equivalent.
+
+Drift check query (should return `0/0` post-deploy):
+
+```sql
+SELECT 'pc_drift', COUNT(*) FROM price_cache pc
+  JOIN cards c ON c.id = pc.card_id
+  WHERE c.game_id <> pc.game_id
+UNION ALL
+SELECT 'lt_drift', COUNT(*) FROM listing_templates lt
+  JOIN cards c ON c.id = lt.card_id
+  WHERE c.game_id <> lt.game_id;
+```
 
 ## Environment Variables
 
