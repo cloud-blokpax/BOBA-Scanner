@@ -233,25 +233,29 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
 
 	// ── Play card pass (reserved floor of 5 per run) ──────
-	// Previously: `Math.min(10, CARDS_PER_RUN - processed)` — but since
-	// heroes always consume the full CARDS_PER_RUN=25 budget in refresh
-	// mode, `CARDS_PER_RUN - processed` was always 0 and plays were
-	// permanently skipped. 409 plays × 0% searched confirmed.
 	//
-	// Now: guarantee a floor of 5 play slots per run. With 12 harvest
-	// runs per hour, the 409 cards clear first-pass in ~7 hours; after
-	// that the RPC returns fewer candidates as priced ones age out of
-	// the refresh window, so the reserved slots yield back naturally.
-	// No hard change to total eBay call cost — the extra 5 plays per
-	// run are still bounded by the 5000/day quota check at the top.
-	// Session 2.14: removed `!noChain &&` from this guard. The `noChain` header
-	// is set by the QStash wrapper (qstash-harvest/+server.ts:79) to prevent
-	// the cron endpoint from self-chaining another QStash link — that intent
-	// is correctly enforced at the chain-fire block below (line ~290). It was
-	// NEVER meant to gate the play card pass. Because every production run is
-	// QStash-triggered, `noChain` was always true in prod, and the play pass
-	// was always skipped — explaining 0 rows in play_price_cache despite 2.12's
-	// eBay call budget floor and 2.13's time budget carve-out both landing.
+	// IMPORTANT ASYMMETRY: plays log to `play_price_cache.fetched_at`
+	// for observability, NOT to `price_harvest_log`. Why: play_cards.id
+	// is TEXT (e.g. "A---PL-2"), but price_harvest_log.card_id is UUID.
+	// Any admin report that JOINs price_harvest_log will see zero plays
+	// — that's by design, not a bug. For play harvest observability:
+	//     SELECT COUNT(*), MAX(fetched_at) FROM public.play_price_cache;
+	//
+	// BUDGET HISTORY:
+	// - Pre-2.12: `Math.min(10, CARDS_PER_RUN - processed)`. Heroes
+	//   consumed the full CARDS_PER_RUN=25 in refresh mode, so this
+	//   was always 0. Plays never ran.
+	// - 2.12: Floor to 5 via Math.max(5, ...). Fixed the arithmetic.
+	// - 2.13: Added heroCutoff so heroes don't time-starve plays.
+	// - 2.14: Removed spurious `!noChain &&` outer gate that skipped
+	//   the whole block whenever QStash was the trigger (which is every
+	//   production run). That last fix is the one that actually made
+	//   plays start writing.
+	//
+	// 409 plays × 5/run × 12 runs/hour → ~7 hours for first full pass.
+	// After that the RPC returns fewer candidates, reserved slots yield
+	// back to heroes. Total eBay call budget still bounded by the 5000/day
+	// quota check at the top of the handler.
 	if (consecutive429s < 3) {
 		let playUsed = 0;
 		try {
