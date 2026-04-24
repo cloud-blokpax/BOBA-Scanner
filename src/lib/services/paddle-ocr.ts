@@ -4,23 +4,20 @@
  * so first-scan-ever has the model ready but users who never scan pay nothing.
  */
 
-// Loaded via Vite's dynamic import of the npm package. Previously this
-// came from jsdelivr's `+esm` CDN to "stay out of the bundle" — but
-// strict ESM engines (current Safari, newer Chromium) refuse to link
-// that CDN bundle because it combines `export *` + `export {default}`
-// against a CJS-origin dependency. The link-phase error surfaces as
-// "Importing binding name 'default' cannot be resolved by star export
-// entries" and fires inside `await import(CDN_URL)` itself, before any
-// of our code runs.
+// `@gutenye/ocr-browser` (npm dep) is imported dynamically so the OCR chain
+// lives in a lazy chunk. Its two largest transitive deps — opencv-js (~10MB
+// UMD with embedded WebAssembly) and onnxruntime-web (WASM loader + backend)
+// — are aliased in vite.config.ts to runtime shims under src/lib/shims/ that
+// load the real code from /vendor/ at runtime. That keeps both out of the
+// client JS budget. The vendor files are copied from node_modules by
+// scripts/copy-vendor.js as part of `npm run build`.
 //
-// The bundled path fixes this at build time — Vite/Rollup rewrite the
-// offending re-export pattern into named bindings that every engine
-// can link. The transitive opencv-js and onnxruntime-web get chunk-
-// split by Rollup, lazy-loaded on first OCR use, so the net user-
-// facing cost (~15MB first-ever OCR) is unchanged. Only the shape of
-// the dependency graph changes.
-//
-// `@gutenye/ocr-browser` is declared in package.json dependencies.
+// opencv-js is a UMD bundle that attaches `window.cv` only after its
+// Emscripten runtime finishes initializing — we must await that inside
+// `preloadOpencv()` *before* importing `@gutenye/ocr-browser`, because the
+// OCR library uses cv.* synchronously from within its async calls.
+
+import { preloadOpencv } from '$lib/shims/opencv-js';
 
 // ONNX model assets served from our own /static directory so we don't
 // depend on a CDN chain for the heavy weights. One-time ~15MB cold load
@@ -51,9 +48,15 @@ export async function initPaddleOCR(): Promise<void> {
 	}
 	_initStartedAt = performance.now();
 	_initPromise = (async () => {
+		// opencv MUST be globally available before ocr-browser links — the
+		// shim resolves every `cv.*` access through globalThis.cv at call
+		// time, so if the script tag hasn't finished loading/initializing
+		// we'd throw the moment ocr-common runs splitIntoLineImages.
+		await preloadOpencv();
 		// Dynamic import (no `@vite-ignore`) so Vite chunk-splits the package
-		// and its transitive opencv-js/onnxruntime-web dependencies into a
-		// lazy-loaded chunk. User pays ~15MB of cold load on first OCR only.
+		// into a lazy-loaded chunk. opencv-js and onnxruntime-web are aliased
+		// in vite.config.ts to the shims under $lib/shims, so this chunk
+		// stays tiny — the real payloads live in /vendor/.
 		const mod = await import('@gutenye/ocr-browser');
 		// Package's documented API is a default export with a static
 		// `.create(options)` method. See npm/@gutenye/ocr-browser README.

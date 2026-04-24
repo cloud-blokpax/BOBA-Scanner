@@ -1,8 +1,9 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "svelte-kit sync && vite build",
+    "dev": "node scripts/copy-vendor.js && vite dev",
+    "copy:vendor": "node scripts/copy-vendor.js",
+    "build": "node scripts/copy-vendor.js && svelte-kit sync && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
