@@ -214,13 +214,24 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// Skip self-chaining when triggered manually (browser handles the loop)
 	const noChain = request.headers.get('x-harvest-no-chain') === 'true';
 
-	// ── Play card pass (uses remaining budget) ────────────
-	// Only runs if hero processing finished with budget remaining.
-	// With 409 play cards total, this clears the backlog in a few runs.
+	// ── Play card pass (reserved floor of 5 per run) ──────
+	// Previously: `Math.min(10, CARDS_PER_RUN - processed)` — but since
+	// heroes always consume the full CARDS_PER_RUN=25 budget in refresh
+	// mode, `CARDS_PER_RUN - processed` was always 0 and plays were
+	// permanently skipped. 409 plays × 0% searched confirmed.
+	//
+	// Now: guarantee a floor of 5 play slots per run. With 12 harvest
+	// runs per hour, the 409 cards clear first-pass in ~7 hours; after
+	// that the RPC returns fewer candidates as priced ones age out of
+	// the refresh window, so the reserved slots yield back naturally.
+	// No hard change to total eBay call cost — the extra 5 plays per
+	// run are still bounded by the 5000/day quota check at the top.
 	if (!noChain && consecutive429s < 3) {
 		let playUsed = 0;
 		try {
-			const playBudget = Math.min(10, CARDS_PER_RUN - processed);
+			const PLAY_FLOOR = 5;
+			const PLAY_CAP = 10;
+			const playBudget = Math.max(PLAY_FLOOR, Math.min(PLAY_CAP, CARDS_PER_RUN - processed));
 			if (playBudget > 0) {
 				const playCandidates = await getPlayCandidates(admin, playBudget);
 
