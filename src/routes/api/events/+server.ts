@@ -1,5 +1,5 @@
 /**
- * POST /api/diag — client-side diagnostic event ingestion.
+ * POST /api/events — client-side diagnostic event ingestion.
  *
  * Receives one or more diagnostic events from the browser (window.onerror,
  * unhandledrejection, fetch failure handlers, fire-and-forget catches that

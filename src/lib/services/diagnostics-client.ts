@@ -2,7 +2,9 @@
  * Client-side diagnostic reporter.
  *
  * Browser counterpart to src/lib/server/diagnostics.ts. POSTs events to
- * /api/diag, which forwards them to logEvent on the server.
+ * /api/events, which forwards them to logEvent on the server.
+ * (Renamed from /api/diag in Round 5 — the original path was being blocked
+ * at the edge with a 403, likely by a default WAF rule matching "diag".)
  *
  * Usage patterns:
  *   - Failure-recovery handlers: replace `console.warn(...)` with `reportClientEvent(...)`
@@ -32,7 +34,7 @@ interface ClientEvent {
 
 const BUFFER_FLUSH_SIZE = 5;
 const BUFFER_FLUSH_INTERVAL_MS = 5_000;
-const ENDPOINT = '/api/diag';
+const ENDPOINT = '/api/events';
 
 let buffer: ClientEvent[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -102,7 +104,7 @@ function flush(useBeacon = false): void {
 			body: payload,
 			keepalive: true
 		}).catch(() => {
-			// Best-effort. If /api/diag is unreachable, the event is lost.
+			// Best-effort. If /api/events is unreachable, the event is lost.
 			// We do not retry — retry logic for a logging endpoint risks
 			// becoming an infinite loop on the day Supabase is down.
 		});
