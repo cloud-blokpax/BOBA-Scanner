@@ -125,7 +125,7 @@ export interface ScanResult {
 }
 
 export interface ScanPipelineState {
-	status: 'idle' | 'capturing' | 'processing' | 'tier1' | 'tier2' | 'tier3' | 'complete' | 'error';
+	status: 'idle' | 'capturing' | 'processing' | 'tier1' | 'tier2' | 'complete' | 'error';
 	currentTier: 1 | 2 | 3 | null;
 	result: ScanResult | null;
 	error: string | null;

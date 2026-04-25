@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Card Scanner (boba.cards) is an AI-powered **multi-game** trading card scanner and pricing platform. It uses a two-tier recognition pipeline — local PaddleOCR in four capture modes (Tier 1) with Claude Haiku as a confidence-gated fallback (Tier 3) — to identify cards at near-zero per-scan cost. The app is a mobile-first PWA built with SvelteKit and deployed on Vercel.
+Card Scanner (boba.cards) is an AI-powered **multi-game** trading card scanner and pricing platform. It uses a two-tier recognition pipeline — local PaddleOCR in four capture modes (Tier 1) with Claude Haiku as a confidence-gated fallback (Tier 2) — to identify cards at near-zero per-scan cost. The app is a mobile-first PWA built with SvelteKit and deployed on Vercel.
 
 **Supported games:**
 
@@ -32,7 +32,7 @@ Direct dependencies (from `package.json`). Versions pinned at minor ranges via `
 - eBay Seller OAuth (Authorization Code Grant, per-user).
 
 **AI & recognition:**
-- Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for Tier 3 card scanning, Sonnet for condition grading.
+- Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for Tier 2 card scanning, Sonnet for condition grading.
 - PaddleOCR via `@gutenye/ocr-browser ^1.4.8` — Tier 1 local OCR. Runs in browser via ONNX Runtime Web. Models (`ch_PP-OCRv4_det_infer.onnx` ~5MB, `ch_PP-OCRv4_rec_infer.onnx` ~10MB, `ppocr_keys_v1.txt` ~26KB) shipped in `static/models/`.
 - OpenCV (`@techstark/opencv-js`) is a transitive dependency of `@gutenye/ocr-browser` — NOT a direct dep. Don't import directly; go through the OCR browser wrapper.
 
@@ -168,7 +168,7 @@ Card-Scanner/
 │   │   ├── privacy/+page.svelte    # Privacy policy
 │   │   ├── terms/+page.svelte      # Terms of service
 │   │   └── api/
-│   │       ├── scan/+server.ts     # POST: Claude AI card identification (Tier 3, multi-game)
+│   │       ├── scan/+server.ts     # POST: Claude AI card identification (Tier 2, multi-game)
 │   │       ├── grade/+server.ts    # POST: AI condition grading (Claude Sonnet)
 │   │       ├── badges/+server.ts   # POST: Badge award endpoint
 │   │       ├── go-pro/+server.ts   # POST: Pro subscription upgrade
@@ -401,7 +401,7 @@ Card-Scanner/
 │   │   │   │
 │   │   │   # Recognition pipeline — orchestrator + validation + workers
 │   │   │   ├── recognition.ts              # Two-tier pipeline orchestrator (entry: recognizeCard())
-│   │   │   ├── recognition-tiers.ts        # Tier 3 Claude Haiku dispatcher (Tier 1 modes dispatch independently)
+│   │   │   ├── recognition-tiers.ts        # Tier 2 Claude Haiku dispatcher (Tier 1 modes dispatch independently)
 │   │   │   ├── recognition-validation.ts   # Cross-validation logic between tier outputs
 │   │   │   ├── recognition-workers.ts      # Web Worker lifecycle management
 │   │   │   │
@@ -516,7 +516,7 @@ Card-Scanner/
 │   ├── api-grade.integration.test.ts    # Integration: grade API
 │   ├── sync.test.ts                     # Unit: collection sync (IDB ↔ Supabase)
 │   ├── auth-guard.e2e.test.ts           # E2E: auth guard routes
-│   ├── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (Tier 3 path; Phase 2 covered by unit tests above)
+│   ├── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (Tier 2 path; Phase 2 covered by unit tests above)
 │   └── architecture/
 │       ├── multi-game-prompt.test.ts    # Architecture: multi-game prompt construction
 │       ├── param-matcher.test.ts        # Architecture: [game=game] route param matcher
@@ -575,7 +575,9 @@ src/lib/games/
 
 ### Recognition Pipeline
 
-A two-tier waterfall designed for near-zero per-scan cost. Tier 1 runs entirely client-side via PaddleOCR (no API cost); Tier 3 Claude Haiku is reached only when Tier 1 can't clear the confidence floor.
+A two-tier waterfall designed for near-zero per-scan cost. Tier 1 runs entirely client-side via PaddleOCR (no API cost); Tier 2 Claude Haiku is reached only when Tier 1 can't clear the confidence floor.
+
+> **Naming note:** the pipeline has two active tiers — Tier 1 is local OCR (PaddleOCR), Tier 2 is the Claude Haiku fallback. The database column `scan_tier_results.tier` still uses the string `'tier3_claude'` for the Claude fallback because the original architecture had three tiers (Tier 2 was Tesseract, removed in Phase 2.5). The DB value is preserved for telemetry continuity; UI and code refer to the AI fallback as "Tier 2".
 
 #### Tier 1 — Local OCR (free, ~1–3 seconds)
 
@@ -590,23 +592,25 @@ Four capture modes feed the same consensus builder:
 
 All four modes produce the same telemetry shape and are matched against the catalog mirror (`catalog-mirror.ts`) via `(card_number, name)` lookup. Wonders cards additionally run through `parallel-classifier.ts` to resolve the foil variant (Paper / Classic Foil / Formless Foil / Orbital Color Match / Stonefoil) — BoBA parallels are encoded in the card number prefix, Wonders aren't.
 
-Tier 1 is gated by the `live_ocr_tier1_v1` feature flag. When off, scans fall straight through to Tier 3.
+Tier 1 is gated by the `live_ocr_tier1_v1` feature flag. When off, scans fall straight through to Tier 2.
 
-#### Tier 3 — Claude Haiku fallback (~$0.002/scan, ~2–4 seconds)
+#### Tier 2 — Claude Haiku fallback (~$0.002/scan, ~2–4 seconds)
 
 Reached when Tier 1 consensus confidence is below the floor, or when the flag is off. The card image is POSTed to `/api/scan`, sanitized via sharp (EXIF stripping, pixel bomb protection, re-encoding), and sent to Claude Haiku with the per-game prompt and tool definition. The `identify_card` tool name is hardcoded — every game's `GameConfig.cardIdTool` must use it. Currently <5% of scans reach Haiku in flag-on production.
+
+The DB row written for this tier carries `tier='tier3_claude'` and `winning_tier='tier3_claude'` — see the naming note above.
 
 #### What's no longer in the pipeline
 
 Retired in Session 2.5:
-- **Hash cache Tier 1** (pHash lookup against IndexedDB + Supabase `hash_cache`). Not used for recognition anymore. The `hash_cache` table still exists — image-harvester and AR overlay still write/read it — but the recognition orchestrator never queries it.
-- **Tesseract Tier 2**. `tesseract.js` was removed from dependencies entirely. OCR is now exclusively PaddleOCR.
+- **Hash cache lookup** (pHash against IndexedDB + Supabase `hash_cache`, formerly Tier 1). Not used for recognition anymore. The `hash_cache` table still exists — image-harvester and AR overlay still write/read it — but the recognition orchestrator never queries it.
+- **Tesseract OCR** (formerly Tier 2 in the original three-tier design). `tesseract.js` was removed from dependencies entirely. OCR is now exclusively PaddleOCR.
 
-Any CLAUDE.md or docs references to "Tier 2" or to the `hash/ocr/ai/manual` scan_method enum refer to pre-2.5 architecture and are inaccurate.
+Any CLAUDE.md or docs references to "Tier 2 = Tesseract" or to the `hash/ocr/ai/manual` scan_method enum refer to pre-2.5 architecture and are inaccurate.
 
 #### Telemetry
 
-Every scan writes a row to `public.scans` with `winning_tier` ∈ `{tier1_local_ocr, tier3_claude, manual}` and `fallback_tier_used` ∈ `{NULL, 'none', 'haiku', 'sonnet', 'manual'}`. Detailed per-tier timing and confidence go into `scan_tier_results` (one row per tier attempted). Live-trace checkpoints go into `scan_pipeline_checkpoint` (per-stage elapsed_ms + extras jsonb). The admin Phase 2 tab surfaces aggregate trends; see `docs/phase-2-telemetry.md` for canonical SQL drilldowns.
+Every scan writes a row to `public.scans` with `winning_tier` ∈ `{tier1_local_ocr, tier3_claude, manual}` and `fallback_tier_used` ∈ `{NULL, 'none', 'haiku', 'sonnet', 'manual'}`. The `tier3_claude` value is the DB string for the Tier 2 (Claude Haiku) fallback — see the naming note above. Detailed per-tier timing and confidence go into `scan_tier_results` (one row per tier attempted). Live-trace checkpoints go into `scan_pipeline_checkpoint` (per-stage elapsed_ms + extras jsonb). The admin Phase 2 tab surfaces aggregate trends; see `docs/phase-2-telemetry.md` for canonical SQL drilldowns.
 
 Pipeline code lives in five service files: `recognition.ts` (orchestrator), `recognition-tiers.ts` (two-tier dispatcher), `recognition-validation.ts` (cross-validation), `recognition-workers.ts` (worker lifecycle), plus the Tier 1 mode implementations named above.
 
@@ -791,8 +795,8 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 |-------|---------|-------------|
 | `scan_sessions` | Device + browser + network context, one row per app session | `id` (UUID PK), `user_id`, `game_id`, `device_model`, `os_name/version`, `browser_name/version`, `app_version`, `viewport_width/height`, `device_memory_gb`, `network_type` + `net_effective_type/downlink_mbps/rtt_ms`, `capabilities` (JSONB), `battery_level/charging`, `is_pwa_standalone`, `page_session_age_ms`, `release_git_sha`, `started_at`, `ended_at`, `extras` (JSONB), `schema_version`, `created_at` |
 | `scans` | One row per scan attempt — the primary recognition result table | 63 columns covering: `id` (UUID PK), `session_id` (FK `scan_sessions`), `user_id`, `game_id`, photo metadata (`photo_storage_path`, `photo_thumbnail_path`, `photo_bytes/width/height/mime_type/sha256/aspect_ratio`), `parent_scan_id` (self-FK for binder children), `retake_chain_idx`, capture context (`capture_context` JSONB, `capture_source`, `camera_facing`, `torch_on`, `focus_mode`), device sensors (`device_orientation_beta/gamma`, `accel_magnitude`, `thermal_state`, `battery_level`), quality signals (`quality_signals` JSONB, `composite_quality`, `blur_laplacian_variance`, `luminance_mean/std`, `overexposed_pct`, `underexposed_pct`, `edge_density_canny`, `card_area_pct`, `perspective_skew_deg`, `quality_gate_passed`, `quality_gate_fail_reason`), EXIF (`exif_make/model/orientation/capture_at/software/gps_stripped`), resolution (`winning_tier` TEXT — `tier1_local_ocr`/`tier3_claude`/`manual`, `final_card_id`, `final_confidence`, `final_parallel`, `live_consensus_reached`, `live_vs_canonical_agreed`, `fallback_tier_used` CHECK `none\|haiku\|sonnet\|manual\|NULL`), timing/cost (`total_latency_ms`, `total_cost_usd`, `capture_latency_ms`), user action (`user_overrode`, `corrected_card_id`, `user_action`, `ms_to_user_action`), lifecycle (`outcome` enum `scan_outcome`, `pipeline_version`, `decision_context` JSONB, `photo_retention_until`, `extras`, `schema_version`, `captured_at`, `created_at`) |
-| `scan_tier_results` | One row per tier invocation within a scan (max 2: Tier 1 + optional Tier 3) | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `tier` (enum `scan_tier`), `engine` (enum `scan_engine`), `engine_version`, `raw_output` (JSONB), `parsed_card_id/parallel/confidence`, `latency_ms`, `cost_usd`, `errored`, `error_message/code`, OCR fields (`ocr_text_raw`, `ocr_mean_confidence`, `ocr_word_count`, `ocr_detected_card_number`, `ocr_orientation_deg`), LLM fields (`llm_model_requested/responded`, `llm_input/output/cache_creation/cache_read_tokens`, `llm_finish_reason`, `prompt_template_sha/version`, `pricing_table_version`, `claude_returned_name_in_catalog`), hash-match legacy fields from pre-2.5 (`query_dhash`, `query_phash_256`, `match_distance`, `winner_dhash/phash_distance`, `runner_up_margin_dhash`, `hash_match_count`, `idb_cache_hit`, `sb_exact/fuzzy_hit`), `topn_candidates` (JSONB), `outcome`, `skip_reason`, `extras`, `schema_version`, `ran_at`, `created_at` |
-| `scan_claude_responses` | Raw Claude Haiku responses for Tier 3 scans | PK `tier_result_id` (FK `scan_tier_results`) |
+| `scan_tier_results` | One row per tier invocation within a scan (max 2: Tier 1 + optional Tier 2 — DB string for the latter is `'tier3_claude'`, see naming note in Recognition Pipeline) | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `tier` (enum `scan_tier`), `engine` (enum `scan_engine`), `engine_version`, `raw_output` (JSONB), `parsed_card_id/parallel/confidence`, `latency_ms`, `cost_usd`, `errored`, `error_message/code`, OCR fields (`ocr_text_raw`, `ocr_mean_confidence`, `ocr_word_count`, `ocr_detected_card_number`, `ocr_orientation_deg`), LLM fields (`llm_model_requested/responded`, `llm_input/output/cache_creation/cache_read_tokens`, `llm_finish_reason`, `prompt_template_sha/version`, `pricing_table_version`, `claude_returned_name_in_catalog`), hash-match legacy fields from pre-2.5 (`query_dhash`, `query_phash_256`, `match_distance`, `winner_dhash/phash_distance`, `runner_up_margin_dhash`, `hash_match_count`, `idb_cache_hit`, `sb_exact/fuzzy_hit`), `topn_candidates` (JSONB), `outcome`, `skip_reason`, `extras`, `schema_version`, `ran_at`, `created_at` |
+| `scan_claude_responses` | Raw Claude Haiku responses for Tier 2 scans | PK `tier_result_id` (FK `scan_tier_results`) |
 | `scan_pipeline_checkpoint` | Per-stage trace (elapsed_ms + extras) for live pipeline debugging | `id` (BIGINT PK), `trace_id`, `user_id`, `stage`, `elapsed_ms`, `extras` (JSONB), `created_at` |
 | `scan_resolutions` | Consensus snapshot for confirmed scan outcomes | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `card_id`, `parallel` (default `'paper'`), `consensus_score`, `tier_agreement_bits`, `confirmed_at`, `confirmed_by`, `superseded_at`, `superseded_by`, `extras`, `schema_version` |
 | `scan_disputes` | User-reported incorrect scans | `id` (UUID PK), scan + card refs, dispute metadata |
@@ -1179,7 +1183,7 @@ Pipeline entry point: `recognizeCard()` in `src/lib/services/recognition.ts`. Al
 
 Orchestrator and support:
 - Orchestrator: `src/lib/services/recognition.ts`
-- Tier dispatcher: `src/lib/services/recognition-tiers.ts` (Tier 3 Haiku only — Tier 1 modes dispatch independently)
+- Tier dispatcher: `src/lib/services/recognition-tiers.ts` (Tier 2 Haiku only — Tier 1 modes dispatch independently)
 - Cross-validation: `src/lib/services/recognition-validation.ts`
 - Worker lifecycle: `src/lib/services/recognition-workers.ts`
 - Scan writer: `src/lib/services/scan-writer.ts` (single owner of the `scans` table row)

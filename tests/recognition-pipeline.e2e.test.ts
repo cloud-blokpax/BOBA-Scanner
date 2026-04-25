@@ -1,15 +1,15 @@
 /**
  * End-to-end tests for the recognition pipeline.
  *
- * Tests the full flow from recognizeCard() through Tier 3 Claude
+ * Tests the full flow from recognizeCard() through Tier 2 Claude
  * with mocked workers, IDB, and network calls.
  *
- * NOTE (Session 2.5): The Tier 1 (pHash) and Tier 2 (Tesseract) paths
- * were removed in this session. Tests below cover the surviving Tier 3
- * (Claude) path and worker resilience. Phase 2 (live OCR / upload TTA /
- * binder) coverage lands in session 2.7 as pure-function unit tests
- * against ConsensusBuilder, classifyWondersParallel, normalizeOcrName,
- * and lookupCardByCardNumberFuzzy.
+ * NOTE (Session 2.5): The legacy hash-cache and Tesseract OCR paths were
+ * removed in that session. Tests below cover the surviving Tier 2 (Claude)
+ * path and worker resilience. Phase 2 (live OCR / upload TTA / binder)
+ * coverage lands in session 2.7 as pure-function unit tests against
+ * ConsensusBuilder, classifyWondersParallel, normalizeOcrName, and
+ * lookupCardByCardNumberFuzzy.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
@@ -145,7 +145,7 @@ vi.stubGlobal('ImageBitmap', MockImageBitmap);
 // Mock createImageBitmap
 vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(new MockImageBitmap()));
 
-// Mock fetch for Tier 3
+// Mock fetch for Tier 2
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
@@ -188,14 +188,14 @@ describe('Recognition Pipeline E2E', () => {
 			expect(result.card_id).toBeNull();
 			expect(result.card).toBeNull();
 			expect(result.failReason).toContain('blurry');
-			// Blur rejection returns early — confirm the tier-3 network call
+			// Blur rejection returns early — confirm the tier-2 network call
 			// never ran, which is the one remaining downstream step.
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
 	});
 
-	describe('Tier 3: Claude API', () => {
-		it('identifies a card via Tier 3 when called', async () => {
+	describe('Tier 2: Claude API', () => {
+		it('identifies a card via Tier 2 when called', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue({
 				ok: true,
@@ -218,7 +218,7 @@ describe('Recognition Pipeline E2E', () => {
 			expect(mockFetch).toHaveBeenCalledWith('/api/scan', expect.any(Object));
 		});
 
-		it('allows unauthenticated users to proceed to Tier 3', async () => {
+		it('allows unauthenticated users to proceed to Tier 2', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue(
 				new Response(JSON.stringify({ success: true, card: { card_number: 'BF-108', hero_name: 'Bo Jackson', confidence: 0.9 } }), { status: 200 })
@@ -227,11 +227,11 @@ describe('Recognition Pipeline E2E', () => {
 			const blob = new Blob(['test'], { type: 'image/jpeg' });
 			const result = await recognizeCard(blob, undefined, { isAuthenticated: false });
 
-			// Unauthenticated users should reach Tier 3 (server-side rate limiting protects against abuse)
+			// Unauthenticated users should reach Tier 2 (server-side rate limiting protects against abuse)
 			expect(mockFetch).toHaveBeenCalledWith('/api/scan', expect.any(Object));
 		});
 
-		it('handles network errors in Tier 3 gracefully', async () => {
+		it('handles network errors in Tier 2 gracefully', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockRejectedValue(new Error('Network failure'));
 
@@ -242,7 +242,7 @@ describe('Recognition Pipeline E2E', () => {
 			expect(result.failReason).toContain('Network error');
 		});
 
-		it('handles API error responses in Tier 3', async () => {
+		it('handles API error responses in Tier 2', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue({
 				ok: false,
@@ -282,7 +282,7 @@ describe('Recognition Pipeline E2E', () => {
 	});
 
 	describe('tier progression callbacks', () => {
-		it('notifies tier 3 when Claude is invoked', async () => {
+		it('notifies tier 2 when Claude is invoked', async () => {
 			mockIdb.getHash.mockResolvedValue(undefined);
 			mockFetch.mockResolvedValue({
 				ok: true,
@@ -294,7 +294,7 @@ describe('Recognition Pipeline E2E', () => {
 			const blob = new Blob(['test'], { type: 'image/jpeg' });
 			await recognizeCard(blob, onTierChange);
 
-			expect(onTierChange).toHaveBeenCalledWith(3);
+			expect(onTierChange).toHaveBeenCalledWith(2);
 		});
 	});
 });
@@ -315,7 +315,7 @@ describe('worker initialization resilience', () => {
 		const blob = new Blob(['test'], { type: 'image/jpeg' });
 		const result = await recognizeCard(blob);
 
-		// Should fall through to Tier 3 even if dHash computation fails
+		// Should fall through to Tier 2 even if dHash computation fails
 		expect(result.card_id).toBe('card-bf108');
 		expect(result.scan_method).toBe('claude');
 	});

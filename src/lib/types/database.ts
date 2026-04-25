@@ -267,6 +267,12 @@ export interface Database {
 					id: string;
 					scan_id: string;
 					user_id: string;
+					// Historical tier names. The current pipeline has only two tiers:
+					//   - Tier 1: local OCR (PaddleOCR). DB string varies by sub-engine.
+					//   - Tier 2: Claude Haiku fallback. DB string is 'tier3_claude' for
+					//     historical continuity (predates the Phase 2.5 rationalization).
+					// Legacy values 'tier1_hash', 'tier1_embedding', 'tier2_ocr' are retained
+					// for old scan rows from before Phase 2.5.
 					tier: 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
 					engine: 'phash' | 'dhash' | 'multicrop_hash' | 'mobileclip_v1' | 'dinov2_s14' | 'dinov2_base' | 'paddleocr_pp_v5' | 'tesseract_v5' | 'claude_haiku' | 'claude_sonnet';
 					engine_version: string;
@@ -316,6 +322,7 @@ export interface Database {
 					id?: string;
 					scan_id: string;
 					user_id: string;
+					// See note above on the Row variant — same union semantics.
 					tier: 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
 					engine: 'phash' | 'dhash' | 'multicrop_hash' | 'mobileclip_v1' | 'dinov2_s14' | 'dinov2_base' | 'paddleocr_pp_v5' | 'tesseract_v5' | 'claude_haiku' | 'claude_sonnet';
 					engine_version: string;

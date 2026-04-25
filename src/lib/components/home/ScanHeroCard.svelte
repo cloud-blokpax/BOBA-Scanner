@@ -18,9 +18,8 @@
 	const statusText = $derived.by(() => {
 		const state = scanState();
 		switch (state.status) {
-			case 'tier1': return 'Checking memory...';
-			case 'tier2': return 'Reading card number...';
-			case 'tier3': return 'AI analyzing card...';
+			case 'tier1': return 'Reading card number...';
+			case 'tier2': return 'AI analyzing card...';
 			case 'processing': return 'Processing...';
 			case 'error': return state.error || 'Scan failed';
 			default: return '';

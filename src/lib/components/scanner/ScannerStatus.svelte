@@ -9,31 +9,31 @@
 		statusType: string;
 	} = $props();
 
-	// Tier 3 escalation: show progressive messages after delays
-	let tier3Elapsed = $state(0);
-	let tier3Interval: ReturnType<typeof setInterval> | null = null;
+	// Tier 2 (Claude Haiku) escalation: show progressive messages after delays
+	let tier2Elapsed = $state(0);
+	let tier2Interval: ReturnType<typeof setInterval> | null = null;
 
 	$effect(() => {
 		const state = scanState();
-		if (state.status === 'tier3') {
-			if (!tier3Interval) {
-				tier3Elapsed = 0;
-				tier3Interval = setInterval(() => { tier3Elapsed += 1; }, 1000);
+		if (state.status === 'tier2') {
+			if (!tier2Interval) {
+				tier2Elapsed = 0;
+				tier2Interval = setInterval(() => { tier2Elapsed += 1; }, 1000);
 			}
 		} else {
-			if (tier3Interval) {
-				clearInterval(tier3Interval);
-				tier3Interval = null;
-				tier3Elapsed = 0;
+			if (tier2Interval) {
+				clearInterval(tier2Interval);
+				tier2Interval = null;
+				tier2Elapsed = 0;
 			}
 		}
 	});
 
 	const displayText = $derived.by(() => {
 		const state = scanState();
-		if (state.status === 'tier3') {
-			if (tier3Elapsed >= 8) return 'Almost there...';
-			if (tier3Elapsed >= 4) return 'Still analyzing...';
+		if (state.status === 'tier2') {
+			if (tier2Elapsed >= 8) return 'Almost there...';
+			if (tier2Elapsed >= 4) return 'Still analyzing...';
 		}
 		return statusText;
 	});
@@ -44,11 +44,10 @@
 		<span class="status-dot"></span>
 	{/if}
 	<span class="status-text">{displayText}</span>
-	{#if scanState().status === 'tier1' || scanState().status === 'tier2' || scanState().status === 'tier3'}
+	{#if scanState().status === 'tier1' || scanState().status === 'tier2'}
 		<div class="tier-progress">
-			<div class="tier-dot" class:active={scanState().status === 'tier1'} class:done={['tier2', 'tier3'].includes(scanState().status)}></div>
-			<div class="tier-dot" class:active={scanState().status === 'tier2'} class:done={scanState().status === 'tier3'}></div>
-			<div class="tier-dot" class:active={scanState().status === 'tier3'}></div>
+			<div class="tier-dot" class:active={scanState().status === 'tier1'} class:done={scanState().status === 'tier2'}></div>
+			<div class="tier-dot" class:active={scanState().status === 'tier2'}></div>
 		</div>
 	{/if}
 </div>

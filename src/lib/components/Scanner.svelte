@@ -156,9 +156,8 @@
 	const statusText = $derived.by(() => {
 		const state = scanState();
 		switch (state.status) {
-			case 'tier1': return 'Checking cache...';
-			case 'tier2': return 'Running OCR...';
-			case 'tier3': return 'AI identifying...';
+			case 'tier1': return 'Reading card...';
+			case 'tier2': return 'AI identifying...';
 			case 'processing': return 'Processing...';
 			case 'complete':
 				if (!state.result?.card && state.result?.failReason) return state.result.failReason;
@@ -174,7 +173,7 @@
 		if (state.status === 'complete' && state.result?.card) return 'success';
 		if (state.status === 'complete' && !state.result?.card) return 'error';
 		if (state.status === 'error') return 'error';
-		if (['tier1', 'tier2', 'tier3', 'processing', 'capturing'].includes(state.status)) return 'scanning';
+		if (['tier1', 'tier2', 'processing', 'capturing'].includes(state.status)) return 'scanning';
 		return 'idle';
 	});
 
