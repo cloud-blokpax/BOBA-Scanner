@@ -26,7 +26,9 @@ import { logEvent, type LogLevel } from '$lib/server/diagnostics';
 interface ClientEventInput {
 	level?: LogLevel;
 	event?: string;
-	error?: { message?: string; stack?: string; name?: string } | string;
+	error?:
+		| { message?: string; stack?: string; name?: string; extras?: Record<string, unknown> }
+		| string;
 	errorCode?: string;
 	context?: Record<string, unknown>;
 	requestPath?: string;
@@ -76,6 +78,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 			: 'client.unspecified';
 
 		// Reconstruct an Error-shaped object for logEvent's normalizer.
+		// Extras (StorageApiError.status, PostgrestError.code/details/hint, etc.)
+		// are copied as own properties so normalizeError picks them up the same
+		// way it would for a server-side StorageApiError.
 		let error: unknown = undefined;
 		if (typeof e.error === 'string') {
 			error = e.error;
@@ -83,6 +88,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 			const reconstructed = new Error(e.error.message || 'client error');
 			if (e.error.stack) reconstructed.stack = e.error.stack;
 			if (e.error.name) reconstructed.name = e.error.name;
+			if (e.error.extras && typeof e.error.extras === 'object') {
+				Object.assign(reconstructed, e.error.extras);
+			}
 			error = reconstructed;
 		}
 
