@@ -199,14 +199,51 @@ async function openScanRow(
 function winningTierFromResult(result: ScanResult): string {
 	if (result.winningTier) return result.winningTier;
 	switch (result.scan_method) {
-		case 'hash_cache': return 'tier1_hash';
 		case 'local_ocr': return 'tier1_local_ocr';
 		case 'upload_tta': return 'tier1_upload_tta';
-		case 'tesseract': return 'tier2_ocr';
 		case 'claude': return 'tier3_claude';
 		case 'manual':
+		// 'hash_cache' and 'tesseract' were retired in 2.5; their cases
+		// are kept in the type union for ScanResult backward compat but
+		// can no longer be produced by the live pipeline.
+		case 'hash_cache':
+		case 'tesseract':
 		default: return 'manual';
 	}
+}
+
+/**
+ * Patch a `scans` row with a non-success outcome and let the user move on.
+ * Fire-and-forget, swallows errors (telemetry must never break a scan).
+ *
+ * Used by every early-return failure path before finalize() is reached:
+ *   - blur reject (low_quality_rejected)
+ *   - card database empty (abandoned)
+ *   - bitmap invalid (abandoned)
+ *   - offline queue (abandoned)
+ *   - all-tiers no match (resolved with null final_card_id — keeps the
+ *     "AI couldn't identify" cohort separate from infra abandonments)
+ */
+function patchAbandonedScan(
+	scanIdPromise: Promise<string | null>,
+	outcome: import('./scan-writer').ScanOutcome,
+	startTime: number,
+	failReason: string | null
+): void {
+	void scanIdPromise.then((scanId) => {
+		if (!scanId) return;
+		void writerUpdateScanOutcome({
+			scanId,
+			winningTier: null,
+			finalCardId: null,
+			finalConfidence: null,
+			finalParallel: null,
+			totalLatencyMs: Math.round(performance.now() - startTime),
+			totalCostUsd: null,
+			outcome,
+			decisionContext: failReason ? { abandon_reason: failReason } : null
+		});
+	}).catch(() => { /* swallow */ });
 }
 
 /**
@@ -285,13 +322,15 @@ export async function recognizeCard(
 
 	const loadedCards = await loadCardDatabase(gamesToLoad);
 
-	// Guard: if card database is empty, don't waste API calls on Tier 3
+	// Guard: if card database is empty, don't waste API calls on Tier 3.
+	// NOTE: this fires BEFORE openScanRow so there's no scan row to patch —
+	// the abandonment is implicit (no row was ever inserted).
 	if (loadedCards.length === 0) {
 		console.warn(`[scan:${traceId}] Card database empty — aborting pipeline`);
 		return {
 			card_id: null,
 			card: null,
-			scan_method: 'hash_cache' as ScanMethod,
+			scan_method: 'manual' as ScanMethod,
 			confidence: 0,
 			processing_ms: Math.round(performance.now() - startTime),
 			failReason: 'Card database unavailable — please check your connection and try again'
@@ -379,10 +418,11 @@ export async function recognizeCard(
 		if (ownsBitmap) {
 			try { bitmap.close(); } catch { /* ignore */ }
 		}
+		// Bitmap invalid runs BEFORE openScanRow so there's no row to patch.
 		return {
 			card_id: null,
 			card: null,
-			scan_method: 'hash_cache' as ScanMethod,
+			scan_method: 'manual' as ScanMethod,
 			confidence: 0,
 			processing_ms: Math.round(performance.now() - startTime),
 			failReason: 'Image buffer was lost during processing — please try again'
@@ -419,11 +459,13 @@ export async function recognizeCard(
 		console.debug(`[scan] Blur check: variance=${blurResult.variance.toFixed(1)}, threshold=${BOBA_SCAN_CONFIG.blurThreshold}, isBlurry=${blurResult.isBlurry}`);
 		if (blurResult.isBlurry) {
 			console.warn(`[scan] Image rejected as blurry (variance ${blurResult.variance.toFixed(1)} < ${BOBA_SCAN_CONFIG.blurThreshold})`);
+			patchAbandonedScan(scanIdPromise, 'low_quality_rejected', startTime,
+				`blur_variance=${blurResult.variance.toFixed(1)}`);
 			if (ownsBitmap) bitmap.close();
 			return {
 				card_id: null,
 				card: null,
-				scan_method: 'hash_cache',
+				scan_method: 'manual',
 				confidence: 0,
 				processing_ms: Math.round(performance.now() - startTime),
 				failReason: 'Image too blurry — try holding the card steady with better lighting'
@@ -501,6 +543,11 @@ export async function recognizeCard(
 					finalParallel: final.card?.parallel ?? final.parallel ?? null,
 					totalLatencyMs: final.processing_ms ?? null,
 					totalCostUsd,
+					// Default success outcome. ScanConfirmation patches to
+					// 'user_corrected' if the user overrides the match;
+					// 'auto_confirmed' if a high-confidence Tier 1 win is
+					// committed without user action.
+					outcome: 'resolved',
 					liveConsensusReached: final.liveConsensusReached ?? null,
 					liveVsCanonicalAgreed: final.liveVsCanonicalAgreed ?? null,
 					fallbackTierUsed: final.fallbackTierUsed ?? null,
@@ -575,10 +622,11 @@ export async function recognizeCard(
 		} catch (err) {
 			console.warn(`[scan:${traceId}] Offline queue failed — scan will be lost:`, err);
 		}
+		patchAbandonedScan(scanIdPromise, 'abandoned', startTime, 'offline_queued');
 		return finalize({
 			card_id: null,
 			card: null,
-			scan_method: 'hash_cache' as ScanMethod,
+			scan_method: 'manual' as ScanMethod,
 			confidence: 0,
 			processing_ms: Math.round(performance.now() - startTime),
 			failReason: 'Offline — scan queued for when you reconnect'
@@ -814,6 +862,10 @@ export async function recognizeCard(
 		return finalize(tier3Result);
 	}
 	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
+	// All tiers exhausted — resolved with null final_card_id. Keeps this
+	// cohort separate from infra abandonments in outcomeDistribution.
+	patchAbandonedScan(scanIdPromise, 'resolved', startTime,
+		ctx.lastTier3FailReason || 'all_tiers_no_match');
 	return finalize(
 		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: ctx.lastTier3FailReason || 'AI could not identify this card' }
 	);

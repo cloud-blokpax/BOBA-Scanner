@@ -198,15 +198,24 @@ export async function runUploadPipeline(
 		parallelHumanName = card.parallel;
 	}
 
+	// Average confidence across the agreeing votes for each task, then take
+	// the min across tasks. Matches the 0–1 unit convention used by
+	// canonical Tier 1 and downstream telemetry (final_confidence, trackScanMetric).
+	// Without this normalization, summedConfidence for a 3-of-5 consensus
+	// reads ~2.25–5.0 and skews every TTA-hit dashboard.
+	const cnAvg = consensus.cardNumber
+		? consensus.cardNumber.summedConfidence / Math.max(1, consensus.cardNumber.agreementCount)
+		: 0;
+	const nameAvg = consensus.name
+		? consensus.name.summedConfidence / Math.max(1, consensus.name.agreementCount)
+		: 0;
+
 	return {
 		card,
 		cardNumber,
 		name,
 		parallel: parallelHumanName,
-		confidence: Math.min(
-			consensus.cardNumber?.summedConfidence ?? 0,
-			consensus.name?.summedConfidence ?? 0
-		),
+		confidence: Math.min(cnAvg, nameAvg),
 		framesProcessed: frames.length,
 		consensusReached: consensus.reachedThreshold && !!card,
 		parallelCode: votedParallelCode ?? null,

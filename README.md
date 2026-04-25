@@ -1,6 +1,8 @@
-# BOBA Scanner 
+# Card Scanner
 
-AI-powered card scanner for Bo Jackson Battle Arena (BoBA) trading cards. Identifies cards from photos using a three-tier pipeline (hash cache, OCR, Claude AI), with pricing via eBay Browse API and full tournament deck building.
+AI-powered multi-game trading card scanner and pricing platform. Identifies cards from photos using a two-tier pipeline (local PaddleOCR with Claude Haiku as a confidence-gated fallback) and provides pricing via the eBay Browse API plus full tournament deck building.
+
+Currently supports Bo Jackson Battle Arena (BoBA) and Wonders of The First (WOTF). Hosted at boba.cards.
 
 ## Quick Start
 
@@ -13,7 +15,7 @@ See [CLAUDE.md](./CLAUDE.md) for complete developer documentation including arch
 
 ## Tech Stack
 
-SvelteKit 2 · Svelte 5 · TypeScript · Supabase · Claude API (Haiku/Sonnet) · Tesseract.js · eBay API · Vercel
+SvelteKit 2 · Svelte 5 (runes) · TypeScript · Supabase (PostgreSQL + RLS) · Claude API (Haiku/Sonnet) · PaddleOCR via @gutenye/ocr-browser · eBay API · Upstash (Redis + QStash) · Vercel
 
 ## License
 

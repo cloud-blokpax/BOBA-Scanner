@@ -5,7 +5,6 @@
  *
  * Exposed via Comlink:
  *   - computeDHash(imageBitmap, hashSize) → 16-char hex perceptual hash
- *   - computePHash(imageBitmap, hashSize) → hex perceptual hash (DCT)
  *   - hammingDistance(hash1, hash2) → number
  *   - resizeForUpload(imageBitmap, maxDimension) → Blob
  *   - checkBlurry(imageBitmap, threshold) → { isBlurry, variance }
@@ -13,13 +12,6 @@
  *   - compositeMinPixel(bitmaps[]) → ImageBitmap
  */
 import * as Comlink from 'comlink';
-
-interface OcrRegion {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-}
 
 // ── DCT-II coefficient matrix (32×32) for pHash ───────────
 // C[k][n] = cos(π * k * (2n+1) / (2N))
@@ -60,84 +52,6 @@ const imageProcessor = {
 			.padStart(hexDigits, '0');
 	},
 
-	/**
-	 * Compute a perceptual hash using DCT (pHash algorithm).
-	 * More robust than dHash for different lighting/angles.
-	 * Returns a 64-char hex string (256-bit hash) for hashSize=16.
-	 */
-	async computePHash(imageBitmap: ImageBitmap, hashSize = 16): Promise<string> {
-		// Resize to 32×32 for DCT
-		const canvas = new OffscreenCanvas(DCT_SIZE, DCT_SIZE);
-		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(imageBitmap, 0, 0, DCT_SIZE, DCT_SIZE);
-		const pixels = ctx.getImageData(0, 0, DCT_SIZE, DCT_SIZE).data;
-
-		// Convert to grayscale matrix
-		const gray = new Float64Array(DCT_SIZE * DCT_SIZE);
-		for (let i = 0; i < DCT_SIZE * DCT_SIZE; i++) {
-			const idx = i * 4;
-			gray[i] = pixels[idx] * 0.299 + pixels[idx + 1] * 0.587 + pixels[idx + 2] * 0.114;
-		}
-
-		// Apply 2D DCT: first on rows, then on columns
-		// Row transform
-		const rowDct = new Float64Array(DCT_SIZE * DCT_SIZE);
-		for (let y = 0; y < DCT_SIZE; y++) {
-			for (let k = 0; k < DCT_SIZE; k++) {
-				let sum = 0;
-				for (let n = 0; n < DCT_SIZE; n++) {
-					sum += DCT_MATRIX[k][n] * gray[y * DCT_SIZE + n];
-				}
-				rowDct[y * DCT_SIZE + k] = sum;
-			}
-		}
-
-		// Column transform on the row-transformed result
-		const dctCoeffs = new Float64Array(DCT_SIZE * DCT_SIZE);
-		for (let x = 0; x < DCT_SIZE; x++) {
-			for (let k = 0; k < DCT_SIZE; k++) {
-				let sum = 0;
-				for (let n = 0; n < DCT_SIZE; n++) {
-					sum += DCT_MATRIX[k][n] * rowDct[n * DCT_SIZE + x];
-				}
-				dctCoeffs[k * DCT_SIZE + x] = sum;
-			}
-		}
-
-		// Take top-left hashSize×hashSize block (low frequencies), skipping [0][0] (DC component)
-		const coeffs: number[] = [];
-		for (let y = 0; y < hashSize; y++) {
-			for (let x = 0; x < hashSize; x++) {
-				if (y === 0 && x === 0) continue; // Skip DC
-				coeffs.push(dctCoeffs[y * DCT_SIZE + x]);
-			}
-		}
-
-		// Median of the coefficients
-		const sorted = [...coeffs].sort((a, b) => a - b);
-		const median = sorted.length % 2 === 0
-			? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-			: sorted[Math.floor(sorted.length / 2)];
-
-		// Generate hash bits: 1 if coefficient > median, else 0
-		// Skip DC component at [0][0] and pad to maintain hashSize*hashSize bits
-		let hashBits = '';
-		for (let y = 0; y < hashSize; y++) {
-			for (let x = 0; x < hashSize; x++) {
-				if (y === 0 && x === 0) {
-					hashBits += '0'; // DC component excluded — always 0
-					continue;
-				}
-				hashBits += dctCoeffs[y * DCT_SIZE + x] > median ? '1' : '0';
-			}
-		}
-
-		const hexDigits = (hashSize * hashSize) / 4;
-		return BigInt('0b' + hashBits)
-			.toString(16)
-			.padStart(hexDigits, '0');
-	},
-
 	hammingDistance(hash1: string, hash2: string): number {
 		let distance = 0;
 		const a = BigInt('0x' + hash1);
@@ -161,16 +75,6 @@ const imageProcessor = {
 		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(imageBitmap, 0, 0, w, h);
 		return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
-	},
-
-	async generateThumbnail(imageBitmap: ImageBitmap, size = 200): Promise<Blob> {
-		const aspect = imageBitmap.width / imageBitmap.height;
-		const w = aspect > 1 ? size : Math.round(size * aspect);
-		const h = aspect > 1 ? Math.round(size / aspect) : size;
-		const canvas = new OffscreenCanvas(w, h);
-		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(imageBitmap, 0, 0, w, h);
-		return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
 	},
 
 	async checkBlurry(imageBitmap: ImageBitmap, threshold = 100): Promise<{ isBlurry: boolean; variance: number }> {
@@ -605,9 +509,10 @@ const imageProcessor = {
 		const intMean = intCount > 0 ? intSum / intCount : 0;
 		const interiorVariance = intCount > 0 ? intSumSq / intCount - intMean * intMean : 0;
 
-		// pHash-256 of the viewfinder region at source resolution. Using the
-		// same DCT pipeline as computePHash() so hashes are interchangeable
-		// with production hash_cache.phash_256 values.
+		// pHash-256 of the viewfinder region at source resolution. Uses the
+		// canonical 32×32 DCT-II pipeline so hashes are interchangeable with
+		// production hash_cache.phash_256 values (and the server-side
+		// computePHashFromBuffer helper).
 		const dctCanvas = new OffscreenCanvas(DCT_SIZE, DCT_SIZE);
 		const dctCtx = dctCanvas.getContext('2d')!;
 		const clampedVfX = Math.max(0, Math.min(srcW - 1, Math.round(viewfinder.x)));
@@ -733,155 +638,6 @@ const imageProcessor = {
 		}
 
 		return { hasGlare, regions };
-	},
-
-	async preprocessForOCR(imageBitmap: ImageBitmap, region: OcrRegion): Promise<Blob> {
-		const sw = imageBitmap.width;
-		const sh = imageBitmap.height;
-		const sx = Math.floor(sw * region.x);
-		const sy = Math.floor(sh * region.y);
-		let sw2 = Math.floor(sw * region.w);
-		let sh2 = Math.floor(sh * region.h);
-
-		// Clamp crop to image bounds
-		sw2 = Math.min(sw2, sw - sx);
-		sh2 = Math.min(sh2, sh - sy);
-
-		// Tesseract needs at least 3px in each dimension to process lines
-		const MIN_CROP = 3;
-		if (sw2 < MIN_CROP || sh2 < MIN_CROP) {
-			throw new Error(`OCR region too small: ${sw2}x${sh2} (min ${MIN_CROP}x${MIN_CROP})`);
-		}
-
-		// Scale up for crisper character rendering, ensure at least 30px in each dimension
-		const SCALE = Math.max(4, Math.ceil(30 / Math.min(sw2, sh2)));
-		const canvas = new OffscreenCanvas(sw2 * SCALE, sh2 * SCALE);
-		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(imageBitmap, sx, sy, sw2, sh2, 0, 0, canvas.width, canvas.height);
-
-		const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		const data = imageData.data;
-		const w = canvas.width;
-		const h = canvas.height;
-		const totalPx = w * h;
-
-		// Histogram stretch (2nd/98th percentile contrast enhancement)
-		const hist = new Uint32Array(256);
-		for (let i = 0; i < totalPx; i++) {
-			const lum = Math.round(
-				data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114
-			);
-			hist[lum]++;
-		}
-		const p2Count = Math.floor(totalPx * 0.02);
-		const p98Count = Math.floor(totalPx * 0.98);
-		let cumul = 0,
-			lo = -1,
-			hi = 255;
-		for (let v = 0; v < 256; v++) {
-			cumul += hist[v];
-			if (cumul >= p2Count && lo === -1) lo = v;
-			if (cumul >= p98Count && hi === 255) hi = v;
-		}
-		if (lo === -1) lo = 0;
-		const range = Math.max(1, hi - lo);
-		for (let i = 0; i < totalPx; i++) {
-			const idx = i * 4;
-			data[idx] = Math.min(255, Math.max(0, Math.round(((data[idx] - lo) * 255) / range)));
-			data[idx + 1] = Math.min(
-				255,
-				Math.max(0, Math.round(((data[idx + 1] - lo) * 255) / range))
-			);
-			data[idx + 2] = Math.min(
-				255,
-				Math.max(0, Math.round(((data[idx + 2] - lo) * 255) / range))
-			);
-		}
-
-		// Grayscale conversion
-		const gray = new Uint8Array(totalPx);
-		for (let i = 0; i < totalPx; i++) {
-			gray[i] = Math.round(
-				data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114
-			);
-		}
-
-		// Apply contrast boost: threshold at 128 on grayscale for cleaner OCR input
-		for (let i = 0; i < totalPx; i++) {
-			const v = gray[i];
-			// Sigmoid contrast curve centered at 128
-			const boosted = 255 / (1 + Math.exp(-0.05 * (v - 128)));
-			gray[i] = Math.round(boosted);
-		}
-
-		// Unsharp mask (3x3 Laplacian sharpening)
-		const sharpened = new Uint8Array(totalPx);
-		const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
-		for (let y = 0; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				let ksum = 0;
-				for (let dy = -1; dy <= 1; dy++) {
-					for (let dx = -1; dx <= 1; dx++) {
-						const ny = Math.min(h - 1, Math.max(0, y + dy));
-						const nx = Math.min(w - 1, Math.max(0, x + dx));
-						ksum += gray[ny * w + nx] * kernel[(dy + 1) * 3 + (dx + 1)];
-					}
-				}
-				sharpened[y * w + x] = Math.min(255, Math.max(0, ksum));
-			}
-		}
-
-		// Adaptive threshold (integral-image method)
-		const integral = new Float64Array((w + 1) * (h + 1));
-		for (let y = 0; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				integral[(y + 1) * (w + 1) + (x + 1)] =
-					sharpened[y * w + x] +
-					integral[y * (w + 1) + (x + 1)] +
-					integral[(y + 1) * (w + 1) + x] -
-					integral[y * (w + 1) + x];
-			}
-		}
-
-		const half = 10;
-		const C = 10;
-		for (let y = 0; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				const x1 = Math.max(0, x - half);
-				const y1 = Math.max(0, y - half);
-				const x2 = Math.min(w, x + half + 1);
-				const y2 = Math.min(h, y + half + 1);
-				const n = (x2 - x1) * (y2 - y1);
-				const areaSum =
-					integral[y2 * (w + 1) + x2] -
-					integral[y1 * (w + 1) + x2] -
-					integral[y2 * (w + 1) + x1] +
-					integral[y1 * (w + 1) + x1];
-				const val = sharpened[y * w + x] < areaSum / n - C ? 0 : 255;
-				const idx = (y * w + x) * 4;
-				data[idx] = data[idx + 1] = data[idx + 2] = val;
-				data[idx + 3] = 255;
-			}
-		}
-
-		ctx.putImageData(imageData, 0, 0);
-
-		// Check if the thresholded image has enough dark (text) pixels.
-		// If the region is nearly all-white after binarisation, there's no text
-		// to recognise — skip early to avoid Tesseract internal warnings
-		// ("ridiculously small scaling factor", "Image too small to scale").
-		let darkPixels = 0;
-		for (let i = 0; i < totalPx; i++) {
-			if (data[i * 4] === 0) darkPixels++;
-		}
-		const darkRatio = darkPixels / totalPx;
-		if (darkRatio < 0.005 || darkRatio > 0.95) {
-			throw new Error(
-				`OCR region has no usable text content (dark pixel ratio: ${(darkRatio * 100).toFixed(1)}%)`
-			);
-		}
-
-		return canvas.convertToBlob({ type: 'image/png' });
 	},
 
 	/**

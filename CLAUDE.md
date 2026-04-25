@@ -35,7 +35,6 @@ Direct dependencies (from `package.json`). Versions pinned at minor ranges via `
 - Anthropic Claude API (`@anthropic-ai/sdk ^0.78.0`) — Haiku for Tier 3 card scanning, Sonnet for condition grading.
 - PaddleOCR via `@gutenye/ocr-browser ^1.4.8` — Tier 1 local OCR. Runs in browser via ONNX Runtime Web. Models (`ch_PP-OCRv4_det_infer.onnx` ~5MB, `ch_PP-OCRv4_rec_infer.onnx` ~10MB, `ppocr_keys_v1.txt` ~26KB) shipped in `static/models/`.
 - OpenCV (`@techstark/opencv-js`) is a transitive dependency of `@gutenye/ocr-browser` — NOT a direct dep. Don't import directly; go through the OCR browser wrapper.
-- Image embeddings use DINOv2-base (stored in Supabase `card_embeddings` as pgvector); seeded offline via `scripts/seed-card-embeddings.ts`.
 
 **Image processing:**
 - `sharp ^0.34.5` — server-side CDR (Content Disarm & Reconstruction: EXIF strip, pixel bomb protection, re-encode).
@@ -77,7 +76,6 @@ npm test                      # Run tests (vitest)
 npm run test:watch            # Tests in watch mode
 npm run generate:card-seed    # Generate SQL seed from card-database.json
 npm run db:types              # Generate TypeScript types from Supabase schema
-npm run seed:embeddings       # Seed DINOv2 embeddings into card_embeddings (uses scripts/seed-card-embeddings.ts)
 npm run backfill:boba-hashes  # Backfill pHash entries for BoBA catalog (uses scripts/backfill-boba-hashes.ts)
 ```
 
@@ -491,19 +489,30 @@ Card-Scanner/
 │   │   └── workers/
 │   │       └── image-processor.ts  # Web Worker: dHash, resize, blur detection, OCR preprocess
 ├── tests/
-│   ├── card-db.test.ts             # Unit: card database operations
-│   ├── ocr-extract.test.ts         # Unit: OCR card number extraction
-│   ├── rate-limit.test.ts          # Unit: rate limiting logic
-│   ├── deck-validator.test.ts      # Unit: deck building rules validation
-│   ├── pricing.test.ts             # Unit: price calculation and formatting
-│   ├── fuzzy-match.test.ts         # Unit: fuzzy string matching
-│   ├── playbook-engine.test.ts     # Unit: playbook analysis engine
-│   ├── api-price.integration.test.ts   # Integration: price API
-│   ├── api-scan.integration.test.ts    # Integration: scan API
-│   ├── api-grade.integration.test.ts   # Integration: grade API
-│   ├── sync.test.ts                    # Unit: collection sync (IDB ↔ Supabase)
-│   ├── auth-guard.e2e.test.ts          # E2E: auth guard routes
-│   └── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline
+│   ├── card-db.test.ts                  # Unit: card database operations
+│   ├── ocr-extract.test.ts              # Unit: OCR card number extraction (pure string parsing)
+│   ├── rate-limit.test.ts               # Unit: rate limiting logic
+│   ├── deck-validator.test.ts           # Unit: deck building rules validation
+│   ├── pricing.test.ts                  # Unit: price calculation and formatting
+│   ├── fuzzy-match.test.ts              # Unit: fuzzy string matching
+│   ├── playbook-engine.test.ts          # Unit: playbook analysis engine
+│   ├── consensus-builder.test.ts        # Unit: ConsensusBuilder vote tallying (Phase 2.1a)
+│   ├── parallel-classifier-rules.test.ts # Unit: Wonders parallel classifier pure rules (Phase 2.1a)
+│   ├── normalize-ocr-name.test.ts       # Unit: OCR name normalization + Levenshtein collapse (Phase 2.1a)
+│   ├── wonders-parallels.test.ts        # Unit: Wonders parallel code↔name mapping + assert/coerce helpers
+│   ├── blank-cell-detector.test.ts      # Unit: binder blank-cell detection (Phase 2.2)
+│   ├── dragon-points.test.ts            # Unit: Wonders Dragon Points scoring engine
+│   ├── hash-parity.test.ts              # Unit: client/server dHash + pHash byte-parity gate
+│   ├── api-price.integration.test.ts    # Integration: price API
+│   ├── api-scan.integration.test.ts     # Integration: scan API
+│   ├── api-grade.integration.test.ts    # Integration: grade API
+│   ├── sync.test.ts                     # Unit: collection sync (IDB ↔ Supabase)
+│   ├── auth-guard.e2e.test.ts           # E2E: auth guard routes
+│   ├── recognition-pipeline.e2e.test.ts # E2E: full recognition pipeline (Tier 3 path; Phase 2 covered by unit tests above)
+│   └── architecture/
+│       ├── multi-game-prompt.test.ts    # Architecture: multi-game prompt construction
+│       ├── param-matcher.test.ts        # Architecture: [game=game] route param matcher
+│       └── resolver.test.ts             # Architecture: GameConfig lazy resolver + cache
 ├── docs/
 │   ├── adding-a-new-game.md        # Guide for adding a third game (6-step checklist)
 │   ├── game-audit.md               # Multi-game architecture audit findings
@@ -519,7 +528,6 @@ Card-Scanner/
 ├── scripts/
 │   ├── generate-card-seed.js       # Generate SQL seed from card-database.json
 │   ├── json-to-card-seed.js        # JSON → SQL seed conversion utility
-│   ├── seed-card-embeddings.ts     # Seed DINOv2-base image embeddings into card_embeddings (via match_card_embedding RPC)
 │   ├── backfill-boba-hashes.ts     # Backfill pHash + dHash for BoBA catalog cards missing hash_cache entries
 │   ├── carde-image-backfill.ts     # Backfill card images from Carde.io (historical — note: Carde.io is no longer used for matching per Session 2.5)
 │   ├── download-carde-images.ts    # Download reference images from Carde.io (legacy utility, not in active use)

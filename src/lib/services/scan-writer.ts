@@ -132,12 +132,29 @@ export interface RecordScanInput {
 	decisionContext?: Record<string, unknown>;
 }
 
-export type ScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr' | 'tier3_claude';
-export type ScanEngine =
+/**
+ * Active scan tier values. Pre-2.5 included `tier1_hash`, `tier1_embedding`,
+ * and `tier2_ocr`; those engines were retired and historical rows tagged via
+ * migration 010. The DB enum/CHECK still allows the legacy values for read
+ * compatibility, but new writes are restricted to this narrowed set.
+ *
+ * `LegacyScanTier` is exported separately for telemetry readers that still
+ * need to render historical rows (see AdminPhase2Tab tierLabel).
+ */
+export type ScanTier = 'tier3_claude';
+export type LegacyScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr';
+
+/**
+ * Active engine values. Tier 1 PaddleOCR runs entirely client-side and never
+ * writes scan_tier_results rows (its telemetry lives in scans.decision_context
+ * JSONB), so `paddleocr_pp_v5` is intentionally excluded. Add it back if/when
+ * a Tier 1 row-write path is added.
+ */
+export type ScanEngine = 'claude_haiku' | 'claude_sonnet';
+export type LegacyScanEngine =
 	| 'phash' | 'dhash' | 'multicrop_hash'
 	| 'mobileclip_v1' | 'dinov2_s14' | 'dinov2_base'
-	| 'paddleocr_pp_v5' | 'tesseract_v5'
-	| 'claude_haiku' | 'claude_sonnet';
+	| 'paddleocr_pp_v5' | 'tesseract_v5';
 
 export interface RecordTierResultInput {
 	scanId: string;
@@ -192,10 +209,28 @@ export interface RecordTierResultInput {
 	ranAt?: Date | null;
 }
 
+/** Closed vocabulary mirroring the `scan_outcome` Postgres enum. Pinned here
+ *  so callers can't free-text new values — Postgres will reject anything
+ *  outside this set with 22P02. */
+export type ScanOutcome =
+	| 'pending'
+	| 'auto_confirmed'
+	| 'user_confirmed'
+	| 'user_corrected'
+	| 'disputed'
+	| 'abandoned'
+	| 'timeout'
+	| 'low_quality_rejected'
+	| 'resolved';
+
 export interface UpdateScanOutcomeInput {
 	scanId: string;
-	winningTier: string;
-	finalCardId: string;
+	/** Allow nullable: failure paths (blur reject, no match, abandoned) have
+	 *  no winning tier. Persisted as null so the dashboard's `null_abandoned`
+	 *  bucket reflects reality. */
+	winningTier: string | null;
+	/** Allow nullable: failure paths have no card. */
+	finalCardId: string | null;
 	finalConfidence: number | null;
 	/** Human-readable parallel name (e.g. "Classic Foil"). Mirrors cards.parallel
 	 *  for the matched card. */
@@ -203,6 +238,9 @@ export interface UpdateScanOutcomeInput {
 	totalLatencyMs: number | null;
 	totalCostUsd: number | null;
 	userOverrode?: boolean;
+	/** Required. Maps to scans.outcome (Postgres enum). Defaults applied at
+	 *  call site, not here, so each call site owns the semantic. */
+	outcome: ScanOutcome;
 	// Session 2.1a live-OCR telemetry (schema applied via MCP).
 	liveConsensusReached?: boolean | null;
 	liveVsCanonicalAgreed?: boolean | null;
@@ -631,7 +669,7 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 			total_latency_ms: input.totalLatencyMs,
 			total_cost_usd: input.totalCostUsd,
 			user_overrode: input.userOverrode ?? false,
-			outcome: 'resolved'
+			outcome: input.outcome
 		};
 		if (input.liveConsensusReached !== undefined) {
 			updates.live_consensus_reached = input.liveConsensusReached;
