@@ -743,6 +743,22 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 	if (!client) return;
 
 	try {
+		// Verify we have an active session before attempting the upload.
+		// Without a JWT attached, auth.uid() evaluates null at the storage
+		// policy and the upload fails with RLS error. This was the source
+		// of fingerprint scan.writer.uploadScanPhoto.upload_failed —
+		// auth.svelte.ts populates _user synchronously but _session async,
+		// so scan-writer can run before the JWT is wired to the client.
+		const { data: { session } } = await client.auth.getSession();
+		if (!session?.access_token) {
+			logFailure(
+				'uploadScanPhoto.no_session',
+				new Error('No active session — JWT not attached to storage client'),
+				{ scanId, uid }
+			);
+			return;
+		}
+
 		// Resize in a canvas — keeps upload size predictable.
 		const resized = await resizeBlobForUpload(blob, 1024, 0.85);
 		if (!resized) {
