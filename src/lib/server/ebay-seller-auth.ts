@@ -7,6 +7,7 @@
 
 import { env } from '$env/dynamic/private';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { logEvent } from '$lib/server/diagnostics';
 
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
@@ -195,6 +196,7 @@ export async function validateSellerConnection(userId: string): Promise<SellerVa
 		};
 	} catch (err) {
 		console.error('[ebay-seller-auth] Privilege check network error:', err);
+		void logEvent({ level: 'error', event: 'ebay.seller_auth.privilege_check_network_error', error: err });
 		return { valid: false, error: 'Could not reach eBay — try again later' };
 	}
 }
@@ -235,6 +237,7 @@ export async function getSellerProfile(userId: string): Promise<SellerProfile> {
 		};
 	} catch (err) {
 		console.error('[ebay-seller-auth] Identity API network error:', err);
+		void logEvent({ level: 'error', event: 'ebay.seller_auth.identity_api_network_error', error: err });
 		return { username: null, email: null };
 	}
 }

@@ -1457,6 +1457,102 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['scraping_test']['Insert']>;
 				Relationships: [];
 			};
+			app_events: {
+				Row: {
+					id: number;
+					level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+					event_name: string;
+					source: 'server' | 'client' | 'edge' | 'worker';
+					fingerprint_hash: string | null;
+					summary: string | null;
+					error_code: string | null;
+					error_detail: Record<string, unknown> | null;
+					context: Record<string, unknown>;
+					user_id: string | null;
+					scan_id: string | null;
+					request_path: string | null;
+					vercel_request_id: string | null;
+					schema_version: number;
+					created_at: string;
+				};
+				Insert: {
+					id?: number;
+					level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+					event_name: string;
+					source: 'server' | 'client' | 'edge' | 'worker';
+					fingerprint_hash?: string | null;
+					summary?: string | null;
+					error_code?: string | null;
+					error_detail?: Record<string, unknown> | null;
+					context?: Record<string, unknown>;
+					user_id?: string | null;
+					scan_id?: string | null;
+					request_path?: string | null;
+					vercel_request_id?: string | null;
+					schema_version?: number;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['app_events']['Insert']>;
+				Relationships: [];
+			};
+			event_fingerprints: {
+				Row: {
+					fingerprint_hash: string;
+					event_name: string;
+					summary: string | null;
+					error_code: string | null;
+					status: 'active' | 'investigating' | 'understood' | 'ignore' | 'resolved';
+					occurrence_count: number;
+					first_seen: string;
+					last_seen: string;
+					notes: string | null;
+					last_triaged_by: string | null;
+					last_triaged_at: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					fingerprint_hash: string;
+					event_name: string;
+					summary?: string | null;
+					error_code?: string | null;
+					status?: 'active' | 'investigating' | 'understood' | 'ignore' | 'resolved';
+					occurrence_count?: number;
+					first_seen?: string;
+					last_seen?: string;
+					notes?: string | null;
+					last_triaged_by?: string | null;
+					last_triaged_at?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['event_fingerprints']['Insert']>;
+				Relationships: [];
+			};
+			event_triage_history: {
+				Row: {
+					id: number;
+					fingerprint_hash: string;
+					admin_id: string;
+					action: 'status_changed' | 'noted' | 'reopened' | 'bulk_archived';
+					old_status: string | null;
+					new_status: string | null;
+					notes: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: number;
+					fingerprint_hash: string;
+					admin_id: string;
+					action: 'status_changed' | 'noted' | 'reopened' | 'bulk_archived';
+					old_status?: string | null;
+					new_status?: string | null;
+					notes?: string | null;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['event_triage_history']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -1557,6 +1653,40 @@ export interface Database {
 			phase_2_telemetry: {
 				Args: { window_interval: string };
 				Returns: Record<string, unknown>;
+			};
+			purge_old_app_events: {
+				Args: Record<string, never>;
+				Returns: Array<{ level: string; deleted_count: number }>;
+			};
+			app_events_storage_summary: {
+				Args: Record<string, never>;
+				Returns: Array<{
+					total_events: number;
+					debug_count: number;
+					info_count: number;
+					warn_count: number;
+					error_count: number;
+					app_events_bytes: number;
+					fingerprint_count: number;
+					fingerprints_bytes: number;
+					triage_history_count: number;
+					triage_history_bytes: number;
+					total_diagnostic_bytes: number;
+					total_db_bytes: number;
+					avg_events_per_day_last_7d: number;
+				}>;
+			};
+			event_known_patterns: {
+				Args: Record<string, never>;
+				Returns: Array<{
+					fingerprint_hash: string;
+					event_name: string;
+					summary: string | null;
+					status: string;
+					occurrence_count: number;
+					last_seen: string;
+					occurrences_last_7d: number;
+				}>;
 			};
 		};
 		Enums: Record<string, never>;

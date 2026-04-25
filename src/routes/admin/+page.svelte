@@ -16,8 +16,9 @@
 	// AdminStatsTab → removed (redundant with Pulse metrics)
 	import AdminPacksTab from './AdminPacksTab.svelte';
 	import AdminPhase2Tab from './AdminPhase2Tab.svelte';
+	import AdminTriageTab from './AdminTriageTab.svelte';
 
-	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'phase2' | 'features' | 'ebay' | 'changelog' | 'system' | 'parallels' | 'packs';
+	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'phase2' | 'triage' | 'features' | 'ebay' | 'changelog' | 'system' | 'parallels' | 'packs';
 
 	// Consolidated from 13 tabs to 9:
 	// - Stats removed (redundant with Pulse metrics)
@@ -30,6 +31,7 @@
 		{ id: 'cards', label: 'Cards', group: 'main' },
 		{ id: 'scans', label: 'Scans', group: 'main' },
 		{ id: 'phase2', label: 'Phase 2', group: 'main' },
+		{ id: 'triage', label: 'Triage', group: 'main' },
 		{ id: 'features', label: 'Features', group: 'main' },
 		{ id: 'ebay', label: 'eBay', group: 'main' },
 		{ id: 'packs', label: 'Packs', group: 'main' },
@@ -208,6 +210,8 @@
 						<AdminScansTab />
 					{:else if activeTab === 'phase2'}
 						<AdminPhase2Tab />
+					{:else if activeTab === 'triage'}
+						<AdminTriageTab />
 					{:else if activeTab === 'features'}
 						<AdminFeaturesTab />
 					{:else if activeTab === 'ebay'}
@@ -329,6 +333,8 @@
 							<AdminScansTab />
 						{:else if activeTab === 'phase2'}
 							<AdminPhase2Tab />
+						{:else if activeTab === 'triage'}
+							<AdminTriageTab />
 						{:else if activeTab === 'features'}
 							<AdminFeaturesTab />
 						{:else if activeTab === 'ebay'}

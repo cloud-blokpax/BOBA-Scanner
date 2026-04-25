@@ -6,6 +6,7 @@
 	import { setupAutoSync } from '$lib/services/sync';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
+	import { installGlobalErrorReporters } from '$lib/services/diagnostics-client';
 	import { initVersionChecking } from '$lib/services/version.svelte';
 	import {
 		isPro, daysRemaining, proExpired,
@@ -61,6 +62,10 @@
 	});
 
 	onMount(() => {
+		// Hook window.onerror / unhandledrejection / pagehide for app_events
+		// ingestion via /api/diag. Idempotent across HMR reloads.
+		installGlobalErrorReporters();
+
 		// Initialize the client-side auth store. Without this call the
 		// store's user() returns null forever, which silently breaks the
 		// feature-flags role check and prevents the new scan pipeline

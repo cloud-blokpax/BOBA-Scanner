@@ -9,6 +9,7 @@
 import { getSupabase } from '$lib/services/supabase';
 import { idb } from '$lib/services/idb';
 import { forceReloadCardDatabase } from '$lib/services/card-db';
+import { reportClientEvent } from '$lib/services/diagnostics-client';
 import type { CollectionItem } from '$lib/types';
 
 /**
@@ -190,8 +191,22 @@ export async function upsertCollectionItem(
 		if (error.code === '23503') {
 			try {
 				// Trigger a full reload so subsequent adds work
-				forceReloadCardDatabase().catch((err) => console.warn('[collection] Card DB reload failed after FK violation:', err));
-			} catch (err) { console.debug('[collection] Cache invalidation wrapper failed:', err); }
+				forceReloadCardDatabase().catch((err) => {
+					console.warn('[collection] Card DB reload failed after FK violation:', err);
+					reportClientEvent({
+						level: 'warn',
+						event: 'collection.card_db_reload_failed_after_fk',
+						error: err
+					});
+				});
+			} catch (err) {
+				console.debug('[collection] Cache invalidation wrapper failed:', err);
+				reportClientEvent({
+					level: 'warn',
+					event: 'collection.cache_invalidation_wrapper_failed',
+					error: err
+				});
+			}
 			throw new Error('Card database is out of date — please refresh the page and re-scan this card');
 		}
 		throw new Error('Failed to add card to collection — please try again');
