@@ -47,10 +47,12 @@ jobs:
           # ── Cumulative client JS (catastrophic-growth tripwire) ──
           # Secondary check. Lazy chunks count here but not in entry.
           # Tripping this means someone added a heavy dep or shipped a
-          # large blob into client code. 1.7MB gives headroom for the
-          # remaining launch features (pack EV, etc.).
+          # large blob into client code. Raised from 1.7MB to 2MB to
+          # accommodate Phase 2 diagnostic system (~14KB of error
+          # capture, normalization, and triage instrumentation) and
+          # give headroom for the remaining launch features.
           JS_TOTAL=$(find .svelte-kit/output/client/_app -name '*.js' -exec du -cb {} + 2>/dev/null | tail -1 | awk '{print $1}')
-          JS_MAX=1700000
+          JS_MAX=2000000
           echo "Client total JS: ${JS_TOTAL:-0} bytes (limit: $JS_MAX)"
           if [ "${JS_TOTAL:-0}" -gt "$JS_MAX" ]; then
             echo "::error::Client total JS ${JS_TOTAL} exceeds limit of $JS_MAX bytes. Download the 'bundle-stats' CI artifact and open stats.html to see what grew."
