@@ -35,7 +35,7 @@ function getSupabaseTransformUrl(url: string, width: number, format: 'avif' | 'w
  * Get optimized image URLs for a given source.
  * Returns srcset entries for AVIF, WebP, and the original fallback.
  */
-export function getOptimizedImageUrls(src: string, size: ImageSize = 'medium'): {
+export function getOptimizedImageUrls(src: string | null | undefined, size: ImageSize = 'medium'): {
 	avif: string | null;
 	webp: string | null;
 	fallback: string;
@@ -43,7 +43,31 @@ export function getOptimizedImageUrls(src: string, size: ImageSize = 'medium'): 
 } {
 	const width = IMAGE_SIZES[size];
 
-	if (!src || !isSupabaseStorageUrl(src)) {
+	// Defensive guard: callers TS-type src as 'string' but at runtime
+	// callers can accidentally pass a Blob (or other object). When that
+	// happens, <img src=Blob> coerces to "[object Blob]" and fires a 404.
+	// Surfaced via diagnostic fingerprint fa2b169ec41bba2c — 10+ occurrences
+	// per scan in mobile Safari. Returns empty fallback rather than letting
+	// the bad value through.
+	if (typeof src !== 'string' || src.length === 0) {
+		if (src !== null && src !== undefined && typeof src !== 'string') {
+			// Log so we can identify the source. Lazy-import to avoid pulling
+			// diagnostics into the hot path of normal-render-with-string-src.
+			void import('$lib/services/diagnostics-client').then(({ reportClientEvent }) => {
+				reportClientEvent({
+					level: 'warn',
+					event: 'image_url.non_string_input',
+					context: {
+						actualType: Object.prototype.toString.call(src),
+						size
+					}
+				});
+			}).catch(() => { /* swallow */ });
+		}
+		return { avif: null, webp: null, fallback: '', width };
+	}
+
+	if (!isSupabaseStorageUrl(src)) {
 		return { avif: null, webp: null, fallback: src, width };
 	}
 

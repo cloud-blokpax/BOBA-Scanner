@@ -250,8 +250,13 @@ export async function uploadScanImage(collectionItemId: string, cardId: string, 
 	const client = getSupabase();
 	if (!client) return null;
 
-	const { data: { user } } = await client.auth.getUser();
-	if (!user) return null;
+	// getSession() ensures the JWT is attached to the client before storage
+	// operations. getUser() alone returns the user object but doesn't guarantee
+	// the storage RLS check has access to auth.uid(). See Bug #2 in the
+	// diagnostic system fix doc.
+	const { data: { session } } = await client.auth.getSession();
+	if (!session?.user) return null;
+	const user = session.user;
 
 	const filename = `${user.id}/${cardId}_${Date.now()}.jpg`;
 
@@ -298,8 +303,9 @@ export async function uploadScanImageForListing(cardId: string, imageSource: str
 	const client = getSupabase();
 	if (!client) return null;
 
-	const { data: { user } } = await client.auth.getUser();
-	if (!user) return null;
+	const { data: { session } } = await client.auth.getSession();
+	if (!session?.user) return null;
+	const user = session.user;
 
 	// Image upload open to all users — eBay requires at least 1 photo.
 	// Image URL in CSV exports is Pro-gated separately in whatnot-export.ts.
