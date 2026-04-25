@@ -13,7 +13,6 @@ import { BOBA_SCAN_CONFIG } from '$lib/data/boba-config';
 
 export type ImageWorkerProxy = Comlink.Remote<{
 	computeDHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
-	computePHash: (bitmap: ImageBitmap, size?: number) => Promise<string>;
 	hammingDistance: (a: string, b: string) => number;
 	resizeForUpload: (bitmap: ImageBitmap, max?: number) => Promise<Blob>;
 	checkBlurry: (bitmap: ImageBitmap, threshold?: number) => Promise<{ isBlurry: boolean; variance: number }>;

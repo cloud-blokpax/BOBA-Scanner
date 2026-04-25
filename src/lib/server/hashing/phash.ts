@@ -1,6 +1,7 @@
 /**
  * Server-side dHash and pHash — bit-identical to the client's
- * computeDHash and computePHash in src/lib/workers/image-processor.ts.
+ * computeDHash and the pHash-256 path inside computeAlignmentSignals
+ * in src/lib/workers/image-processor.ts.
  *
  * Parity constraints (see Session 1.0 doc):
  *   - .rotate() to respect EXIF orientation (OffscreenCanvas auto-rotates)

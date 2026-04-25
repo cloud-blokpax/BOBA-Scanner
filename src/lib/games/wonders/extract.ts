@@ -79,8 +79,8 @@ export function extractWondersCardNumber(text: string): string | null {
 
 	// Fallback: stamp-robust prefix search. OCR may have captured the 1st
 	// edition stamp as leading characters that don't match any known prefix
-	// pattern (common Tesseract misreads: "I", "1", "(1)", "O"). Scan the
-	// cleaned text for a known prefix anchor and re-extract from there.
+	// pattern (common OCR misreads of the stamp glyph: "I", "1", "(1)", "O").
+	// Scan the cleaned text for a known prefix anchor and re-extract from there.
 	for (const prefix of WONDERS_PREFIXES) {
 		// Try the prefix-with-total pattern first (OCM format)
 		const prefixRegex = new RegExp(`\\b${prefix}-(\\d{1,3})(?:/(\\d{3,4}))?\\b`);

@@ -42,7 +42,7 @@
 	<section>
 		<h2>4. AI Processing Disclosure</h2>
 		<p>Card Scanner uses artificial intelligence to identify trading cards from images. This section explains exactly how AI processes your data.</p>
-		<p><strong>Client-side processing (no data leaves your device):</strong> Tesseract.js OCR runs entirely in your browser's Web Worker. Perceptual hash computation and image quality analysis also run locally. Most card identifications complete without any data being sent to external services.</p>
+		<p><strong>Client-side processing (no data leaves your device):</strong> PaddleOCR (an open-source optical character recognition engine, run via WebAssembly through the @gutenye/ocr-browser library) reads card numbers and names entirely in your browser's Web Worker. Perceptual hash computation and image quality analysis also run locally. Most card identifications complete without any data being sent to external services.</p>
 		<p><strong>Cloud AI processing (Anthropic Claude API):</strong> When client-side methods cannot identify a card, the image is sent to our server, sanitized (metadata stripped, re-encoded), and forwarded to Anthropic's Claude API (currently Claude Haiku) for identification. For AI card grading, images are sent to Claude Sonnet. In both cases:</p>
 		<ul>
 			<li>The AI provider is <strong>Anthropic, PBC</strong>, based in San Francisco, California, USA</li>
