@@ -1457,6 +1457,148 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['scraping_test']['Insert']>;
 				Relationships: [];
 			};
+			app_events: {
+				Row: {
+					id: string;
+					short_code: string;
+					level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+					source: 'client' | 'server' | 'edge' | 'cron';
+					event_name: string;
+					user_id: string | null;
+					session_id: string | null;
+					scan_id: string | null;
+					game_id: string | null;
+					request_id: string | null;
+					context: Record<string, unknown>;
+					error_message: string | null;
+					error_stack: string | null;
+					error_code: string | null;
+					duration_ms: number | null;
+					pipeline_version: string | null;
+					release_git_sha: string | null;
+					app_version: string | null;
+					fingerprint_hash: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					short_code: string;
+					level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+					source: 'client' | 'server' | 'edge' | 'cron';
+					event_name: string;
+					user_id?: string | null;
+					session_id?: string | null;
+					scan_id?: string | null;
+					game_id?: string | null;
+					request_id?: string | null;
+					context?: Record<string, unknown>;
+					error_message?: string | null;
+					error_stack?: string | null;
+					error_code?: string | null;
+					duration_ms?: number | null;
+					pipeline_version?: string | null;
+					release_git_sha?: string | null;
+					app_version?: string | null;
+					fingerprint_hash?: string | null;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['app_events']['Insert']>;
+				Relationships: [];
+			};
+			event_fingerprints: {
+				Row: {
+					fingerprint_hash: string;
+					event_name: string;
+					error_code: string | null;
+					level: string;
+					status:
+						| 'new'
+						| 'investigating'
+						| 'fix_pending'
+						| 'fixed'
+						| 'understood'
+						| 'ignore'
+						| 'duplicate'
+						| 'regression';
+					summary: string | null;
+					occurrence_count: number;
+					first_seen: string;
+					last_seen: string;
+					fixed_in_release_git_sha: string | null;
+					fixed_at: string | null;
+					duplicate_of_hash: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					fingerprint_hash: string;
+					event_name: string;
+					error_code?: string | null;
+					level: string;
+					status?: string;
+					summary?: string | null;
+					occurrence_count?: number;
+					first_seen?: string;
+					last_seen?: string;
+					fixed_in_release_git_sha?: string | null;
+					fixed_at?: string | null;
+					duplicate_of_hash?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['event_fingerprints']['Insert']>;
+				Relationships: [];
+			};
+			event_triage_history: {
+				Row: {
+					id: string;
+					fingerprint_hash: string;
+					prev_status: string | null;
+					new_status: string;
+					note: string | null;
+					author: 'jimmy' | 'claude' | 'auto';
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					fingerprint_hash: string;
+					prev_status?: string | null;
+					new_status: string;
+					note?: string | null;
+					author: 'jimmy' | 'claude' | 'auto';
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['event_triage_history']['Insert']>;
+				Relationships: [];
+			};
+			app_deployments: {
+				Row: {
+					id: string;
+					release_git_sha: string;
+					deploy_url: string | null;
+					deploy_target: 'production' | 'preview' | 'development';
+					commit_message: string | null;
+					commit_author: string | null;
+					vercel_deploy_id: string | null;
+					fingerprints_fixed: string[];
+					deployed_at: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					release_git_sha: string;
+					deploy_url?: string | null;
+					deploy_target: 'production' | 'preview' | 'development';
+					commit_message?: string | null;
+					commit_author?: string | null;
+					vercel_deploy_id?: string | null;
+					fingerprints_fixed?: string[];
+					deployed_at?: string;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['app_deployments']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -1556,6 +1698,30 @@ export interface Database {
 			};
 			phase_2_telemetry: {
 				Args: { window_interval: string };
+				Returns: Record<string, unknown>;
+			};
+			triage_fingerprint: {
+				Args: {
+					p_hash: string;
+					p_new_status: string;
+					p_note?: string | null;
+					p_author?: string;
+					p_release_git_sha?: string | null;
+					p_summary?: string | null;
+					p_duplicate_of_hash?: string | null;
+				};
+				Returns: Record<string, unknown>;
+			};
+			diagnostic_bundle_by_code: {
+				Args: { p_short_code: string };
+				Returns: Record<string, unknown>;
+			};
+			diagnostic_bundle_by_scan: {
+				Args: { p_scan_id: string };
+				Returns: Record<string, unknown>;
+			};
+			purge_old_app_events: {
+				Args: Record<string, never>;
 				Returns: Record<string, unknown>;
 			};
 		};

@@ -279,6 +279,13 @@ function logFailure(where: string, err: unknown, ctx: Record<string, unknown> = 
 		: typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message)
 		: String(err);
 	console.debug(`[scan-writer] ${where} failed`, { ...ctx, error: message });
+
+	// Also persist to app_events. Lazy-imported to avoid pulling the
+	// diagnostics module into the scan-writer's import graph for users
+	// who never trip a logFailure path.
+	void import('$lib/services/diagnostics').then(({ logFailure: logToEvents }) => {
+		logToEvents(`scan_writer.${where}`, err, ctx);
+	}).catch(() => { /* logger failures must never escape */ });
 }
 
 /**

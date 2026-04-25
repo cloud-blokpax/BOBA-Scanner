@@ -20,6 +20,11 @@ migration — check them in with the code change that depends on them.
 | 10 | `010_retire_legacy_tier_results.sql` | Session 2.5 followup. Tag pre-2.5 `scan_tier_results` rows with retirement metadata in the `extras` jsonb column + create `scan_tier_results_live` filtering view. Column name corrected in session 2.8. |
 | 11 | `011_sunset_legacy_flag_rows.sql` | Session 2.8. Drop `scan_pipeline_trace`, delete zombie `embedding_tier1` / `new_scan_pipeline` rows from `feature_flags` + `user_feature_overrides`, delete orphaned `system_settings.app_name` row. Captures the 2.4 + 2.6 post-deploy SQL that was MCP-only. |
 | 12 | `012_phase_2_telemetry_rpc.sql` | Session 2.9. Aggregate read-only RPC `phase_2_telemetry(window_interval)` returning all admin dashboard sections as jsonb. Consumed by `/api/admin/phase-2-telemetry`. |
+| 13 | `013_backfill_abandoned_scans.sql` | Backfill `scans.outcome = 'abandoned'` for legacy pending rows older than 1 hour. Idempotent. |
+| 14 | `014_app_events.sql` | Diagnostic logging system. Create `app_events` (unified log stream) with short_code, level, source, fingerprint_hash and per-user RLS. |
+| 15 | `015_event_fingerprints.sql` | Diagnostic logging system. Create `event_fingerprints` (triage state) and `event_triage_history` (append-only audit) plus the `app_events_compute_fingerprint` BEFORE INSERT trigger that auto-creates fingerprints and detects fixed→regression flips. |
+| 16 | `016_app_deployments_and_rpcs.sql` | Diagnostic logging system. Create `app_deployments` table + `triage_fingerprint`, `diagnostic_bundle_by_code`, `diagnostic_bundle_by_scan`, `purge_old_app_events` RPCs. |
+| 17 | `017_diagnostics_feature_flag.sql` | Diagnostic logging system. Seed `diagnostics_v1` row in `feature_flags` (admin-only at launch). |
 
 ### Phase 2 deploy ordering (applied via Supabase MCP pre-deploy)
 

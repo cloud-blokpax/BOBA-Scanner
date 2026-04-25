@@ -66,12 +66,32 @@ function queueError(payload: ErrorPayload): void {
 function flushErrors(): void {
 	if (ERROR_QUEUE.length === 0) return;
 	const batch = ERROR_QUEUE.splice(0, MAX_QUEUE);
-	try {
-		const blob = new Blob([JSON.stringify(batch)], { type: 'application/json' });
-		navigator.sendBeacon('/api/log', blob);
-	} catch (err) {
-		console.debug('[error-tracking] sendBeacon failed:', err);
-	}
+
+	// Lazy-import diagnostics so this module doesn't pull it into every
+	// route's bundle.
+	void import('$lib/services/diagnostics').then(({ logEvent }) => {
+		for (const payload of batch) {
+			void logEvent({
+				level: payload.type === 'metric' ? 'debug' : 'error',
+				event: payload.type === 'metric'
+					? 'client.metric'
+					: payload.type === 'unhandled_rejection'
+						? 'client.unhandled_rejection'
+						: 'client.window_error',
+				error: payload.message,
+				context: {
+					file: payload.file,
+					line: payload.line,
+					col: payload.col,
+					stack: payload.stack,
+					url: payload.url,
+					session: payload.session,
+					ua: payload.ua,
+					ts: payload.ts
+				}
+			});
+		}
+	}).catch(() => { /* logger failures must never escape */ });
 }
 
 function onError(event: ErrorEvent): void {

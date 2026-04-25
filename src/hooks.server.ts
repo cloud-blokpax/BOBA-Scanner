@@ -210,7 +210,7 @@ const requestLogger: Handle = async ({ event, resolve }) => {
 
 export const handle = sequence(globalRateLimit, supabaseHandle, securityHeaders, authGuard, requestLogger);
 
-export const handleError = ({ error, event, status, message }: { error: unknown; event: { url: URL; request: Request }; status: number; message: string }) => {
+export const handleError = async ({ error, event, status, message }: { error: unknown; event: { url: URL; request: Request }; status: number; message: string }) => {
 	const ua = event.request.headers.get('user-agent') || 'unknown';
 	console.error(JSON.stringify({
 		type: 'unhandled_error',
@@ -220,6 +220,21 @@ export const handleError = ({ error, event, status, message }: { error: unknown;
 		ua: ua.slice(0, 200),
 		error: error instanceof Error ? { message: error.message, stack: error.stack?.slice(0, 500) } : String(error)
 	}));
+
+	// Persist to app_events. Best-effort — never blocks the response.
+	void import('$lib/server/diagnostics').then(({ logEvent }) => {
+		logEvent({
+			level: status >= 500 ? 'fatal' : 'error',
+			event: 'sveltekit.unhandled_error',
+			error,
+			errorCode: `http_${status}`,
+			context: {
+				path: event.url.pathname,
+				ua: ua.slice(0, 200),
+				message
+			}
+		});
+	}).catch(() => { /* logger failures must never escape */ });
 
 	return { message: 'Something went wrong on our end.' };
 };
