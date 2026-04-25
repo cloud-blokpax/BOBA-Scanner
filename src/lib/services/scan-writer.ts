@@ -21,6 +21,7 @@ import { getSupabase } from '$lib/services/supabase';
 import { PIPELINE_VERSION } from '$lib/services/pipeline-version';
 import { userId } from '$lib/stores/auth.svelte';
 import { coerceHumanReadableParallel } from '$lib/data/wonders-parallels';
+import { reportClientEvent } from '$lib/services/diagnostics-client';
 
 /**
  * Session 1.2: schema bump signal for the enriched scans-row shape. Every
@@ -279,6 +280,17 @@ function logFailure(where: string, err: unknown, ctx: Record<string, unknown> = 
 		: typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message)
 		: String(err);
 	console.debug(`[scan-writer] ${where} failed`, { ...ctx, error: message });
+
+	// Mirror to app_events. scan-writer failures are silent by contract (the
+	// scan completing matters more than telemetry), but invisible failures are
+	// still observability gaps — log at warn so they're triageable but don't
+	// crowd the active error queue.
+	reportClientEvent({
+		level: 'warn',
+		event: `scan.writer.${where}_failed`,
+		error: err,
+		context: ctx
+	});
 }
 
 /**

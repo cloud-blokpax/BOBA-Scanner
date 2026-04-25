@@ -3,6 +3,7 @@ import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { env as publicEnv } from '$env/dynamic/public';
 import { BOBA_RATE_LIMITS } from '$lib/data/boba-config';
+import { logEvent } from '$lib/server/diagnostics';
 
 // ── Global rate limiter (100 requests/minute per IP) ─────────
 const globalRateMap = new Map<string, { count: number; windowStart: number }>();
@@ -210,7 +211,17 @@ const requestLogger: Handle = async ({ event, resolve }) => {
 
 export const handle = sequence(globalRateLimit, supabaseHandle, securityHeaders, authGuard, requestLogger);
 
-export const handleError = ({ error, event, status, message }: { error: unknown; event: { url: URL; request: Request }; status: number; message: string }) => {
+export const handleError = ({
+	error,
+	event,
+	status,
+	message
+}: {
+	error: unknown;
+	event: { url: URL; request: Request; locals?: App.Locals };
+	status: number;
+	message: string;
+}) => {
 	const ua = event.request.headers.get('user-agent') || 'unknown';
 	console.error(JSON.stringify({
 		type: 'unhandled_error',
@@ -220,6 +231,26 @@ export const handleError = ({ error, event, status, message }: { error: unknown;
 		ua: ua.slice(0, 200),
 		error: error instanceof Error ? { message: error.message, stack: error.stack?.slice(0, 500) } : String(error)
 	}));
+
+	// Mirror to app_events. SvelteKit's handleError fires for any thrown error
+	// that wasn't caught by an endpoint — these are the high-signal failures
+	// the diagnostic system most needs to capture. Fire-and-forget; logEvent
+	// is non-throwing so we don't risk turning a 500 response into a hang.
+	const isFatal = status >= 500;
+	void logEvent({
+		level: isFatal ? 'fatal' : 'error',
+		event: 'request.unhandled_error',
+		source: 'server',
+		error,
+		errorCode: String(status),
+		context: {
+			method: event.request.method,
+			ua: ua.slice(0, 200)
+		},
+		userId: event.locals?.user?.id ?? null,
+		requestPath: event.url.pathname,
+		vercelRequestId: event.request.headers.get('x-vercel-id')
+	});
 
 	return { message: 'Something went wrong on our end.' };
 };

@@ -11,6 +11,7 @@ import { json, error } from '@sveltejs/kit';
 import sharp from 'sharp';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import { submitReferenceImageRpc, awardBadgeRpc } from '$lib/server/rpc';
+import { logEvent } from '$lib/server/diagnostics';
 import type { RequestHandler } from './$types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,7 +108,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				p_icon: '📸'
 			});
 			if (shutterbug) badgesAwarded.push('shutterbug');
-		} catch (err) { console.warn('[reference-image] Shutterbug badge award failed:', err); }
+		} catch (err) {
+			console.warn('[reference-image] Shutterbug badge award failed:', err);
+			void logEvent({
+				level: 'warn',
+				event: 'badges.shutterbug.award_failed',
+				error: err,
+				userId: user.id
+			});
+		}
 
 		// Milestone badges based on total reference images held
 		try {
@@ -135,11 +144,28 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 								p_icon: m.icon
 							});
 							if (awarded) badgesAwarded.push(m.key);
-						} catch (err) { console.warn(`[reference-image] Badge ${m.key} award failed:`, err); }
+						} catch (err) {
+							console.warn(`[reference-image] Badge ${m.key} award failed:`, err);
+							void logEvent({
+								level: 'warn',
+								event: 'badges.milestone.award_failed',
+								error: err,
+								userId: user.id,
+								context: { badge_key: m.key, threshold: m.threshold }
+							});
+						}
 					}
 				}
 			}
-		} catch (err) { console.warn('[reference-image] Milestone badge check failed:', err); }
+		} catch (err) {
+			console.warn('[reference-image] Milestone badge check failed:', err);
+			void logEvent({
+				level: 'warn',
+				event: 'badges.milestone.check_failed',
+				error: err,
+				userId: user.id
+			});
+		}
 	}
 
 	return json({

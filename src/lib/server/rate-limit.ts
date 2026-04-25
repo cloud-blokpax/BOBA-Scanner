@@ -25,6 +25,10 @@ const LIMITERS: Record<string, LimiterConfig> = {
 	collection: { prefix: 'rl:col',        maxRequests: 60, windowSeconds: 60 },
 	mutation:   { prefix: 'rl:mut',        maxRequests: 10, windowSeconds: 60 },
 	heavyMut:   { prefix: 'rl:hmut',       maxRequests: 3,  windowSeconds: 60 },
+	// /api/diag accepts client error reports. Bots could try to flood it; cap
+	// per-IP at a generous-but-bounded rate. Real users with chained errors
+	// (one root cause cascading into many handlers) won't hit the cap.
+	diag:       { prefix: 'rl:diag',       maxRequests: 30, windowSeconds: 60 },
 };
 
 // ── Redis limiters (lazy-initialized once) ──────────────────
@@ -131,3 +135,4 @@ export const checkAnonPriceRateLimit = (ip: string) => checkLimit('anonPrice', i
 export const checkCollectionRateLimit = (userId: string) => checkLimit('collection', userId);
 export const checkMutationRateLimit = (userId: string) => checkLimit('mutation', userId);
 export const checkHeavyMutationRateLimit = (userId: string) => checkLimit('heavyMut', userId);
+export const checkDiagRateLimit = (identifier: string) => checkLimit('diag', identifier);

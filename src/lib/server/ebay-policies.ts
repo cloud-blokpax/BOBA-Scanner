@@ -7,6 +7,7 @@
  */
 
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { logEvent } from '$lib/server/diagnostics';
 
 const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
 const EBAY_ACCOUNT_URL = 'https://api.ebay.com/sell/account/v1';
@@ -98,6 +99,7 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 		};
 	} catch (err) {
 		console.error('[ebay-policies] Seller policies fetch failed:', err);
+		void logEvent({ level: 'error', event: 'ebay.policies.fetch_seller_failed', error: err });
 		return null;
 	}
 }
@@ -132,6 +134,12 @@ async function createFulfillmentPolicy(
 		return data.fulfillmentPolicyId || null;
 	} catch (err) {
 		console.error('[ebay-policies] fulfillment policy creation error:', err);
+		void logEvent({
+			level: 'error',
+			event: 'ebay.policies.create_fulfillment_failed',
+			error: err,
+			context: { policy_name: name }
+		});
 		return null;
 	}
 }
@@ -180,6 +188,7 @@ async function createDefaultPaymentPolicy(headers: Record<string, string>): Prom
 		return data.paymentPolicyId || null;
 	} catch (err) {
 		console.error('[ebay-policies] payment policy creation error:', err);
+		void logEvent({ level: 'error', event: 'ebay.policies.create_payment_failed', error: err });
 		return null;
 	}
 }
@@ -207,6 +216,7 @@ async function createDefaultReturnPolicy(headers: Record<string, string>): Promi
 		return data.returnPolicyId || null;
 	} catch (err) {
 		console.error('[ebay-policies] return policy creation error:', err);
+		void logEvent({ level: 'error', event: 'ebay.policies.create_return_failed', error: err });
 		return null;
 	}
 }
@@ -243,6 +253,7 @@ export async function optInToBusinessPolicies(token: string): Promise<boolean> {
 		return false;
 	} catch (err) {
 		console.error('[ebay-policies] Business Policy opt-in error:', err);
+		void logEvent({ level: 'error', event: 'ebay.policies.opt_in_failed', error: err });
 		return false;
 	}
 }
@@ -307,9 +318,16 @@ export async function ensureInventoryLocation(token: string): Promise<boolean> {
 
 		const errBody = await createRes.text().catch(() => '');
 		console.error('[ebay-policies] Inventory location creation failed:', createRes.status, errBody);
+		void logEvent({
+			level: 'error',
+			event: 'ebay.policies.inventory_location_create_failed',
+			errorCode: String(createRes.status),
+			context: { body_excerpt: errBody.slice(0, 500) }
+		});
 		return false;
 	} catch (err) {
 		console.warn('[ebay-policies] Inventory location check failed:', err);
+		void logEvent({ level: 'warn', event: 'ebay.policies.inventory_location_check_failed', error: err });
 		return false;
 	}
 }
@@ -360,10 +378,23 @@ export async function publishOffer(offerId: string, token: string, sku: string):
 				}).eq('sku', sku);
 				if (updateErr) {
 					console.error('[ebay-policies] Template publish update FAILED:', updateErr.message, updateErr.details);
+					void logEvent({
+						level: 'error',
+						event: 'ebay.policies.template_publish_update_failed',
+						error: updateErr.message,
+						errorCode: updateErr.code,
+						context: { sku, offer_id: offerId }
+					});
 				}
 			}
 		} catch (err) {
 			console.error('[ebay-policies] Template publish update FAILED:', err);
+			void logEvent({
+				level: 'error',
+				event: 'ebay.policies.template_publish_update_failed',
+				error: err,
+				context: { sku, offer_id: offerId }
+			});
 		}
 
 		return {

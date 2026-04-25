@@ -29,6 +29,7 @@ import {
 	scoreWondersListingMatch,
 } from '$lib/server/ebay-query-wonders';
 import { captureCardImage } from '$lib/services/image-harvester';
+import { logEvent } from '$lib/server/diagnostics';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby supports up to 60s
@@ -210,6 +211,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			}
 		} catch (err) {
 			console.error(`[harvest] Card ${card.id} (${card.card_number}) threw unexpectedly:`, err instanceof Error ? err.message : err);
+			void logEvent({
+				level: 'error',
+				event: 'harvest.boba.card_threw_unexpectedly',
+				error: err,
+				context: { card_id: card.id, card_number: card.card_number, game_id: card.game_id ?? null }
+			});
 			processed++;
 			errors++;
 		}
@@ -226,6 +233,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			await admin.from('price_harvest_log').insert(harvestLogs as unknown as Database['public']['Tables']['price_harvest_log']['Insert'][]);
 		} catch (err) {
 			console.error('[harvest] Log batch insert failed:', err instanceof Error ? err.message : err);
+			void logEvent({
+				level: 'error',
+				event: 'harvest.log_batch_insert_failed',
+				error: err,
+				context: { batch_size: harvestLogs.length }
+			});
 		}
 	}
 
@@ -283,6 +296,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
 						}
 					} catch (err) {
 						console.error(`[harvest] Play card ${playCard.id} threw:`, err instanceof Error ? err.message : err);
+						void logEvent({
+							level: 'error',
+							event: 'harvest.play.card_threw',
+							error: err,
+							context: { card_id: playCard.id }
+						});
 						playUsed++;
 					}
 
@@ -299,6 +318,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			}
 		} catch (err) {
 			console.warn('[harvest] Play card pass failed:', err instanceof Error ? err.message : err);
+			void logEvent({ level: 'warn', event: 'harvest.play.pass_failed', error: err });
 		}
 	}
 
@@ -409,6 +429,13 @@ async function getNextCandidates(
 
 	if (rpcError) {
 		console.error(`[harvest] get_harvest_candidates RPC failed (game=${gameId}):`, rpcError);
+		void logEvent({
+			level: 'error',
+			event: 'harvest.boba.candidates_rpc_failed',
+			error: rpcError.message,
+			errorCode: rpcError.code,
+			context: { game_id: gameId }
+		});
 		return [];
 	}
 
@@ -437,6 +464,12 @@ async function getPlayCandidates(
 
 	if (rpcError) {
 		console.error('[harvest] get_play_harvest_candidates RPC failed:', rpcError);
+		void logEvent({
+			level: 'error',
+			event: 'harvest.play.candidates_rpc_failed',
+			error: rpcError.message,
+			errorCode: rpcError.code
+		});
 		return [];
 	}
 
@@ -622,6 +655,12 @@ async function refreshCardPrice(
 		}).upsert(cachePayload, { onConflict: 'card_id,source,parallel' });
 		if (cacheError) {
 			console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+			void logEvent({
+				level: 'error',
+				event: 'harvest.price_cache_upsert_failed',
+				error: cacheError.message,
+				context: { card_id: card.id, parallel: card.parallel ?? 'Paper' }
+			});
 		}
 
 		// Write price history only if price changed AND meets threshold
@@ -645,6 +684,12 @@ async function refreshCardPrice(
 			}).insert(historyRow);
 			if (historyError) {
 				console.error(`[harvest] price_history insert FAILED for ${card.id}:`, historyError.message);
+				void logEvent({
+					level: 'error',
+					event: 'harvest.price_history_insert_failed',
+					error: historyError.message,
+					context: { card_id: card.id, parallel }
+				});
 			}
 		}
 
@@ -833,6 +878,12 @@ async function refreshPlayCardPrice(
 		const { error: cacheError } = await admin.from('play_price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
 		if (cacheError) {
 			console.error(`[harvest] play_price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+			void logEvent({
+				level: 'error',
+				event: 'harvest.play.price_cache_upsert_failed',
+				error: cacheError.message,
+				context: { card_id: card.id }
+			});
 		}
 
 		// Write price history if changed and meets threshold
@@ -851,6 +902,12 @@ async function refreshPlayCardPrice(
 			});
 			if (historyError) {
 				console.error(`[harvest] play_price_history insert FAILED for ${card.id}:`, historyError.message);
+				void logEvent({
+					level: 'error',
+					event: 'harvest.play.price_history_insert_failed',
+					error: historyError.message,
+					context: { card_id: card.id }
+				});
 			}
 		}
 

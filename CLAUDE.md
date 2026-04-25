@@ -145,6 +145,7 @@ Card-Scanner/
 │   │   │   ├── AdminCardPrices.svelte # Card price details panel
 │   │   │   ├── AdminScansTab.svelte # Scan analytics: metrics, sparkline, hourly heatmap
 │   │   │   ├── AdminPhase2Tab.svelte # Phase 2 telemetry: OCR agreement rates, tier distribution, fallback usage (added 2.9)
+│   │   │   ├── AdminTriageTab.svelte # Diagnostic triage: active fingerprints, archive, known patterns, storage panel
 │   │   │   ├── AdminEbayTab.svelte  # eBay quota gauge, price freshness, harvest trigger
 │   │   │   ├── AdminFeaturesTab.svelte # Feature flag management
 │   │   │   ├── AdminChangelogTab.svelte # CRUD for changelog entries
@@ -199,8 +200,11 @@ Card-Scanner/
 │   │       ├── whatnot/
 │   │       │   └── export/+server.ts    # POST: Whatnot CSV bulk export
 │   │       ├── cron/
-│   │       │   ├── price-harvest/+server.ts  # Cron: Automated eBay price harvesting
-│   │       │   └── qstash-harvest/+server.ts # QStash: Webhook-triggered harvesting
+│   │       │   ├── price-harvest/+server.ts        # Cron: Automated eBay price harvesting
+│   │       │   ├── qstash-harvest/+server.ts       # QStash: Webhook-triggered harvesting
+│   │       │   ├── vercel-log-mirror/+server.ts    # Cron: Pulls Vercel runtime logs into app_events (Phase 2.5)
+│   │       │   └── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
+│   │       ├── diag/+server.ts                     # POST: Client-side diagnostic event ingestion (window errors, fire-and-forget catches)
 │   │       ├── admin/
 │   │       │   ├── stats/+server.ts          # GET: Aggregated dashboard metrics, trends, alerts
 │   │       │   ├── changelog/+server.ts      # CRUD: Changelog entry management
@@ -220,6 +224,7 @@ Card-Scanner/
 │   │       │   ├── harvest-log/+server.ts    # Admin: harvest log viewer
 │   │       │   ├── logs/+server.ts           # Admin: system log viewer
 │   │       │   ├── trigger-harvest/+server.ts # Admin: manual harvest trigger
+│   │       │   ├── triage/+server.ts         # GET/PUT: Diagnostic event triage (active/archive/patterns/storage views, fingerprint status changes)
 │   │       │   ├── dragon-points/+server.ts  # Admin: Wonders dragon points config
 │   │       │   ├── migrate-images/+server.ts # Admin: image migration utility
 │   │       │   └── st-data/+server.ts        # Admin: external pricing data lookup
@@ -379,6 +384,7 @@ Card-Scanner/
 │   │   │   ├── admin-guard.ts      # Admin authorization guard for API endpoints
 │   │   │   ├── anthropic.ts        # Anthropic Claude client singleton
 │   │   │   ├── api-response.ts     # Standardized API response helpers
+│   │   │   ├── diagnostics.ts      # Server-side diagnostic logging (logEvent, wrap, wrapSilent → app_events)
 │   │   │   ├── rate-limit.ts       # Upstash Redis rate limiting + in-memory fallback
 │   │   │   ├── redis.ts            # Redis client singleton
 │   │   │   ├── rpc.ts              # Supabase RPC helper utilities
@@ -457,6 +463,7 @@ Card-Scanner/
 │   │   │   ├── scan-image-utils.ts         # Scan image utility functions (thumbnail + listing image)
 │   │   │   ├── export-templates.ts         # Export format definitions (CSV, JSON)
 │   │   │   ├── error-tracking.ts           # Client error reporting
+│   │   │   ├── diagnostics-client.ts        # Buffered POST to /api/diag for client-side window errors and fire-and-forget catches
 │   │   │   └── version.svelte.ts           # Version checking (runes store)
 │   │   ├── stores/                 # All stores use .svelte.ts extension (Svelte 5 runes)
 │   │   │   ├── collection.svelte.ts    # Collection state store (game-filterable)
@@ -503,6 +510,7 @@ Card-Scanner/
 │   ├── blank-cell-detector.test.ts      # Unit: binder blank-cell detection (Phase 2.2)
 │   ├── dragon-points.test.ts            # Unit: Wonders Dragon Points scoring engine
 │   ├── hash-parity.test.ts              # Unit: client/server dHash + pHash byte-parity gate
+│   ├── diagnostics.test.ts              # Unit: error normalization, fingerprint hashing, summary truncation
 │   ├── api-price.integration.test.ts    # Integration: price API
 │   ├── api-scan.integration.test.ts     # Integration: scan API
 │   ├── api-grade.integration.test.ts    # Integration: grade API
@@ -663,11 +671,41 @@ Plus a `handleError` handler for structured error logging.
 - **Server state**: Supabase PostgreSQL (collections synced via `sync.ts`)
 - **Offline support**: SvelteKit service worker (`src/service-worker.ts`) caches app shell, card database served stale-while-revalidate, API calls always go to network
 
+### Diagnostic Logging
+
+Every observable failure in the app — server endpoint catches, client window errors, scan-writer fire-and-forgets, harvester upserts, eBay policy creates, Vercel runtime crashes — feeds into a single `public.app_events` table, fingerprinted for dedup, and reviewed via the admin Triage tab.
+
+**Three writer surfaces:**
+
+- **Server (`src/lib/server/diagnostics.ts`)** — `logEvent()` for direct catches, `wrap(eventName, fn, ctx)` for instrumented async functions (logs success at debug, failure at error, rethrows), `wrapSilent(name, fn, fallback)` for graceful-degradation paths (logs warn, returns fallback). Used by `hooks.server.ts handleError` for any unhandled request error, by `ebay-policies.ts` / `ebay-seller-auth.ts` / `price-harvest` cron, and inline at any new server-side catch.
+- **Client (`src/lib/services/diagnostics-client.ts`)** — `reportClientEvent()` buffers events and POSTs them to `/api/diag` in batches (or via `navigator.sendBeacon` on tab close). `installGlobalErrorReporters()` is called once at root layout boot to wire `window.error` and `unhandledrejection`. Used by `scan-writer logFailure`, `recognition.ts` reference-image / auto-tag fire-and-forgets, and the `CardCorrection` component.
+- **Edge (`/api/cron/vercel-log-mirror`)** — daily QStash-triggered cron pulls the last 24h of Vercel runtime logs, dedupes against `app_events`, and inserts the missing ones with `source='edge'`. Catches function timeouts, OOM kills, cold-start failures, and middleware crashes that never reach `handleError`. Triggered via `/api/cron/qstash-vercel-mirror` (06:00 UTC daily).
+
+**Fingerprinting.** `warn`/`error`/`fatal` events get a SHA-1 fingerprint over `(event_name, error_code, normalized_message)`. The normalizer strips UUIDs, long numeric IDs, ISO timestamps, and hex addresses so two occurrences of the same root cause hash identically. `debug` and `info` events are not fingerprinted (don't surface in the active triage queue). The `app_events_maintain_fingerprint` trigger upserts the fingerprint registry on every event insert and bumps `occurrence_count`/`last_seen`. If a fingerprint was previously marked `resolved`, a new occurrence flips it back to `active` automatically — the fix didn't take, retriage.
+
+**Triage states** (in `event_fingerprints.status`):
+- `active` — new, untriaged, surfaces in active queue.
+- `investigating` — admin is currently debugging.
+- `understood` — known pattern, choosing not to fix; suppressed from active queue, visible in Patterns view with 7d firing rate.
+- `ignore` — noise that shouldn't have been logged in the first place.
+- `resolved` — fix shipped; reopens automatically if the fingerprint fires again.
+
+**Storage budget.** Steady state at 100 active users / 50 scans-per-active-user-per-day projects to ~420MB/year on Supabase Pro. Retention is tier-based: `debug`/`info` purged at 7 days, `warn` at 90 days, `error`/`fatal` kept indefinitely. The AdminTriageTab Storage panel surfaces the current size and color-codes against thresholds (🟢 <200MB, 🟡 200MB–1GB, 🟠 1GB–4GB, 🔴 >4GB). If you hit Yellow, tighten purge windows in `migrations/016_app_events_purge.sql`; if Orange, also reduce `DEBUG_SUCCESS_SAMPLE_RATE` in `diagnostics.ts` from 1.0. Purge is manual today (call `purge_old_app_events()` via MCP); pg_cron is not enabled on this project.
+
+**Expected-failure handling.** The right fix for noisy patterns is at the logging site: log expected outcomes (eBay 429s, no-eligible-cards) at `level='info'` so they never fingerprint. For genuinely-known-but-warn/error patterns, mark the fingerprint `understood` once — future occurrences bump the counter silently. The Patterns sub-tab shows their 7d firing rate so you can detect a known-rate suddenly dropping (often a regression in the upstream system).
+
+**Not in v1:**
+- Service worker cache failures stay as `console.warn` — too noisy, low value.
+- Empty catch blocks at bitmap close / response.text() failures stay silent — benign by code inspection.
+- Rhythmic pattern auto-detection (Phase 3) — manual triage is fine for current volume.
+
+**Required env vars for the Vercel mirror:** `VERCEL_API_TOKEN` (read scope on the project), `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`. The mirror returns 503 if these aren't configured and silently no-ops.
+
 ## Testing
 
 The test suite uses Vitest with three tiers:
 
-- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`, `blank-cell-detector.test.ts`, `consensus-builder.test.ts`, `dragon-points.test.ts`, `hash-parity.test.ts`, `normalize-ocr-name.test.ts`, `parallel-classifier-rules.test.ts`, `wonders-parallels.test.ts`
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`, `blank-cell-detector.test.ts`, `consensus-builder.test.ts`, `diagnostics.test.ts`, `dragon-points.test.ts`, `hash-parity.test.ts`, `normalize-ocr-name.test.ts`, `parallel-classifier-rules.test.ts`, `wonders-parallels.test.ts`
 - **Integration tests**: `api-price.integration.test.ts`, `api-scan.integration.test.ts`, `api-grade.integration.test.ts` — test API routes with mocked dependencies
 - **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
 - **Architecture tests** (`tests/architecture/`): `multi-game-prompt.test.ts`, `param-matcher.test.ts`, `resolver.test.ts` — guard invariants about the multi-game system that can't be enforced by types alone
@@ -809,6 +847,9 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `changelog_entries` | What's new notifications | `title`, `body`, `published`, `is_notification`, `published_at`, `created_by` (FK `auth.users`) |
 | `admin_activity_log` | Admin audit trail | `admin_id` (FK `auth.users`), `action`, `entity_type`, `entity_id`, `details` (JSONB) |
 | `parallel_rarity_config` | Parallel card rarity | `parallel_name` (UNIQUE), `rarity`, `sort_order`, `updated_by` (FK users) |
+| `app_events` | Diagnostic event stream — every observable failure (server catches, client window errors, scan-writer fire-and-forgets, harvester upserts, Vercel runtime errors) | `id` (BIGSERIAL PK), `level` CHECK `debug\|info\|warn\|error\|fatal`, `event_name`, `source` CHECK `server\|client\|edge\|worker`, `fingerprint_hash` (NULL for debug/info), `summary`, `error_code`, `error_detail` (JSONB), `context` (JSONB), `user_id`, `scan_id`, `request_path`, `vercel_request_id`, `schema_version`, `created_at`. Tier-based retention via `purge_old_app_events()`: debug/info 7d, warn 90d, error/fatal forever. Service-role-only RLS. |
+| `event_fingerprints` | Diagnostic dedup registry — one row per unique error shape | `fingerprint_hash` (TEXT PK, SHA-1 over event_name+error_code+normalized_message, 16 chars), `event_name`, `summary`, `error_code`, `status` CHECK `active\|investigating\|understood\|ignore\|resolved`, `occurrence_count`, `first_seen`, `last_seen`, `notes`, `last_triaged_by`, `last_triaged_at`. Auto-maintained by `app_events_maintain_fingerprint` trigger on every `app_events` insert. Resolved fingerprints auto-flip back to active on a new occurrence. |
+| `event_triage_history` | Audit trail of admin triage actions | `id` (BIGSERIAL PK), `fingerprint_hash` (FK `event_fingerprints`), `admin_id`, `action` CHECK `status_changed\|noted\|reopened\|bulk_archived`, `old_status`, `new_status`, `notes`, `created_at` |
 
 #### RPC Functions
 
@@ -851,6 +892,12 @@ Admin & maintenance:
 
 Phase 2 telemetry:
 - `phase_2_telemetry(window_interval)` — aggregate read-only dashboard RPC returning all ten Phase 2 telemetry sections as one JSONB payload. Powers the admin Phase 2 tab. Window parameter is allowlist-guarded inside the function.
+
+Diagnostic logging:
+- `purge_old_app_events()` — tier-based deletion of `app_events` rows (debug/info 7d, warn 90d, error/fatal kept). Returns per-level deleted counts. Manual trigger today; pg_cron-schedulable when the extension lands.
+- `app_events_storage_summary()` — single-row snapshot of diagnostic table sizes, row counts, mix by level, 7d daily volume, total DB size. Powers the AdminTriageTab Storage panel.
+- `event_known_patterns()` — fingerprints with status `understood`/`ignore` plus their 7-day firing rate. Powers the AdminTriageTab Patterns sub-tab.
+- `app_events_maintain_fingerprint()` — TRIGGER that auto-upserts the `event_fingerprints` registry on every `app_events` insert. Bumps occurrence_count/last_seen, and auto-reopens fingerprints whose status was `resolved`.
 
 (Extensions like `pgvector` contribute many more functions — `cosine_distance`, `l2_distance`, vector arithmetic — not listed individually.)
 

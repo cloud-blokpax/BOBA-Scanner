@@ -2,6 +2,7 @@
 	import type { Card } from '$lib/types';
 	import { searchCards } from '$lib/services/card-db';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { reportClientEvent } from '$lib/services/diagnostics-client';
 
 	let { card, onCorrect, onClose }: {
 		card: Partial<Card>;
@@ -63,7 +64,15 @@
 		if (originalNumber && correctedNumber && originalNumber !== correctedNumber) {
 			import('$lib/services/community-corrections').then(({ submitCommunityCorrection }) => {
 				submitCommunityCorrection(originalNumber, correctedNumber);
-			}).catch((err) => console.warn('[card-correction] Community correction submission failed:', err));
+			}).catch((err) => {
+				console.warn('[card-correction] Community correction submission failed:', err);
+				reportClientEvent({
+					level: 'warn',
+					event: 'card_correction.submit_failed',
+					error: err,
+					context: { originalNumber, correctedNumber }
+				});
+			});
 		}
 
 		onClose?.();

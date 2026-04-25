@@ -20,6 +20,7 @@ import { getSupabase } from './supabase';
 import { getCardImageUrl } from '$lib/utils/image-url';
 import { addToScanHistory } from '$lib/stores/scan-history.svelte';
 import { trackScanMetric } from '$lib/services/error-tracking';
+import { reportClientEvent } from '$lib/services/diagnostics-client';
 import { userId } from '$lib/stores/auth.svelte';
 import { submitReferenceImage } from '$lib/services/reference-images';
 import { BOBA_SCAN_CONFIG, BOBA_PIPELINE_CONFIG } from '$lib/data/boba-config';
@@ -593,7 +594,15 @@ export async function recognizeCard(
 					const { variance: blurVariance } = await worker.checkBlurry(bitmap, 100);
 					if (blurVariance > BOBA_PIPELINE_CONFIG.referenceImageMinVariance) {
 						submitReferenceImage(final.card_id!, final.confidence, uploadBlob, blurVariance)
-							.catch((err) => console.debug('[scan] Reference image submission failed:', err));
+							.catch((err) => {
+								console.debug('[scan] Reference image submission failed:', err);
+								reportClientEvent({
+									level: 'warn',
+									event: 'recognition.reference_image_submit_failed',
+									error: err,
+									context: { card_id: final.card_id }
+								});
+							});
 					}
 				} catch (err) {
 					console.debug('[scan] Reference image preparation failed:', err);
@@ -605,7 +614,15 @@ export async function recognizeCard(
 		if (final.card?.parallel && final.card_id) {
 			import('$lib/stores/tags.svelte').then(({ addTag }) => {
 				addTag(final.card_id!, final.card!.parallel!);
-			}).catch((err) => console.debug('[scan] Auto-tag failed:', err));
+			}).catch((err) => {
+				console.debug('[scan] Auto-tag failed:', err);
+				reportClientEvent({
+					level: 'warn',
+					event: 'recognition.auto_tag_failed',
+					error: err,
+					context: { card_id: final.card_id, parallel: final.card?.parallel }
+				});
+			});
 		}
 
 		return final;
