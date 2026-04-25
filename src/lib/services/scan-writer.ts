@@ -760,7 +760,11 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 		}
 
 		// Resize in a canvas — keeps upload size predictable.
-		const resized = await resizeBlobForUpload(blob, 1024, 0.85);
+		// 800px long-edge at q0.78 produces ~250-450KB JPEGs reliably.
+		// Bucket limit is 2MB (raised from 512KB), so we have headroom.
+		// Listing-quality images (eBay etc.) are produced separately by
+		// createListingImageBlob in scan-image-utils.ts.
+		const resized = await resizeBlobForUpload(blob, 800, 0.78);
 		if (!resized) {
 			logFailure('uploadScanPhoto.resize', new Error('resize returned null'), { scanId });
 			return;
