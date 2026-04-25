@@ -198,6 +198,56 @@ async function runRegionOCR(
 }
 
 /**
+ * Expand a normalized region by `pad` (0–1) on each side, clamped to [0,1].
+ * Used to widen the spatial gate for full-frame OCR voting so we tolerate
+ * region-coord drift without letting card-body text bleed in.
+ */
+function expandRegion(
+	r: { x: number; y: number; w: number; h: number },
+	pad: number
+): { x: number; y: number; w: number; h: number } {
+	const padW = r.w * pad;
+	const padH = r.h * pad;
+	const x = Math.max(0, r.x - padW);
+	const y = Math.max(0, r.y - padH);
+	const w = Math.min(1 - x, r.w + 2 * padW);
+	const h = Math.min(1 - y, r.h + 2 * padH);
+	return { x, y, w, h };
+}
+
+/**
+ * Compute the centroid of a PaddleOCR detection polygon, returned in
+ * normalized [0,1] coordinates. Returns null if the polygon is empty
+ * or malformed.
+ */
+function boxCenterNormalized(
+	boxPoints: number[][],
+	bitmapW: number,
+	bitmapH: number
+): { x: number; y: number } | null {
+	if (!Array.isArray(boxPoints) || boxPoints.length === 0) return null;
+	let sx = 0;
+	let sy = 0;
+	let n = 0;
+	for (const p of boxPoints) {
+		if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+			sx += p[0];
+			sy += p[1];
+			n++;
+		}
+	}
+	if (n === 0) return null;
+	return { x: sx / n / bitmapW, y: sy / n / bitmapH };
+}
+
+function regionContains(
+	r: { x: number; y: number; w: number; h: number },
+	p: { x: number; y: number }
+): boolean {
+	return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
+/**
  * Full-frame OCR pattern-extraction. Validated 100% accuracy on 20 real
  * phone-photographed cards at 2400px long edge. Each detected box is tried
  * as both a card_number and a name vote — ConsensusBuilder's prefix
@@ -209,21 +259,43 @@ async function runFullFrameOCR(
 ): Promise<OCROutputs> {
 	const result = await ocrFullFrame(bitmap, { maxLongEdge: 2400 });
 
+	// Spatial gating — only vote a detected box for a task if its centroid
+	// falls inside the (padded) configured region for that task. Without
+	// this, rules text from the card body gets fed into card_number voting,
+	// and the validator's pattern is the only thing standing between us
+	// and false matches. With this, full-frame OCR is a strict superset of
+	// region OCR — it just sweeps in nearby boxes that pure region cropping
+	// might have missed because of region-coord drift.
+	const cnRegion = expandRegion(
+		game === 'boba' ? REGIONS.boba.card_number : REGIONS.wonders.card_number,
+		0.5
+	);
+	const nmRegion = expandRegion(
+		game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+		0.5
+	);
+
 	const builder = new ConsensusBuilder(1, game);
 	for (const box of result.boxes) {
 		if (!box.text) continue;
-		builder.addVote({
-			task: 'card_number',
-			rawValue: box.text,
-			confidence: box.score,
-			sessionId: 1
-		});
-		builder.addVote({
-			task: 'name',
-			rawValue: box.text,
-			confidence: box.score,
-			sessionId: 1
-		});
+		const center = boxCenterNormalized(box.box, bitmap.width, bitmap.height);
+		if (!center) continue;
+		if (regionContains(cnRegion, center)) {
+			builder.addVote({
+				task: 'card_number',
+				rawValue: box.text,
+				confidence: box.score,
+				sessionId: 1
+			});
+		}
+		if (regionContains(nmRegion, center)) {
+			builder.addVote({
+				task: 'name',
+				rawValue: box.text,
+				confidence: box.score,
+				sessionId: 1
+			});
+		}
 	}
 	const consensus = builder.getConsensus();
 
