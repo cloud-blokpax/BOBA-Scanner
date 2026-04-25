@@ -22,7 +22,9 @@ import type { LogLevel } from '$lib/server/diagnostics';
 interface ClientEvent {
 	level: LogLevel;
 	event: string;
-	error?: { message: string; stack?: string; name?: string } | string;
+	error?:
+		| { message: string; stack?: string; name?: string; extras?: Record<string, unknown> }
+		| string;
 	errorCode?: string;
 	context?: Record<string, unknown>;
 	requestPath?: string;
@@ -40,16 +42,39 @@ function serializeError(err: unknown): ClientEvent['error'] {
 	if (err === undefined || err === null) return undefined;
 	if (typeof err === 'string') return err;
 	if (err instanceof Error) {
+		// Capture custom properties from Error subclasses (e.g. StorageApiError
+		// has `status` and `statusCode`; PostgrestError has `code`, `details`,
+		// `hint`). The base Error type doesn't include these, so we pull them
+		// off the runtime object and add them to context for triage.
+		const e = err as Error & Record<string, unknown>;
+		const extras: Record<string, unknown> = {};
+		for (const key of ['status', 'statusCode', 'code', 'details', 'hint', 'errno', 'syscall']) {
+			if (key in e && e[key] !== undefined) {
+				extras[key] = e[key];
+			}
+		}
 		return {
-			message: err.message || err.name,
-			stack: typeof err.stack === 'string' ? err.stack.slice(0, 4000) : undefined,
-			name: err.name
+			message: e.message || e.name,
+			stack: typeof e.stack === 'string' ? e.stack.slice(0, 4000) : undefined,
+			name: e.name,
+			...(Object.keys(extras).length > 0 ? { extras } : {})
 		};
 	}
 	if (typeof err === 'object') {
 		const obj = err as Record<string, unknown>;
 		const message = typeof obj.message === 'string' ? obj.message : JSON.stringify(obj).slice(0, 500);
-		return { message, name: typeof obj.name === 'string' ? obj.name : undefined };
+		// Same extras capture for plain objects
+		const extras: Record<string, unknown> = {};
+		for (const key of ['status', 'statusCode', 'code', 'details', 'hint']) {
+			if (key in obj && obj[key] !== undefined) {
+				extras[key] = obj[key];
+			}
+		}
+		return {
+			message,
+			name: typeof obj.name === 'string' ? obj.name : undefined,
+			...(Object.keys(extras).length > 0 ? { extras } : {})
+		};
 	}
 	return { message: String(err) };
 }

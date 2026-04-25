@@ -759,6 +759,35 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 			return;
 		}
 
+		// Diagnostic: capture session vs uid divergence. If the session's user.id
+		// differs from the passed-in uid (which came from the cached _user store),
+		// the storage client may be authenticated as a different user than the
+		// scan-writer thinks. This is the leading hypothesis for Bug #2 round 3.
+		const sessionUserId = session.user?.id ?? null;
+		const jwtSub = (() => {
+			try {
+				const payloadB64 = session.access_token.split('.')[1];
+				if (!payloadB64) return null;
+				const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
+				return typeof payload?.sub === 'string' ? payload.sub : null;
+			} catch {
+				return null;
+			}
+		})();
+		reportClientEvent({
+			level: 'info',
+			event: 'scan.writer.uploadScanPhoto.preflight',
+			context: {
+				scanId,
+				passedUid: uid,
+				sessionUserId,
+				jwtSub,
+				uidsAgree: uid === sessionUserId && uid === jwtSub,
+				tokenLen: session.access_token.length,
+				expiresAt: session.expires_at
+			}
+		});
+
 		// Resize in a canvas — keeps upload size predictable.
 		// 800px long-edge at q0.78 produces ~250-450KB JPEGs reliably.
 		// Bucket limit is 2MB (raised from 512KB), so we have headroom.
@@ -770,7 +799,10 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 			return;
 		}
 
-		const path = `${uid}/${scanId}.jpg`;
+		// Use the SESSION'S user id, not the parameter. The cached _user store
+		// can drift from the active session in some Safari edge cases. This
+		// mirrors the working pattern in uploadScanImageForListing.
+		const path = `${sessionUserId ?? uid}/${scanId}.jpg`;
 		const { error: uploadErr } = await client.storage
 			.from('scan-images')
 			.upload(path, resized, {

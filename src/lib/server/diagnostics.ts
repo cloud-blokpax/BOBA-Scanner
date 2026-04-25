@@ -52,16 +52,28 @@ interface NormalizedError {
 	stack: string | null;
 	name: string | null;
 	code: string | null;
+	extras?: Record<string, unknown>;
 }
 
 function normalizeError(err: unknown): NormalizedError {
 	if (err instanceof Error) {
-		const code = (err as Error & { code?: unknown }).code;
+		const e = err as Error & Record<string, unknown>;
+		const code = e.code;
+		// Capture custom Error-subclass properties (StorageApiError.status,
+		// PostgrestError.code/details/hint, etc.). These don't appear on the
+		// base Error type but are present at runtime.
+		const extras: Record<string, unknown> = {};
+		for (const key of ['status', 'statusCode', 'details', 'hint', 'errno', 'syscall']) {
+			if (key in e && e[key] !== undefined) {
+				extras[key] = e[key];
+			}
+		}
 		return {
-			message: err.message || err.name || 'Error',
-			stack: typeof err.stack === 'string' ? err.stack.slice(0, STACK_MAX_LEN) : null,
-			name: err.name || null,
-			code: typeof code === 'string' || typeof code === 'number' ? String(code) : null
+			message: e.message || e.name || 'Error',
+			stack: typeof e.stack === 'string' ? e.stack.slice(0, STACK_MAX_LEN) : null,
+			name: e.name || null,
+			code: typeof code === 'string' || typeof code === 'number' ? String(code) : null,
+			...(Object.keys(extras).length > 0 ? { extras } : {})
 		};
 	}
 	if (typeof err === 'string') return { message: err, stack: null, name: null, code: null };
@@ -127,7 +139,9 @@ export async function logEvent(input: LogEventInput): Promise<number | null> {
 		? {
 				message: normalized.message,
 				name: normalized.name,
-				stack: normalized.stack
+				stack: normalized.stack,
+				...(normalized.code ? { code: normalized.code } : {}),
+				...(normalized.extras ? { extras: normalized.extras } : {})
 		  }
 		: null;
 
