@@ -108,8 +108,17 @@ export async function ocrRegion(
 	ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 	const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
 
-	const result = await _client.detect(blob);
-	return buildOCRResult(result);
+	// `@gutenye/ocr-browser` Ocr.detect(image: string) does `new Image(); img.src = image`,
+	// so a Blob coerces to "[object Blob]" and fires GET /[object%20Blob] at the origin.
+	// Pass an Object URL string instead and revoke after detect() resolves.
+	// Diagnostic fingerprint: fa2b169ec41bba2c.
+	const objectUrl = URL.createObjectURL(blob);
+	try {
+		const result = await _client.detect(objectUrl);
+		return buildOCRResult(result);
+	} finally {
+		URL.revokeObjectURL(objectUrl);
+	}
 }
 
 /**
@@ -144,8 +153,14 @@ export async function ocrFullFrame(
 	ctx.drawImage(bitmap, 0, 0, W, H);
 	const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
 
-	const result = await _client.detect(blob);
-	return buildOCRResult(result);
+	// See ocrRegion for the rationale. Object URL string, not Blob.
+	const objectUrl = URL.createObjectURL(blob);
+	try {
+		const result = await _client.detect(objectUrl);
+		return buildOCRResult(result);
+	} finally {
+		URL.revokeObjectURL(objectUrl);
+	}
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
