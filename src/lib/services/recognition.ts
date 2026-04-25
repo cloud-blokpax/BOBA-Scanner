@@ -450,9 +450,26 @@ export async function recognizeCard(
 		? openScanRow(bitmap, imageSource, scanWriteExtras, gameHint)
 			.catch((err) => {
 				console.debug(`[scan:${traceId}] openScanRow failed:`, err);
+				reportClientEvent({
+					level: 'warn',
+					event: 'scan.recognition.openScanRow_threw',
+					error: err,
+					context: { traceId, captureSource }
+				});
 				return null;
 			})
-		: Promise.resolve(null);
+		: (() => {
+				// Capture this. When userId() is null, the entire scan-writer
+				// path silently skips. Tier 3 still fires because /api/scan is
+				// auth-optional, but no scan_sessions/scans/tier_results rows
+				// land in the DB. This event surfaces the silent loss.
+				reportClientEvent({
+					level: 'warn',
+					event: 'scan.recognition.unauth_scan_skipped',
+					context: { traceId, captureSource }
+				});
+				return Promise.resolve(null);
+			})();
 
 	// ── Check blur (skip if caller already verified quality) ─
 	if (!options?.skipBlurCheck) {
