@@ -3,12 +3,17 @@
  *
  * Runs the Phase 2 canonical local-OCR path (Tier 1) with an optional
  * upload TTA voting stage for File inputs, falling back to Claude Haiku
- * (Tier 3) when neither can clear the confidence floor.
+ * (Tier 2) when neither can clear the confidence floor.
  *
- * The legacy pHash hash-cache (Tier 1) and Tesseract OCR (Tier 2) paths
- * were retired in Session 2.5. `hash_cache` rows written before that
- * session remain in place and continue to serve the AR overlay and the
- * image-harvester; this orchestrator no longer writes to them.
+ * The pipeline has two active tiers post-Phase-2.5:
+ *   - Tier 1: local PaddleOCR (canonical + optional upload TTA)
+ *   - Tier 2: Claude Haiku fallback (the DB string is still 'tier3_claude'
+ *     for telemetry continuity with the original 3-tier design)
+ *
+ * The legacy pHash hash-cache and Tesseract OCR paths were retired in
+ * Session 2.5. `hash_cache` rows written before that session remain in
+ * place and continue to serve the AR overlay and the image-harvester;
+ * this orchestrator no longer writes to them.
  *
  * Tier functions live in recognition-tiers.ts.
  * Cross-validation logic lives in recognition-validation.ts.
@@ -31,8 +36,8 @@ import {
 	initWorkers
 } from './recognition-workers';
 import {
-	runTier3,
-	emptyTier3Telemetry,
+	runTier2,
+	emptyTier2Telemetry,
 	type ScanContext
 } from './recognition-tiers';
 import { incrementPersona } from './persona';
@@ -202,6 +207,10 @@ function winningTierFromResult(result: ScanResult): string {
 	switch (result.scan_method) {
 		case 'local_ocr': return 'tier1_local_ocr';
 		case 'upload_tta': return 'tier1_upload_tta';
+		// 'tier3_claude' is the legacy DB string for the Claude Haiku fallback,
+		// which is conceptually Tier 2 in the post-Phase-2.5 two-tier pipeline.
+		// We keep the literal value for telemetry continuity with historical
+		// scan rows.
 		case 'claude': return 'tier3_claude';
 		case 'manual':
 		// 'hash_cache' and 'tesseract' were retired in 2.5; their cases
@@ -283,7 +292,7 @@ function isBitmapValid(bmp: ImageBitmap): { valid: boolean; reason: string | nul
  */
 export async function recognizeCard(
 	imageSource: File | Blob | ImageBitmap,
-	onTierChange?: (tier: 1 | 2 | 3) => void,
+	onTierChange?: (tier: 1 | 2) => void,
 	options?: {
 		isAuthenticated?: boolean;
 		skipBlurCheck?: boolean;
@@ -323,7 +332,7 @@ export async function recognizeCard(
 
 	const loadedCards = await loadCardDatabase(gamesToLoad);
 
-	// Guard: if card database is empty, don't waste API calls on Tier 3.
+	// Guard: if card database is empty, don't waste API calls on Tier 2.
 	// NOTE: this fires BEFORE openScanRow so there's no scan row to patch —
 	// the abandonment is implicit (no row was ever inserted).
 	if (loadedCards.length === 0) {
@@ -341,7 +350,7 @@ export async function recognizeCard(
 	console.debug(`[scan:${traceId}] Pipeline started. ${loadedCards.length} cards loaded (games=${isAutoDetect ? 'auto' : gameHint}).`);
 
 	// Per-scan context to avoid global state pollution across concurrent scans
-	const ctx: ScanContext = { traceId, lastTier3FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
+	const ctx: ScanContext = { traceId, lastTier2FailReason: null, cropRegion: options?.cropRegion ?? null, gameHint };
 
 	// Convert to ImageBitmap for worker transfer
 	const ownsBitmap = !(imageSource instanceof ImageBitmap);
@@ -399,7 +408,7 @@ export async function recognizeCard(
 
 	// Session 1.5: the caller (Scanner.svelte) already cropped `bitmap` to the
 	// viewfinder region via cropToCanonical, so the Tier 1/2 hashes/OCR run on
-	// a known-aspect frame. Tier 3 still sees this same bitmap.
+	// a known-aspect frame. Tier 2 still sees this same bitmap.
 	const workingBitmap = bitmap;
 
 	// CRITICAL: check the bitmap is still valid BEFORE passing it to tiers.
@@ -442,7 +451,7 @@ export async function recognizeCard(
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
-	// scanIdPromise runs in parallel with tier execution; tier3-claude and
+	// scanIdPromise runs in parallel with tier execution; tier2-claude and
 	// recognition-tiers both tolerate a null resolution (unauthenticated
 	// scan, or openScanRow failure). Flag gating removed in session 2.10 —
 	// unified on the single scan-writer path.
@@ -460,7 +469,7 @@ export async function recognizeCard(
 			})
 		: (() => {
 				// Capture this. When userId() is null, the entire scan-writer
-				// path silently skips. Tier 3 still fires because /api/scan is
+				// path silently skips. Tier 2 still fires because /api/scan is
 				// auth-optional, but no scan_sessions/scans/tier_results rows
 				// land in the DB. This event surfaces the silent loss.
 				reportClientEvent({
@@ -493,8 +502,8 @@ export async function recognizeCard(
 
 	// Declared here (not at each tier's run site) so finalize() can close over
 	// it on every exit path — including offline returns that happen before
-	// Tier 3 would otherwise be declared.
-	const tier3Tel = emptyTier3Telemetry();
+	// Tier 2 would otherwise be declared.
+	const tier2Tel = emptyTier2Telemetry();
 
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
@@ -541,15 +550,15 @@ export async function recognizeCard(
 			void scanIdPromise.then((scanId) => {
 				if (!scanId) return;
 
-				// Sum per-tier costs into total_cost_usd. Tiers 1 and 2 are
-				// free (hash lookup + local OCR). Tier 3 cost duplicates the
-				// per-row calc in emitTier3Result — fine for now; fold into
-				// a shared helper in the AI Gateway session.
-				const tier3CostUsd =
-					tier3Tel.llmInputTokens !== null && tier3Tel.llmOutputTokens !== null
-						? (tier3Tel.llmInputTokens * 1.0 + tier3Tel.llmOutputTokens * 5.0) / 1_000_000
+				// Sum per-tier costs into total_cost_usd. Tier 1 (local OCR) is
+				// free. Tier 2 (Claude Haiku) cost duplicates the per-row calc
+				// in emitTier2Result — fine for now; fold into a shared helper
+				// in the AI Gateway session.
+				const tier2CostUsd =
+					tier2Tel.llmInputTokens !== null && tier2Tel.llmOutputTokens !== null
+						? (tier2Tel.llmInputTokens * 1.0 + tier2Tel.llmOutputTokens * 5.0) / 1_000_000
 						: 0;
-				const totalCostUsd = tier3CostUsd > 0 ? tier3CostUsd : null;
+				const totalCostUsd = tier2CostUsd > 0 ? tier2CostUsd : null;
 				const mergedDecisionCtx = final.decisionContext
 					? { ...buildDecisionContext(), ...final.decisionContext }
 					: null;
@@ -673,7 +682,7 @@ export async function recognizeCard(
 	}
 
 	// ── TIER 1 canonical PaddleOCR (Session 2.1a) ───────────
-	// Local OCR + rule-based parallel classifier. Runs before Tier 3 (Claude).
+	// Local OCR + rule-based parallel classifier. Runs before Tier 2 (Claude).
 	// Gated by live_ocr_tier1_v1; when off, scans fall straight through to Haiku.
 	const liveOCREnabled = await isLiveOCRTier1Enabled();
 	let liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
@@ -692,7 +701,7 @@ export async function recognizeCard(
 		augmentation_set_version: string;
 	} | null = null;
 	if (liveOCREnabled) {
-		onTierChange?.(3); // reuse tier3 UI state for OCR-in-progress
+		onTierChange?.(1);
 		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
 		try {
 			const { runCanonicalTier1 } = await import('./tier1-canonical');
@@ -772,8 +781,8 @@ export async function recognizeCard(
 				return finalize(tier1Result);
 			}
 			// Below confidence floor — fall through to TTA (uploads only) or
-			// Tier 3 Haiku. Preserve canonical telemetry for both fallbacks.
-			ctx.lastTier3FailReason = null;
+			// Tier 2 Haiku. Preserve canonical telemetry for both fallbacks.
+			ctx.lastTier2FailReason = null;
 
 			// ── Upload TTA voting (Session 2.1b) ───────────────
 			// Only fires on File uploads whose canonical pass couldn't clear
@@ -841,7 +850,7 @@ export async function recognizeCard(
 						checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
 							error: err instanceof Error ? err.message : String(err)
 						});
-						console.warn('[scan] Upload TTA failed, falling through to Tier 3:', err);
+						console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
 					}
 				}
 			}
@@ -849,43 +858,43 @@ export async function recognizeCard(
 			checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
 				error: err instanceof Error ? err.message : String(err)
 			});
-			console.warn('[scan] Tier 1 canonical failed, falling through to Tier 3:', err);
+			console.warn('[scan] Tier 1 canonical failed, falling through to Tier 2:', err);
 		}
 	}
 
-	// ── TIER 3: Claude API ──────────────────────────────────
+	// ── TIER 2: Claude API ──────────────────────────────────
 	// Anonymous users are allowed — server-side rate limit (5/60s per IP) protects against abuse
-	onTierChange?.(3);
-	console.debug('[scan] Starting Tier 3: Claude AI identification...');
-	checkpoint(traceId, 'tier3:start', performance.now() - startTime);
-	let tier3Result: ScanResult | null = null;
+	onTierChange?.(2);
+	console.debug('[scan] Starting Tier 2: Claude AI identification...');
+	checkpoint(traceId, 'tier2:start', performance.now() - startTime);
+	let tier2Result: ScanResult | null = null;
 	try {
 		// No outer race: the fetch to /api/scan is the only network op and it's
 		// bounded by the server-side Anthropic client + Vercel function timeout.
-		// runTier3 emits its scan_tier_results row inside try/finally now.
-		tier3Result = await runTier3(workingBitmap, ctx, tier3Tel, scanIdPromise);
-		checkpoint(traceId, 'tier3:done', performance.now() - startTime, {
-			hit: tier3Result !== null,
-			outcome: tier3Tel.outcome
+		// runTier2 emits its scan_tier_results row inside try/finally now.
+		tier2Result = await runTier2(workingBitmap, ctx, tier2Tel, scanIdPromise);
+		checkpoint(traceId, 'tier2:done', performance.now() - startTime, {
+			hit: tier2Result !== null,
+			outcome: tier2Tel.outcome
 		});
 	} catch (err) {
-		checkpoint(traceId, 'tier3:threw', performance.now() - startTime, {
+		checkpoint(traceId, 'tier2:threw', performance.now() - startTime, {
 			error: err instanceof Error ? err.message : String(err)
 		});
-		console.warn('[scan] Tier 3 threw:', err);
+		console.warn('[scan] Tier 2 threw:', err);
 	}
-	if (tier3Result && liveOCREnabled) {
+	if (tier2Result && liveOCREnabled) {
 		// Tag the Haiku-fallback telemetry fields so analytics can split
-		// flag-on-and-tier3-rescued vs flag-off runs.
-		tier3Result.fallbackTierUsed = 'haiku';
-		tier3Result.liveConsensusReached = liveConsensusReached;
-		tier3Result.liveVsCanonicalAgreed = null;
+		// flag-on-and-tier2-rescued vs flag-off runs.
+		tier2Result.fallbackTierUsed = 'haiku';
+		tier2Result.liveConsensusReached = liveConsensusReached;
+		tier2Result.liveVsCanonicalAgreed = null;
 		// Preserve what canonical / TTA saw so we can debug which stage
-		// would have caught which card. Merged with anything Tier 3 already
+		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.
 		if (canonicalTelemetry || ttaTelemetry) {
-			tier3Result.decisionContext = {
-				...(tier3Result.decisionContext ?? {}),
+			tier2Result.decisionContext = {
+				...(tier2Result.decisionContext ?? {}),
 				...(canonicalTelemetry
 					? {
 						canonical_result: canonicalTelemetry.perTask,
@@ -896,17 +905,17 @@ export async function recognizeCard(
 			};
 		}
 	}
-	if (tier3Result) {
-		console.debug(`[scan] Tier 3 HIT: card_id=${tier3Result.card_id}, card=${tier3Result.card?.card_number}, confidence=${tier3Result.confidence}, game=${tier3Result.game_id ?? tier3Result.card?.game_id ?? gameHint}, parallel=${tier3Result.parallel}`);
-		return finalize(tier3Result);
+	if (tier2Result) {
+		console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}, parallel=${tier2Result.parallel}`);
+		return finalize(tier2Result);
 	}
-	console.warn('[scan] Tier 3 MISS: Claude could not identify card (see earlier logs for details)');
+	console.warn('[scan] Tier 2 MISS: Claude could not identify card (see earlier logs for details)');
 	// All tiers exhausted — resolved with null final_card_id. Keeps this
 	// cohort separate from infra abandonments in outcomeDistribution.
 	patchAbandonedScan(scanIdPromise, 'resolved', startTime,
-		ctx.lastTier3FailReason || 'all_tiers_no_match');
+		ctx.lastTier2FailReason || 'all_tiers_no_match');
 	return finalize(
-		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: ctx.lastTier3FailReason || 'AI could not identify this card' }
+		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: ctx.lastTier2FailReason || 'AI could not identify this card' }
 	);
 }
 

@@ -141,6 +141,11 @@ export interface RecordScanInput {
  *
  * `LegacyScanTier` is exported separately for telemetry readers that still
  * need to render historical rows (see AdminPhase2Tab tierLabel).
+ *
+ * NAMING NOTE: the live system has TWO tiers (local OCR + Claude fallback).
+ * The DB string 'tier3_claude' is preserved from the original 3-tier design
+ * for telemetry continuity. UI and docs refer to the Claude fallback as
+ * "Tier 2" — only the DB string carries the legacy "tier3" name.
  */
 export type ScanTier = 'tier3_claude';
 export type LegacyScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr';

@@ -20,8 +20,7 @@
 		successRate: 0,
 		errorsToday: 0,
 		tier1Rate: 0,
-		tier2Rate: 0,
-		tier3Rate: 0
+		tier2Rate: 0
 	});
 	let hourlyData = $state<number[]>(new Array(24).fill(0));
 	let trendData = $state<number[]>([]);

@@ -28,7 +28,7 @@ export function setScannerActive(active: boolean): void { _scannerActive = activ
 
 export function scanState(): ScanPipelineState { return _scanState; }
 export function isScanning(): boolean {
-	return ['capturing', 'processing', 'tier1', 'tier2', 'tier3'].includes(_scanState.status);
+	return ['capturing', 'processing', 'tier1', 'tier2'].includes(_scanState.status);
 }
 export function scanResult(): ScanResult | null { return _scanState.result; }
 

@@ -1,13 +1,15 @@
 /**
  * Recognition Pipeline — Tier Functions
  *
- * Tier 3: Claude API → cross-validation against local DB
+ * Tier 2: Claude API → cross-validation against local DB
  *
- * Session 2.5 retired the legacy Tier 1 (pHash hash-cache lookup) and
- * Tier 2 (Tesseract OCR) paths. Phase 2 canonical local OCR now owns
- * Tier 1; Tier 3 stays as the Claude-Haiku fallback.
+ * Session 2.5 retired the legacy hash-cache and Tesseract OCR paths.
+ * Phase 2 canonical local OCR now owns Tier 1; the Claude-Haiku fallback
+ * is Tier 2 in the active 2-tier pipeline. The DB string stored on
+ * `scan_tier_results.tier` is still 'tier3_claude' for telemetry
+ * continuity with the original 3-tier design — see scan-writer.ts.
  *
- * runTier3 returns ScanResult | null. Null means "no match".
+ * runTier2 returns ScanResult | null. Null means "no match".
  */
 
 import { idb } from './idb';
@@ -21,7 +23,7 @@ import type { Card, ScanResult } from '$lib/types';
 
 export interface ScanContext {
 	traceId: string;
-	lastTier3FailReason: string | null;
+	lastTier2FailReason: string | null;
 	cropRegion?: { x: number; y: number; width: number; height: number } | null;
 	/** Game hint for scoping Claude prompts + Phase 2 canonical OCR. Defaults to 'boba'. */
 	gameHint: string;
@@ -29,8 +31,8 @@ export interface ScanContext {
 
 // ── Per-tier telemetry (Session 1.2-tier-miss-telemetry) ────
 
-/** Telemetry accumulated by runTier3. */
-export interface Tier3Telemetry {
+/** Telemetry accumulated by runTier2 (the Claude-Haiku fallback). */
+export interface Tier2Telemetry {
 	attempted: boolean;
 	skipReason: string | null;
 	imageBytesUploaded: number | null;
@@ -51,7 +53,7 @@ export interface Tier3Telemetry {
 	latencyMs: number;
 }
 
-export function emptyTier3Telemetry(): Tier3Telemetry {
+export function emptyTier2Telemetry(): Tier2Telemetry {
 	return {
 		attempted: false,
 		skipReason: null,
@@ -74,7 +76,7 @@ export function emptyTier3Telemetry(): Tier3Telemetry {
 	};
 }
 
-export async function emitTier3Result(scanId: string, t: Tier3Telemetry): Promise<void> {
+export async function emitTier2Result(scanId: string, t: Tier2Telemetry): Promise<void> {
 	// Cost calc for Haiku 4.5 — duplicates the per-row sum done in
 	// recognition.ts's finalize(). Fold into a shared helper when the
 	// AI Gateway lands and replaces this hand-rolled pricing table.
@@ -85,6 +87,9 @@ export async function emitTier3Result(scanId: string, t: Tier3Telemetry): Promis
 
 	await writerRecordTierResult({
 		scanId,
+		// 'tier3_claude' is the legacy DB string for the Claude Haiku fallback,
+		// preserved for telemetry continuity. The active pipeline calls this
+		// Tier 2 in code/UI; only the DB value carries the original "tier3" name.
 		tier: 'tier3_claude',
 		engine: 'claude_haiku',
 		engineVersion: t.llmModelResponded ?? 'claude-haiku-4-5-20251001',
@@ -133,16 +138,16 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
 	]);
 }
 
-// ── Tier 3: Claude API ──────────────────────────────────────
+// ── Tier 2: Claude API ──────────────────────────────────────
 
-export async function runTier3(
+export async function runTier2(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
-	telemetry: Tier3Telemetry = emptyTier3Telemetry(),
+	telemetry: Tier2Telemetry = emptyTier2Telemetry(),
 	scanIdPromise: Promise<string | null> = Promise.resolve(null)
 ): Promise<ScanResult | null> {
 	const started = performance.now();
-	ctx.lastTier3FailReason = null;
+	ctx.lastTier2FailReason = null;
 	telemetry.attempted = true;
 	telemetry.llmModelRequested = 'claude-haiku-4-5-20251001';
 
@@ -152,7 +157,7 @@ export async function runTier3(
 	try {
 		const imageBlob = await getImageWorker().resizeForUpload(bitmap, 1024);
 		telemetry.imageBytesUploaded = imageBlob.size;
-		console.debug(`[scan:${ctx.traceId}:tier3] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
+		console.debug(`[scan:${ctx.traceId}:tier2] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
 		const formData = new FormData();
 		formData.append('image', imageBlob, 'scan.jpg');
 		if (ctx.gameHint) {
@@ -161,8 +166,8 @@ export async function runTier3(
 		response = await fetch('/api/scan', { method: 'POST', body: formData });
 		telemetry.httpStatus = response.status;
 	} catch (err) {
-		console.error(`[scan:${ctx.traceId}:tier3] Network error calling /api/scan:`, err);
-		ctx.lastTier3FailReason = 'Network error reaching scan API';
+		console.error(`[scan:${ctx.traceId}:tier2] Network error calling /api/scan:`, err);
+		ctx.lastTier2FailReason = 'Network error reaching scan API';
 		telemetry.outcome = 'error';
 		telemetry.errorMessage = err instanceof Error ? err.message : String(err);
 		telemetry.latencyMs = Math.round(performance.now() - started);
@@ -173,11 +178,11 @@ export async function runTier3(
 	if (!response.ok) {
 		let errorBody = '';
 		try { errorBody = await response.text(); } catch { /* ignore */ }
-		console.error(`[scan:${ctx.traceId}:tier3] API returned ${response.status}: ${errorBody}`);
-		if (response.status === 401) ctx.lastTier3FailReason = 'Not authenticated — please sign in';
-		else if (response.status === 429) ctx.lastTier3FailReason = 'Rate limited — please wait before scanning again';
-		else if (response.status === 503) ctx.lastTier3FailReason = 'AI service overloaded — try again in a moment';
-		else ctx.lastTier3FailReason = `Scan API error (${response.status})`;
+		console.error(`[scan:${ctx.traceId}:tier2] API returned ${response.status}: ${errorBody}`);
+		if (response.status === 401) ctx.lastTier2FailReason = 'Not authenticated — please sign in';
+		else if (response.status === 429) ctx.lastTier2FailReason = 'Rate limited — please wait before scanning again';
+		else if (response.status === 503) ctx.lastTier2FailReason = 'AI service overloaded — try again in a moment';
+		else ctx.lastTier2FailReason = `Scan API error (${response.status})`;
 		telemetry.outcome = 'error';
 		telemetry.errorMessage = `HTTP ${response.status}`;
 		telemetry.latencyMs = Math.round(performance.now() - started);
@@ -190,9 +195,9 @@ export async function runTier3(
 		result = await response.json();
 		telemetry.parseSuccess = true;
 	} catch (err) {
-		console.debug(`[scan:${ctx.traceId}:tier3] API response JSON parse failed:`, err);
-		console.error(`[scan:${ctx.traceId}:tier3] Invalid JSON in API response`);
-		ctx.lastTier3FailReason = 'Invalid response from scan API';
+		console.debug(`[scan:${ctx.traceId}:tier2] API response JSON parse failed:`, err);
+		console.error(`[scan:${ctx.traceId}:tier2] Invalid JSON in API response`);
+		ctx.lastTier2FailReason = 'Invalid response from scan API';
 		telemetry.outcome = 'error';
 		telemetry.parseSuccess = false;
 		telemetry.errorMessage = 'JSON parse failed';
@@ -201,7 +206,7 @@ export async function runTier3(
 	}
 
 	// Capture raw response + Anthropic meta regardless of success/failure so
-	// diagnostics have the full picture for every Tier 3 run.
+	// diagnostics have the full picture for every Tier 2 run.
 	telemetry.rawResponse = result as Record<string, unknown>;
 	if (result && typeof result.meta === 'object' && result.meta !== null) {
 		const meta = result.meta as Record<string, unknown>;
@@ -214,11 +219,11 @@ export async function runTier3(
 		telemetry.anthropicRequestId = typeof meta.anthropic_request_id === 'string' ? meta.anthropic_request_id : null;
 	}
 
-	console.debug(`[scan:${ctx.traceId}:tier3] API response:`, JSON.stringify(result, null, 2));
+	console.debug(`[scan:${ctx.traceId}:tier2] API response:`, JSON.stringify(result, null, 2));
 
 	if (!result.success || !result.card) {
-		console.warn(`[scan:${ctx.traceId}:tier3] API returned success=false or no card data. Raw:`, result.raw || '(none)');
-		ctx.lastTier3FailReason = 'AI could not parse card details from image';
+		console.warn(`[scan:${ctx.traceId}:tier2] API returned success=false or no card data. Raw:`, result.raw || '(none)');
+		ctx.lastTier2FailReason = 'AI could not parse card details from image';
 		telemetry.outcome = 'miss';
 		telemetry.latencyMs = Math.round(performance.now() - started);
 		return null;
@@ -266,7 +271,7 @@ export async function runTier3(
 			: null;
 
 	console.debug(
-		`[scan:${ctx.traceId}:tier3] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", ` +
+		`[scan:${ctx.traceId}:tier2] Claude identified: game=${detectedGameId}, card_number="${claudeNumber}", ` +
 		`hero="${claudeHero}", power=${claudePower}, confidence=${result.card.confidence}, ` +
 		`parallel=${claudeParallel}, parallel_conf=${parallelConfidence}, stamp=${firstEditionStampDetected}, ` +
 		`cn_conf=${collectorNumberConfidence}`
@@ -290,11 +295,11 @@ export async function runTier3(
 			: { ...validated.card };
 		if (!mergedCard.game_id) mergedCard.game_id = detectedGameId;
 		console.debug(
-			`[scan:${ctx.traceId}:tier3] Validated: id=${mergedCard.id}, number=${mergedCard.card_number}, ` +
+			`[scan:${ctx.traceId}:tier2] Validated: id=${mergedCard.id}, number=${mergedCard.card_number}, ` +
 			`game=${mergedCard.game_id}, method=${validated.validationMethod}, confidence=${validated.confidence}`
 		);
 		if (validated.warnings.length > 0) {
-			console.warn(`[scan:${ctx.traceId}:tier3] Validation warnings:`, validated.warnings);
+			console.warn(`[scan:${ctx.traceId}:tier2] Validation warnings:`, validated.warnings);
 		}
 		// Resolve parallel for DB write. cards.parallel is the source of truth —
 		// for BoBA it carries the rich parallel name (e.g. "Battlefoil") encoded
@@ -327,18 +332,18 @@ export async function runTier3(
 	// No match — log diagnostic info and write negative cache
 	const totalCards = getAllCards().length;
 	const playCardCount = getAllCards().filter(c => c.hero_name === null && c.power === null).length;
-	console.warn(`[scan:${ctx.traceId}:tier3] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${totalCards} total, ${playCardCount} play cards)`);
-	ctx.lastTier3FailReason = playCardCount === 0
+	console.warn(`[scan:${ctx.traceId}:tier2] Claude identified card_number="${claudeNumber}" hero="${claudeHero}" but NO MATCH in local card database (${totalCards} total, ${playCardCount} play cards)`);
+	ctx.lastTier2FailReason = playCardCount === 0
 		? `AI identified "${claudeNumber}" (${claudeHero}) — play cards not loaded, please reload the app`
 		: `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 
-	// Negative cache to prevent repeated Tier 3 calls for the same unrecognized card
+	// Negative cache to prevent repeated Tier 2 calls for the same unrecognized card
 	if (claudeNumber) {
 		try {
 			const hash = await getImageWorker().computeDHash(bitmap);
 			await idb.setHash({ phash: hash, card_id: `__unrecognized:${claudeNumber}`, confidence: 0 });
 		} catch (err) {
-			console.debug(`[scan:${ctx.traceId}:tier3] Failed to write negative cache entry:`, err);
+			console.debug(`[scan:${ctx.traceId}:tier2] Failed to write negative cache entry:`, err);
 		}
 	}
 
@@ -355,9 +360,9 @@ export async function runTier3(
 		const sid = await resolveScanId(scanIdPromise);
 		if (sid) {
 			try {
-				await emitTier3Result(sid, telemetry);
+				await emitTier2Result(sid, telemetry);
 			} catch (err) {
-				console.debug(`[scan:${ctx.traceId}:tier3] emit failed:`, err);
+				console.debug(`[scan:${ctx.traceId}:tier2] emit failed:`, err);
 			}
 		}
 	}
