@@ -799,6 +799,23 @@ async function uploadScanPhoto(scanId: string, uid: string, blob: Blob): Promise
 			return;
 		}
 
+		// Diagnostic: capture the actual content-type and size that goes to Storage.
+		// The bucket's allowed_mime_types is ["image/jpeg"] — if Safari's
+		// canvas.convertToBlob produces anything else (or an empty type), Storage
+		// Gateway rejects with the misleading "RLS policy violation" message.
+		// This event lets us confirm or rule out that hypothesis from telemetry.
+		reportClientEvent({
+			level: 'info',
+			event: 'scan.writer.uploadScanPhoto.resized',
+			context: {
+				scanId,
+				origType: blob.type || 'unknown',
+				origSize: blob.size,
+				resizedType: resized.type || 'unknown',
+				resizedSize: resized.size
+			}
+		});
+
 		// Use the SESSION'S user id, not the parameter. The cached _user store
 		// can drift from the active session in some Safari edge cases. This
 		// mirrors the working pattern in uploadScanImageForListing.
