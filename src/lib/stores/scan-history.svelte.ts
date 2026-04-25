@@ -113,8 +113,31 @@ export function removeFromScanHistory(id: string): void {
 }
 
 export function addToScanHistory(entry: Omit<ScanHistoryEntry, 'id' | 'timestamp'>): void {
+	// Defensive: imageUrl is typed `string | null` but runtime code may
+	// accidentally pass a Blob (TS erases the check). If a Blob lands here,
+	// it propagates to <img src> via RecentScansStrip and fires
+	// /[object%20Blob] 404s. Surfaced as fingerprint fa2b169ec41bba2c.
+	let safeImageUrl: string | null = null;
+	if (typeof entry.imageUrl === 'string' && entry.imageUrl.length > 0) {
+		safeImageUrl = entry.imageUrl;
+	} else if (entry.imageUrl !== null && entry.imageUrl !== undefined && typeof entry.imageUrl !== 'string') {
+		// Log so we can isolate the actual source.
+		void import('$lib/services/diagnostics-client').then(({ reportClientEvent }) => {
+			reportClientEvent({
+				level: 'warn',
+				event: 'scan_history.non_string_image_url',
+				context: {
+					actualType: Object.prototype.toString.call(entry.imageUrl),
+					cardId: entry.cardId ?? null,
+					method: entry.method
+				}
+			});
+		}).catch(() => { /* swallow */ });
+	}
+
 	const newEntry: ScanHistoryEntry = {
 		...entry,
+		imageUrl: safeImageUrl,
 		id: crypto.randomUUID(),
 		timestamp: Date.now()
 	};

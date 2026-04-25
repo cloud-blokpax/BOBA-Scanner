@@ -495,10 +495,15 @@ export async function recognizeCard(
 		if (bitmap instanceof ImageBitmap && final.card_id) {
 			final._listingImagePromise = createListingImageBlob(bitmap, ctx.cropRegion ?? null);
 		}
+		// Explicit string assertion — both branches are string-typed, but
+		// being explicit makes future regressions visible in PR diffs.
+		const historyImageUrl: string | null =
+			(typeof thumbnail === 'string' ? thumbnail : null) ??
+			(final.card ? getCardImageUrl(final.card) : null);
 		addToScanHistory({
 			cardNumber: final.card?.card_number ?? null,
 			heroName: final.card?.hero_name ?? null,
-			imageUrl: thumbnail || (final.card ? getCardImageUrl(final.card) : null),
+			imageUrl: historyImageUrl,
 			cardId: final.card?.id ?? null,
 			method: final.scan_method || 'unknown',
 			confidence: final.confidence,
