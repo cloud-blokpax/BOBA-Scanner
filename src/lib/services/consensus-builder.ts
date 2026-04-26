@@ -115,24 +115,43 @@ export class ConsensusBuilder {
 	}
 
 	private validateCardNumber(raw: string): string | null {
-		const cleaned = raw.toUpperCase().replace(/[^A-Z0-9/-]/g, '').trim();
+		if (!raw || !raw.trim()) return null;
+
+		// Tokenize on whitespace before cleaning. Bottom-strip OCR often
+		// returns the card_number alongside set markers / serial prefixes
+		// / copyright tags (e.g. "1 316/401 VExis", "0 316/401 Exist"
+		// observed in production for Wonders). The actual card_number lives
+		// inside; we extract by validating each whitespace-separated token
+		// and picking the longest valid result. Single-token reads like
+		// "BF-16" still pass through correctly — the array has one element.
+		const tokens = raw.split(/\s+/).filter((t) => t.length > 0);
+		let best: string | null = null;
+		for (const token of tokens) {
+			const validated = this.validateCardNumberToken(token);
+			if (validated && (!best || validated.length > best.length)) {
+				best = validated;
+			}
+		}
+		return best;
+	}
+
+	private validateCardNumberToken(rawToken: string): string | null {
+		const cleaned = rawToken.toUpperCase().replace(/[^A-Z0-9/-]/g, '').trim();
 		if (!cleaned) return null;
 
 		// Length cap — longest real card_number in the catalog is 10 chars
-		// ("A1-028/401"). Cap at 12 for headroom. Catches rules-text bleed
-		// like "LOOKATTHETOP2CARDSOFTARGETPLAYERS" before pattern checks.
+		// ("A1-028/401"). Cap at 12 for headroom. Per-token, this rejects
+		// stray prose ("LOOKATTHETOP2CARDSOFTARGETPLAYERS") while letting
+		// real card_numbers through.
 		if (cleaned.length > 12) return null;
 
-		// Anchored shapes covering 99.99% of the catalog (verified against prod):
-		//   "BF-16", "BBF-34", "GLBF-170"        → letters-digits          (15504)
-		//   "AVA-T1", "BL-B35", "BL-BG35"        → letters with sub-letters (1116)
-		//   "S-101A"                              → suffix letter           (2)
-		//   "S-01/100", "A1-028/401"             → fractional                (97)
-		//   "10", "316"                           → pure digits             (956)
-		//   "316/402"                             → fractional digits       (408)
-		// Rejected oddballs: "PIA-EP" (1 card promo, intentional loss).
-		// Pre-anchor regex /^[A-Z]+\d+/ matched any prefix of "[A-Z]+\d+",
-		// letting "BURROCIOUS130POWER…" pass as a card_number.
+		// Anchored shapes covering 99.99% of the catalog:
+		//   "BF-16", "BBF-34", "GLBF-170"   → letters-digits           (15504)
+		//   "AVA-T1", "BL-B35", "BL-BG35"   → letters with sub-letters  (1116)
+		//   "S-101A"                          → suffix letter             (2)
+		//   "S-01/100", "A1-028/401"         → fractional                 (97)
+		//   "10", "316"                       → pure digits              (956)
+		//   "316/402"                         → fractional digits         (408)
 		const PREFIX_PATTERN = /^[A-Z]{1,5}[0-9]?-[A-Z]{0,3}[0-9]{1,4}[A-Z]?(\/[0-9]{1,4})?$/;
 		const PURE_DIGIT_PATTERN = /^[0-9]{1,4}(\/[0-9]{1,4})?$/;
 

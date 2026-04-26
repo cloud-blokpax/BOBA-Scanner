@@ -158,9 +158,28 @@ export async function lookupCard(
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const indexName = game === 'boba' ? 'game_card_hero' : 'game_card_name';
-	const key = [game, cardNumber, nameField];
-	const match = await db.getFromIndex(STORE_CARDS, indexName, key);
-	return (match as MirrorCard) || null;
+
+	// Try the card_number as-given first.
+	const match = await db.getFromIndex(STORE_CARDS, indexName, [game, cardNumber, nameField]);
+	if (match) return match as MirrorCard;
+
+	// Fall back to the integer prefix when the input is fractional. Wonders
+	// physical cards print "316/401"; the catalog indexes "316". Without
+	// this fallback, OCR'd fractional reads can never hit the exact index
+	// even when name and game are correct.
+	if (cardNumber.includes('/')) {
+		const integerForm = cardNumber.split('/')[0];
+		if (integerForm && integerForm !== cardNumber) {
+			const altMatch = await db.getFromIndex(
+				STORE_CARDS,
+				indexName,
+				[game, integerForm, nameField]
+			);
+			if (altMatch) return altMatch as MirrorCard;
+		}
+	}
+
+	return null;
 }
 
 /**
@@ -176,7 +195,19 @@ export async function lookupCardByCardNumberFuzzy(
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const all = (await db.getAll(STORE_CARDS)) as MirrorCard[];
-	const candidates = all.filter((c) => c.game_id === game && c.card_number === cardNumber);
+
+	// Build the set of card_number forms to consider. Wonders printed cards
+	// show fractional ("316/401") while the catalog indexes integer ("316"),
+	// so add the integer prefix as a fallback whenever the input is fractional.
+	const cnVariants = new Set<string>([cardNumber]);
+	if (cardNumber.includes('/')) {
+		const integerForm = cardNumber.split('/')[0];
+		if (integerForm) cnVariants.add(integerForm);
+	}
+
+	const candidates = all.filter(
+		(c) => c.game_id === game && cnVariants.has(c.card_number)
+	);
 	if (candidates.length === 0) return null;
 	if (candidates.length === 1) return candidates[0];
 
