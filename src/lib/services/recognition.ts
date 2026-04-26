@@ -753,14 +753,50 @@ export async function recognizeCard(
 		per_frame_results: unknown[];
 		augmentation_set_version: string;
 	} | null = null;
+	// Hoisted so the Tier 2 fallback's decisionContext merge can reference it
+	// even when liveOCREnabled is false.
+	let canonicalAttempts: Array<{
+		game: 'boba' | 'wonders';
+		hit: boolean;
+		confidence: number;
+		ocr_strategy: import('./tier1-canonical').CanonicalResult['ocrStrategy'];
+	}> = [];
 	if (liveOCREnabled) {
 		onTierChange?.(1);
 		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
 		try {
 			const { runCanonicalTier1 } = await import('./tier1-canonical');
 			const { toParallelName } = await import('$lib/data/wonders-parallels');
-			const game = (gameHint === 'wonders' ? 'wonders' : 'boba') as 'boba' | 'wonders';
-			const canonical = await runCanonicalTier1(workingBitmap, game);
+
+			// Auto-detect runs Tier 1 against both games sequentially. Explicit
+			// gameHint runs only that game. We commit to whichever game finds
+			// a card; if neither hits we keep the last game tried for
+			// downstream TTA / Tier 2 telemetry continuity. Per-game attempts
+			// are logged in decision_context.canonical_attempts so we can
+			// measure the auto-detect win distribution post-deploy.
+			const gamesToTry: Array<'boba' | 'wonders'> = isAutoDetect
+				? ['boba', 'wonders']
+				: gameHint === 'wonders'
+					? ['wonders']
+					: ['boba'];
+
+			let canonical!: import('./tier1-canonical').CanonicalResult;
+			let game: 'boba' | 'wonders' = gamesToTry[0];
+			canonicalAttempts = [];
+
+			for (const candidateGame of gamesToTry) {
+				const attempt = await runCanonicalTier1(workingBitmap, candidateGame);
+				canonical = attempt;
+				game = candidateGame;
+				canonicalAttempts.push({
+					game: candidateGame,
+					hit: !!attempt.card,
+					confidence: attempt.confidence,
+					ocr_strategy: attempt.ocrStrategy
+				});
+				if (attempt.card) break;
+			}
+
 			canonicalTelemetry = {
 				perTask: canonical.perTask,
 				ocrStrategy: canonical.ocrStrategy
@@ -799,6 +835,8 @@ export async function recognizeCard(
 					live_session: liveSnap,
 					canonical_result: canonical.perTask,
 					canonical_ocr_strategy: canonical.ocrStrategy,
+					canonical_attempts: canonicalAttempts,
+					winning_game: game,
 					live_vs_canonical: {
 						live_ran: !!live,
 						agreed: liveAgreed,
@@ -869,6 +907,8 @@ export async function recognizeCard(
 							const ttaDecisionCtx: Record<string, unknown> = {
 								canonical_result: canonical.perTask,
 								canonical_ocr_strategy: canonical.ocrStrategy,
+								canonical_attempts: canonicalAttempts,
+								winning_game: game,
 								upload_tta: ttaTelemetry,
 								...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 							};
@@ -953,7 +993,8 @@ export async function recognizeCard(
 				...(canonicalTelemetry
 					? {
 						canonical_result: canonicalTelemetry.perTask,
-						canonical_ocr_strategy: canonicalTelemetry.ocrStrategy
+						canonical_ocr_strategy: canonicalTelemetry.ocrStrategy,
+						canonical_attempts: canonicalAttempts
 					}
 					: {}),
 				...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {}),
