@@ -12,7 +12,11 @@ import {
 	getBobaHeroes,
 	getWondersNames
 } from './catalog-mirror';
-import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
+import {
+	normalizeOcrName,
+	levenshtein,
+	stripCardNameStamps
+} from '$lib/utils/normalize-ocr-name';
 
 export type TaskKind = 'card_number' | 'name' | 'parallel';
 
@@ -165,7 +169,15 @@ export class ConsensusBuilder {
 			return null;
 		}
 		if (!raw.trim()) return null;
-		const rawNorm = normalizeOcrName(raw);
+
+		// Strip card-edition stamps ("FIRST EDITION" etc.) that the OCR reads
+		// alongside the hero name in the top-left region. Without this, the
+		// concatenated string (e.g. "BURRULIOUS FIRST EDITION") blows past
+		// the Levenshtein threshold for short hero names.
+		const stripped = stripCardNameStamps(raw);
+		if (!stripped) return null;
+
+		const rawNorm = normalizeOcrName(stripped);
 		if (!rawNorm) return null;
 		let best: { name: string; dist: number } | null = null;
 		for (const known of shortlist) {
