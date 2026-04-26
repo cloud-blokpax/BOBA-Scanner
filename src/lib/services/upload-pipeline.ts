@@ -20,7 +20,7 @@
  * `WONDERS_PARALLEL_NAMES`. Short codes must never leave this module.
  */
 
-import { initPaddleOCR, ocrRegion } from './paddle-ocr';
+import { initPaddleOCR, ocrRegion, pickTopBox } from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
 import {
 	classifyWondersParallel,
@@ -106,29 +106,35 @@ export async function runUploadPipeline(
 				name: { text: '', confidence: 0 }
 			};
 
-			if (numRes.status === 'fulfilled' && numRes.value.text) {
-				builder.addVote({
-					task: 'card_number',
-					rawValue: numRes.value.text,
-					confidence: numRes.value.confidence,
-					sessionId: 1
-				});
-				frameRecord.cardNumber = {
-					text: numRes.value.text,
-					confidence: numRes.value.confidence
-				};
+			if (numRes.status === 'fulfilled') {
+				const top = pickTopBox(numRes.value.boxes);
+				if (top?.text) {
+					builder.addVote({
+						task: 'card_number',
+						rawValue: top.text,
+						confidence: top.score || numRes.value.confidence,
+						sessionId: 1
+					});
+					frameRecord.cardNumber = {
+						text: top.text,
+						confidence: top.score || numRes.value.confidence
+					};
+				}
 			}
-			if (nameRes.status === 'fulfilled' && nameRes.value.text) {
-				builder.addVote({
-					task: 'name',
-					rawValue: nameRes.value.text,
-					confidence: nameRes.value.confidence,
-					sessionId: 1
-				});
-				frameRecord.name = {
-					text: nameRes.value.text,
-					confidence: nameRes.value.confidence
-				};
+			if (nameRes.status === 'fulfilled') {
+				const top = pickTopBox(nameRes.value.boxes);
+				if (top?.text) {
+					builder.addVote({
+						task: 'name',
+						rawValue: top.text,
+						confidence: top.score || nameRes.value.confidence,
+						sessionId: 1
+					});
+					frameRecord.name = {
+						text: top.text,
+						confidence: top.score || nameRes.value.confidence
+					};
+				}
 			}
 			if (parallelRes.status === 'fulfilled' && parallelRes.value) {
 				builder.addVote({

@@ -1,11 +1,14 @@
 /**
  * Rule-based Wonders parallel classifier.
  *
- * Rules, in order (most-distinctive first):
- *   1. FF: no border (edge-density on perimeter ~ edge-density on center)
- *   2. OCM: left-edge serial "NN/99" visible in full-frame OCR output
- *   3. Stonefoil / 1-of-1: "ONE OF ONE" text visible (OCR drops middle "OF"
+ * Rules, in order (positive-signal text matches first, pixel heuristics
+ * as a fallback):
+ *   1. OCM: left-edge fractional serial in any print run (/10, /50, /99, /250…)
+ *   2. Stonefoil / 1-of-1: left-edge "ONE OF ONE" text (OCR drops middle "OF"
  *      on gold-on-black kerning; regex accepts "ONEONE" too)
+ *   3. FF: no border (edge-density on perimeter ~ edge-density on center).
+ *      Fallback only — holographic OCM foils suppress perimeter contrast and
+ *      would be mis-labeled FF if this ran before the OCM serial check.
  *   4. CF: diagonal hatching in border (FFT — stubbed, 2.1a.1 follow-up)
  *   5. Default: paper
  *
@@ -16,7 +19,7 @@
  * before persisting.
  */
 
-import { ocrFullFrame } from './paddle-ocr';
+import { ocrFullFrame, boxCenterNormalized, type OCRBox } from './paddle-ocr';
 import type { WondersParallelCode, WondersParallelName } from '$lib/data/wonders-parallels';
 import { WONDERS_PARALLEL_CODE_TO_NAME } from '$lib/data/wonders-parallels';
 
@@ -47,54 +50,104 @@ export interface ParallelResult {
 }
 
 /**
- * Pure rule helpers exposed for unit tests. classifyWondersParallel
- * wraps these with the impure bitmap-access pieces (edge-density
- * measurement, OCR call). Each returns the classifier short code if the
- * rule fires, or null if it doesn't.
+ * Position-based OCM serial detection.
+ *
+ * OCM (Orbital Color Match) cards have a print-run serial (e.g. "66/99",
+ * "12/50", "3/10", "247/250") rendered vertically on the LEFT EDGE of the
+ * card, in the upper-to-middle Y range. The serial uses any print-run
+ * denominator the publisher chooses — known forms include /10, /50, /75,
+ * /99, /250 and there is no exhaustive list, so we accept any
+ * \d{1,4}/\d{1,4} pattern with sane numerator/denominator semantics
+ * (numerator >= 1, denominator >= 1, numerator <= denominator).
+ *
+ * Wonders card NUMBERS are also fractional ("316/401", "1/402" — 408 rows
+ * in the catalog use this form). The disambiguator is position: card
+ * numbers print horizontally at the bottom of the card; OCM serials print
+ * vertically on the left edge. We require the box centroid to satisfy
+ * x < OCM_LEFT_EDGE_MAX and y < OCM_BOTTOM_EXCLUSION_MIN before accepting
+ * the box as a serial candidate.
+ *
+ * Returns the canonical "N/D" form when a left-edge serial is found, null
+ * otherwise.
  */
-export function matchOCMSerial(ocrText: string): string | null {
-	const textUpper = ocrText.toUpperCase();
-	const ocmMatch = textUpper.match(/\b(\d{1,3})\s*\/\s*99\b/);
-	return ocmMatch ? `${ocmMatch[1]}/99` : null;
+const OCM_LEFT_EDGE_MAX = 0.15; // box centroid x < 15% of card width
+const OCM_BOTTOM_EXCLUSION_MIN = 0.85; // and y < 85% of card height (excludes bottom card_number)
+const OCM_FRACTION_RE = /\b(\d{1,4})\s*\/\s*(\d{1,4})\b/;
+
+export function matchOCMSerial(
+	boxes: OCRBox[],
+	bitmapW: number,
+	bitmapH: number
+): string | null {
+	for (const b of boxes) {
+		if (!b.text) continue;
+		const center = boxCenterNormalized(b.box, bitmapW, bitmapH);
+		if (!center) continue;
+		if (center.x >= OCM_LEFT_EDGE_MAX) continue;
+		if (center.y >= OCM_BOTTOM_EXCLUSION_MIN) continue;
+
+		const m = b.text.toUpperCase().match(OCM_FRACTION_RE);
+		if (!m) continue;
+		const num = parseInt(m[1], 10);
+		const den = parseInt(m[2], 10);
+		if (!Number.isFinite(num) || !Number.isFinite(den)) continue;
+		if (num < 1 || den < 1) continue;
+		if (num > den) continue; // "63 of 99" yes, "401 of 316" no — that's a card_number
+		return `${num}/${den}`;
+	}
+	return null;
 }
 
-export function matchOneOfOne(ocrText: string): boolean {
-	const textUpper = ocrText.toUpperCase();
-	const textNoSpace = textUpper.replace(/\s+/g, '');
-	return /ONE\s*(?:OF\s*)?ONE/.test(textUpper) || /ONEONE/.test(textNoSpace);
+/**
+ * Position-based Stonefoil "ONE OF ONE" detection.
+ *
+ * Stonefoil cards have "ONE OF ONE" rendered in gold-on-black on the left
+ * edge. PaddleOCR consistently drops the middle "OF" against the kerned
+ * gold typeface, so we accept "ONEONE" as well as "ONE OF ONE". Same
+ * left-edge position filter as OCM — the gold-on-black text doesn't print
+ * elsewhere on the card.
+ */
+const SF_LEFT_EDGE_MAX = 0.15;
+
+export function matchOneOfOne(
+	boxes: OCRBox[],
+	bitmapW: number,
+	bitmapH: number
+): boolean {
+	for (const b of boxes) {
+		if (!b.text) continue;
+		const center = boxCenterNormalized(b.box, bitmapW, bitmapH);
+		if (!center) continue;
+		if (center.x >= SF_LEFT_EDGE_MAX) continue;
+
+		const upper = b.text.toUpperCase();
+		const noSpace = upper.replace(/\s+/g, '');
+		if (/ONE\s*(?:OF\s*)?ONE/.test(upper) || /ONEONE/.test(noSpace)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<ParallelResult> {
 	const evidence: ParallelResult['evidence'] = {};
 
-	// Rule 1: FF detection via border edge-density ratio (pixel-level)
-	const ffScore = await measureBorderVsCenterEdgeRatio(bitmap);
-	evidence.border_center_edge_ratio = Number(ffScore.toFixed(3));
-	if (ffScore < 1.25) {
-		// Border doesn't differ much from center → art bleeds to edges → FF
-		return {
-			parallel: 'ff',
-			ruleFired: 'ff_no_border',
-			confidence: Math.min(1, (1.4 - ffScore) * 2),
-			evidence
-		};
-	}
-
-	// Rules 2 + 3: one full-frame OCR powers both the OCM NN/99 serial lookup
-	// and the Stonefoil ONE-OF-ONE text lookup. Cheaper than two region reads
-	// and more robust to tiny left-edge coord drift.
-	let fullFrameText = '';
+	// Run full-frame OCR FIRST. Powers the positive-signal text rules
+	// (OCM serial + Stonefoil ONE-OF-ONE). Distinct print-run serials
+	// (/10, /50, /75, /99, /250, ...) and "ONE OF ONE" gold-on-black
+	// text are the most distinctive evidence Wonders parallels carry —
+	// they should win before we fall back to pixel-level border heuristics.
+	let fullFrameBoxes: OCRBox[] = [];
 	try {
 		const ocr = await ocrFullFrame(bitmap, { maxLongEdge: 1800 });
-		fullFrameText = ocr.boxes.map((b) => b.text).join(' | ');
+		fullFrameBoxes = ocr.boxes;
 		evidence.full_frame_ocr_box_count = ocr.boxes.length;
 	} catch (err) {
 		evidence.full_frame_ocr_error = String(err);
 	}
 
-	// Rule 2: OCM — left-edge "NN/99" serial.
-	// Validated on Cast Out OCM: OCR read "66/99" at conf 0.97.
-	const ocmSerial = matchOCMSerial(fullFrameText);
+	// Rule 1 (was Rule 2): OCM — left-edge fractional serial in any print run.
+	const ocmSerial = matchOCMSerial(fullFrameBoxes, bitmap.width, bitmap.height);
 	if (ocmSerial) {
 		evidence.ocm_serial = ocmSerial;
 		return {
@@ -105,11 +158,8 @@ export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<Para
 		};
 	}
 
-	// Rule 3: Stonefoil / 1-of-1 — "ONE OF ONE" text on left-edge strip.
-	// Validated on Cast Out Stonefoil: OCR read "ONEONE" at conf 0.99 — the
-	// middle "OF" is consistently dropped in the gold-on-black kerned text,
-	// so the regex accepts both forms.
-	if (matchOneOfOne(fullFrameText)) {
+	// Rule 2 (was Rule 3): Stonefoil — "ONE OF ONE" / "ONEONE" left-edge text.
+	if (matchOneOfOne(fullFrameBoxes, bitmap.width, bitmap.height)) {
 		evidence.one_of_one_detected = true;
 		return {
 			parallel: 'sf',
@@ -119,15 +169,28 @@ export async function classifyWondersParallel(bitmap: ImageBitmap): Promise<Para
 		};
 	}
 
-	// Rule 4: CF diagonal hatching — stubbed for v1.
-	// TODO(2.1a.1): FFT peak detection on top/bottom border strips.
+	// Rule 3 (was Rule 1): FF — border edge-density ratio (pixel-level).
+	// Negative-signal fallback. Only fires when no positive text signal lit up,
+	// preventing the previous failure mode where holographic OCM cards (which
+	// suppress perimeter edge contrast) were mis-labeled FF before their /99
+	// serial got a chance to be detected.
+	const ffScore = await measureBorderVsCenterEdgeRatio(bitmap);
+	evidence.border_center_edge_ratio = Number(ffScore.toFixed(3));
+	if (ffScore < 1.25) {
+		return {
+			parallel: 'ff',
+			ruleFired: 'ff_no_border',
+			confidence: Math.min(1, (1.4 - ffScore) * 2),
+			evidence
+		};
+	}
+
+	// Rule 4: CF diagonal hatching — stubbed (TODO 2.1a.1: FFT peak detection).
 
 	// Rule 5: default to paper.
 	return {
 		parallel: 'paper',
 		ruleFired: 'default_paper',
-		// Conservative — we didn't affirmatively detect paper, we ruled out
-		// FF / OCM / Stonefoil via the distinctive signals.
 		confidence: 0.7,
 		evidence
 	};
