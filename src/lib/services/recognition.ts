@@ -46,6 +46,8 @@ import {
 	recordScan as writerRecordScan,
 	updateScanOutcome as writerUpdateScanOutcome
 } from './scan-writer';
+import { cropToCanonical } from './constrained-crop';
+import { detectCardRect, type CardRect } from './upload-card-detector';
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
 import { checkpoint } from './scan-checkpoint';
@@ -406,10 +408,39 @@ export async function recognizeCard(
 		console.debug('[scan] computeQualitySignals failed, continuing:', err);
 	}
 
-	// Session 1.5: the caller (Scanner.svelte) already cropped `bitmap` to the
-	// viewfinder region via cropToCanonical, so the Tier 1/2 hashes/OCR run on
-	// a known-aspect frame. Tier 2 still sees this same bitmap.
-	const workingBitmap = bitmap;
+	// Session 1.5: live captures are already cropped to the viewfinder rect by
+	// Scanner.svelte before scanImage. Uploads are NOT — they arrive as raw
+	// phone photos with the card embedded somewhere. For Files, run edge
+	// detection to find the card rectangle and produce an equivalent
+	// 1500×2100 cropped frame. Without this, region-based OCR lands on photo
+	// coordinates (background, hands, margins) instead of card coordinates
+	// and the upload path can never hit Tier 1.
+	let workingBitmap: ImageBitmap = bitmap;
+	let croppedBitmapOwned: ImageBitmap | null = null;
+	let detectedCardRect: CardRect | null = null;
+	if (imageSource instanceof File) {
+		try {
+			checkpoint(traceId, 'card_detect:start', performance.now() - startTime);
+			detectedCardRect = await detectCardRect(bitmap);
+			const cropped = await cropToCanonical(bitmap, detectedCardRect);
+			croppedBitmapOwned = cropped;
+			workingBitmap = cropped;
+			checkpoint(traceId, 'card_detect:done', performance.now() - startTime, {
+				method: detectedCardRect.method,
+				x: detectedCardRect.x,
+				y: detectedCardRect.y,
+				width: detectedCardRect.width,
+				height: detectedCardRect.height
+			});
+		} catch (err) {
+			checkpoint(traceId, 'card_detect:threw', performance.now() - startTime, {
+				error: err instanceof Error ? err.message : String(err)
+			});
+			console.warn('[scan] card-rect detection failed, using full photo:', err);
+			// workingBitmap stays = bitmap; pipeline continues with the
+			// uncropped photo (matches pre-fix behavior — graceful degrade).
+		}
+	}
 
 	// CRITICAL: check the bitmap is still valid BEFORE passing it to tiers.
 	// If a prior worker call transferred ownership, it's closed and subsequent
@@ -427,6 +458,9 @@ export async function recognizeCard(
 		});
 		if (ownsBitmap) {
 			try { bitmap.close(); } catch { /* ignore */ }
+		}
+		if (croppedBitmapOwned) {
+			try { croppedBitmapOwned.close(); } catch { /* ignore */ }
 		}
 		// Bitmap invalid runs BEFORE openScanRow so there's no row to patch.
 		return {
@@ -489,6 +523,9 @@ export async function recognizeCard(
 			patchAbandonedScan(scanIdPromise, 'low_quality_rejected', startTime,
 				`blur_variance=${blurResult.variance.toFixed(1)}`);
 			if (ownsBitmap) bitmap.close();
+			if (croppedBitmapOwned) {
+				try { croppedBitmapOwned.close(); } catch { /* ignore */ }
+			}
 			return {
 				card_id: null,
 				card: null,
@@ -504,6 +541,22 @@ export async function recognizeCard(
 	// it on every exit path — including offline returns that happen before
 	// Tier 2 would otherwise be declared.
 	const tier2Tel = emptyTier2Telemetry();
+
+	// Card-detection telemetry — surfaces in scans.decision_context so we
+	// can measure detection hit rate vs centered_fallback rate post-deploy
+	// and track Tier 1 hit rate as a function of detection method.
+	const cardDetectContext: Record<string, unknown> | null = detectedCardRect
+		? {
+			method: detectedCardRect.method,
+			rect: {
+				x: detectedCardRect.x,
+				y: detectedCardRect.y,
+				width: detectedCardRect.width,
+				height: detectedCardRect.height
+			},
+			source_dimensions: { width: bitmap.width, height: bitmap.height }
+		}
+		: null;
 
 	// Helper to record scan result to history and auto-tag before returning
 	function finalize(result: ScanResult): ScanResult {
@@ -750,7 +803,8 @@ export async function recognizeCard(
 						live_ran: !!live,
 						agreed: liveAgreed,
 						divergent_fields: live ? divergent : null
-					}
+					},
+					...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 				};
 				const tier1Result: ScanResult = {
 					card_id: canonical.card.id,
@@ -815,7 +869,8 @@ export async function recognizeCard(
 							const ttaDecisionCtx: Record<string, unknown> = {
 								canonical_result: canonical.perTask,
 								canonical_ocr_strategy: canonical.ocrStrategy,
-								upload_tta: ttaTelemetry
+								upload_tta: ttaTelemetry,
+								...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 							};
 							const ttaResult: ScanResult = {
 								card_id: tta.card.id,
@@ -892,7 +947,7 @@ export async function recognizeCard(
 		// Preserve what canonical / TTA saw so we can debug which stage
 		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.
-		if (canonicalTelemetry || ttaTelemetry) {
+		if (canonicalTelemetry || ttaTelemetry || cardDetectContext) {
 			tier2Result.decisionContext = {
 				...(tier2Result.decisionContext ?? {}),
 				...(canonicalTelemetry
@@ -901,7 +956,8 @@ export async function recognizeCard(
 						canonical_ocr_strategy: canonicalTelemetry.ocrStrategy
 					}
 					: {}),
-				...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {})
+				...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {}),
+				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 			};
 		}
 	}

@@ -168,12 +168,19 @@ function buildOCRResult(raw: any): OCRResult {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const boxes = ((raw?.lines || raw || []) as any[]).map((l: any) => ({
 		text: (l.text || '').trim(),
+		// `@gutenye/ocr-common` v1.4.8 emits `mean` (avg per-character
+		// confidence). Verified against the package's published
+		// TypeScript types and Recognition.decodeText output.
+		// `score`/`confidence` retained as forward-compat fallbacks if
+		// the field gets renamed in a future release.
 		score:
-			typeof l.score === 'number'
-				? l.score
-				: typeof l.confidence === 'number'
-					? l.confidence
-					: 0,
+			typeof l.mean === 'number'
+				? l.mean
+				: typeof l.score === 'number'
+					? l.score
+					: typeof l.confidence === 'number'
+						? l.confidence
+						: 0,
 		box: l.box || l.points || []
 	}));
 	const text = boxes
