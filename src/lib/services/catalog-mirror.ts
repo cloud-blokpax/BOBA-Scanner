@@ -6,7 +6,11 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { getSupabase } from './supabase';
-import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
+import {
+	normalizeOcrName,
+	levenshtein,
+	stripCardNameStamps
+} from '$lib/utils/normalize-ocr-name';
 
 // Re-exported from a side-effect-free module so unit tests can import
 // the pure helpers without pulling IDB + Supabase transitively.
@@ -176,7 +180,12 @@ export async function lookupCardByCardNumberFuzzy(
 	if (candidates.length === 0) return null;
 	if (candidates.length === 1) return candidates[0];
 
-	const normalized = normalizeOcrName(rawName);
+	// Strip card-edition stamps before fuzzy matching. OCR reads stamp +
+	// hero name as one string (e.g. "BURRULIOUS FIRST EDITION"); without
+	// this strip the trailing stamp blows past the threshold even for
+	// otherwise-clean reads.
+	const stripped = stripCardNameStamps(rawName);
+	const normalized = normalizeOcrName(stripped);
 	let best: { card: MirrorCard; dist: number } | null = null;
 	for (const c of candidates) {
 		const catalogName = (game === 'boba' ? c.hero_name : c.name) || '';
