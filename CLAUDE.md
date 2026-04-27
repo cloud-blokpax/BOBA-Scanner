@@ -511,6 +511,7 @@ Card-Scanner/
 │   ├── parallel-classifier-rules.test.ts # Unit: Wonders parallel classifier pure rules (Phase 2.1a)
 │   ├── normalize-ocr-name.test.ts       # Unit: OCR name normalization + Levenshtein collapse (Phase 2.1a)
 │   ├── wonders-parallels.test.ts        # Unit: Wonders parallel code↔name mapping + assert/coerce helpers
+│   ├── ebay-query.test.ts               # Unit: BoBA eBay OR-grouped query builder + hardened filter
 │   ├── blank-cell-detector.test.ts      # Unit: binder blank-cell detection (Phase 2.2)
 │   ├── dragon-points.test.ts            # Unit: Wonders Dragon Points scoring engine
 │   ├── hash-parity.test.ts              # Unit: client/server dHash + pHash byte-parity gate
@@ -690,6 +691,34 @@ The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_
 
 **Flag.** `image_harvest_in_price_cron_v1` (default OFF, seeded by `migrations/022_image_harvest_flag.sql`) gates the legacy price-harvest piggyback. Flip ON via the admin Features tab if the dedicated endpoint is ever retired and the inline path needs to come back. The cron reads the flag once per invocation via `isFeatureEnabledGlobally()` in `src/lib/server/feature-flags.ts` (30s TTL cache).
 
+**eBay search query (BoBA).** `buildEbayQuery()` in `src/lib/server/ebay-query.ts` builds a boolean OR-grouped expression validated against ~40 real seller titles:
+
+```
+(hero_name, athlete_name) "Bo Jackson Battle Arena" (card_number, "parallel_prefix" weapon)
+```
+
+- `(hero, athlete)` — at least one identity match required.
+- `"Bo Jackson Battle Arena"` — quoted set anchor, always present.
+- `(card_number, "parallel_prefix" weapon)` — at least one discriminator. Second arm is compound (parallel-prefix AND weapon together).
+
+Notes:
+- 350-char `q=` limit on eBay's Browse API. The builder length-guards at 340 and drops the discriminator group when over budget.
+- Compound OR-arms `(a, "b" c)` are NOT documented as supported by eBay; we are deliberately trialing the form. Verify in `price_harvest_log` before assuming it parses correctly. If recall collapses, fall back to `(card_number, "parallel_prefix")` (simple-OR) or to `card_number` alone — see Phase 6 dial-downs in the harvester PR.
+- Paper cards are detected case-insensitively and produce no parallel arm — discriminator collapses to `card_number` alone.
+- BoBA parallels are mapped through `PARALLEL_PREFIX_MAP` to drop the trailing `Battlefoil` suffix sellers don't use (e.g. `"80's Rad Battlefoil"` → `RAD`, `"Headlines Battlefoil"` → `Headlines`, `"Blue Battlefoil"` → `Blue`). Unmapped parallels fall back to a regex strip of `\s*Battlefoil\s*$`.
+
+**eBay result filter (BoBA).** `filterRelevantListings()` in the same file is hardened against four contamination categories observed in real eBay search:
+
+1. **Hard rejects** (`TITLE_REJECT_PATTERNS`): graded slabs (`PSA \d`, `BGS \d`, `slab`, `graded`), sealed product (`hobby box`, `blaster box`, `factory sealed`, `jumbo pack`), lots/multiples/bundles (`lot of`, `complete set`, `\d+ cards`), and vintage Bo Jackson memorabilia (`topps`, `fleer`, `donruss`, `royals`, `auburn`, `starting lineup`, `bobblehead`, `jersey`).
+2. **Set anchor**: title must contain `battle arena`.
+3. **Identity gate**: title must mention hero OR athlete OR card number.
+4. **Weapon disambiguation**: drop listings whose title mentions a different weapon than the catalog (e.g. drop a Bojax-Fire title when the catalog row is Bojax-Ice).
+5. **Parallel gate** (when card has a non-paper parallel): title must include the parallel name OR its short search prefix.
+
+Graded listings are dropped from the raw bucket entirely. Capturing them into a separate graded price bucket is out of scope for v1.
+
+**Parallel write path.** `cards.parallel` (the rich, per-card catalog name like `Battlefoil` or `Headlines Battlefoil`) is the source of truth. The `get_harvest_candidates` RPC returns both `card_parallel_name` (cards.parallel) and a per-candidate synthetic `parallel`. The harvester's normalizer (`getNextCandidates` in `src/routes/api/cron/price-harvest/+server.ts`) prefers `card_parallel_name` so the actual catalog parallel reaches both writers — `price_cache.parallel` and `price_harvest_log.parallel`. Pre-fix logs all wrote `parallel: 'paper'` because the synthetic value won; the fallback chain is now `card_parallel_name → parallel → 'paper'`.
+
 ### Diagnostic Logging
 
 Every observable failure in the app — server endpoint catches, client window errors, scan-writer fire-and-forgets, harvester upserts, eBay policy creates, Vercel runtime crashes — feeds into a single `public.app_events` table, fingerprinted for dedup, and reviewed via the admin Triage tab.
@@ -724,7 +753,7 @@ Every observable failure in the app — server endpoint catches, client window e
 
 The test suite uses Vitest with three tiers:
 
-- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`, `blank-cell-detector.test.ts`, `consensus-builder.test.ts`, `diagnostics.test.ts`, `dragon-points.test.ts`, `hash-parity.test.ts`, `normalize-ocr-name.test.ts`, `parallel-classifier-rules.test.ts`, `wonders-parallels.test.ts`
+- **Unit tests**: `card-db.test.ts`, `ocr-extract.test.ts`, `rate-limit.test.ts`, `deck-validator.test.ts`, `pricing.test.ts`, `fuzzy-match.test.ts`, `playbook-engine.test.ts`, `sync.test.ts`, `blank-cell-detector.test.ts`, `consensus-builder.test.ts`, `diagnostics.test.ts`, `dragon-points.test.ts`, `ebay-query.test.ts`, `hash-parity.test.ts`, `normalize-ocr-name.test.ts`, `parallel-classifier-rules.test.ts`, `wonders-parallels.test.ts`
 - **Integration tests**: `api-price.integration.test.ts`, `api-scan.integration.test.ts`, `api-grade.integration.test.ts` — test API routes with mocked dependencies
 - **E2E tests**: `auth-guard.e2e.test.ts`, `recognition-pipeline.e2e.test.ts`
 - **Architecture tests** (`tests/architecture/`): `multi-game-prompt.test.ts`, `param-matcher.test.ts`, `resolver.test.ts` — guard invariants about the multi-game system that can't be enforced by types alone
