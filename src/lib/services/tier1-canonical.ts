@@ -14,7 +14,14 @@
  * canonical result wins.
  */
 
-import { initPaddleOCR, ocrRegion, ocrFullFrame } from './paddle-ocr';
+import {
+	initPaddleOCR,
+	ocrRegion,
+	ocrFullFrame,
+	boxCenterNormalized,
+	regionContains,
+	pickTopBox
+} from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
 import { classifyWondersParallel } from './parallel-classifier';
 import { ConsensusBuilder } from './consensus-builder';
@@ -166,32 +173,48 @@ async function runRegionOCR(
 
 	const builder = new ConsensusBuilder(1, game);
 	if (numRes.status === 'fulfilled') {
-		builder.addVote({
-			task: 'card_number',
-			rawValue: numRes.value.text,
-			confidence: numRes.value.confidence,
-			sessionId: 1
-		});
+		// card_number regions usually return a single box; pickTopBox is a
+		// no-op there. Kept for symmetry with the name path.
+		const top = pickTopBox(numRes.value.boxes);
+		if (top?.text) {
+			builder.addVote({
+				task: 'card_number',
+				rawValue: top.text,
+				confidence: top.score || numRes.value.confidence,
+				sessionId: 1
+			});
+		}
 	}
 	if (nameRes.status === 'fulfilled') {
-		builder.addVote({
-			task: 'name',
-			rawValue: nameRes.value.text,
-			confidence: nameRes.value.confidence,
-			sessionId: 1
-		});
+		// Hero name is always the top line; edition/subtitle stamps below
+		// it ("FIRST EDITION", "WORLD CHAMPIONS DEBUT", future variants)
+		// are correctly excluded by taking the top-Y box only.
+		const top = pickTopBox(nameRes.value.boxes);
+		if (top?.text) {
+			builder.addVote({
+				task: 'name',
+				rawValue: top.text,
+				confidence: top.score || nameRes.value.confidence,
+				sessionId: 1
+			});
+		}
 	}
 	const consensus = builder.getConsensus();
 
+	const numTop = numRes.status === 'fulfilled' ? pickTopBox(numRes.value.boxes) : null;
+	const nameTop = nameRes.status === 'fulfilled' ? pickTopBox(nameRes.value.boxes) : null;
+
 	return {
 		cardNumber: {
-			raw: numRes.status === 'fulfilled' ? numRes.value.text : '',
-			confidence: numRes.status === 'fulfilled' ? numRes.value.confidence : 0,
+			raw: numTop?.text || (numRes.status === 'fulfilled' ? numRes.value.text : ''),
+			confidence:
+				numTop?.score || (numRes.status === 'fulfilled' ? numRes.value.confidence : 0),
 			validated: consensus.cardNumber?.value || null
 		},
 		name: {
-			raw: nameRes.status === 'fulfilled' ? nameRes.value.text : '',
-			confidence: nameRes.status === 'fulfilled' ? nameRes.value.confidence : 0,
+			raw: nameTop?.text || (nameRes.status === 'fulfilled' ? nameRes.value.text : ''),
+			confidence:
+				nameTop?.score || (nameRes.status === 'fulfilled' ? nameRes.value.confidence : 0),
 			collapsed: consensus.name?.value || null
 		}
 	};
@@ -213,38 +236,6 @@ function expandRegion(
 	const w = Math.min(1 - x, r.w + 2 * padW);
 	const h = Math.min(1 - y, r.h + 2 * padH);
 	return { x, y, w, h };
-}
-
-/**
- * Compute the centroid of a PaddleOCR detection polygon, returned in
- * normalized [0,1] coordinates. Returns null if the polygon is empty
- * or malformed.
- */
-function boxCenterNormalized(
-	boxPoints: number[][],
-	bitmapW: number,
-	bitmapH: number
-): { x: number; y: number } | null {
-	if (!Array.isArray(boxPoints) || boxPoints.length === 0) return null;
-	let sx = 0;
-	let sy = 0;
-	let n = 0;
-	for (const p of boxPoints) {
-		if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
-			sx += p[0];
-			sy += p[1];
-			n++;
-		}
-	}
-	if (n === 0) return null;
-	return { x: sx / n / bitmapW, y: sy / n / bitmapH };
-}
-
-function regionContains(
-	r: { x: number; y: number; w: number; h: number },
-	p: { x: number; y: number }
-): boolean {
-	return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
 /**

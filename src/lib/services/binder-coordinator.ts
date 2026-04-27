@@ -11,7 +11,7 @@
  * carry over onto a totally different card.
  */
 
-import { ocrRegion, isPaddleOCRReady } from './paddle-ocr';
+import { ocrRegion, isPaddleOCRReady, pickTopBox } from './paddle-ocr';
 import { REGIONS, regionToPixels } from './ocr-regions';
 import { classifyWondersParallel } from './parallel-classifier';
 import { ConsensusBuilder, type Consensus } from './consensus-builder';
@@ -191,21 +191,27 @@ export class BinderCoordinator {
 			this.game === 'wonders' ? classifyWondersParallel(cellBitmap) : Promise.resolve(null)
 		]);
 
-		if (numRes.status === 'fulfilled' && numRes.value.text) {
-			cell.builder.addVote({
-				task: 'card_number',
-				rawValue: numRes.value.text,
-				confidence: numRes.value.confidence,
-				sessionId: cell.sessionId
-			});
+		if (numRes.status === 'fulfilled') {
+			const top = pickTopBox(numRes.value.boxes);
+			if (top?.text) {
+				cell.builder.addVote({
+					task: 'card_number',
+					rawValue: top.text,
+					confidence: top.score || numRes.value.confidence,
+					sessionId: cell.sessionId
+				});
+			}
 		}
-		if (nameRes.status === 'fulfilled' && nameRes.value.text) {
-			cell.builder.addVote({
-				task: 'name',
-				rawValue: nameRes.value.text,
-				confidence: nameRes.value.confidence,
-				sessionId: cell.sessionId
-			});
+		if (nameRes.status === 'fulfilled') {
+			const top = pickTopBox(nameRes.value.boxes);
+			if (top?.text) {
+				cell.builder.addVote({
+					task: 'name',
+					rawValue: top.text,
+					confidence: top.score || nameRes.value.confidence,
+					sessionId: cell.sessionId
+				});
+			}
 		}
 		if (parallelRes.status === 'fulfilled' && parallelRes.value) {
 			cell.builder.addVote({

@@ -34,10 +34,86 @@ let _client: any = null;
 let _initPromise: Promise<any> | null = null;
 let _initStartedAt: number | null = null;
 
+/** A single PaddleOCR detection. `box` is a 4-point polygon in original-bitmap pixel coords. */
+export interface OCRBox {
+	text: string;
+	score: number;
+	box: number[][];
+}
+
 export interface OCRResult {
 	text: string;
 	confidence: number;
-	boxes: Array<{ text: string; score: number; box: number[][] }>;
+	boxes: OCRBox[];
+}
+
+/**
+ * Compute the centroid of a polygon in normalized [0,1] coordinates relative
+ * to the bitmap. Returns null if the polygon is empty or malformed. Used by
+ * region-containment checks and the parallel classifier's left-edge filter.
+ */
+export function boxCenterNormalized(
+	boxPoints: number[][],
+	bitmapW: number,
+	bitmapH: number
+): { x: number; y: number } | null {
+	if (!Array.isArray(boxPoints) || boxPoints.length === 0) return null;
+	let sx = 0;
+	let sy = 0;
+	let n = 0;
+	for (const p of boxPoints) {
+		if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+			sx += p[0];
+			sy += p[1];
+			n++;
+		}
+	}
+	if (n === 0) return null;
+	return { x: sx / n / bitmapW, y: sy / n / bitmapH };
+}
+
+/** True iff p is inside the [x, x+w] × [y, y+h] rectangle. All coords normalized. */
+export function regionContains(
+	r: { x: number; y: number; w: number; h: number },
+	p: { x: number; y: number }
+): boolean {
+	return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
+/**
+ * Pick the top-most box from a set of OCR detections, ordered by centroid Y.
+ *
+ * The hero name is always the top line in the name region; subtitles and
+ * edition stamps ("FIRST EDITION", "WORLD CHAMPIONS DEBUT", future variants)
+ * are always below it. Picking the top-Y box gives the hero name directly,
+ * avoiding the need for a stamp-pattern dictionary.
+ */
+export function pickTopBox(boxes: OCRBox[]): OCRBox | null {
+	if (!boxes || boxes.length === 0) return null;
+	let best: OCRBox | null = null;
+	let bestY = Infinity;
+	for (const b of boxes) {
+		if (!b.text) continue;
+		if (!Array.isArray(b.box) || b.box.length === 0) {
+			if (!best) best = b;
+			continue;
+		}
+		let sy = 0;
+		let n = 0;
+		for (const p of b.box) {
+			if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[1])) {
+				sy += p[1];
+				n++;
+			}
+		}
+		if (n === 0) continue;
+		const avgY = sy / n;
+		if (avgY < bestY) {
+			bestY = avgY;
+			best = b;
+		}
+	}
+	return best;
 }
 
 export async function initPaddleOCR(): Promise<void> {
@@ -166,7 +242,7 @@ export async function ocrFullFrame(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildOCRResult(raw: any): OCRResult {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const boxes = ((raw?.lines || raw || []) as any[]).map((l: any) => ({
+	const boxes: OCRBox[] = ((raw?.lines || raw || []) as any[]).map((l: any) => ({
 		text: (l.text || '').trim(),
 		// `@gutenye/ocr-common` v1.4.8 emits `mean` (avg per-character
 		// confidence). Verified against the package's published
@@ -184,11 +260,11 @@ function buildOCRResult(raw: any): OCRResult {
 		box: l.box || l.points || []
 	}));
 	const text = boxes
-		.map((b: { text: string }) => b.text)
+		.map((b) => b.text)
 		.join(' ')
 		.trim();
 	const confidence = boxes.length
-		? boxes.reduce((acc: number, b: { score: number }) => acc + b.score, 0) / boxes.length
+		? boxes.reduce((acc, b) => acc + b.score, 0) / boxes.length
 		: 0;
 	return { text, confidence, boxes };
 }
