@@ -204,7 +204,9 @@ Card-Scanner/
 │   │       │   ├── qstash-harvest/+server.ts       # QStash: Webhook-triggered harvesting (forwards to price-harvest)
 │   │       │   ├── image-harvest/+server.ts        # Cron: Hourly image-only backfill (CPU-throttled successor to the price-harvest piggyback)
 │   │       │   ├── vercel-log-mirror/+server.ts    # Cron: Pulls Vercel runtime logs into app_events (Phase 2.5)
-│   │       │   └── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
+│   │       │   ├── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
+│   │       │   ├── mark-stale-listings/+server.ts        # Cron: Marks ebay_card_images inactive after 7 days + prunes ebay_listing_observations after 30 days
+│   │       │   └── qstash-mark-stale-listings/+server.ts # QStash: Daily trigger for mark-stale-listings (recommended 04:00 UTC)
 │   │       ├── diag/+server.ts                     # POST: Client-side diagnostic event ingestion (window errors, fire-and-forget catches)
 │   │       ├── admin/
 │   │       │   ├── stats/+server.ts          # GET: Aggregated dashboard metrics, trends, alerts
@@ -400,7 +402,8 @@ Card-Scanner/
 │   │   │   ├── supabase-admin.ts   # Supabase admin/service-role client
 │   │   │   ├── validate.ts         # Request validation helpers
 │   │   │   └── harvester/
-│   │   │       └── image-capture.ts # runImageCapture(): hourly /api/cron/image-harvest worker (BoBA image backfill, bounded batch, eBay-quota-aware)
+│   │   │       ├── image-capture.ts # runImageCapture(): hourly /api/cron/image-harvest worker (BoBA image backfill, bounded batch, eBay-quota-aware)
+│   │   │       └── listing-observations.ts # persistObservations(): writes ebay_listing_observations + ebay_card_images per harvest cycle (best-effort, no HTTP fetch, no sharp)
 │   │   ├── services/
 │   │   │   │
 │   │   │   # Recognition pipeline — orchestrator + validation + workers
@@ -691,6 +694,8 @@ The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_
 
 **Flag.** `image_harvest_in_price_cron_v1` (default OFF, seeded by `migrations/022_image_harvest_flag.sql`) gates the legacy price-harvest piggyback. Flip ON via the admin Features tab if the dedicated endpoint is ever retired and the inline path needs to come back. The cron reads the flag once per invocation via `isFeatureEnabledGlobally()` in `src/lib/server/feature-flags.ts` (30s TTL cache).
 
+**Per-listing observation persistence.** The price-harvest cron also persists every (listing × cycle) snapshot to `ebay_listing_observations` and dedupes unique `(card_id, ebay_item_id)` rows into `ebay_card_images` via `persistObservations()` from `src/lib/server/harvester/listing-observations.ts`. Pure write-side: no HTTP fetches, no `sharp`, no Storage uploads — every column is parsed from the eBay JSON the harvester already has in memory. The filter-decision (`accepted_by_filter`, `rejection_reason`, `weapon_conflict`) is tagged onto each observation so rejected listings are queryable for filter regression hunting. Best-effort wrapper around the call — any insert failure is logged and swallowed so price harvesting (`price_cache` + `price_harvest_log`) is never blocked. Daily maintenance: `/api/cron/mark-stale-listings` (triggered by `qstash-mark-stale-listings`, recommended 04:00 UTC) flips images inactive after 7 days and prunes observations after 30 days.
+
 **eBay search query (BoBA).** `buildEbayQuery()` in `src/lib/server/ebay-query.ts` builds a boolean OR-grouped expression validated against ~40 real seller titles:
 
 ```
@@ -860,6 +865,8 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `variant_harvest_seed` | Queue for cards that need parallel-specific price harvesting | PK `(card_id, parallel)`, `reason`, `created_at` |
 | `scraping_test` | External pricing intelligence (third-party lookup results) | `id` (UUID PK), `card_id` (UUID UNIQUE, FK `cards`), `st_price/low/high`, `st_source_id`, `st_card_name`, `st_set_name`, `st_variant`, `st_rarity`, `st_image_url`, `st_raw_data` (JSONB), `st_updated`, `game_id` |
 | `ebay_api_log` | eBay quota tracking (per harvest run) | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (`running`/`quota_exhausted`/`no_cards_remaining`/`triggered_manual`) |
+| `ebay_listing_observations` | Per-listing snapshot from each harvest cycle. Populated by the price-harvest cron via `persistObservations()`. 30-day retention (see `prune_old_observations()`). Admin-only RLS. | `id` (BIGSERIAL PK), `observed_at`, `run_id`, `card_id` (FK `cards`), `game_id` (default `'boba'`), `parallel`, `ebay_item_id`, `title`, `price_value/currency`, `bid_count`, `current_bid_value`, `buying_options` (TEXT[]), `condition_label/_id`, `seller_username/_feedback_pct/_feedback_score`, `category_path`, `item_created_at/ends_at`, `priority_listing`, `marketing_original_value`, `image_url`, `item_web_url/_affiliate_url`, `accepted_by_filter`, `rejection_reason`, `weapon_conflict`, `raw_payload` (JSONB) |
+| `ebay_card_images` | Image dedupe table — one row per unique `(card_id, ebay_item_id)` ever observed. `is_active` flips false after 7 days without re-observation. Authenticated users can read active rows. | **PK: `(card_id, ebay_item_id)`**. `image_url`, `thumbnail_url`, `first_seen_at`, `last_seen_at`, `observation_count`, `is_active`, `last_title`, `parallel` |
 
 #### Tables — Tournaments
 

@@ -20,6 +20,9 @@ migration — check them in with the code change that depends on them.
 | 10 | `010_retire_legacy_tier_results.sql` | Session 2.5 followup. Tag pre-2.5 `scan_tier_results` rows with retirement metadata in the `extras` jsonb column + create `scan_tier_results_live` filtering view. Column name corrected in session 2.8. |
 | 11 | `011_sunset_legacy_flag_rows.sql` | Session 2.8. Drop `scan_pipeline_trace`, delete zombie `embedding_tier1` / `new_scan_pipeline` rows from `feature_flags` + `user_feature_overrides`, delete orphaned `system_settings.app_name` row. Captures the 2.4 + 2.6 post-deploy SQL that was MCP-only. |
 | 12 | `012_phase_2_telemetry_rpc.sql` | Session 2.9. Aggregate read-only RPC `phase_2_telemetry(window_interval)` returning all admin dashboard sections as jsonb. Consumed by `/api/admin/phase-2-telemetry`. |
+| 25 | `025_ebay_listing_observations.sql` | Per-listing observation table populated by the price-harvest cron. Stores every (listing × cycle) snapshot with the filter decision tagged. Admin-only RLS, 30-day retention. |
+| 26 | `026_ebay_card_images.sql` | Image dedupe table keyed on `(card_id, ebay_item_id)`. One row per unique listing ever observed; `last_seen_at` + `observation_count` updated on re-observation. Authenticated users can read active rows. |
+| 27 | `027_listing_observations_maintenance.sql` | `mark_stale_ebay_listings()` flips inactive after 7 days; `prune_old_observations()` deletes rows older than 30 days. Both called from `/api/cron/mark-stale-listings`. |
 
 ### Phase 2 deploy ordering (applied via Supabase MCP pre-deploy)
 

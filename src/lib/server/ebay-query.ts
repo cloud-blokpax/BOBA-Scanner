@@ -229,20 +229,27 @@ function weaponConflicts(title: string, cardWeapon: string | null | undefined): 
 }
 
 /**
- * Filter eBay item summaries to those matching a specific card.
- *
- * Hardened pipeline:
- *   1. Hard rejects (TITLE_REJECT_PATTERNS): graded, sealed, lots, vintage.
- *   2. Set anchor: title must contain "battle arena".
- *   3. Identity gate: title must mention hero OR athlete OR card number.
- *   4. Weapon disambiguation: drop listings that mention a different weapon.
- *   5. Parallel gate (when card has a non-paper parallel): title must
- *      include the parallel name OR its short search prefix.
+ * Decision emitted by `evaluateListings` for each raw eBay item.
+ * `accepted=true` means the listing passed every gate; `rejection_reason`
+ * is the name of the gate that dropped it (or null on accept).
  */
-export function filterRelevantListings<T extends { title?: string }>(
+export type ListingFilterDecision = {
+	accepted: boolean;
+	rejection_reason: string | null;
+	weapon_conflict: boolean;
+};
+
+/**
+ * Evaluate every raw eBay item against the same gates `filterRelevantListings`
+ * applies, but return a decision for every item instead of dropping rejects.
+ * Powers the harvester's per-listing observation table — we want the rejected
+ * listings persisted alongside the accepted ones with the rejection reason
+ * tagged on each row.
+ */
+export function evaluateListings<T extends { title?: string }>(
 	items: T[],
 	card: EbayCardInfo
-): T[] {
+): Array<{ item: T; decision: ListingFilterDecision }> {
 	const heroStr = (card.hero_name || card.name || '').toUpperCase().trim();
 	const athleteStr = (card.athlete_name || '').toUpperCase().trim();
 	const parallelStr = (card.parallel || '').toUpperCase().trim();
@@ -260,23 +267,41 @@ export function filterRelevantListings<T extends { title?: string }>(
 
 	const heroLc = heroStr.toLowerCase();
 	const athleteLc = athleteStr.toLowerCase();
-	const cardNumLc = cardNum.toLowerCase();
 	const normalizedCardNumLc = normalizedCardNum.toLowerCase();
 
-	return items.filter((item) => {
+	return items.map((item) => {
 		const title = item.title || '';
-		if (!title) return false;
+		if (!title) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'missing_title', weapon_conflict: false }
+			};
+		}
 
 		// 1. Hard rejects
 		for (const r of TITLE_REJECT_PATTERNS) {
-			if (r.pattern.test(title)) return false;
+			if (r.pattern.test(title)) {
+				return {
+					item,
+					decision: {
+						accepted: false,
+						rejection_reason: `hard_reject:${r.name}`,
+						weapon_conflict: false
+					}
+				};
+			}
 		}
 
 		const titleLc = title.toLowerCase();
 		const titleUpper = title.toUpperCase();
 
 		// 2. Set anchor
-		if (!titleLc.includes('battle arena')) return false;
+		if (!titleLc.includes('battle arena')) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'set_anchor', weapon_conflict: false }
+			};
+		}
 
 		// 3. Identity gate — at least one of hero / athlete / card_number
 		const heroMatch = heroLc.length > 2 && includesAllWords(titleLc, heroLc);
@@ -284,16 +309,62 @@ export function filterRelevantListings<T extends { title?: string }>(
 		const cardNumMatch =
 			normalizedCardNumLc.length > 2 &&
 			titleLc.replace(/[-\s]/g, '').includes(normalizedCardNumLc);
-		if (!heroMatch && !athleteMatch && !cardNumMatch) return false;
+		if (!heroMatch && !athleteMatch && !cardNumMatch) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'identity_gate', weapon_conflict: false }
+			};
+		}
 
 		// 4. Weapon disambiguation
-		if (weaponConflicts(title, card.weapon_type ?? null)) return false;
+		const wConflict = weaponConflicts(title, card.weapon_type ?? null);
+		if (wConflict) {
+			return {
+				item,
+				decision: {
+					accepted: false,
+					rejection_reason: 'weapon_conflict',
+					weapon_conflict: true
+				}
+			};
+		}
 
 		// 5. Parallel gate
-		if (!matchesParallel(titleUpper)) return false;
+		if (!matchesParallel(titleUpper)) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'parallel_gate', weapon_conflict: false }
+			};
+		}
 
-		return true;
+		return {
+			item,
+			decision: { accepted: true, rejection_reason: null, weapon_conflict: false }
+		};
 	});
+}
+
+/**
+ * Filter eBay item summaries to those matching a specific card.
+ *
+ * Hardened pipeline:
+ *   1. Hard rejects (TITLE_REJECT_PATTERNS): graded, sealed, lots, vintage.
+ *   2. Set anchor: title must contain "battle arena".
+ *   3. Identity gate: title must mention hero OR athlete OR card number.
+ *   4. Weapon disambiguation: drop listings that mention a different weapon.
+ *   5. Parallel gate (when card has a non-paper parallel): title must
+ *      include the parallel name OR its short search prefix.
+ *
+ * Implemented as a thin wrapper over `evaluateListings` so the gate logic has
+ * exactly one source of truth.
+ */
+export function filterRelevantListings<T extends { title?: string }>(
+	items: T[],
+	card: EbayCardInfo
+): T[] {
+	return evaluateListings(items, card)
+		.filter((d) => d.decision.accepted)
+		.map((d) => d.item);
 }
 
 /**
