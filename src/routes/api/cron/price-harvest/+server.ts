@@ -29,6 +29,7 @@ import {
 	scoreWondersListingMatch,
 } from '$lib/server/ebay-query-wonders';
 import { captureCardImage } from '$lib/services/image-harvester';
+import { isFeatureEnabledGlobally } from '$lib/server/feature-flags';
 import { logEvent } from '$lib/server/diagnostics';
 import type { RequestHandler } from './$types';
 
@@ -168,6 +169,20 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	const PLAY_TIME_RESERVE_MS = 12000;
 	const heroCutoff = processingCutoff - PLAY_TIME_RESERVE_MS;
 
+	// Read the image-harvest kill-switch once per run. When false (the
+	// default), the per-card captureCardImage piggyback is skipped — the
+	// dedicated /api/cron/image-harvest endpoint owns that work on its own
+	// hourly cadence. Caching inside isFeatureEnabledGlobally keeps repeat
+	// reads cheap if the helper is reused elsewhere later.
+	const imageCaptureEnabled = await isFeatureEnabledGlobally(
+		'image_harvest_in_price_cron_v1'
+	);
+	if (!imageCaptureEnabled) {
+		console.log(
+			'[harvest:image] skipped — flag image_harvest_in_price_cron_v1 disabled'
+		);
+	}
+
 	const startTime = Date.now();
 	let processed = 0;
 	let updated = 0;
@@ -190,7 +205,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		const card = candidates[i];
 
 		try {
-			const result = await refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold);
+			const result = await refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold, imageCaptureEnabled);
 			processed++;
 
 			if (result.success) {
@@ -284,7 +299,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 					const playCard = playCandidates[i];
 					try {
-						const result = await refreshPlayCardPrice(admin, playCard, redis, today, chainDepth, confidenceThreshold);
+						const result = await refreshPlayCardPrice(admin, playCard, redis, today, chainDepth, confidenceThreshold, imageCaptureEnabled);
 						playUsed++;
 						if (result.logEntry) {
 							const errMsg = String(result.logEntry.error_message || '');
@@ -489,7 +504,8 @@ async function refreshCardPrice(
 	redis: NonNullable<ReturnType<typeof getRedis>>,
 	today: string,
 	chainDepth: number,
-	confidenceThreshold: number
+	confidenceThreshold: number,
+	imageCaptureEnabled: boolean
 ): Promise<RefreshResult> {
 	// Phase 2.5 / 3: the harvester operates on (card_id, parallel) pairs and
 	// dispatches query/filter builders by game_id. BoBA uses ebay-query.ts;
@@ -575,8 +591,11 @@ async function refreshCardPrice(
 			? filterRelevantWondersListings(rawItems, wondersCardInfo)
 			: filterRelevantListings(rawItems, card);
 
-		// Piggyback: harvest image from first relevant listing (BoBA only). Fire-and-forget.
-		if (!isWonders && items.length > 0) {
+		// Piggyback: harvest image from first relevant listing (BoBA only).
+		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1 — when off
+		// (the default), the dedicated /api/cron/image-harvest endpoint owns
+		// this work instead.
+		if (imageCaptureEnabled && !isWonders && items.length > 0) {
 			void captureCardImage(card.id, items[0], 'boba');
 		}
 
@@ -771,7 +790,8 @@ async function refreshPlayCardPrice(
 	redis: NonNullable<ReturnType<typeof getRedis>>,
 	today: string,
 	chainDepth: number,
-	confidenceThreshold: number
+	confidenceThreshold: number,
+	imageCaptureEnabled: boolean
 ): Promise<RefreshResult> {
 	const query = buildEbaySearchQuery(card);
 	const callStart = Date.now();
@@ -837,8 +857,9 @@ async function refreshPlayCardPrice(
 		const ebayResultsRaw = rawItems.length;
 		const items = filterRelevantListings(rawItems, card);
 
-		// Piggyback: harvest image from first relevant listing. Fire-and-forget.
-		if (items.length > 0) {
+		// Piggyback: harvest image from first relevant listing.
+		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1.
+		if (imageCaptureEnabled && items.length > 0) {
 			void captureCardImage(card.id, items[0], 'boba');
 		}
 

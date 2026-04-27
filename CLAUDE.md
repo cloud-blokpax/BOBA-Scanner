@@ -45,7 +45,7 @@ Direct dependencies (from `package.json`). Versions pinned at minor ranges via `
 
 **Infrastructure:**
 - Upstash Redis (`@upstash/redis ^1.36.4`, `@upstash/ratelimit ^2.0.8`) — rate limiting + eBay API quota counter; in-memory fallback when Redis unavailable.
-- Upstash QStash (`@upstash/qstash ^2.10.1`) — scheduled webhook triggers for the price harvest cron. POSTs `/api/cron/qstash-harvest` every 5 minutes (QStash is the SINGLE trigger — `vercel.json` has no `crons` entry).
+- Upstash QStash (`@upstash/qstash ^2.10.1`) — scheduled webhook triggers. Two schedules: POSTs `/api/cron/qstash-harvest` every 5 minutes (which forwards to `/api/cron/price-harvest`), and GETs `/api/cron/image-harvest` every 60 minutes for the image-only backfill. QStash is the SINGLE trigger source — `vercel.json` has no `crons` entry, so we never double-fire.
 - `@vercel/analytics ^2.0.1`, `@vercel/speed-insights ^2.0.0` — Vercel-hosted telemetry.
 
 **Pricing & commerce:**
@@ -200,8 +200,9 @@ Card-Scanner/
 │   │       ├── whatnot/
 │   │       │   └── export/+server.ts    # POST: Whatnot CSV bulk export
 │   │       ├── cron/
-│   │       │   ├── price-harvest/+server.ts        # Cron: Automated eBay price harvesting
-│   │       │   ├── qstash-harvest/+server.ts       # QStash: Webhook-triggered harvesting
+│   │       │   ├── price-harvest/+server.ts        # Cron: Automated eBay price harvesting (5-min QStash chain)
+│   │       │   ├── qstash-harvest/+server.ts       # QStash: Webhook-triggered harvesting (forwards to price-harvest)
+│   │       │   ├── image-harvest/+server.ts        # Cron: Hourly image-only backfill (CPU-throttled successor to the price-harvest piggyback)
 │   │       │   ├── vercel-log-mirror/+server.ts    # Cron: Pulls Vercel runtime logs into app_events (Phase 2.5)
 │   │       │   └── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
 │   │       ├── diag/+server.ts                     # POST: Client-side diagnostic event ingestion (window errors, fire-and-forget catches)
@@ -385,6 +386,7 @@ Card-Scanner/
 │   │   │   ├── anthropic.ts        # Anthropic Claude client singleton
 │   │   │   ├── api-response.ts     # Standardized API response helpers
 │   │   │   ├── diagnostics.ts      # Server-side diagnostic logging (logEvent, wrap, wrapSilent → app_events)
+│   │   │   ├── feature-flags.ts    # Server-side feature flag reader (enabled_globally lookup with TTL cache; used by cron paths that have no user context)
 │   │   │   ├── rate-limit.ts       # Upstash Redis rate limiting + in-memory fallback
 │   │   │   ├── redis.ts            # Redis client singleton
 │   │   │   ├── rpc.ts              # Supabase RPC helper utilities
@@ -396,7 +398,9 @@ Card-Scanner/
 │   │   │   ├── ebay-query-wonders.ts # eBay search query construction (Wonders)
 │   │   │   ├── grading-prompts.ts  # Card grading prompt construction for Claude Vision
 │   │   │   ├── supabase-admin.ts   # Supabase admin/service-role client
-│   │   │   └── validate.ts         # Request validation helpers
+│   │   │   ├── validate.ts         # Request validation helpers
+│   │   │   └── harvester/
+│   │   │       └── image-capture.ts # runImageCapture(): hourly /api/cron/image-harvest worker (BoBA image backfill, bounded batch, eBay-quota-aware)
 │   │   ├── services/
 │   │   │   │
 │   │   │   # Recognition pipeline — orchestrator + validation + workers
@@ -429,7 +433,7 @@ Card-Scanner/
 │   │   │   ├── scan-checkpoint.ts          # Per-stage trace writes to scan_pipeline_checkpoint
 │   │   │   ├── pipeline-version.ts         # Pipeline version pin (stamps scans.pipeline_version)
 │   │   │   ├── catalog-mirror.ts           # Client-side catalog mirror for (card_number, name) → card_id lookup
-│   │   │   ├── image-harvester.ts          # Opportunistic image harvesting from eBay listings (populates card_reference_images)
+│   │   │   ├── image-harvester.ts          # captureCardImage(): per-listing image capture (sharp re-encode + Storage upload + cards.image_url update + hash_cache seed). Driven by /api/cron/image-harvest via $lib/server/harvester/image-capture; can also be re-piggybacked onto price-harvest if image_harvest_in_price_cron_v1 is flipped on.
 │   │   │   │
 │   │   │   # Card data + search
 │   │   │   ├── card-db.ts                  # Card database: load, index, search, fuzzy match
@@ -674,6 +678,17 @@ Plus a `handleError` handler for structured error logging.
 - **Client state**: Svelte stores (`src/lib/stores/`) backed by IndexedDB for offline persistence
 - **Server state**: Supabase PostgreSQL (collections synced via `sync.ts`)
 - **Offline support**: SvelteKit service worker (`src/service-worker.ts`) caches app shell, card database served stale-while-revalidate, API calls always go to network
+
+### Price + Image Harvester
+
+The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_price_cache` and backfills `cards.image_url` from the same eBay listings. It runs on **two** QStash schedules — never on Vercel cron — so we don't double-fire:
+
+- **5-min price chain.** QStash POSTs `/api/cron/qstash-harvest`, which forwards to `/api/cron/price-harvest` (server-to-server, bypassing Vercel Deployment Protection). Each invocation processes up to 25 hero cards + 5–10 plays, then fires a self-chain link until the daily eBay quota is exhausted. This is the cadence and shape that has run since Session 2.x — unchanged.
+- **Hourly image backfill.** QStash GETs `/api/cron/image-harvest` directly (no qstash-harvest indirection — the price chain is what needs that, image-harvest is one-shot). The endpoint calls `runImageCapture({ maxBatch: 20 })` from `src/lib/server/harvester/image-capture.ts`, which selects BoBA cards with `image_url IS NULL`, queries eBay for each, and hands the first relevant listing's image to `captureCardImage()` (sharp re-encode → Supabase Storage → cards.image_url update → hash_cache seed).
+
+**Why the split.** Image work — sharp re-encode + Storage upload — was the dominant chunk of Vercel Hobby Fluid Active CPU when it ran piggybacked on every price call (~30 captures × 288 runs/day = ~8,640/day). Hourly + bounded batch cuts that to ~480/day worst-case while keeping price refresh on the same 5-min cadence. After the catalog is fully populated the image-harvest endpoint becomes a no-op until the 30-day recapture TTL expires.
+
+**Flag.** `image_harvest_in_price_cron_v1` (default OFF, seeded by `migrations/022_image_harvest_flag.sql`) gates the legacy price-harvest piggyback. Flip ON via the admin Features tab if the dedicated endpoint is ever retired and the inline path needs to come back. The cron reads the flag once per invocation via `isFeatureEnabledGlobally()` in `src/lib/server/feature-flags.ts` (30s TTL cache).
 
 ### Diagnostic Logging
 

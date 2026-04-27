@@ -23,34 +23,36 @@ const FETCH_TIMEOUT_MS = 5_000;
 const MIN_IMAGE_BYTES = 1_000;
 const BUCKET = 'card-images';
 
+export type CaptureResult = 'captured' | 'skipped' | 'errored';
+
 export async function captureCardImage(
 	cardId: string,
 	itemSummary: ItemImageFields,
 	gameId: string
-): Promise<void> {
+): Promise<CaptureResult> {
 	try {
-		if (gameId !== 'boba') return;
+		if (gameId !== 'boba') return 'skipped';
 
 		const rawUrl =
 			itemSummary?.image?.imageUrl ??
 			itemSummary?.thumbnailImages?.[0]?.imageUrl;
-		if (!rawUrl) return;
+		if (!rawUrl) return 'skipped';
 
 		const admin = getAdminClient();
-		if (!admin) return;
+		if (!admin) return 'skipped';
 
 		const { data: card, error: cardErr } = await admin
 			.from('cards')
 			.select('image_url, updated_at, parallel')
 			.eq('id', cardId)
 			.single();
-		if (cardErr || !card) return;
+		if (cardErr || !card) return 'skipped';
 
-		if (card.image_url?.includes('/references/')) return;
+		if (card.image_url?.includes('/references/')) return 'skipped';
 
 		if (card.image_url?.includes('/harvested/') && card.updated_at) {
 			const age = Date.now() - new Date(card.updated_at).getTime();
-			if (age < RECAPTURE_TTL_MS) return;
+			if (age < RECAPTURE_TTL_MS) return 'skipped';
 		}
 
 		const hiResUrl = rawUrl.replace(/s-l\d+\.jpg/i, 's-l1600.jpg');
@@ -64,14 +66,14 @@ export async function captureCardImage(
 		} finally {
 			clearTimeout(timer);
 		}
-		if (!response.ok) return;
+		if (!response.ok) return 'skipped';
 
 		const contentType = response.headers.get('content-type') ?? '';
-		if (!contentType.startsWith('image/')) return;
+		if (!contentType.startsWith('image/')) return 'skipped';
 
 		const buffer = Buffer.from(await response.arrayBuffer());
 
-		if (buffer.length < MIN_IMAGE_BYTES) return;
+		if (buffer.length < MIN_IMAGE_BYTES) return 'skipped';
 
 		const processed = await sharp(buffer)
 			.rotate()
@@ -89,7 +91,7 @@ export async function captureCardImage(
 			});
 		if (uploadErr) {
 			console.warn(`[harvest:image] upload failed ${cardId}: ${uploadErr.message}`);
-			return;
+			return 'errored';
 		}
 
 		const { data: publicData } = admin.storage
@@ -105,7 +107,7 @@ export async function captureCardImage(
 			.eq('id', cardId);
 		if (updateErr) {
 			console.warn(`[harvest:image] db update failed ${cardId}: ${updateErr.message}`);
-			return;
+			return 'errored';
 		}
 
 		console.log(`[harvest:image] captured ${cardId} (${processed.length} bytes)`);
@@ -147,8 +149,11 @@ export async function captureCardImage(
 					: String(hashCatchErr);
 			console.warn(`[harvest:hash] compute failed ${cardId}: ${msg}`);
 		}
+
+		return 'captured';
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		console.warn(`[harvest:image] error for ${cardId}: ${msg}`);
+		return 'errored';
 	}
 }
