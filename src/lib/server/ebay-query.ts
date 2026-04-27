@@ -5,22 +5,23 @@
  *
  * Query shape (boolean OR-grouped, validated against ~40 real seller titles):
  *
- *   (hero_name, athlete_name) "Bo Jackson Battle Arena" (card_number, "parallel_prefix" weapon)
+ *   (hero_name, athlete_name) "Bo Jackson Battle Arena" (card_number, "parallel_prefix")
  *
  * Translation:
  *   - (hero, athlete) — at least one identity match
  *   - "Bo Jackson Battle Arena" — set anchor (always)
- *   - (card_number, "parallel_prefix" weapon) — at least one discriminator;
- *     the second arm is compound (parallel-prefix AND weapon together)
+ *   - (card_number, "parallel_prefix") — at least one discriminator
  *
  * eBay query syntax notes:
  *   - Space between tokens = AND
  *   - (a, b) = OR
  *   - Quoted strings = phrase match
  *   - 350 char hard limit on q=
- *   - Compound arms inside an OR group like (a, "b" c) are NOT documented as
- *     supported. We are deliberately trialing the compound form; verify in
- *     production logs before assuming it parses correctly.
+ *   - Compound arms inside an OR group like (a, "b" c) are NOT supported by
+ *     eBay Browse API — production tested 2026-04-27. The earlier v3 form
+ *     `(card#, "parallel" weapon)` collapsed recall (50% zero-result rate,
+ *     10× drop in raw results) because eBay parsed the weapon as an AND
+ *     across the whole query. Weapon stays in the post-fetch filter only.
  */
 
 import { buildEbayApiQuery } from '$lib/utils/ebay-title';
@@ -90,17 +91,18 @@ function parallelPrefix(parallel: string | null | undefined): string | null {
 /**
  * Build the BoBA boolean eBay search query.
  *
- *   (hero, athlete) "Bo Jackson Battle Arena" (card_number, "parallel_prefix" weapon)
+ *   (hero, athlete) "Bo Jackson Battle Arena" (card_number, "parallel_prefix")
  *
  * Construction rules:
  *   - Hero/athlete OR group: include both arms when both exist and differ;
  *     otherwise emit the single arm bare.
  *   - Anchor "Bo Jackson Battle Arena": always quoted phrase, always present.
- *   - Discriminator OR group: (card_number, "parallel_prefix" weapon).
+ *   - Discriminator OR group: (card_number, "parallel_prefix").
  *     If only card_number → emit bare card_number.
  *     If only the parallel arm → emit it bare.
- *     If only weapon (no parallel and no card_number) → discriminator dropped
- *     entirely (weapon-alone is too broad to disambiguate).
+ *     If neither → discriminator dropped entirely.
+ *   - Weapon is intentionally NOT in the query (post-fetch filter only).
+ *     See module header comment for the production data behind this.
  *
  * Length guard: drops the discriminator group if the joined query exceeds
  * EBAY_Q_MAX (340 chars).
@@ -126,21 +128,12 @@ export function buildEbayQuery(card: EbayCardInfo): string {
 	// Set anchor (always)
 	tokens.push('"Bo Jackson Battle Arena"');
 
-	// Group 2: (card_number, "parallel_prefix" weapon)
+	// Group 2: (card_number, "parallel_prefix")
 	const cardNumber = (card.card_number || '').trim();
 	const prefix = parallelPrefix(card.parallel);
-	const weapon = (card.weapon_type || '').trim();
 
 	const arm1 = cardNumber;
-
-	// arm2 = parallel AND weapon. Weapon-alone is dropped — too broad to
-	// disambiguate against the broader catalog.
-	let arm2 = '';
-	if (prefix && weapon) {
-		arm2 = `${quoteIfMultiWord(prefix)} ${weapon}`;
-	} else if (prefix) {
-		arm2 = quoteIfMultiWord(prefix);
-	}
+	const arm2 = prefix ? quoteIfMultiWord(prefix) : '';
 
 	if (arm1 && arm2) {
 		tokens.push(`(${arm1}, ${arm2})`);

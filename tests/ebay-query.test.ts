@@ -3,7 +3,11 @@
  *
  * The query builder produces a boolean OR-grouped expression validated against
  * ~40 real seller titles harvested from live eBay search:
- *   (hero, athlete) "Bo Jackson Battle Arena" (card_number, "parallel_prefix" weapon)
+ *   (hero, athlete) "Bo Jackson Battle Arena" (card_number, "parallel_prefix")
+ *
+ * Weapon is intentionally absent from the query — eBay treats compound OR-arms
+ * `(a, "b" c)` as AND-required across the whole query, which collapsed recall
+ * in production. Weapon stays in the post-fetch filter only.
  *
  * The filter rejects graded slabs, sealed product, lots, and vintage Bo
  * Jackson memorabilia, then enforces an identity gate (hero/athlete/card#),
@@ -24,7 +28,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 			card_number: 'GLBF-27'
 		});
 		expect(q).toBe(
-			`("Lady Magic", "Nancy Lieberman") "Bo Jackson Battle Arena" (GLBF-27, "Grandma's Linoleum" Hex)`
+			`("Lady Magic", "Nancy Lieberman") "Bo Jackson Battle Arena" (GLBF-27, "Grandma's Linoleum")`
 		);
 	});
 
@@ -37,7 +41,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 			athlete_name: 'Paolo Banchero',
 			card_number: 'RAD-266'
 		});
-		expect(q).toBe(`(Bandelero, "Paolo Banchero") "Bo Jackson Battle Arena" (RAD-266, RAD Hex)`);
+		expect(q).toBe(`(Bandelero, "Paolo Banchero") "Bo Jackson Battle Arena" (RAD-266, RAD)`);
 	});
 
 	it('omits athlete arm when hero matches athlete (Bojax = Bo Jackson)', () => {
@@ -49,7 +53,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 			athlete_name: null,
 			card_number: 'BBF-1'
 		});
-		expect(q).toBe(`Bojax "Bo Jackson Battle Arena" (BBF-1, Blue Ice)`);
+		expect(q).toBe(`Bojax "Bo Jackson Battle Arena" (BBF-1, Blue)`);
 	});
 
 	it('drops the parallel arm for paper cards (discriminator collapses to card_number)', () => {
@@ -73,7 +77,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 			athlete_name: 'Shohei Ohtani',
 			card_number: null
 		});
-		expect(q).toBe(`(Showtime, "Shohei Ohtani") "Bo Jackson Battle Arena" Headlines Steel`);
+		expect(q).toBe(`(Showtime, "Shohei Ohtani") "Bo Jackson Battle Arena" Headlines`);
 	});
 
 	it('builds a minimal query for paper cards with no athlete or weapon', () => {
@@ -88,7 +92,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 		expect(q).toBe(`"Pulling the Plug" "Bo Jackson Battle Arena" PL-70`);
 	});
 
-	it('drops the discriminator entirely when only weapon is present (weapon-alone is too broad)', () => {
+	it('drops the discriminator entirely when card_number and parallel are both absent', () => {
 		const q = buildEbayQuery({
 			hero_name: 'Tester',
 			name: 'Tester',
@@ -121,7 +125,7 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 			athlete_name: null,
 			card_number: 'SN-1'
 		});
-		expect(q).toBe(`X "Bo Jackson Battle Arena" (SN-1, "Some New" Fire)`);
+		expect(q).toBe(`X "Bo Jackson Battle Arena" (SN-1, "Some New")`);
 	});
 });
 

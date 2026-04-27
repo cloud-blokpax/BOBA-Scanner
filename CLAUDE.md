@@ -699,16 +699,17 @@ The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_
 **eBay search query (BoBA).** `buildEbayQuery()` in `src/lib/server/ebay-query.ts` builds a boolean OR-grouped expression validated against ~40 real seller titles:
 
 ```
-(hero_name, athlete_name) "Bo Jackson Battle Arena" (card_number, "parallel_prefix" weapon)
+(hero_name, athlete_name) "Bo Jackson Battle Arena" (card_number, "parallel_prefix")
 ```
 
 - `(hero, athlete)` — at least one identity match required.
 - `"Bo Jackson Battle Arena"` — quoted set anchor, always present.
-- `(card_number, "parallel_prefix" weapon)` — at least one discriminator. Second arm is compound (parallel-prefix AND weapon together).
+- `(card_number, "parallel_prefix")` — at least one discriminator. Both arms are simple tokens.
 
 Notes:
 - 350-char `q=` limit on eBay's Browse API. The builder length-guards at 340 and drops the discriminator group when over budget.
-- Compound OR-arms `(a, "b" c)` are NOT documented as supported by eBay; we are deliberately trialing the form. Verify in `price_harvest_log` before assuming it parses correctly. If recall collapses, fall back to `(card_number, "parallel_prefix")` (simple-OR) or to `card_number` alone — see Phase 6 dial-downs in the harvester PR.
+- **Compound OR-arms `(a, "b" c)` are NOT supported by eBay's Browse API.** Production tested 2026-04-27: the v3 form `(card#, "parallel" weapon)` collapsed recall (zero-result rate jumped from 14.7% → 50.0%, avg raw results dropped 22.9 → 2.3). eBay parsed the weapon as AND-required across the whole query, excluding any listing that didn't have the weapon word in its title. The dial-down dropped weapon from arm2 entirely; weapon stays in the post-fetch filter as a tie-breaker. If recall ever collapses again, the next dial-down is to drop the parallel arm and emit `card_number` alone.
+- Weapon is intentionally absent from the eBay query string. It is only used in the post-fetch `filterRelevantListings` weapon-disambiguation gate.
 - Paper cards are detected case-insensitively and produce no parallel arm — discriminator collapses to `card_number` alone.
 - BoBA parallels are mapped through `PARALLEL_PREFIX_MAP` to drop the trailing `Battlefoil` suffix sellers don't use (e.g. `"80's Rad Battlefoil"` → `RAD`, `"Headlines Battlefoil"` → `Headlines`, `"Blue Battlefoil"` → `Blue`). Unmapped parallels fall back to a regex strip of `\s*Battlefoil\s*$`.
 
@@ -722,7 +723,7 @@ Notes:
 
 Graded listings are dropped from the raw bucket entirely. Capturing them into a separate graded price bucket is out of scope for v1.
 
-**Parallel write path.** `cards.parallel` (the rich, per-card catalog name like `Battlefoil` or `Headlines Battlefoil`) is the source of truth. The `get_harvest_candidates` RPC returns both `card_parallel_name` (cards.parallel) and a per-candidate synthetic `parallel`. The harvester's normalizer (`getNextCandidates` in `src/routes/api/cron/price-harvest/+server.ts`) prefers `card_parallel_name` so the actual catalog parallel reaches both writers — `price_cache.parallel` and `price_harvest_log.parallel`. Pre-fix logs all wrote `parallel: 'paper'` because the synthetic value won; the fallback chain is now `card_parallel_name → parallel → 'paper'`.
+**Parallel write path.** `cards.parallel` (the rich, per-card catalog name like `Battlefoil` or `Headlines Battlefoil`) is the source of truth. The `get_harvest_candidates` RPC returns both `card_parallel_name` (cards.parallel) and a per-candidate synthetic `parallel`. The harvester's normalizer (`getNextCandidates` in `src/routes/api/cron/price-harvest/+server.ts`) prefers `card_parallel_name` so the actual catalog parallel reaches both writers — `price_cache.parallel` and `price_harvest_log.parallel`. Pre-fix logs all wrote `parallel: 'paper'` because the synthetic value won; the fallback chain is now `card_parallel_name → parallel → 'paper'`. **Convention:** any new harvester-side write to `price_cache` or `price_harvest_log` MUST use the case-sensitive `cards.parallel` value, NOT the lowercase column default. Mismatched-case writes split rows across the `(card_id, source, parallel)` PK and orphan stale entries (the v3 deploy left ~14.5k orphan `parallel='paper'` rows in `price_cache` that were cleaned up post-deploy).
 
 ### Diagnostic Logging
 
