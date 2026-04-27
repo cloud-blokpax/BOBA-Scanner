@@ -22,15 +22,19 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 import type { Database } from '$lib/types/database';
 import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
-import { buildEbaySearchQuery, filterRelevantListings } from '$lib/server/ebay-query';
+import { buildEbaySearchQuery, evaluateListings } from '$lib/server/ebay-query';
 import {
 	buildWondersEbayQuery,
-	filterRelevantWondersListings,
+	evaluateWondersListings,
 	scoreWondersListingMatch,
 } from '$lib/server/ebay-query-wonders';
 import { captureCardImage } from '$lib/services/image-harvester';
 import { isFeatureEnabledGlobally } from '$lib/server/feature-flags';
 import { logEvent } from '$lib/server/diagnostics';
+import {
+	persistObservations,
+	type RawEbayListing
+} from '$lib/server/harvester/listing-observations';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby supports up to 60s
@@ -583,20 +587,34 @@ async function refreshCardPrice(
 		}
 
 		const data = await res.json();
-		const rawItems: Array<{
-			title?: string;
-			price?: { value?: string };
-			buyingOptions?: string[];
-			image?: { imageUrl?: string };
-			thumbnailImages?: Array<{ imageUrl?: string }>;
-		}> = data.itemSummaries || [];
+		const rawItems: RawEbayListing[] = data.itemSummaries || [];
 
 		const ebayResultsRaw = rawItems.length;
 
-		// Filter to listings that actually match this card (game-aware)
-		const items = isWonders
-			? filterRelevantWondersListings(rawItems, wondersCardInfo)
-			: filterRelevantListings(rawItems, card);
+		// Evaluate every listing — both accepted and rejected — so we can
+		// persist all observations with their filter decision tagged. The
+		// price math operates only on accepted items via `items` below.
+		const decisions = isWonders
+			? evaluateWondersListings(rawItems, wondersCardInfo)
+			: evaluateListings(rawItems, card);
+		const items = decisions.filter((d) => d.decision.accepted).map((d) => d.item);
+
+		// Persist per-listing observations + image dedupe. Best-effort: any
+		// failure is logged inside persistObservations and the surrounding
+		// try/catch ensures price harvesting is never blocked by this work.
+		try {
+			await persistObservations(
+				admin,
+				{ id: card.id, game_id: card.game_id ?? gameId, parallel },
+				today,
+				decisions
+			);
+		} catch (err) {
+			console.error(
+				'[harvest:observations] non-fatal:',
+				err instanceof Error ? err.message : err
+			);
+		}
 
 		// Piggyback: harvest image from first relevant listing (BoBA only).
 		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1 — when off
@@ -853,16 +871,15 @@ async function refreshPlayCardPrice(
 		}
 
 		const data = await res.json();
-		const rawItems: Array<{
-			title?: string;
-			price?: { value?: string };
-			buyingOptions?: string[];
-			image?: { imageUrl?: string };
-			thumbnailImages?: Array<{ imageUrl?: string }>;
-		}> = data.itemSummaries || [];
+		const rawItems: RawEbayListing[] = data.itemSummaries || [];
 
 		const ebayResultsRaw = rawItems.length;
-		const items = filterRelevantListings(rawItems, card);
+		const decisions = evaluateListings(rawItems, card);
+		const items = decisions.filter((d) => d.decision.accepted).map((d) => d.item);
+
+		// Play cards have TEXT IDs (e.g. "A---PL-2") while ebay_listing_observations
+		// keys on UUID card_id. Skip persistence for plays — the observations
+		// table is hero-only by design.
 
 		// Piggyback: harvest image from first relevant listing.
 		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1.

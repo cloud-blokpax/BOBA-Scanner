@@ -72,6 +72,91 @@ export function buildWondersEbayQuery(card: EbayCardInfo): string {
 }
 
 /**
+ * Decision emitted by `evaluateWondersListings` for each raw eBay item.
+ * Mirrors the BoBA `ListingFilterDecision` shape so the harvester can persist
+ * observations from both games using a single payload schema.
+ */
+export type WondersListingFilterDecision = {
+	accepted: boolean;
+	rejection_reason: string | null;
+	weapon_conflict: boolean;
+};
+
+/**
+ * Evaluate every raw eBay item against the same gates
+ * `filterRelevantWondersListings` applies, but return a decision for every
+ * item instead of dropping rejects. Used by the harvester's observation
+ * persistence path.
+ */
+export function evaluateWondersListings<T extends { title?: string }>(
+	items: T[],
+	card: EbayCardInfo
+): Array<{ item: T; decision: WondersListingFilterDecision }> {
+	const cardName = (card.name || card.hero_name || '').toUpperCase().trim();
+	const cardNum = (card.card_number || '').toUpperCase().trim();
+	const parallelKeywords = keywordsFor(card.parallel);
+	const keywordPhrases = parallelKeywords.map((k) => k.replace(/"/g, '').toUpperCase());
+
+	return items.map((item) => {
+		if (!item.title) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'missing_title', weapon_conflict: false }
+			};
+		}
+		const t = item.title.toUpperCase();
+
+		if (!WONDERS_TITLE_TOKENS.some((tok) => t.includes(tok))) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'wonders_anchor', weapon_conflict: false }
+			};
+		}
+
+		if (BOBA_CONTAMINATION_TOKENS.some((tok) => t.includes(tok))) {
+			return {
+				item,
+				decision: {
+					accepted: false,
+					rejection_reason: 'boba_contamination',
+					weapon_conflict: false
+				}
+			};
+		}
+
+		if (BULK_REJECT_TOKENS.some((tok) => new RegExp(`\\b${tok}\\b`).test(t))) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'bulk_lot', weapon_conflict: false }
+			};
+		}
+
+		const matchesName = cardName.length > 2 && includesAllWords(t, cardName);
+		const matchesNumber =
+			cardNum.length > 2 &&
+			t.replace(/[-\s]/g, '').includes(cardNum.replace(/[-\s]/g, ''));
+		if (!matchesName && !matchesNumber) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'identity_gate', weapon_conflict: false }
+			};
+		}
+
+		if (keywordPhrases.length > 0 && !keywordPhrases.some((kw) => t.includes(kw))) {
+			return {
+				item,
+				decision: { accepted: false, rejection_reason: 'parallel_gate', weapon_conflict: false }
+			};
+		}
+
+		return {
+			item,
+			decision: { accepted: true, rejection_reason: null, weapon_conflict: false }
+		};
+	});
+}
+
+/**
  * Filter eBay item summaries to those matching a specific Wonders card+parallel.
  *
  * Rules (all required):
@@ -80,43 +165,17 @@ export function buildWondersEbayQuery(card: EbayCardInfo): string {
  *   - Title does NOT suggest a multi-card lot (prevents bulk-price false positives)
  *   - Title contains the card name OR the collector number
  *   - For foil parallels, title contains at least one of that parallel's keywords
+ *
+ * Thin wrapper over `evaluateWondersListings` so the gate logic has exactly
+ * one source of truth.
  */
 export function filterRelevantWondersListings<T extends { title?: string }>(
 	items: T[],
 	card: EbayCardInfo
 ): T[] {
-	const cardName = (card.name || card.hero_name || '').toUpperCase().trim();
-	const cardNum = (card.card_number || '').toUpperCase().trim();
-	const parallelKeywords = keywordsFor(card.parallel);
-
-	return items.filter((item) => {
-		if (!item.title) return false;
-		const t = item.title.toUpperCase();
-
-		// Must reference Wonders
-		if (!WONDERS_TITLE_TOKENS.some((tok) => t.includes(tok))) return false;
-
-		// Reject BoBA-contaminated listings (mixed-game lots)
-		if (BOBA_CONTAMINATION_TOKENS.some((tok) => t.includes(tok))) return false;
-
-		// Reject multi-card lots (the price represents N cards, not 1)
-		if (BULK_REJECT_TOKENS.some((tok) => new RegExp(`\\b${tok}\\b`).test(t))) return false;
-
-		// Card identity: name OR collector number must match
-		const matchesName = cardName.length > 2 && includesAllWords(t, cardName);
-		const matchesNumber = cardNum.length > 2 && t.replace(/[-\s]/g, '').includes(cardNum.replace(/[-\s]/g, ''));
-		if (!matchesName && !matchesNumber) return false;
-
-		// Parallel gate: foils must show at least one matching keyword phrase.
-		// Paper has no keyword requirement.
-		if (parallelKeywords.length > 0) {
-			// Strip quotes for substring matching (eBay titles don't preserve them)
-			const keywordPhrases = parallelKeywords.map((k) => k.replace(/"/g, '').toUpperCase());
-			if (!keywordPhrases.some((kw) => t.includes(kw))) return false;
-		}
-
-		return true;
-	});
+	return evaluateWondersListings(items, card)
+		.filter((d) => d.decision.accepted)
+		.map((d) => d.item);
 }
 
 /**
