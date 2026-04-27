@@ -454,13 +454,17 @@ async function getNextCandidates(
 		return [];
 	}
 
-	// Normalize: default parallel to cards.parallel (or 'Paper') and tag
-	// game_id on each candidate so downstream refreshCardPrice() routes to
-	// the right query builder.
+	// Normalize: default parallel to cards.parallel (the rich, per-card
+	// catalog name like "Battlefoil" or "Headlines Battlefoil"). The RPC's
+	// per-candidate `parallel` column is a synthetic value that returns the
+	// literal 'paper' for every base catalog row regardless of cards.parallel,
+	// which is why pre-fix harvest logs all wrote `parallel: 'paper'`. Prefer
+	// card_parallel_name so the eBay query and writers see the actual catalog
+	// parallel; fall back to the synthetic value or 'paper' only when missing.
 	const raw = (data as unknown as CardCandidate[]) || [];
 	return raw.map((r) => ({
 		...r,
-		parallel: r.parallel || r.card_parallel_name || 'Paper',
+		parallel: r.card_parallel_name || r.parallel || 'paper',
 		game_id: r.game_id || gameId
 	}));
 }
@@ -511,7 +515,10 @@ async function refreshCardPrice(
 	// dispatches query/filter builders by game_id. BoBA uses ebay-query.ts;
 	// Wonders uses ebay-query-wonders.ts (quoted phrases + parallel keywords
 	// + cross-game contamination rejection).
-	const parallel = card.parallel || card.card_parallel_name || 'Paper';
+	// Prefer card_parallel_name (cards.parallel) over the synthetic per-candidate
+	// `parallel` so we write the actual catalog parallel into price_cache /
+	// price_harvest_log. See getNextCandidates() for the full explanation.
+	const parallel = card.card_parallel_name || card.parallel || 'paper';
 	const gameId = (card.game_id || 'boba').toLowerCase();
 	const isWonders = gameId === 'wonders';
 	// Build the EbayCardInfo shape the Wonders query builder expects.
@@ -678,7 +685,7 @@ async function refreshCardPrice(
 				level: 'error',
 				event: 'harvest.price_cache_upsert_failed',
 				error: cacheError.message,
-				context: { card_id: card.id, parallel: card.parallel ?? 'Paper' }
+				context: { card_id: card.id, parallel }
 			});
 		}
 
@@ -975,7 +982,7 @@ function buildLogEntry(
 		// Phase 3: tag the harvest log row with game + parallel so admin dashboards
 		// can distinguish BoBA harvests from Wonders harvests.
 		game_id: card.game_id || 'boba',
-		parallel: card.parallel || card.card_parallel_name || 'Paper',
+		parallel: card.card_parallel_name || card.parallel || 'paper',
 		search_query: query,
 		ebay_results_raw: 0,
 		auction_count: 0,
