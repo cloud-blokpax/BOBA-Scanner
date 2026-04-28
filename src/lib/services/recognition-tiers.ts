@@ -17,6 +17,11 @@ import { getAllCards } from './card-db';
 import { getImageWorker } from './recognition-workers';
 import { crossValidateCardResult } from './recognition-validation';
 import { recordTierResult as writerRecordTierResult } from './scan-writer';
+import { runCanonicalTier1, type CanonicalResult } from './tier1-canonical';
+import { runUploadPipeline } from './upload-pipeline';
+import { toParallelName } from '$lib/data/wonders-parallels';
+import { checkpoint } from './scan-checkpoint';
+import type { LiveOCRSnapshot } from './live-ocr-coordinator';
 import type { Card, ScanResult } from '$lib/types';
 
 // ── Shared types ────────────────────────────────────────────
@@ -366,4 +371,262 @@ export async function runTier2(
 			}
 		}
 	}
+}
+
+// ── Tier 1: canonical PaddleOCR + optional upload TTA ──────
+
+export interface Tier1Telemetry {
+	canonical: {
+		perTask: CanonicalResult['perTask'];
+		ocrStrategy: CanonicalResult['ocrStrategy'];
+	} | null;
+	tta: {
+		frames_processed: number;
+		consensus_reached: boolean;
+		parallel_code: string | null;
+		parallel_rule_fired: string | null;
+		per_frame_results: unknown[];
+		augmentation_set_version: string;
+	} | null;
+	canonicalAttempts: Array<{
+		game: 'boba' | 'wonders';
+		hit: boolean;
+		confidence: number;
+		ocr_strategy: CanonicalResult['ocrStrategy'];
+	}>;
+}
+
+export interface Tier1Outcome {
+	/** A finalized scan result if Tier 1 hit. Null means "fall through to Tier 2". */
+	result: ScanResult | null;
+	telemetry: Tier1Telemetry;
+}
+
+export interface Tier1Inputs {
+	workingBitmap: ImageBitmap;
+	ctx: ScanContext;
+	imageSource: File | Blob | ImageBitmap;
+	traceId: string;
+	startTime: number;
+	gameHint: string;
+	isAutoDetect: boolean;
+	liveConsensusSnapshot: LiveOCRSnapshot | null;
+	liveConsensusReached: boolean;
+	cardDetectContext: Record<string, unknown> | null;
+	confidenceFloor: number;
+	/**
+	 * Whether upload TTA voting should run after canonical fails to clear the
+	 * floor. Only meaningful for File uploads. Owned by the orchestrator so
+	 * recognition-tiers stays free of feature-flag imports.
+	 */
+	ttaEnabled: boolean;
+}
+
+/**
+ * Tier 1 canonical PaddleOCR + optional upload TTA voting. Lifted from the
+ * orchestrator so recognition.ts stays small. Returns either a complete
+ * ScanResult (tier1 hit) or null (fall through to Tier 2). Telemetry is
+ * always returned so Tier 2 can attach canonical/TTA context to its own
+ * decision_context.
+ */
+export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
+	const {
+		workingBitmap,
+		ctx,
+		imageSource,
+		traceId,
+		startTime,
+		gameHint,
+		isAutoDetect,
+		liveConsensusSnapshot,
+		liveConsensusReached,
+		cardDetectContext,
+		confidenceFloor,
+		ttaEnabled
+	} = inputs;
+
+	let canonicalTelemetry: Tier1Telemetry['canonical'] = null;
+	let ttaTelemetry: Tier1Telemetry['tta'] = null;
+	let canonicalAttempts: Tier1Telemetry['canonicalAttempts'] = [];
+
+	checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
+	try {
+		// Auto-detect runs Tier 1 against both games sequentially. Explicit
+		// gameHint runs only that game. Per-game attempts are logged in
+		// decision_context.canonical_attempts so we can measure the auto-detect
+		// win distribution post-deploy.
+		const gamesToTry: Array<'boba' | 'wonders'> = isAutoDetect
+			? ['boba', 'wonders']
+			: gameHint === 'wonders'
+				? ['wonders']
+				: ['boba'];
+
+		let canonical!: CanonicalResult;
+		let game: 'boba' | 'wonders' = gamesToTry[0];
+
+		for (const candidateGame of gamesToTry) {
+			const attempt = await runCanonicalTier1(workingBitmap, candidateGame);
+			canonical = attempt;
+			game = candidateGame;
+			canonicalAttempts.push({
+				game: candidateGame,
+				hit: !!attempt.card,
+				confidence: attempt.confidence,
+				ocr_strategy: attempt.ocrStrategy
+			});
+			if (attempt.card) break;
+		}
+
+		canonicalTelemetry = {
+			perTask: canonical.perTask,
+			ocrStrategy: canonical.ocrStrategy
+		};
+
+		const liveSnap = liveConsensusSnapshot;
+		const live = liveSnap?.consensus ?? null;
+		// Live consensus emits classifier short codes; canonical.parallel is
+		// already the human-readable DB name. Map before comparing.
+		const liveParallelName = live?.parallel?.value
+			? toParallelName(live.parallel.value)
+			: null;
+		const liveAgreed = !!(
+			live?.reachedThreshold &&
+			live.cardNumber?.value === canonical.cardNumber &&
+			live.name?.value === canonical.name &&
+			(game === 'boba' || liveParallelName === canonical.parallel)
+		);
+
+		checkpoint(traceId, 'tier1_canonical:done', performance.now() - startTime, {
+			hit: !!canonical.card,
+			confidence: canonical.confidence,
+			live_reached: liveConsensusReached,
+			live_agreed: liveAgreed
+		});
+
+		if (canonical.card && canonical.confidence >= confidenceFloor) {
+			const divergent: string[] = [];
+			if (live) {
+				if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
+				if (live.name?.value !== canonical.name) divergent.push('name');
+				if (game === 'wonders' && liveParallelName !== canonical.parallel) divergent.push('parallel');
+			}
+			const decisionCtx: Record<string, unknown> = {
+				live_session: liveSnap,
+				canonical_result: canonical.perTask,
+				canonical_ocr_strategy: canonical.ocrStrategy,
+				canonical_attempts: canonicalAttempts,
+				winning_game: game,
+				live_vs_canonical: {
+					live_ran: !!live,
+					agreed: liveAgreed,
+					divergent_fields: live ? divergent : null
+				},
+				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
+			};
+			const tier1Result: ScanResult = {
+				card_id: canonical.card.id,
+				card: {
+					id: canonical.card.id,
+					game_id: canonical.card.game_id,
+					card_number: canonical.card.card_number,
+					hero_name: canonical.card.hero_name ?? undefined,
+					name: canonical.card.name ?? canonical.card.hero_name ?? '',
+					set_code: canonical.card.set_code ?? '',
+					parallel: canonical.card.parallel ?? undefined
+				} as unknown as Card,
+				scan_method: 'local_ocr',
+				confidence: canonical.confidence,
+				processing_ms: Math.round(performance.now() - startTime),
+				parallel: canonical.parallel,
+				game_id: canonical.card.game_id,
+				liveConsensusReached,
+				liveVsCanonicalAgreed: liveAgreed,
+				fallbackTierUsed: null,
+				winningTier: 'tier1_local_ocr',
+				decisionContext: decisionCtx
+			};
+			return {
+				result: tier1Result,
+				telemetry: { canonical: canonicalTelemetry, tta: null, canonicalAttempts }
+			};
+		}
+		// Below confidence floor — fall through to TTA (uploads only) or
+		// Tier 2 Haiku.
+		ctx.lastTier2FailReason = null;
+
+		// ── Upload TTA voting (Session 2.1b) ────────────────
+		const ttaEligible = imageSource instanceof File;
+		if (ttaEligible && ttaEnabled) {
+			checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
+			try {
+				const tta = await runUploadPipeline(workingBitmap, game);
+				ttaTelemetry = {
+					frames_processed: tta.framesProcessed,
+					consensus_reached: tta.consensusReached,
+					parallel_code: tta.parallelCode ?? null,
+					parallel_rule_fired: tta.parallelRuleFired,
+					per_frame_results: tta.perFrameResults,
+					augmentation_set_version: tta.augmentationSetVersion
+				};
+				checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
+					hit: tta.consensusReached,
+					frames: tta.framesProcessed,
+					confidence: tta.confidence
+				});
+
+				if (tta.consensusReached && tta.card) {
+					const ttaDecisionCtx: Record<string, unknown> = {
+						canonical_result: canonical.perTask,
+						canonical_ocr_strategy: canonical.ocrStrategy,
+						canonical_attempts: canonicalAttempts,
+						winning_game: game,
+						upload_tta: ttaTelemetry,
+						...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
+					};
+					const ttaResult: ScanResult = {
+						card_id: tta.card.id,
+						card: {
+							id: tta.card.id,
+							game_id: tta.card.game_id,
+							card_number: tta.card.card_number,
+							hero_name: tta.card.hero_name ?? undefined,
+							name: tta.card.name ?? tta.card.hero_name ?? '',
+							set_code: tta.card.set_code ?? '',
+							parallel: tta.card.parallel ?? undefined
+						} as unknown as Card,
+						scan_method: 'upload_tta',
+						confidence: tta.confidence,
+						processing_ms: Math.round(performance.now() - startTime),
+						parallel: tta.parallel,
+						game_id: tta.card.game_id,
+						liveConsensusReached,
+						liveVsCanonicalAgreed: null,
+						fallbackTierUsed: null,
+						winningTier: 'tier1_upload_tta',
+						decisionContext: ttaDecisionCtx
+					};
+					return {
+						result: ttaResult,
+						telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+					};
+				}
+				// TTA couldn't converge either — fall through to Haiku.
+			} catch (err) {
+				checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
+					error: err instanceof Error ? err.message : String(err)
+				});
+				console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
+			}
+		}
+	} catch (err) {
+		checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
+			error: err instanceof Error ? err.message : String(err)
+		});
+		console.warn('[scan] Tier 1 canonical failed, falling through to Tier 2:', err);
+	}
+
+	return {
+		result: null,
+		telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+	};
 }

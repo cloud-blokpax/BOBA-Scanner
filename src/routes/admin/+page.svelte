@@ -11,9 +11,6 @@
 	import AdminChangelogTab from './AdminChangelogTab.svelte';
 	import AdminSystemTab from './AdminSystemTab.svelte';
 	import AdminParallelsTab from './AdminParallelsTab.svelte';
-	// AdminConfigTab → folded into AdminSystemTab
-	// AdminLogsTab → folded into AdminScansTab
-	// AdminStatsTab → removed (redundant with Pulse metrics)
 	import AdminPacksTab from './AdminPacksTab.svelte';
 	import AdminPhase2Tab from './AdminPhase2Tab.svelte';
 	import AdminTriageTab from './AdminTriageTab.svelte';

@@ -36,9 +36,11 @@ import {
 	initWorkers
 } from './recognition-workers';
 import {
+	runTier1,
 	runTier2,
 	emptyTier2Telemetry,
-	type ScanContext
+	type ScanContext,
+	type Tier1Telemetry
 } from './recognition-tiers';
 import { incrementPersona } from './persona';
 import {
@@ -734,226 +736,36 @@ export async function recognizeCard(
 		});
 	}
 
-	// ── TIER 1 canonical PaddleOCR (Session 2.1a) ───────────
-	// Local OCR + rule-based parallel classifier. Runs before Tier 2 (Claude).
+	// ── TIER 1: canonical PaddleOCR + optional upload TTA ──
 	// Gated by live_ocr_tier1_v1; when off, scans fall straight through to Haiku.
 	const liveOCREnabled = await isLiveOCRTier1Enabled();
-	let liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
-	// Shared across canonical + TTA telemetry so fallback Haiku rows still
-	// carry what canonical / TTA saw when they couldn't close the deal.
-	let canonicalTelemetry: {
-		perTask: import('./tier1-canonical').CanonicalResult['perTask'];
-		ocrStrategy: import('./tier1-canonical').CanonicalResult['ocrStrategy'];
-	} | null = null;
-	let ttaTelemetry: {
-		frames_processed: number;
-		consensus_reached: boolean;
-		parallel_code: string | null;
-		parallel_rule_fired: string | null;
-		per_frame_results: unknown[];
-		augmentation_set_version: string;
-	} | null = null;
-	// Hoisted so the Tier 2 fallback's decisionContext merge can reference it
-	// even when liveOCREnabled is false.
-	let canonicalAttempts: Array<{
-		game: 'boba' | 'wonders';
-		hit: boolean;
-		confidence: number;
-		ocr_strategy: import('./tier1-canonical').CanonicalResult['ocrStrategy'];
-	}> = [];
+	const liveConsensusReached = !!options?.liveConsensusSnapshot?.consensus?.reachedThreshold;
+	let tier1Telemetry: Tier1Telemetry = {
+		canonical: null,
+		tta: null,
+		canonicalAttempts: []
+	};
+
 	if (liveOCREnabled) {
 		onTierChange?.(1);
-		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
-		try {
-			const { runCanonicalTier1 } = await import('./tier1-canonical');
-			const { toParallelName } = await import('$lib/data/wonders-parallels');
-
-			// Auto-detect runs Tier 1 against both games sequentially. Explicit
-			// gameHint runs only that game. We commit to whichever game finds
-			// a card; if neither hits we keep the last game tried for
-			// downstream TTA / Tier 2 telemetry continuity. Per-game attempts
-			// are logged in decision_context.canonical_attempts so we can
-			// measure the auto-detect win distribution post-deploy.
-			const gamesToTry: Array<'boba' | 'wonders'> = isAutoDetect
-				? ['boba', 'wonders']
-				: gameHint === 'wonders'
-					? ['wonders']
-					: ['boba'];
-
-			let canonical!: import('./tier1-canonical').CanonicalResult;
-			let game: 'boba' | 'wonders' = gamesToTry[0];
-			canonicalAttempts = [];
-
-			for (const candidateGame of gamesToTry) {
-				const attempt = await runCanonicalTier1(workingBitmap, candidateGame);
-				canonical = attempt;
-				game = candidateGame;
-				canonicalAttempts.push({
-					game: candidateGame,
-					hit: !!attempt.card,
-					confidence: attempt.confidence,
-					ocr_strategy: attempt.ocrStrategy
-				});
-				if (attempt.card) break;
-			}
-
-			canonicalTelemetry = {
-				perTask: canonical.perTask,
-				ocrStrategy: canonical.ocrStrategy
-			};
-
-			const liveSnap = options?.liveConsensusSnapshot ?? null;
-			const live = liveSnap?.consensus ?? null;
-			// Live consensus emits classifier short codes; canonical.parallel is
-			// already the human-readable DB name. Map before comparing.
-			const liveParallelName = live?.parallel?.value
-				? toParallelName(live.parallel.value)
-				: null;
-			const liveAgreed = !!(
-				live?.reachedThreshold &&
-				live.cardNumber?.value === canonical.cardNumber &&
-				live.name?.value === canonical.name &&
-				(game === 'boba' || liveParallelName === canonical.parallel)
-			);
-			const TIER1_CONFIDENCE_FLOOR = 0.6;
-
-			checkpoint(traceId, 'tier1_canonical:done', performance.now() - startTime, {
-				hit: !!canonical.card,
-				confidence: canonical.confidence,
-				live_reached: liveConsensusReached,
-				live_agreed: liveAgreed
-			});
-
-			if (canonical.card && canonical.confidence >= TIER1_CONFIDENCE_FLOOR) {
-				const divergent: string[] = [];
-				if (live) {
-					if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
-					if (live.name?.value !== canonical.name) divergent.push('name');
-					if (game === 'wonders' && liveParallelName !== canonical.parallel) divergent.push('parallel');
-				}
-				const decisionCtx: Record<string, unknown> = {
-					live_session: liveSnap,
-					canonical_result: canonical.perTask,
-					canonical_ocr_strategy: canonical.ocrStrategy,
-					canonical_attempts: canonicalAttempts,
-					winning_game: game,
-					live_vs_canonical: {
-						live_ran: !!live,
-						agreed: liveAgreed,
-						divergent_fields: live ? divergent : null
-					},
-					...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
-				};
-				const tier1Result: ScanResult = {
-					card_id: canonical.card.id,
-					card: {
-						// Map MirrorCard fields onto the Card shape the UI expects.
-						// Any missing fields (power, rarity, etc.) will be filled in
-						// later by downstream consumers reading from the card DB.
-						id: canonical.card.id,
-						game_id: canonical.card.game_id,
-						card_number: canonical.card.card_number,
-						hero_name: canonical.card.hero_name ?? undefined,
-						name: canonical.card.name ?? canonical.card.hero_name ?? '',
-						set_code: canonical.card.set_code ?? '',
-						parallel: canonical.card.parallel ?? undefined
-					} as unknown as import('$lib/types').Card,
-					scan_method: 'local_ocr',
-					confidence: canonical.confidence,
-					processing_ms: Math.round(performance.now() - startTime),
-					parallel: canonical.parallel,
-					game_id: canonical.card.game_id,
-					liveConsensusReached,
-					liveVsCanonicalAgreed: liveAgreed,
-					fallbackTierUsed: null,
-					// Distinguishes canonical wins from hash-cache hits in telemetry.
-					winningTier: 'tier1_local_ocr',
-					decisionContext: decisionCtx
-				};
-				return finalize(tier1Result);
-			}
-			// Below confidence floor — fall through to TTA (uploads only) or
-			// Tier 2 Haiku. Preserve canonical telemetry for both fallbacks.
-			ctx.lastTier2FailReason = null;
-
-			// ── Upload TTA voting (Session 2.1b) ───────────────
-			// Only fires on File uploads whose canonical pass couldn't clear
-			// the floor. Live captures (ImageBitmap / Blob that came from the
-			// camera) skip this — they already had temporal-frame voting via
-			// the live OCR coordinator. Gated by upload_tta_v1.
-			const ttaEligible = imageSource instanceof File;
-			if (ttaEligible) {
-				const ttaEnabled = await isUploadTtaEnabled();
-				if (ttaEnabled) {
-					checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
-					try {
-						const { runUploadPipeline } = await import('./upload-pipeline');
-						const tta = await runUploadPipeline(workingBitmap, game);
-						ttaTelemetry = {
-							frames_processed: tta.framesProcessed,
-							consensus_reached: tta.consensusReached,
-							parallel_code: tta.parallelCode ?? null,
-							parallel_rule_fired: tta.parallelRuleFired,
-							per_frame_results: tta.perFrameResults,
-							augmentation_set_version: tta.augmentationSetVersion
-						};
-						checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
-							hit: tta.consensusReached,
-							frames: tta.framesProcessed,
-							confidence: tta.confidence
-						});
-
-						if (tta.consensusReached && tta.card) {
-							const ttaDecisionCtx: Record<string, unknown> = {
-								canonical_result: canonical.perTask,
-								canonical_ocr_strategy: canonical.ocrStrategy,
-								canonical_attempts: canonicalAttempts,
-								winning_game: game,
-								upload_tta: ttaTelemetry,
-								...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
-							};
-							const ttaResult: ScanResult = {
-								card_id: tta.card.id,
-								card: {
-									id: tta.card.id,
-									game_id: tta.card.game_id,
-									card_number: tta.card.card_number,
-									hero_name: tta.card.hero_name ?? undefined,
-									name: tta.card.name ?? tta.card.hero_name ?? '',
-									set_code: tta.card.set_code ?? '',
-									parallel: tta.card.parallel ?? undefined
-								} as unknown as import('$lib/types').Card,
-								scan_method: 'upload_tta',
-								confidence: tta.confidence,
-								processing_ms: Math.round(performance.now() - startTime),
-								// `tta.parallel` is ALWAYS a human-readable name (resolved
-								// through WONDERS_PARALLEL_NAMES in the pipeline). Safe
-								// to persist; never a short code.
-								parallel: tta.parallel,
-								game_id: tta.card.game_id,
-								liveConsensusReached,
-								liveVsCanonicalAgreed: null,
-								fallbackTierUsed: null,
-								winningTier: 'tier1_upload_tta',
-								decisionContext: ttaDecisionCtx
-							};
-							return finalize(ttaResult);
-						}
-						// TTA couldn't converge either — fall through to Haiku with
-						// canonical + TTA metadata attached.
-					} catch (err) {
-						checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
-							error: err instanceof Error ? err.message : String(err)
-						});
-						console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
-					}
-				}
-			}
-		} catch (err) {
-			checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
-				error: err instanceof Error ? err.message : String(err)
-			});
-			console.warn('[scan] Tier 1 canonical failed, falling through to Tier 2:', err);
+		const ttaEnabled = imageSource instanceof File ? await isUploadTtaEnabled() : false;
+		const tier1Outcome = await runTier1({
+			workingBitmap,
+			ctx,
+			imageSource,
+			traceId,
+			startTime,
+			gameHint,
+			isAutoDetect,
+			liveConsensusSnapshot: options?.liveConsensusSnapshot ?? null,
+			liveConsensusReached,
+			cardDetectContext,
+			confidenceFloor: 0.6,
+			ttaEnabled
+		});
+		tier1Telemetry = tier1Outcome.telemetry;
+		if (tier1Outcome.result) {
+			return finalize(tier1Outcome.result);
 		}
 	}
 
@@ -987,17 +799,17 @@ export async function recognizeCard(
 		// Preserve what canonical / TTA saw so we can debug which stage
 		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.
-		if (canonicalTelemetry || ttaTelemetry || cardDetectContext) {
+		if (tier1Telemetry.canonical || tier1Telemetry.tta || cardDetectContext) {
 			tier2Result.decisionContext = {
 				...(tier2Result.decisionContext ?? {}),
-				...(canonicalTelemetry
+				...(tier1Telemetry.canonical
 					? {
-						canonical_result: canonicalTelemetry.perTask,
-						canonical_ocr_strategy: canonicalTelemetry.ocrStrategy,
-						canonical_attempts: canonicalAttempts
+						canonical_result: tier1Telemetry.canonical.perTask,
+						canonical_ocr_strategy: tier1Telemetry.canonical.ocrStrategy,
+						canonical_attempts: tier1Telemetry.canonicalAttempts
 					}
 					: {}),
-				...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {}),
+				...(tier1Telemetry.tta ? { upload_tta: tier1Telemetry.tta } : {}),
 				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 			};
 		}

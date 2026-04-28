@@ -24,6 +24,7 @@
 	import CategoryTabs from '$lib/components/CategoryTabs.svelte';
 	import { getCategoryForPath } from '$lib/data/category-tabs';
 	import '../styles/index.css';
+	import '../styles/sell.css';
 
 	let { children, data } = $props();
 

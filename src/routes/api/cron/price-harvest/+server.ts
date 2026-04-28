@@ -17,24 +17,21 @@
 
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { isEbayConfigured, ebayFetch } from '$lib/server/ebay-auth';
+import { isEbayConfigured } from '$lib/server/ebay-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import type { Database } from '$lib/types/database';
 import { getRedis, getHarvestConfidenceThreshold } from '$lib/server/redis';
 import { calculatePriceStats } from '$lib/utils/pricing';
-import { buildEbaySearchQuery, evaluateListings } from '$lib/server/ebay-query';
-import {
-	buildWondersEbayQuery,
-	evaluateWondersListings,
-	scoreWondersListingMatch,
-} from '$lib/server/ebay-query-wonders';
 import { captureCardImage } from '$lib/services/image-harvester';
 import { isFeatureEnabledGlobally } from '$lib/server/feature-flags';
 import { logEvent } from '$lib/server/diagnostics';
+import { persistObservations } from '$lib/server/harvester/listing-observations';
 import {
-	persistObservations,
-	type RawEbayListing
-} from '$lib/server/harvester/listing-observations';
+	getNextCandidates,
+	getPlayCandidates,
+	type CardCandidate
+} from '$lib/server/harvester/candidates';
+import { searchAndEvaluate } from '$lib/server/harvester/ebay-search';
 import type { RequestHandler } from './$types';
 
 // Vercel Hobby supports up to 60s
@@ -44,31 +41,6 @@ const CARDS_PER_RUN = 25;       // Max cards per invocation (time-check is the r
 const CARD_DELAY_MS = 2000;     // 2s between eBay calls — stays under burst limit
 const MAX_CHAIN_DEPTH = 1500;   // Safety cap (~33K cards max across all chains)
 const RESERVE_CALLS = 0;        // Harvester gets 100% of budget
-
-/**
- * Refund an eBay call counter increment. Call this when an eBay request failed
- * in a way that didn't consume real quota — namely 429 responses (rate-limited,
- * no quota consumed) or thrown network errors (request never reached eBay).
- *
- * Without this, our self-imposed 4500-call cap trips early as the counter
- * drifts above actual eBay usage, stalling the harvester before quota is real.
- */
-async function refundEbayCall(
-	redis: NonNullable<ReturnType<typeof getRedis>>,
-	today: string,
-	reason: string,
-	cardId?: string
-): Promise<void> {
-	try {
-		const key = `ebay-calls:${today}`;
-		const count = await redis.decr(key);
-		// decr can go negative if we over-refund; clamp back to 0.
-		if (count < 0) await redis.set(key, 0, { ex: 86400 });
-		console.debug(`[harvest] Refunded ebay-calls counter (${reason}) card=${cardId ?? 'n/a'} new_count=${Math.max(0, count)}`);
-	} catch (err) {
-		console.debug('[harvest] Counter refund failed:', err instanceof Error ? err.message : err);
-	}
-}
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	// ── Auth ─────────────────────────────────────────────
@@ -400,106 +372,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	});
 };
 
-// ── SQL-based candidate selection ───────────────────────────
-// Single Postgres function replaces four in-memory priority passes.
-//
-// Phase 2.5 note: the RPC returns `(id, parallel, ...)` pairs drawn from
-// the union of parallels seen in active `collections` and
-// `listing_templates` rows for each card, plus `cards.parallel` as the
-// baseline. The `card_parallel_name` column carries the rich per-card
-// parallel name from cards.parallel; the `parallel` column carries the
-// downstream value (which equals `card_parallel_name` for BoBA after the
-// 2.1a.4/5 backfill).
-
-interface CardCandidate {
-	id: string;
-	hero_name: string | null;
-	name: string | null;
-	card_number: string | null;
-	athlete_name: string | null;
-	/** cards.parallel — the rich per-card parallel name (e.g. "Battlefoil"). */
-	card_parallel_name?: string | null;
-	weapon_type: string | null;
-	priority: number;
-	/** Downstream parallel column value. For BoBA equals card_parallel_name
-	 *  (post-backfill); for Wonders is the active foil parallel name. */
-	parallel?: string | null;
-	/** Phase 3: game_id routes to the right query builder (BoBA vs Wonders). */
-	game_id?: string | null;
-	/** Phase 3: metadata used by the Wonders query builder for set display name. */
-	metadata?: Record<string, unknown> | null;
-}
-
-async function getNextCandidates(
-	admin: NonNullable<ReturnType<typeof getAdminClient>>,
-	limit: number,
-	today: string,
-	gameId: 'boba' | 'wonders' = 'boba'
-): Promise<CardCandidate[]> {
-	// Supabase types don't include p_game_id yet — cast through unknown so the
-	// optional parameter typechecks. The RPC defaults game_id to 'boba'.
-	const rpcArgs = {
-		p_run_id: today,
-		p_limit: limit,
-		p_game_id: gameId,
-	} as unknown as { p_run_id: string; p_limit: number };
-
-	const { data, error: rpcError } = await admin.rpc('get_harvest_candidates', rpcArgs);
-
-	if (rpcError) {
-		console.error(`[harvest] get_harvest_candidates RPC failed (game=${gameId}):`, rpcError);
-		void logEvent({
-			level: 'error',
-			event: 'harvest.boba.candidates_rpc_failed',
-			error: rpcError.message,
-			errorCode: rpcError.code,
-			context: { game_id: gameId }
-		});
-		return [];
-	}
-
-	// Normalize: default parallel to cards.parallel (the rich, per-card
-	// catalog name like "Battlefoil" or "Headlines Battlefoil"). The RPC's
-	// per-candidate `parallel` column is a synthetic value that returns the
-	// literal 'paper' for every base catalog row regardless of cards.parallel,
-	// which is why pre-fix harvest logs all wrote `parallel: 'paper'`. Prefer
-	// card_parallel_name so the eBay query and writers see the actual catalog
-	// parallel; fall back to the synthetic value or 'paper' only when missing.
-	const raw = (data as unknown as CardCandidate[]) || [];
-	return raw.map((r) => ({
-		...r,
-		parallel: r.card_parallel_name || r.parallel || 'paper',
-		game_id: r.game_id || gameId
-	}));
-}
-
-/**
- * Fetch play card candidates from the play_cards table.
- * Uses a separate RPC that returns TEXT IDs (not UUIDs).
- */
-async function getPlayCandidates(
-	admin: NonNullable<ReturnType<typeof getAdminClient>>,
-	limit: number
-): Promise<CardCandidate[]> {
-	const { data, error: rpcError } = await admin.rpc('get_play_harvest_candidates', {
-		p_limit: limit
-	});
-
-	if (rpcError) {
-		console.error('[harvest] get_play_harvest_candidates RPC failed:', rpcError);
-		void logEvent({
-			level: 'error',
-			event: 'harvest.play.candidates_rpc_failed',
-			error: rpcError.message,
-			errorCode: rpcError.code
-		});
-		return [];
-	}
-
-	return (data as unknown as CardCandidate[]) || [];
-}
-
 // ── Single card price refresh ───────────────────────────────
+// Candidate selection lives in $lib/server/harvester/candidates.
+// eBay search + filter dispatch lives in $lib/server/harvester/ebay-search.
 
 interface RefreshResult {
 	success: boolean;
@@ -515,34 +390,10 @@ async function refreshCardPrice(
 	confidenceThreshold: number,
 	imageCaptureEnabled: boolean
 ): Promise<RefreshResult> {
-	// Phase 2.5 / 3: the harvester operates on (card_id, parallel) pairs and
-	// dispatches query/filter builders by game_id. BoBA uses ebay-query.ts;
-	// Wonders uses ebay-query-wonders.ts (quoted phrases + parallel keywords
-	// + cross-game contamination rejection).
-	// Prefer card_parallel_name (cards.parallel) over the synthetic per-candidate
-	// `parallel` so we write the actual catalog parallel into price_cache /
-	// price_harvest_log. See getNextCandidates() for the full explanation.
 	const parallel = card.card_parallel_name || card.parallel || 'paper';
 	const gameId = (card.game_id || 'boba').toLowerCase();
 	const isWonders = gameId === 'wonders';
-	// Build the EbayCardInfo shape the Wonders query builder expects.
-	const wondersCardInfo = {
-		hero_name: card.hero_name,
-		name: card.name,
-		card_number: card.card_number,
-		parallel,
-		game_id: 'wonders' as const,
-		metadata: card.metadata ?? null,
-	};
-	const query = isWonders ? buildWondersEbayQuery(wondersCardInfo) : buildEbaySearchQuery(card);
 	const callStart = Date.now();
-
-	// Increment Redis counter BEFORE the call
-	try {
-		const key = `ebay-calls:${today}`;
-		const count = await redis.incr(key);
-		if (count === 1) await redis.expire(key, 86400);
-	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
 
 	// Fetch previous price for delta tracking (parallel-scoped)
 	let previousMid: number | null = null;
@@ -561,253 +412,205 @@ async function refreshCardPrice(
 		} else {
 			isNewPrice = true;
 		}
-	} catch (err) { console.debug('[harvest] Previous price fetch failed (delta tracking):', err instanceof Error ? err.message : err); }
+	} catch (err) {
+		console.debug('[harvest] Previous price fetch failed (delta tracking):', err instanceof Error ? err.message : err);
+	}
 
-	try {
-		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
-		searchUrl.searchParams.set('q', query);
-		searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
-		searchUrl.searchParams.set('limit', '50');
+	const outcome = await searchAndEvaluate(card, parallel, redis, today);
 
-		const res = await ebayFetch(searchUrl.toString());
-		if (!res.ok) {
-			// 429 = rate limited — no quota was actually consumed, refund the counter
-			// so our self-imposed cap doesn't drift above real eBay usage.
-			if (res.status === 429) {
-				await refundEbayCall(redis, today, '429 response', card.id);
-			}
-			return {
+	if (!outcome.ok) {
+		return {
+			success: false,
+			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, callStart, {
 				success: false,
-				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
-					success: false,
-					error_message: `eBay API returned ${res.status}`,
-					isNewPrice, previousMid
-				})
-			};
-		}
+				error_message: outcome.errorMessage ?? 'Unknown error',
+				isNewPrice,
+				previousMid
+			})
+		};
+	}
 
-		const data = await res.json();
-		const rawItems: RawEbayListing[] = data.itemSummaries || [];
+	const { items, decisions, rawCount: ebayResultsRaw, query, wondersAvgTitleScore } = outcome;
 
-		const ebayResultsRaw = rawItems.length;
-
-		// Evaluate every listing — both accepted and rejected — so we can
-		// persist all observations with their filter decision tagged. The
-		// price math operates only on accepted items via `items` below.
-		const decisions = isWonders
-			? evaluateWondersListings(rawItems, wondersCardInfo)
-			: evaluateListings(rawItems, card);
-		const items = decisions.filter((d) => d.decision.accepted).map((d) => d.item);
-
-		// Persist per-listing observations + image dedupe. Best-effort: any
-		// failure is logged inside persistObservations and the surrounding
-		// try/catch ensures price harvesting is never blocked by this work.
-		try {
-			await persistObservations(
-				admin,
-				{ id: card.id, game_id: card.game_id ?? gameId, parallel },
-				today,
-				decisions
-			);
-		} catch (err) {
-			console.error(
-				'[harvest:observations] non-fatal:',
-				err instanceof Error ? err.message : err
-			);
-		}
-
-		// Piggyback: harvest image from first relevant listing (BoBA only).
-		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1 — when off
-		// (the default), the dedicated /api/cron/image-harvest endpoint owns
-		// this work instead.
-		if (imageCaptureEnabled && !isWonders && items.length > 0) {
-			void captureCardImage(card.id, items[0], 'boba');
-		}
-
-		// Separate by buying option
-		const fixedPriceItems = items.filter(item =>
-			item.buyingOptions?.includes('FIXED_PRICE')
+	// Persist per-listing observations + image dedupe. Best-effort.
+	try {
+		await persistObservations(
+			admin,
+			{ id: card.id, game_id: card.game_id ?? gameId, parallel },
+			today,
+			decisions
 		);
-		const auctionItems = items.filter(item =>
-			item.buyingOptions?.includes('AUCTION')
+	} catch (err) {
+		console.error(
+			'[harvest:observations] non-fatal:',
+			err instanceof Error ? err.message : err
 		);
+	}
 
-		const allPrices = items
-			.map(item => parseFloat(item.price?.value || '0'))
-			.filter(p => p > 0);
+	// Piggyback: harvest image from first relevant listing (BoBA only).
+	// Fire-and-forget. Gated by image_harvest_in_price_cron_v1.
+	if (imageCaptureEnabled && !isWonders && items.length > 0) {
+		void captureCardImage(card.id, items[0], 'boba');
+	}
 
-		const fixedPrices = fixedPriceItems
-			.map(item => parseFloat(item.price?.value || '0'))
-			.filter(p => p > 0);
+	const fixedPriceItems = items.filter(item =>
+		item.buyingOptions?.includes('FIXED_PRICE')
+	);
+	const auctionItems = items.filter(item =>
+		item.buyingOptions?.includes('AUCTION')
+	);
 
-		const allStats = calculatePriceStats(allPrices);
-		const fixedStats = calculatePriceStats(fixedPrices);
+	const allPrices = items
+		.map(item => parseFloat(item.price?.value || '0'))
+		.filter(p => p > 0);
 
-		// Phase 3: for Wonders, refine confidence using the listing title scorer
-		// so we don't accept loose name-only matches. Average across items.
-		let adjustedConfidence = allStats?.confidenceScore ?? 0;
-		if (isWonders && items.length > 0) {
-			const titleScores = items.map((it) => scoreWondersListingMatch(it.title || '', wondersCardInfo));
-			const avgTitleScore = titleScores.reduce((a, b) => a + b, 0) / titleScores.length;
-			// Blend: 60% existing signal (price stability / listing count), 40% title match
-			adjustedConfidence = adjustedConfidence * 0.6 + avgTitleScore * 0.4;
-		}
+	const fixedPrices = fixedPriceItems
+		.map(item => parseFloat(item.price?.value || '0'))
+		.filter(p => p > 0);
 
-		// Cold-start: new (card_id, parallel) pairs are provisional for their first
-		// few harvests. The UI shows provisional prices with an asterisk + tooltip.
-		// Uses isNewPrice (no prior price_cache row) as the signal.
-		const coldStart = isWonders && isNewPrice;
+	const allStats = calculatePriceStats(allPrices);
+	const fixedStats = calculatePriceStats(fixedPrices);
 
-		const priceData: Record<string, unknown> = {
+	// Phase 3: for Wonders, blend the title scorer into confidence.
+	let adjustedConfidence = allStats?.confidenceScore ?? 0;
+	if (isWonders && wondersAvgTitleScore !== null) {
+		adjustedConfidence = adjustedConfidence * 0.6 + wondersAvgTitleScore * 0.4;
+	}
+
+	const coldStart = isWonders && isNewPrice;
+
+	const priceData: Record<string, unknown> = {
+		card_id: card.id,
+		source: 'ebay',
+		parallel,
+		game_id: card.game_id || 'boba',
+		price_low: allStats?.low ?? null,
+		price_mid: allStats?.median ?? null,
+		price_high: allStats?.high ?? null,
+		listings_count: allPrices.length,
+		buy_now_low: fixedStats?.low ?? null,
+		buy_now_mid: fixedStats?.median ?? null,
+		buy_now_count: fixedPrices.length,
+		filtered_count: allStats?.filteredCount ?? 0,
+		confidence_score: adjustedConfidence,
+		confidence_cold_start: coldStart,
+		fetched_at: new Date().toISOString()
+	};
+
+	const meetsThreshold = adjustedConfidence >= confidenceThreshold;
+
+	const cachePayload: Record<string, unknown> = meetsThreshold
+		? priceData
+		: {
+			...priceData,
+			price_low: null,
+			price_mid: null,
+			price_high: null,
+			buy_now_low: null,
+			buy_now_mid: null,
+		};
+	const { error: cacheError } = await (admin.from('price_cache') as unknown as {
+		upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
+	}).upsert(cachePayload, { onConflict: 'card_id,source,parallel' });
+	if (cacheError) {
+		console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+		void logEvent({
+			level: 'error',
+			event: 'harvest.price_cache_upsert_failed',
+			error: cacheError.message,
+			context: { card_id: card.id, parallel }
+		});
+	}
+
+	const newMid = priceData.price_mid !== null ? Number(priceData.price_mid) : null;
+	const priceChanged = previousMid !== newMid;
+
+	if (meetsThreshold && (!previousMid || priceChanged)) {
+		const historyRow: Record<string, unknown> = {
 			card_id: card.id,
 			source: 'ebay',
 			parallel,
 			game_id: card.game_id || 'boba',
-			price_low: allStats?.low ?? null,
-			price_mid: allStats?.median ?? null,
-			price_high: allStats?.high ?? null,
-			listings_count: allPrices.length,
-			buy_now_low: fixedStats?.low ?? null,
-			buy_now_mid: fixedStats?.median ?? null,
-			buy_now_count: fixedPrices.length,
-			filtered_count: allStats?.filteredCount ?? 0,
-			confidence_score: adjustedConfidence,
-			confidence_cold_start: coldStart,
-			fetched_at: new Date().toISOString()
+			price_low: priceData.price_low,
+			price_mid: priceData.price_mid,
+			price_high: priceData.price_high,
+			listings_count: priceData.listings_count,
+			recorded_at: new Date().toISOString()
 		};
-
-		// Check confidence threshold before accepting price
-		const meetsThreshold = adjustedConfidence >= confidenceThreshold;
-
-		// Always upsert price_cache so the card is marked as "searched".
-		// Cards below threshold get cached with null prices (searched, no price)
-		// so they drop to stale priority instead of being re-searched as "unpriced".
-		const cachePayload: Record<string, unknown> = meetsThreshold
-			? priceData
-			: {
-				...priceData,
-				// Zero out prices so it's clearly "searched, none found"
-				price_low: null,
-				price_mid: null,
-				price_high: null,
-				buy_now_low: null,
-				buy_now_mid: null,
-			};
-		// Upsert key is (card_id, source, parallel).
-		const { error: cacheError } = await (admin.from('price_cache') as unknown as {
-			upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
-		}).upsert(cachePayload, { onConflict: 'card_id,source,parallel' });
-		if (cacheError) {
-			console.error(`[harvest] price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+		const { error: historyError } = await (admin.from('price_history') as unknown as {
+			insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+		}).insert(historyRow);
+		if (historyError) {
+			console.error(`[harvest] price_history insert FAILED for ${card.id}:`, historyError.message);
 			void logEvent({
 				level: 'error',
-				event: 'harvest.price_cache_upsert_failed',
-				error: cacheError.message,
+				event: 'harvest.price_history_insert_failed',
+				error: historyError.message,
 				context: { card_id: card.id, parallel }
 			});
 		}
-
-		// Write price history only if price changed AND meets threshold
-		const newMid = priceData.price_mid !== null ? Number(priceData.price_mid) : null;
-		const priceChanged = previousMid !== newMid;
-
-		if (meetsThreshold && (!previousMid || priceChanged)) {
-			const historyRow: Record<string, unknown> = {
-				card_id: card.id,
-				source: 'ebay',
-				parallel,
-				game_id: card.game_id || 'boba',
-				price_low: priceData.price_low,
-				price_mid: priceData.price_mid,
-				price_high: priceData.price_high,
-				listings_count: priceData.listings_count,
-				recorded_at: new Date().toISOString()
-			};
-			const { error: historyError } = await (admin.from('price_history') as unknown as {
-				insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
-			}).insert(historyRow);
-			if (historyError) {
-				console.error(`[harvest] price_history insert FAILED for ${card.id}:`, historyError.message);
-				void logEvent({
-					level: 'error',
-					event: 'harvest.price_history_insert_failed',
-					error: historyError.message,
-					context: { card_id: card.id, parallel }
-				});
-			}
-		}
-
-		// Calculate delta
-		let priceDelta: number | null = null;
-		let priceDeltaPct: number | null = null;
-		if (previousMid !== null && newMid !== null) {
-			priceDelta = parseFloat((newMid - previousMid).toFixed(2));
-			if (previousMid > 0) {
-				priceDeltaPct = parseFloat(((priceDelta / previousMid) * 100).toFixed(2));
-			}
-		}
-
-		return {
-			success: true,
-			logEntry: {
-				run_id: today,
-				chain_depth: chainDepth,
-				priority: card.priority,
-				card_id: card.id,
-				hero_name: card.hero_name,
-				card_name: card.name,
-				card_number: card.card_number,
-				// Phase 3: tag the harvest log row with game + parallel.
-				game_id: card.game_id || 'boba',
-				parallel,
-				search_query: query,
-				ebay_results_raw: ebayResultsRaw,
-				auction_count: auctionItems.length,
-				fixed_price_count: fixedPriceItems.length,
-				price_low: allStats?.low ?? null,
-				price_mid: allStats?.median ?? null,
-				price_high: allStats?.high ?? null,
-				price_mean: allStats?.mean ?? null,
-				listings_count: allPrices.length,
-				filtered_count: allStats?.filteredCount ?? 0,
-				confidence_score: allStats?.confidenceScore ?? 0,
-				buy_now_low: fixedStats?.low ?? null,
-				buy_now_mid: fixedStats?.median ?? null,
-				buy_now_high: fixedStats?.high ?? null,
-				buy_now_mean: fixedStats?.mean ?? null,
-				buy_now_count: fixedPrices.length,
-				buy_now_filtered: fixedStats?.filteredCount ?? 0,
-				buy_now_confidence: fixedStats?.confidenceScore ?? 0,
-				previous_mid: previousMid,
-				price_changed: priceChanged,
-				price_delta: priceDelta,
-				price_delta_pct: priceDeltaPct,
-				is_new_price: isNewPrice,
-				success: true,
-				zero_results: ebayResultsRaw === 0,
-				threshold_rejected: !meetsThreshold,
-				error_message: null,
-				duration_ms: Date.now() - callStart,
-				processed_at: new Date().toISOString()
-			}
-		};
-	} catch (err) {
-		// Thrown error = fetch failed before reaching eBay. Refund the counter.
-		await refundEbayCall(redis, today, 'fetch threw', card.id);
-		return {
-			success: false,
-			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
-				success: false,
-				error_message: err instanceof Error ? err.message : 'Unknown error',
-				isNewPrice, previousMid
-			})
-		};
 	}
+
+	let priceDelta: number | null = null;
+	let priceDeltaPct: number | null = null;
+	if (previousMid !== null && newMid !== null) {
+		priceDelta = parseFloat((newMid - previousMid).toFixed(2));
+		if (previousMid > 0) {
+			priceDeltaPct = parseFloat(((priceDelta / previousMid) * 100).toFixed(2));
+		}
+	}
+
+	return {
+		success: true,
+		logEntry: {
+			run_id: today,
+			chain_depth: chainDepth,
+			priority: card.priority,
+			card_id: card.id,
+			hero_name: card.hero_name,
+			card_name: card.name,
+			card_number: card.card_number,
+			game_id: card.game_id || 'boba',
+			parallel,
+			search_query: query,
+			ebay_results_raw: ebayResultsRaw,
+			auction_count: auctionItems.length,
+			fixed_price_count: fixedPriceItems.length,
+			price_low: allStats?.low ?? null,
+			price_mid: allStats?.median ?? null,
+			price_high: allStats?.high ?? null,
+			price_mean: allStats?.mean ?? null,
+			listings_count: allPrices.length,
+			filtered_count: allStats?.filteredCount ?? 0,
+			confidence_score: allStats?.confidenceScore ?? 0,
+			buy_now_low: fixedStats?.low ?? null,
+			buy_now_mid: fixedStats?.median ?? null,
+			buy_now_high: fixedStats?.high ?? null,
+			buy_now_mean: fixedStats?.mean ?? null,
+			buy_now_count: fixedPrices.length,
+			buy_now_filtered: fixedStats?.filteredCount ?? 0,
+			buy_now_confidence: fixedStats?.confidenceScore ?? 0,
+			previous_mid: previousMid,
+			price_changed: priceChanged,
+			price_delta: priceDelta,
+			price_delta_pct: priceDeltaPct,
+			is_new_price: isNewPrice,
+			success: true,
+			zero_results: ebayResultsRaw === 0,
+			threshold_rejected: !meetsThreshold,
+			error_message: null,
+			duration_ms: Date.now() - callStart,
+			processed_at: new Date().toISOString()
+		}
+	};
 }
 
 /**
  * Refresh price for a play card. Identical logic to refreshCardPrice
  * but writes to play_price_cache (TEXT card_id) instead of price_cache (UUID).
+ *
+ * play_price_cache has no parallel column, so we don't persist parallel for
+ * plays; pass 'paper' to searchAndEvaluate so the BoBA query builder is used.
  */
 async function refreshPlayCardPrice(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
@@ -818,17 +621,8 @@ async function refreshPlayCardPrice(
 	confidenceThreshold: number,
 	imageCaptureEnabled: boolean
 ): Promise<RefreshResult> {
-	const query = buildEbaySearchQuery(card);
 	const callStart = Date.now();
 
-	// Increment Redis counter BEFORE the call
-	try {
-		const key = `ebay-calls:${today}`;
-		const count = await redis.incr(key);
-		if (count === 1) await redis.expire(key, 86400);
-	} catch (err) { console.debug('[harvest] Redis counter increment failed:', err instanceof Error ? err.message : err); }
-
-	// Fetch previous price for delta tracking
 	let previousMid: number | null = null;
 	let isNewPrice = false;
 	try {
@@ -846,135 +640,107 @@ async function refreshPlayCardPrice(
 		} else {
 			isNewPrice = true;
 		}
-	} catch (err) { console.debug('[harvest] Play card previous price fetch failed:', err instanceof Error ? err.message : err); }
-
-	try {
-		const searchUrl = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
-		searchUrl.searchParams.set('q', query);
-		searchUrl.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE|AUCTION}');
-		searchUrl.searchParams.set('limit', '50');
-
-		const res = await ebayFetch(searchUrl.toString());
-		if (!res.ok) {
-			// 429 = rate limited — no quota was actually consumed, refund the counter.
-			if (res.status === 429) {
-				await refundEbayCall(redis, today, '429 response (play card)', card.id);
-			}
-			return {
-				success: false,
-				logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
-					success: false,
-					error_message: `eBay API returned ${res.status}`,
-					isNewPrice, previousMid
-				})
-			};
-		}
-
-		const data = await res.json();
-		const rawItems: RawEbayListing[] = data.itemSummaries || [];
-
-		const ebayResultsRaw = rawItems.length;
-		const decisions = evaluateListings(rawItems, card);
-		const items = decisions.filter((d) => d.decision.accepted).map((d) => d.item);
-
-		// Play cards have TEXT IDs (e.g. "A---PL-2") while ebay_listing_observations
-		// keys on UUID card_id. Skip persistence for plays — the observations
-		// table is hero-only by design.
-
-		// Piggyback: harvest image from first relevant listing.
-		// Fire-and-forget. Gated by image_harvest_in_price_cron_v1.
-		if (imageCaptureEnabled && items.length > 0) {
-			void captureCardImage(card.id, items[0], 'boba');
-		}
-
-		const fixedPriceItems = items.filter(item =>
-			item.buyingOptions?.includes('FIXED_PRICE')
-		);
-
-		const allPrices = items
-			.map(item => parseFloat(item.price?.value || '0'))
-			.filter(p => p > 0);
-
-		const fixedPrices = fixedPriceItems
-			.map(item => parseFloat(item.price?.value || '0'))
-			.filter(p => p > 0);
-
-		const allStats = calculatePriceStats(allPrices);
-		const fixedStats = calculatePriceStats(fixedPrices);
-
-		const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
-
-		// Upsert into play_price_cache (TEXT card_id — no UUID constraint)
-		const cachePayload = {
-			card_id: card.id,
-			source: 'ebay',
-			price_low: meetsThreshold ? (allStats?.low ?? null) : null,
-			price_mid: meetsThreshold ? (allStats?.median ?? null) : null,
-			price_high: meetsThreshold ? (allStats?.high ?? null) : null,
-			listings_count: allPrices.length,
-			buy_now_low: meetsThreshold ? (fixedStats?.low ?? null) : null,
-			buy_now_mid: meetsThreshold ? (fixedStats?.median ?? null) : null,
-			buy_now_count: fixedPrices.length,
-			filtered_count: allStats?.filteredCount ?? 0,
-			confidence_score: allStats?.confidenceScore ?? 0,
-			fetched_at: new Date().toISOString()
-		};
-
-		const { error: cacheError } = await admin.from('play_price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
-		if (cacheError) {
-			console.error(`[harvest] play_price_cache upsert FAILED for ${card.id}:`, cacheError.message);
-			void logEvent({
-				level: 'error',
-				event: 'harvest.play.price_cache_upsert_failed',
-				error: cacheError.message,
-				context: { card_id: card.id }
-			});
-		}
-
-		// Write price history if changed and meets threshold
-		const newMid = meetsThreshold ? (allStats?.median ?? null) : null;
-		const priceChanged = previousMid !== newMid;
-
-		if (meetsThreshold && (!previousMid || priceChanged)) {
-			const { error: historyError } = await admin.from('play_price_history').insert({
-				card_id: card.id,
-				source: 'ebay',
-				price_low: allStats?.low ?? null,
-				price_mid: allStats?.median ?? null,
-				price_high: allStats?.high ?? null,
-				listings_count: allPrices.length,
-				recorded_at: new Date().toISOString()
-			});
-			if (historyError) {
-				console.error(`[harvest] play_price_history insert FAILED for ${card.id}:`, historyError.message);
-				void logEvent({
-					level: 'error',
-					event: 'harvest.play.price_history_insert_failed',
-					error: historyError.message,
-					context: { card_id: card.id }
-				});
-			}
-		}
-
-		return {
-			success: true,
-			logEntry: {
-				error_message: null,
-				success: true
-			}
-		};
 	} catch (err) {
-		// Thrown error = fetch failed before reaching eBay. Refund the counter.
-		await refundEbayCall(redis, today, 'fetch threw (play card)', card.id);
+		console.debug('[harvest] Play card previous price fetch failed:', err instanceof Error ? err.message : err);
+	}
+
+	const outcome = await searchAndEvaluate(card, 'paper', redis, today);
+
+	if (!outcome.ok) {
 		return {
 			success: false,
-			logEntry: buildLogEntry(card, query, chainDepth, today, callStart, {
+			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, callStart, {
 				success: false,
-				error_message: err instanceof Error ? err.message : 'Unknown error',
-				isNewPrice, previousMid
+				error_message: outcome.errorMessage ?? 'Unknown error',
+				isNewPrice,
+				previousMid
 			})
 		};
 	}
+
+	const { items } = outcome;
+
+	// Play cards skip ebay_listing_observations persistence by design — that
+	// table is hero-only (UUID card_id constraint).
+
+	if (imageCaptureEnabled && items.length > 0) {
+		void captureCardImage(card.id, items[0], 'boba');
+	}
+
+	const fixedPriceItems = items.filter(item =>
+		item.buyingOptions?.includes('FIXED_PRICE')
+	);
+
+	const allPrices = items
+		.map(item => parseFloat(item.price?.value || '0'))
+		.filter(p => p > 0);
+
+	const fixedPrices = fixedPriceItems
+		.map(item => parseFloat(item.price?.value || '0'))
+		.filter(p => p > 0);
+
+	const allStats = calculatePriceStats(allPrices);
+	const fixedStats = calculatePriceStats(fixedPrices);
+
+	const meetsThreshold = (allStats?.confidenceScore ?? 0) >= confidenceThreshold;
+
+	const cachePayload = {
+		card_id: card.id,
+		source: 'ebay',
+		price_low: meetsThreshold ? (allStats?.low ?? null) : null,
+		price_mid: meetsThreshold ? (allStats?.median ?? null) : null,
+		price_high: meetsThreshold ? (allStats?.high ?? null) : null,
+		listings_count: allPrices.length,
+		buy_now_low: meetsThreshold ? (fixedStats?.low ?? null) : null,
+		buy_now_mid: meetsThreshold ? (fixedStats?.median ?? null) : null,
+		buy_now_count: fixedPrices.length,
+		filtered_count: allStats?.filteredCount ?? 0,
+		confidence_score: allStats?.confidenceScore ?? 0,
+		fetched_at: new Date().toISOString()
+	};
+
+	const { error: cacheError } = await admin.from('play_price_cache').upsert(cachePayload, { onConflict: 'card_id,source' });
+	if (cacheError) {
+		console.error(`[harvest] play_price_cache upsert FAILED for ${card.id}:`, cacheError.message);
+		void logEvent({
+			level: 'error',
+			event: 'harvest.play.price_cache_upsert_failed',
+			error: cacheError.message,
+			context: { card_id: card.id }
+		});
+	}
+
+	const newMid = meetsThreshold ? (allStats?.median ?? null) : null;
+	const priceChanged = previousMid !== newMid;
+
+	if (meetsThreshold && (!previousMid || priceChanged)) {
+		const { error: historyError } = await admin.from('play_price_history').insert({
+			card_id: card.id,
+			source: 'ebay',
+			price_low: allStats?.low ?? null,
+			price_mid: allStats?.median ?? null,
+			price_high: allStats?.high ?? null,
+			listings_count: allPrices.length,
+			recorded_at: new Date().toISOString()
+		});
+		if (historyError) {
+			console.error(`[harvest] play_price_history insert FAILED for ${card.id}:`, historyError.message);
+			void logEvent({
+				level: 'error',
+				event: 'harvest.play.price_history_insert_failed',
+				error: historyError.message,
+				context: { card_id: card.id }
+			});
+		}
+	}
+
+	return {
+		success: true,
+		logEntry: {
+			error_message: null,
+			success: true
+		}
+	};
 }
 
 /**
