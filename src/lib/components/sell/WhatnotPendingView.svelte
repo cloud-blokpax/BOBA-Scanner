@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { showToast } from '$lib/stores/toast.svelte';
-	import { priceCache } from '$lib/stores/prices.svelte';
+	import { priceCache, getPrice } from '$lib/stores/prices.svelte';
+	import type { PriceData } from '$lib/types';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import {
 		whatnotPendingCards, whatnotBatchTag, whatnotBatchNumber,
@@ -13,6 +14,7 @@
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 	import { getCardImageUrl } from '$lib/utils/image-url';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import { PARALLEL_ABBREV, PARALLEL_COLOR, normalizeParallel } from '$lib/data/parallels';
 
 	interface Props {
 		onScan: () => void;
@@ -30,6 +32,48 @@
 
 	let exporting = $state(false);
 	let showHistory = $state(false);
+
+	// Track which pending cards have completed a price fetch attempt.
+	// Lets us distinguish "still loading" from "loaded, no market data".
+	let priceFetched = $state<Set<string>>(new Set());
+
+	// Prefetch prices for every pending card so the UI can render real
+	// state instead of $0.99 fallback. Tracked per (cardId, parallel).
+	$effect(() => {
+		for (const p of pending) {
+			const parallel = p.card.parallel || 'Paper';
+			const key = `${p.cardId}:${parallel}`;
+			if (priceFetched.has(key)) continue;
+			if (prices.has(key)) {
+				priceFetched.add(key);
+				continue;
+			}
+			getPrice(p.cardId, parallel)
+				.catch(() => null)
+				.finally(() => {
+					const next = new Set(priceFetched);
+					next.add(key);
+					priceFetched = next;
+				});
+		}
+	});
+
+	function priceState(p: WhatnotPendingCard): 'loading' | 'no_data' | 'loaded' {
+		const parallel = p.card.parallel || 'Paper';
+		const key = `${p.cardId}:${parallel}`;
+		if (prices.has(key)) return 'loaded';
+		if (priceFetched.has(key)) return 'no_data';
+		return 'loading';
+	}
+
+	function priceDataFor(p: WhatnotPendingCard): PriceData | null {
+		const parallel = p.card.parallel || 'Paper';
+		return (
+			prices.get(`${p.cardId}:${parallel}`) ??
+			prices.get(`${p.cardId}:Paper`) ??
+			null
+		);
+	}
 
 	async function handleExport() {
 		if (pending.length === 0) {
@@ -76,6 +120,29 @@
 	// into the WhatnotExportCard the CSV generator consumes. Reused by the
 	// per-card editor preview so the user sees exactly what will land in the
 	// CSV before clicking Export.
+	// Compute SKU suffix map: for each (cardId, parallel) duplicated within
+	// the batch, assign -01/-02/… by add order. Singletons get no suffix.
+	const skuSuffixMap = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const p of pending) {
+			const key = `${p.cardId}:${p.card.parallel || 'Paper'}`;
+			counts.set(key, (counts.get(key) ?? 0) + 1);
+		}
+		const seen = new Map<string, number>();
+		const suffixes = new Map<string, string>();
+		for (const p of pending) {
+			const key = `${p.cardId}:${p.card.parallel || 'Paper'}`;
+			if ((counts.get(key) ?? 0) <= 1) {
+				suffixes.set(p.cardId, '');
+				continue;
+			}
+			const idx = (seen.get(key) ?? 0) + 1;
+			seen.set(key, idx);
+			suffixes.set(p.cardId, `-${String(idx).padStart(2, '0')}`);
+		}
+		return suffixes;
+	});
+
 	function buildExportCard(p: WhatnotPendingCard): WhatnotExportCard {
 		const parallel = p.card.parallel || 'Paper';
 		const priceData = prices.get(`${p.cardId}:${parallel}`) ?? prices.get(`${p.cardId}:Paper`);
@@ -117,8 +184,36 @@
 			offerable_override: p.offerable,
 			category_override: p.category,
 			sub_category_override: p.subCategory,
-			sku_override: p.skuOverride,
+			// SKU override priority: user-edited value (skuOverride) wins. If
+			// the user hasn't touched it AND the batch has duplicates of this
+			// (card_id, parallel), append the auto-generated suffix to the
+			// computed default. Computing the default here (instead of in the
+			// CSV generator) so the duplicate-suffix logic has batch context.
+			sku_override: p.skuOverride ?? (skuSuffixMap.get(p.cardId)
+				? buildSkuPreview({ ...buildExportCardWithoutSku(p), sku_override: null }) + skuSuffixMap.get(p.cardId)
+				: null),
 			cogs: p.cogs
+		};
+	}
+
+	// Strips the override fields that buildSkuPreview would round-trip through;
+	// avoids recursion when buildExportCard needs to resolve a default SKU
+	// suffixed with the duplicate index.
+	function buildExportCardWithoutSku(p: WhatnotPendingCard): WhatnotExportCard {
+		const parallel = p.card.parallel || 'Paper';
+		return {
+			id: p.cardId,
+			hero_name: p.card.hero_name,
+			name: p.card.name,
+			athlete_name: p.card.athlete_name,
+			card_number: p.card.card_number,
+			set_code: p.card.set_code,
+			parallel,
+			weapon_type: p.card.weapon_type,
+			power: p.card.power,
+			rarity: p.card.rarity,
+			game_id: (p.card as { game_id?: string | null }).game_id ?? null,
+			metadata: (p.card as { metadata?: Record<string, unknown> | null }).metadata ?? null
 		};
 	}
 
@@ -126,6 +221,34 @@
 	let expandedCardId = $state<string | null>(null);
 	function toggleExpand(cardId: string) {
 		expandedCardId = expandedCardId === cardId ? null : cardId;
+	}
+
+	// ── Bulk apply ──────────────────────────────────────────
+	let bulkCondition = $state<string>('Near Mint');
+	let bulkShipping = $state<string>('0-1 oz');
+	let bulkListingType = $state<string>('Buy It Now');
+	let bulkOfferable = $state<boolean>(true);
+
+	function applyBulk() {
+		if (pending.length === 0) return;
+		const confirmed = confirm(
+			`Apply Condition="${bulkCondition}", Shipping="${bulkShipping}", Type="${bulkListingType}", ` +
+			`Offerable=${bulkOfferable ? 'Yes' : 'No'} to all ${pending.length} cards?\n\n` +
+			`Per-card edits to these fields will be overwritten. Title, description, price, ` +
+			`SKU, COGS, and photos are not affected.`
+		);
+		if (!confirmed) return;
+
+		for (const p of pending) {
+			updatePendingCard(p.cardId, {
+				condition: bulkCondition,
+				shippingProfile: bulkShipping,
+				listingType: bulkListingType,
+				offerable: bulkOfferable
+			});
+		}
+		showToast(`Applied to ${pending.length} cards`, 'check');
+		triggerHaptic('success');
 	}
 
 	// Per-card image upload handler — uploads to Supabase, appends to slots
@@ -232,11 +355,47 @@
 			<p class="wnp-empty-hint">Scan or upload cards to add them to your Whatnot export</p>
 		</div>
 	{:else}
+		{#if pending.length >= 2}
+			<div class="wnp-bulk">
+				<div class="wnp-bulk-header">
+					<span class="wnp-bulk-title">Apply to all</span>
+					<span class="wnp-bulk-count">{pending.length} cards</span>
+				</div>
+				<div class="wnp-bulk-row">
+					<select class="wnp-bulk-input" bind:value={bulkCondition} aria-label="Bulk condition">
+						<option value="Near Mint">Near Mint</option>
+						<option value="Excellent">Lightly Played</option>
+						<option value="Good">Moderately Played</option>
+						<option value="Fair">Heavily Played</option>
+						<option value="Poor">Damaged</option>
+					</select>
+					<select class="wnp-bulk-input" bind:value={bulkListingType} aria-label="Bulk listing type">
+						<option value="Buy It Now">Buy It Now</option>
+						<option value="Auction">Auction</option>
+						<option value="Giveaway">Giveaway</option>
+					</select>
+					<input
+						class="wnp-bulk-input"
+						type="text"
+						bind:value={bulkShipping}
+						placeholder="Shipping profile"
+						aria-label="Bulk shipping profile"
+					/>
+					<select class="wnp-bulk-input wnp-bulk-input-narrow" bind:value={bulkOfferable} aria-label="Bulk offerable">
+						<option value={true}>Offerable</option>
+						<option value={false}>Not offerable</option>
+					</select>
+					<button class="wnp-bulk-apply" onclick={applyBulk}>Apply</button>
+				</div>
+			</div>
+		{/if}
 		<div class="wnp-cards">
 			{#each pending as item (item.cardId)}
 				{@const effective = buildExportCard(item)}
 				{@const isExpanded = expandedCardId === item.cardId}
 				{@const photoCount = (item.imageUrls?.length ?? 0)}
+				{@const pState = priceState(item)}
+				{@const pData = priceDataFor(item)}
 				<div class="wnp-card" class:wnp-card-expanded={isExpanded}>
 					<!-- Summary row (always visible, click to expand) -->
 					<button class="wnp-card-summary" onclick={() => toggleExpand(item.cardId)} aria-expanded={isExpanded}>
@@ -248,10 +407,32 @@
 							{/if}
 						</div>
 						<div class="wnp-card-info">
-							<span class="wnp-card-hero">{item.card.hero_name || item.card.name || 'Unknown'}</span>
-							<span class="wnp-card-num">{item.card.card_number || ''}</span>
+							<div class="wnp-card-line1">
+								<span class="wnp-card-hero">{item.card.hero_name || item.card.name || 'Unknown'}</span>
+								{#if item.card.parallel && item.card.parallel !== 'Paper'}
+									{@const pCode = normalizeParallel(item.card.parallel)}
+									<span
+										class="wnp-card-parallel"
+										style="background: {PARALLEL_COLOR[pCode]}22; color: {PARALLEL_COLOR[pCode]}; border-color: {PARALLEL_COLOR[pCode]}55;"
+									>{PARALLEL_ABBREV[pCode]}</span>
+								{/if}
+							</div>
+							<div class="wnp-card-line2">
+								<span class="wnp-card-num">{item.card.card_number || ''}</span>
+								{#if item.card.rarity}
+									<span class="wnp-card-rarity">{String(item.card.rarity).replace(/_/g, ' ')}</span>
+								{/if}
+							</div>
 							<div class="wnp-card-meta">
-								<span class="wnp-meta-pill">${(effective.price_mid ?? 0.99).toFixed(2)}</span>
+								{#if item.priceOverride != null}
+									<span class="wnp-meta-pill wnp-meta-pill-set">${item.priceOverride.toFixed(2)}</span>
+								{:else if pState === 'loading'}
+									<span class="wnp-meta-pill wnp-meta-pill-loading">Pricing…</span>
+								{:else if pState === 'no_data' || !pData?.price_mid}
+									<span class="wnp-meta-pill wnp-meta-pill-warn" title="No recent sales found — defaulting to $0.99. Set a price below.">⚠ No market data</span>
+								{:else}
+									<span class="wnp-meta-pill">${pData.price_mid.toFixed(2)}</span>
+								{/if}
 								<span class="wnp-meta-pill">{photoCount}/8 📷</span>
 								<span class="wnp-meta-pill">{item.condition}</span>
 							</div>
@@ -270,10 +451,39 @@
 										<div class="wnp-photo-slot">
 											<img src={url} alt={`Photo ${idx + 1}`} />
 											<button class="wnp-photo-remove" onclick={() => removeImageFromCard(item.cardId, idx)} title="Remove photo">✕</button>
-											{#if idx === 0}<span class="wnp-photo-primary">Primary</span>{/if}
+											{#if idx === 0}<span class="wnp-photo-label">Front</span>{/if}
+											{#if idx === 1}<span class="wnp-photo-label">Back</span>{/if}
 										</div>
 									{/each}
-									{#if photoCount < 8}
+									{#if photoCount === 0}
+										<label class="wnp-photo-cta">
+											<input
+												type="file"
+												accept="image/*"
+												capture="environment"
+												onchange={(e) => handlePhotoUpload(item.cardId, e)}
+												disabled={uploadingFor === item.cardId}
+											/>
+											<span class="wnp-photo-cta-icon">📷</span>
+											<span class="wnp-photo-cta-text">
+												{uploadingFor === item.cardId ? 'Uploading…' : 'Take front photo'}
+											</span>
+										</label>
+									{:else if photoCount === 1}
+										<label class="wnp-photo-cta wnp-photo-cta-back">
+											<input
+												type="file"
+												accept="image/*"
+												capture="environment"
+												onchange={(e) => handlePhotoUpload(item.cardId, e)}
+												disabled={uploadingFor === item.cardId}
+											/>
+											<span class="wnp-photo-cta-icon">🔄</span>
+											<span class="wnp-photo-cta-text">
+												{uploadingFor === item.cardId ? 'Uploading…' : 'Take back photo'}
+											</span>
+										</label>
+									{:else if photoCount < 8}
 										<label class="wnp-photo-add">
 											<input
 												type="file"
@@ -286,8 +496,10 @@
 										</label>
 									{/if}
 								</div>
-								{#if photoCount === 0 && effective.image_urls && effective.image_urls.length > 0}
-									<p class="wnp-field-hint">Using auto-detected reference image as primary. Add your own photos to override.</p>
+								{#if photoCount === 0}
+									<p class="wnp-field-hint">Whatnot listings convert better with front + back photos.</p>
+								{:else if photoCount === 1}
+									<p class="wnp-field-hint">One more — back of the card next.</p>
 								{/if}
 							</div>
 
@@ -344,6 +556,21 @@
 											updatePendingCard(item.cardId, { priceOverride: Number.isFinite(num) ? num : null });
 										}}
 									/>
+									{#if priceState(item) === 'loaded'}
+										{@const pd = priceDataFor(item)}
+										{#if pd?.price_low != null && pd?.price_high != null && pd.listings_count}
+											<span class="wnp-field-hint">
+												Comps: ${pd.price_low.toFixed(2)}–${pd.price_high.toFixed(2)}
+												({pd.listings_count} {pd.listings_count === 1 ? 'sale' : 'sales'})
+											</span>
+										{/if}
+									{:else if priceState(item) === 'no_data'}
+										<span class="wnp-field-hint wnp-field-hint-warn">
+											No recent comps — set price manually
+										</span>
+									{:else}
+										<span class="wnp-field-hint">Loading market data…</span>
+									{/if}
 								</div>
 							</div>
 
@@ -432,9 +659,12 @@
 									<input
 										class="wnp-field-input"
 										type="text"
-										value={item.skuOverride ?? buildSkuPreview(effective)}
+										value={item.skuOverride ?? (buildSkuPreview(effective) + (skuSuffixMap.get(item.cardId) ?? ''))}
 										oninput={(e) => updatePendingCard(item.cardId, { skuOverride: (e.target as HTMLInputElement).value || null })}
 									/>
+									{#if skuSuffixMap.get(item.cardId)}
+										<span class="wnp-field-hint">Auto-suffixed because this card appears {pending.filter((q) => q.cardId === item.cardId && (q.card.parallel || 'Paper') === (item.card.parallel || 'Paper')).length}× in the batch.</span>
+									{/if}
 								</div>
 								<div class="wnp-field-group">
 									<span class="wnp-field-label">COGS</span>
@@ -505,6 +735,44 @@
 	.wnp-action-btn { flex: 1; padding: 0.6rem; border-radius: 10px; background: var(--surface-raised, rgba(148,163,184,0.08)); border: 1px solid var(--border, rgba(148,163,184,0.10)); color: var(--text-primary, #e2e8f0); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
 	.wnp-action-btn:hover { background: var(--surface-hover, rgba(148,163,184,0.12)); }
 
+	.wnp-bulk {
+		margin: 0.5rem 1rem;
+		padding: 0.6rem 0.75rem;
+		border-radius: 10px;
+		background: var(--surface-raised, rgba(148,163,184,0.06));
+		border: 1px solid var(--border, rgba(148,163,184,0.12));
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		backdrop-filter: blur(8px);
+	}
+	.wnp-bulk-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+	.wnp-bulk-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary, #94a3b8); }
+	.wnp-bulk-count { font-size: 0.7rem; color: var(--text-muted, #64748b); }
+	.wnp-bulk-row { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+	.wnp-bulk-input {
+		flex: 1;
+		min-width: 100px;
+		padding: 0.4rem 0.5rem;
+		border-radius: 6px;
+		background: var(--bg-surface, #0d1524);
+		border: 1px solid var(--border, rgba(148,163,184,0.15));
+		color: var(--text-primary, #e2e8f0);
+		font-size: 0.8rem;
+	}
+	.wnp-bulk-input-narrow { flex: 0 1 auto; }
+	.wnp-bulk-apply {
+		padding: 0.4rem 0.85rem;
+		border-radius: 6px;
+		background: #7c3aed;
+		color: white;
+		border: none;
+		font-size: 0.8rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.wnp-bulk-apply:hover { opacity: 0.9; }
+
 	.wnp-empty { text-align: center; padding: 3rem 1rem; }
 	.wnp-empty-title { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
 	.wnp-empty-hint { font-size: 0.85rem; color: var(--text-muted, #475569); margin: 0; }
@@ -515,8 +783,25 @@
 	.wnp-card-img { width: 100%; height: 100%; object-fit: cover; }
 	.wnp-card-placeholder { font-size: 1.25rem; }
 	.wnp-card-info { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-	.wnp-card-hero { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.wnp-card-num { font-size: 0.75rem; color: var(--text-muted, #475569); }
+	.wnp-card-line1 { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+	.wnp-card-line2 { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.05rem; }
+	.wnp-card-hero { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+	.wnp-card-num { font-size: 0.75rem; color: var(--text-muted, #475569); font-family: ui-monospace, monospace; }
+	.wnp-card-parallel {
+		font-size: 0.6rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 4px;
+		font-weight: 700;
+		letter-spacing: 0.03em;
+		border: 1px solid;
+		flex-shrink: 0;
+	}
+	.wnp-card-rarity {
+		font-size: 0.65rem;
+		color: var(--text-secondary, #94a3b8);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
 
 	/* Expanded editor */
 	.wnp-card-summary {
@@ -539,6 +824,22 @@
 		background: var(--surface-raised, rgba(148,163,184,0.1));
 		color: var(--text-secondary, #94a3b8);
 	}
+	.wnp-meta-pill-loading {
+		background: var(--surface-raised, rgba(148,163,184,0.15));
+		color: var(--text-muted, #64748b);
+		font-style: italic;
+	}
+	.wnp-meta-pill-warn {
+		background: rgba(245, 158, 11, 0.12);
+		color: #f59e0b;
+		border: 1px solid rgba(245, 158, 11, 0.25);
+	}
+	.wnp-meta-pill-set {
+		background: rgba(124, 58, 237, 0.15);
+		color: #a78bfa;
+		border: 1px solid rgba(124, 58, 237, 0.3);
+	}
+	.wnp-field-hint-warn { color: #f59e0b; font-weight: 500; }
 	.wnp-expand-chev { font-size: 0.85rem; color: var(--text-muted, #475569); flex-shrink: 0; }
 	.wnp-card-expanded { background: var(--surface-raised, rgba(148,163,184,0.08)); }
 
@@ -591,7 +892,7 @@
 		align-items: center;
 		justify-content: center;
 	}
-	.wnp-photo-primary {
+	.wnp-photo-label {
 		position: absolute;
 		bottom: 0;
 		left: 0;
@@ -603,6 +904,30 @@
 		color: white;
 		font-weight: 600;
 	}
+	/* CTAs for front/back guided capture — wider than generic "+ Add" so the
+	   labels read clearly and the action feels primary, not auxiliary. */
+	.wnp-photo-cta {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		min-width: 96px;
+		height: 78px;
+		padding: 0.4rem 0.6rem;
+		border-radius: 6px;
+		border: 2px dashed rgba(124, 58, 237, 0.5);
+		background: rgba(124, 58, 237, 0.08);
+		color: #a78bfa;
+		cursor: pointer;
+		font-weight: 600;
+	}
+	.wnp-photo-cta:hover { background: rgba(124, 58, 237, 0.15); border-color: #7c3aed; }
+	.wnp-photo-cta input { display: none; }
+	.wnp-photo-cta-icon { font-size: 1.1rem; }
+	.wnp-photo-cta-text { font-size: 0.7rem; text-align: center; line-height: 1.1; }
+	.wnp-photo-cta-back { border-color: rgba(34, 211, 238, 0.5); background: rgba(34, 211, 238, 0.08); color: #22d3ee; }
+	.wnp-photo-cta-back:hover { background: rgba(34, 211, 238, 0.15); border-color: #22d3ee; }
 	.wnp-photo-add {
 		display: flex;
 		align-items: center;
