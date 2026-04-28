@@ -54,6 +54,10 @@
 	let view = $state<SellView>('browse');
 	let listingCard = $state<Card | null>(null);
 	let listingImageUrl = $state<string | null>(null);
+	// Provenance: the scan that produced `listingCard`. Forwarded into
+	// `listing_templates.scan_id` so Phase 2 dashboards can measure
+	// scan→listing conversion. Null for non-scan entry points.
+	let listingScanId = $state<string | null>(null);
 
 	// ── Upload state ────────────────────────────────────────
 	let uploadProcessing = $state(false);
@@ -66,6 +70,7 @@
 		initScanner();
 		listingCard = null;
 		listingImageUrl = null;
+		listingScanId = null;
 		listingSource = 'scan';
 		view = 'scanning';
 	}
@@ -73,6 +78,7 @@
 	function startUploadToList() {
 		listingCard = null;
 		listingImageUrl = null;
+		listingScanId = null;
 		listingSource = 'upload';
 		uploadError = null;
 		uploadProcessing = false;
@@ -166,6 +172,7 @@
 			if (result.card_id && result.card) {
 				listingCard = result.card;
 				listingImageUrl = uploadThumbnailUrl;
+				listingScanId = result.id ?? null;
 				uploadThumbnailUrl = null; // Transfer ownership to listing view
 				view = 'listing';
 			} else {
@@ -183,6 +190,7 @@
 		if (!result.card) return;
 		listingCard = result.card;
 		listingImageUrl = capturedImageUrl || null;
+		listingScanId = result.id ?? null;
 		view = 'listing';
 	}
 </script>
@@ -247,9 +255,10 @@
 	<ListingView
 		card={listingCard}
 		imageUrl={listingImageUrl}
+		scanId={listingScanId}
 		{ebayConnected}
-		onScanNext={() => { listingCard = null; listingImageUrl = null; if (listingSource === 'upload') { startUploadToList(); } else { startScanToList(); } }}
-		onDone={() => { listingCard = null; listingImageUrl = null; view = 'browse'; }}
+		onScanNext={() => { listingCard = null; listingImageUrl = null; listingScanId = null; if (listingSource === 'upload') { startUploadToList(); } else { startScanToList(); } }}
+		onDone={() => { listingCard = null; listingImageUrl = null; listingScanId = null; view = 'browse'; }}
 	/>
 {:else if view === 'whatnot-scanning'}
 	<div class="stl-scanner-view">

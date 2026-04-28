@@ -475,6 +475,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const offerId = offerData.offerId;
 		if (offerId) {
 			const result = await publishOffer(offerId, token, sku);
+			// publishOffer marks listing_templates with status='error' and
+			// error_message on failure; surface that to the client as 502
+			// instead of returning 200 + a misleading partial-success body.
+			if (!result.success) {
+				return json(result, { status: 502 });
+			}
 			return json(result);
 		}
 

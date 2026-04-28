@@ -171,6 +171,14 @@ export interface UpdateScanOutcomeInput {
 	liveVsCanonicalAgreed?: boolean | null;
 	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
 	decisionContext?: Record<string, unknown> | null;
+	/**
+	 * Resolved game_id for the matched card. The initial INSERT in
+	 * recordScan() can only see the active session's gameHint — which is
+	 * 'boba' (the default) when the scan was kicked off in auto-detect mode.
+	 * Once a Wonders card resolves, finalize() must patch this so the row
+	 * doesn't keep claiming `game_id='boba'` on a Wonders match.
+	 */
+	gameId?: string | null;
 }
 
 export interface RecordClaudeResponseInput {

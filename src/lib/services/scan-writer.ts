@@ -488,6 +488,13 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 		if (input.decisionContext) {
 			updates.decision_context = input.decisionContext;
 		}
+		// Patch the resolved game_id when finalize() knows it. The initial
+		// INSERT defaulted to 'boba' for auto-detect scans; a Wonders match
+		// must overwrite it so downstream telemetry (and the parallel
+		// classifier path on replay) doesn't keep treating the row as BoBA.
+		if (input.gameId) {
+			updates.game_id = input.gameId;
+		}
 		const { error } = await client
 			.from('scans')
 			.update(updates)

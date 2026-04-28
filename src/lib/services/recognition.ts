@@ -561,7 +561,7 @@ export async function recognizeCard(
 		: null;
 
 	// Helper to record scan result to history and auto-tag before returning
-	function finalize(result: ScanResult): ScanResult {
+	async function finalize(result: ScanResult): Promise<ScanResult> {
 		// Prefer the card's own game_id, then the result's tier-set game_id,
 		// then the caller's hint, and finally 'boba' for legacy rows without game_id.
 		const resolvedGameId = result.card?.game_id
@@ -569,6 +569,17 @@ export async function recognizeCard(
 			|| (gameHint || null)
 			|| 'boba';
 		const final = { ...result, processing_ms: Math.round(performance.now() - startTime), traceId, game_id: result.card ? resolvedGameId : null };
+		// Await the scan-row INSERT so consumers (sell flow, listing creator)
+		// receive a result whose `id` is already populated. The INSERT was
+		// kicked off in parallel with tier work, so by the time we reach
+		// finalize() it has had multiple seconds to complete — the await is
+		// usually a no-op. Failure is non-fatal: leave id undefined.
+		try {
+			const resolvedScanId = await scanIdPromise;
+			if (resolvedScanId) final.id = resolvedScanId;
+		} catch {
+			// scanIdPromise already swallows; double-guard for type safety.
+		}
 		const thumbnail = bitmap instanceof ImageBitmap ? createThumbnailDataUrl(bitmap) : null;
 
 		// Create a listing-quality image blob for Supabase Storage upload.
@@ -602,9 +613,10 @@ export async function recognizeCard(
 			const client = getSupabase();
 			if (client) incrementPersona(client, 'collector');
 
-			void scanIdPromise.then((scanId) => {
-				if (!scanId) return;
-
+			// `final.id` was awaited at the top of finalize(); skip the outcome
+			// update if the scan-row INSERT failed.
+			if (final.id) {
+				const scanId = final.id;
 				// Sum per-tier costs into total_cost_usd. Tier 1 (local OCR) is
 				// free. Tier 2 (Claude Haiku) cost duplicates the per-row calc
 				// in emitTier2Result — fine for now; fold into a shared helper
@@ -638,11 +650,14 @@ export async function recognizeCard(
 					liveConsensusReached: final.liveConsensusReached ?? null,
 					liveVsCanonicalAgreed: final.liveVsCanonicalAgreed ?? null,
 					fallbackTierUsed: final.fallbackTierUsed ?? null,
-					decisionContext: mergedDecisionCtx
+					decisionContext: mergedDecisionCtx,
+					// The initial INSERT defaulted game_id to 'boba' (auto-detect
+					// scans don't know the game until matching completes). Patch
+					// to the resolved value so a Wonders match doesn't keep
+					// claiming game_id='boba'.
+					gameId: resolvedGameId
 				});
-			}).catch((err) => {
-				console.debug(`[scan:${traceId}] scan outcome update failed:`, err);
-			});
+			}
 		}
 
 		// Track scan performance metrics for operational monitoring
