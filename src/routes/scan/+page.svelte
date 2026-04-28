@@ -108,8 +108,12 @@
 </svelte:head>
 
 <div class="scan-page">
-	<!-- Close button (top left, always visible) -->
-	<CloseButton onclick={exitScanner} position="top-left" variant="dark" />
+	<!-- Close button (top left). Hidden while the result modal is up so it
+	     doesn't fight with the modal's own close button — see Fix 6 in
+	     scan-flow-fixes.md. -->
+	{#if !scanResult}
+		<CloseButton onclick={exitScanner} position="top-left" variant="dark" />
+	{/if}
 
 	<ScannerErrorBoundary>
 		<!-- Mode selector — top bar, out of the way -->

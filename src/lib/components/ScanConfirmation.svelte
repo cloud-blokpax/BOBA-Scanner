@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { addToCollection, ownedCardCounts, getScanImageUrl } from '$lib/stores/collection.svelte';
 	import { getPriceWithReason } from '$lib/stores/prices.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
@@ -385,7 +386,9 @@
 							onclick={() => {
 								// Return to scanner in foil multi-scan mode. The existing scanner
 								// supports foil mode via a URL parameter; this triggers it.
-								window.location.assign('/scan?mode=foil');
+								// Use goto so we keep the warm OCR/catalog state instead of
+								// triggering a full page reload.
+								goto('/scan?mode=foil');
 							}}
 						>
 							Rescan at multiple angles
@@ -411,6 +414,7 @@
 					{listingError}
 					{priceData}
 					{isLowConfidence}
+					addBlocked={needsParallelConfirmation && !parallelAcknowledged}
 					onAdd={handleAdd}
 					onListOnEbay={handleListOnEbay}
 					{onScanAnother}

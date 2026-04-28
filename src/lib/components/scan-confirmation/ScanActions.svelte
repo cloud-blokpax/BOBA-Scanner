@@ -19,6 +19,7 @@
 		listingError,
 		priceData,
 		isLowConfidence = false,
+		addBlocked = false,
 		onAdd,
 		onListOnEbay,
 		onScanAnother,
@@ -41,6 +42,10 @@
 		listingError: string | null;
 		priceData: { price_mid: number | null } | null;
 		isLowConfidence?: boolean;
+		/** When true, the Add button is disabled and shows a "confirm parallel" hint.
+		 *  Used for Wonders low-confidence scans where the user must pick a parallel
+		 *  before we persist a collection row. */
+		addBlocked?: boolean;
 		onAdd: () => void;
 		onListOnEbay: () => void;
 		onScanAnother: () => void;
@@ -90,12 +95,14 @@
 		<div class="add-btn-wrapper">
 			{#if isAuthenticated}
 				{#if isLowConfidence}
-					<button class="btn btn-add btn-verify" onclick={onAdd} disabled={adding || addSuccess}>
-						{adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
+					<button class="btn btn-add btn-verify" onclick={onAdd} disabled={adding || addSuccess || addBlocked}>
+						{addBlocked ? 'Confirm parallel above ↑' : adding ? 'Adding...' : addSuccess ? 'Added!' : 'Verify & Add'}
 					</button>
 				{:else}
-					<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding}>
-						{#if adding}
+					<button class="btn btn-add" class:btn-added={addSuccess} onclick={onAdd} disabled={adding || addBlocked}>
+						{#if addBlocked}
+							Confirm parallel above ↑
+						{:else if adding}
 							Adding...
 						{:else if addSuccess}
 							Added!

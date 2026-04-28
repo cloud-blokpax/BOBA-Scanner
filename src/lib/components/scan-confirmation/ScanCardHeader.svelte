@@ -36,7 +36,7 @@
 		<p class="athlete-name">{athleteName}</p>
 	{/if}
 	<div class="meta-row">
-		{#if parallel}
+		{#if parallel && parallel !== 'Paper'}
 			<span class="parallel-badge">{parallel}</span>
 		{/if}
 		{#if weaponType}
