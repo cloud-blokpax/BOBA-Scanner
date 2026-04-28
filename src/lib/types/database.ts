@@ -1566,6 +1566,58 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['event_triage_history']['Insert']>;
 				Relationships: [];
 			};
+			client_errors: {
+				Row: {
+					id: string;
+					user_id: string | null;
+					session_id: string;
+					created_at: string;
+					error_type: 'error' | 'unhandledrejection' | 'inferred_crash' | 'manual_breadcrumb';
+					flow: string | null;
+					step: string | null;
+					message: string | null;
+					stack: string | null;
+					source: string | null;
+					line: number | null;
+					col: number | null;
+					heartbeat_age_ms: number | null;
+					user_agent: string | null;
+					url: string | null;
+					viewport: Record<string, unknown> | null;
+					memory_mb: number | null;
+					device_memory_gb: number | null;
+					connection_type: string | null;
+					breadcrumbs: Array<Record<string, unknown>> | null;
+					resolved: boolean;
+					notes: string | null;
+				};
+				Insert: {
+					id?: string;
+					user_id?: string | null;
+					session_id: string;
+					created_at?: string;
+					error_type: 'error' | 'unhandledrejection' | 'inferred_crash' | 'manual_breadcrumb';
+					flow?: string | null;
+					step?: string | null;
+					message?: string | null;
+					stack?: string | null;
+					source?: string | null;
+					line?: number | null;
+					col?: number | null;
+					heartbeat_age_ms?: number | null;
+					user_agent?: string | null;
+					url?: string | null;
+					viewport?: Record<string, unknown> | null;
+					memory_mb?: number | null;
+					device_memory_gb?: number | null;
+					connection_type?: string | null;
+					breadcrumbs?: Array<Record<string, unknown>> | null;
+					resolved?: boolean;
+					notes?: string | null;
+				};
+				Update: Partial<Database['public']['Tables']['client_errors']['Insert']>;
+				Relationships: [];
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
