@@ -30,14 +30,26 @@ export interface WhatnotExportCard {
 	quantity?: number;
 	condition?: string | null;
 
-	// Image (Supabase public URL — NOT a blob URL)
+	// Image (Supabase public URL — NOT a blob URL).
+	// Legacy single-image field; if `image_urls` is non-empty, that wins.
 	image_url?: string | null;
+	/** Up to 8 public https URLs. Slot order matches Whatnot's Image URL 1..8. */
+	image_urls?: string[];
 
 	// Phase 2.5: game id for cross-game listings.
-	// (parallel is declared above — it's the human-readable DB name, e.g.
-	// "Paper", "Classic Foil", "Battlefoil".)
 	game_id?: string | null;
 	metadata?: Record<string, unknown> | null;
+
+	// ── Per-card CSV-field overrides (null/undefined = use computed default) ──
+	title_override?: string | null;
+	description_override?: string | null;
+	type_override?: string | null;          // 'Buy It Now' | 'Auction' | 'Giveaway'
+	shipping_profile_override?: string | null;
+	offerable_override?: boolean | null;
+	category_override?: string | null;
+	sub_category_override?: string | null;
+	sku_override?: string | null;
+	cogs?: number | null;
 }
 
 export interface WhatnotExportOptions {
@@ -194,6 +206,26 @@ function escapeCSV(value: string | number | boolean | null | undefined): string 
 	return str;
 }
 
+/**
+ * Resolve the ordered list of public image URLs for a single card.
+ *
+ * Priority: `image_urls` array (new multi-photo path) → legacy `image_url`
+ * single-field. Always validates https — Whatnot rejects http or blob/data URIs.
+ * Caller is responsible for Pro gating.
+ */
+function collectImageUrls(card: WhatnotExportCard): string[] {
+	const urls: string[] = [];
+	if (Array.isArray(card.image_urls)) {
+		for (const u of card.image_urls) {
+			if (typeof u === 'string' && u.startsWith('https://')) urls.push(u);
+		}
+	}
+	if (urls.length === 0 && card.image_url && card.image_url.startsWith('https://')) {
+		urls.push(card.image_url);
+	}
+	return urls.slice(0, 8);
+}
+
 // ── Main Export Function ────────────────────────────────────
 
 export function generateWhatnotCSV(
@@ -217,36 +249,39 @@ export function generateWhatnotCSV(
 	for (const card of cards) {
 		const condition = mapCondition(card.condition);
 		const price = fixedPrice ?? (card.price_mid ? Math.round(card.price_mid * priceMultiplier * 100) / 100 : 0.99);
-		const title = buildWhatnotTitle(card);
-		const description = buildWhatnotDescription(card, condition);
-		const sku = buildWhatnotSku(card);
 
-		// Image URL in CSV is Pro-only — free users get blank column
-		const imageUrl = options.isPro && card.image_url && card.image_url.startsWith('https://')
-			? card.image_url
-			: '';
+		// Per-card overrides win; fall back to computed default, then options default.
+		const title = card.title_override ?? buildWhatnotTitle(card);
+		const description = card.description_override ?? buildWhatnotDescription(card, condition);
+		const sku = card.sku_override ?? buildWhatnotSku(card);
+		const cardCategory = card.category_override ?? category;
+		const cardSubCategory = card.sub_category_override ?? subCategory;
+		const cardListingType = card.type_override ?? listingType;
+		const cardShipping = card.shipping_profile_override ?? shippingProfile;
+		const cardOfferable = card.offerable_override ?? offerable;
+
+		// Image URL slots — Pro-only. `image_urls` array wins over legacy
+		// `image_url` single field. Validate https on every slot, drop blanks.
+		// Free users get blank columns even if URLs are present.
+		const validImageUrls = options.isPro
+			? collectImageUrls(card)
+			: [];
+		const imageSlots: string[] = Array.from({ length: 8 }, (_, i) => validImageUrls[i] ?? '');
 
 		const row = [
-			category,
-			subCategory,
+			cardCategory,
+			cardSubCategory,
 			title,
 			description,
 			card.quantity || 1,
-			listingType,
+			cardListingType,
 			price.toFixed(2),
-			shippingProfile,
-			listingType === 'Buy It Now' && offerable ? 'TRUE' : '',
+			cardShipping,
+			cardListingType === 'Buy It Now' && cardOfferable ? 'TRUE' : '',
 			condition,
 			sku,
-			'',
-			imageUrl,
-			'',
-			'',
-			'',
-			'',
-			'',
-			'',
-			''
+			card.cogs != null ? card.cogs.toFixed(2) : '',
+			...imageSlots
 		];
 
 		rows.push(row.map(escapeCSV).join(','));

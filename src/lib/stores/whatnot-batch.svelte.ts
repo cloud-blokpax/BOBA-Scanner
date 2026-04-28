@@ -22,11 +22,28 @@ let _initialized = $state(false);
 export interface WhatnotPendingCard {
 	cardId: string;
 	card: Card;
+	/** Legacy single-image field — kept for back-compat with pre-2.16 entries.
+	 *  New code reads/writes `imageUrls` instead. */
 	imageUrl: string | null;
 	condition: string;
-	/** Price override (null = use market price) */
+	/** Price override (null = use market price; market price falls back to 0.99) */
 	priceOverride: number | null;
 	addedAt: string;
+
+	// ── Per-card CSV-field overrides (null = use computed default) ────
+	titleOverride: string | null;
+	descriptionOverride: string | null;
+	quantityOverride: number | null;
+	listingType: string | null;        // 'Buy It Now' | 'Auction' | 'Giveaway'
+	shippingProfile: string | null;    // e.g. '0-1 oz', '1-3 oz'
+	offerable: boolean | null;          // null = default true on BIN
+	category: string | null;
+	subCategory: string | null;
+	skuOverride: string | null;
+	cogs: number | null;
+
+	// ── Listing photos (public https URLs only) ───────────────────────
+	imageUrls: string[];                // ordered slots 1..8; index 0 = primary
 }
 
 // ── Accessors ───────────────────────────────────────────────
@@ -49,7 +66,22 @@ export async function initWhatnotBatch(): Promise<void> {
 
 		const savedPending = await idb.getMeta<WhatnotPendingCard[]>(PENDING_KEY);
 		if (Array.isArray(savedPending)) {
-			_pendingCards = savedPending;
+			// Normalize legacy entries written before 2.16 added the override
+			// fields. Missing fields decode as undefined; coerce to safe defaults.
+			_pendingCards = savedPending.map((p) => ({
+				...p,
+				titleOverride: p.titleOverride ?? null,
+				descriptionOverride: p.descriptionOverride ?? null,
+				quantityOverride: p.quantityOverride ?? null,
+				listingType: p.listingType ?? null,
+				shippingProfile: p.shippingProfile ?? null,
+				offerable: p.offerable ?? null,
+				category: p.category ?? null,
+				subCategory: p.subCategory ?? null,
+				skuOverride: p.skuOverride ?? null,
+				cogs: p.cogs ?? null,
+				imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : []
+			}));
 		}
 	} catch (err) {
 		console.warn('[whatnot-batch] Init failed, using defaults:', err);
@@ -76,7 +108,18 @@ export function addCardToBatch(card: Card, imageUrl: string | null, condition: s
 		imageUrl,
 		condition,
 		priceOverride: null,
-		addedAt: new Date().toISOString()
+		addedAt: new Date().toISOString(),
+		titleOverride: null,
+		descriptionOverride: null,
+		quantityOverride: null,
+		listingType: null,
+		shippingProfile: null,
+		offerable: null,
+		category: null,
+		subCategory: null,
+		skuOverride: null,
+		cogs: null,
+		imageUrls: []
 	};
 
 	_pendingCards = [..._pendingCards, entry];
@@ -95,12 +138,44 @@ export function removeCardFromBatch(cardId: string): void {
 }
 
 /**
- * Update price or condition for a pending card.
+ * Update any per-card field on a pending Whatnot entry. Null is a meaningful
+ * value for override fields (clears the override → falls back to computed
+ * default), so callers should pass `null` rather than omitting the key when
+ * resetting a field.
  */
-export function updatePendingCard(cardId: string, updates: { condition?: string; priceOverride?: number | null }): void {
-	_pendingCards = _pendingCards.map(p => {
+export function updatePendingCard(
+	cardId: string,
+	updates: Partial<Omit<WhatnotPendingCard, 'cardId' | 'card' | 'addedAt'>>
+): void {
+	_pendingCards = _pendingCards.map((p) => {
 		if (p.cardId !== cardId) return p;
 		return { ...p, ...updates };
+	});
+	savePending();
+}
+
+/**
+ * Append an uploaded image URL (must be public https) to the imageUrls slot
+ * list. Caps at 8 — Whatnot's CSV format only supports 8 image columns.
+ */
+export function addImageToCard(cardId: string, imageUrl: string): void {
+	if (!imageUrl.startsWith('https://')) return;
+	_pendingCards = _pendingCards.map((p) => {
+		if (p.cardId !== cardId) return p;
+		if (p.imageUrls.includes(imageUrl)) return p;
+		const next = [...p.imageUrls, imageUrl].slice(0, 8);
+		return { ...p, imageUrls: next };
+	});
+	savePending();
+}
+
+/** Remove an image URL by index (0-based slot). */
+export function removeImageFromCard(cardId: string, slotIndex: number): void {
+	_pendingCards = _pendingCards.map((p) => {
+		if (p.cardId !== cardId) return p;
+		if (slotIndex < 0 || slotIndex >= p.imageUrls.length) return p;
+		const next = p.imageUrls.filter((_, i) => i !== slotIndex);
+		return { ...p, imageUrls: next };
 	});
 	savePending();
 }
