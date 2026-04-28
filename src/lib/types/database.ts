@@ -1695,6 +1695,10 @@ export interface Database {
 					occurrences_last_7d: number;
 				}>;
 			};
+			is_admin: {
+				Args: { p_auth_user_id?: string };
+				Returns: boolean;
+			};
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;

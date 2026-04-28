@@ -214,7 +214,7 @@
 
 					{#if !ebaySellerUsername && !ebaySellerEmail}
 						<p class="ebay-reconnect-hint">
-							<a href="/auth/ebay" data-sveltekit-reload>Reconnect</a> to display your seller name and email.
+							<a href="/auth/ebay?from=/sell" data-sveltekit-reload>Reconnect</a> to display your seller name and email.
 						</p>
 					{/if}
 				</div>
@@ -222,7 +222,7 @@
 				<div class="ebay-connect-card">
 					<p class="ebay-connect-text">Connect your eBay seller account to list cards directly from scans.</p>
 					<EbaySetupGuide />
-					<a href="/auth/ebay" class="btn-ebay-connect" data-sveltekit-reload>Connect eBay Account</a>
+					<a href="/auth/ebay?from=/sell" class="btn-ebay-connect" data-sveltekit-reload>Connect eBay Account</a>
 				</div>
 			{:else}
 				<div class="ebay-connect-card">

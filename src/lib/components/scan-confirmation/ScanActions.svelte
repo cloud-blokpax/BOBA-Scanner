@@ -77,7 +77,7 @@
 		{#if listingUrl}
 			<a href={listingUrl} target="_blank" rel="noopener noreferrer" class="btn btn-list btn-listed">View on eBay</a>
 		{:else if !ebayConnected && ebayChecked}
-			<a href="/auth/ebay" class="btn btn-list">Connect eBay</a>
+			<a href="/auth/ebay?from=/scan" class="btn btn-list">Connect eBay</a>
 		{:else if ebayConnected}
 			<button class="btn btn-list" onclick={onListOnEbay} disabled={listingInProgress || !priceData}>
 				{listingInProgress ? 'Creating...' : 'List on eBay'}
