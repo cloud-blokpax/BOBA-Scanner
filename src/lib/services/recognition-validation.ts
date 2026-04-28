@@ -56,6 +56,10 @@ export interface CrossValidationInput {
 	heroName: string | null;
 	power: number | null;
 	confidence: number;
+	/** Wonders only — parallel name as returned by Tier 3 / canonical classifier
+	 *  (e.g. "Formless Foil"). Used to disambiguate among same-(card_number,
+	 *  name) rows post-parallel-expansion. BoBA callers omit. */
+	parallel?: string | null;
 }
 
 export interface CrossValidationResult {
@@ -100,7 +104,7 @@ export function crossValidateCardResult(
 			: [ai.cardNumber];
 
 		for (const candidate of numberCandidates) {
-			const exactMatch = findCard(candidate, null, gameId);
+			const exactMatch = findCard(candidate, null, gameId, ai.parallel ?? null);
 			if (!exactMatch) continue;
 
 			// Verify hero name matches
@@ -235,7 +239,7 @@ export function crossValidateCardResult(
 					: [candidate];
 
 				for (const form of lookupForms) {
-					const match = findCard(form, null, gameId);
+					const match = findCard(form, null, gameId, ai.parallel ?? null);
 					if (!match) continue;
 
 					const nameScore = fuzzyNameMatch(
@@ -303,9 +307,20 @@ export function crossValidateCardResult(
 		}
 	}
 
-	// ── Step 3: Fallback — search by hero name (+ power to disambiguate) ──
+	// ── Step 3: Fallback — search by hero name (+ power / parallel to disambiguate) ──
 	if (ai.heroName) {
-		const heroSearchResults = searchCards(ai.heroName, 10, gameId);
+		const rawHeroResults = searchCards(ai.heroName, 10, gameId);
+
+		// Wonders parallel filter — restrict to the requested parallel before
+		// power/first-match disambiguation, so we don't pick a random parallel
+		// row when card_number couldn't be resolved.
+		const heroSearchResults =
+			gameId === 'wonders' && ai.parallel && rawHeroResults.length > 1
+				? (() => {
+						const filtered = rawHeroResults.filter((c) => c.parallel === ai.parallel);
+						return filtered.length > 0 ? filtered : rawHeroResults;
+					})()
+				: rawHeroResults;
 
 		if (heroSearchResults.length > 0) {
 			// If we have power info, use it to disambiguate among hero matches

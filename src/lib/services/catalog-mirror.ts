@@ -150,14 +150,39 @@ export function getWondersNames(): string[] {
 export async function lookupCard(
 	game: 'boba' | 'wonders',
 	cardNumber: string,
-	nameField: string
+	nameField: string,
+	parallel: string | null = null
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const indexName = game === 'boba' ? 'game_card_hero' : 'game_card_name';
 
+	// For Wonders, the (game, card_number, name) index is non-unique post
+	// parallel-expansion (5 rows per card). Read all matches and pick the
+	// row matching `parallel`. BoBA stays on getFromIndex (single-row path).
+	const fetchMatch = async (cn: string): Promise<MirrorCard | null> => {
+		if (game === 'boba') {
+			const m = await db.getFromIndex(STORE_CARDS, indexName, [game, cn, nameField]);
+			return (m as MirrorCard | undefined) ?? null;
+		}
+		const all = (await db.getAllFromIndex(
+			STORE_CARDS,
+			indexName,
+			[game, cn, nameField]
+		)) as MirrorCard[];
+		if (all.length === 0) return null;
+		if (parallel) {
+			const exact = all.find((c) => c.parallel === parallel);
+			if (exact) return exact;
+		}
+		// No parallel filter or no row matches it — degrade to first row
+		// (pre-fix behavior). Caller without parallel context still gets
+		// something; downstream warning surfaces in scan-writer/UI.
+		return all[0];
+	};
+
 	// Try the card_number as-given first.
-	const match = await db.getFromIndex(STORE_CARDS, indexName, [game, cardNumber, nameField]);
-	if (match) return match as MirrorCard;
+	const match = await fetchMatch(cardNumber);
+	if (match) return match;
 
 	// Fall back to the integer prefix when the input is fractional. Wonders
 	// physical cards print "316/401"; the catalog indexes "316". Without
@@ -166,12 +191,8 @@ export async function lookupCard(
 	if (cardNumber.includes('/')) {
 		const integerForm = cardNumber.split('/')[0];
 		if (integerForm && integerForm !== cardNumber) {
-			const altMatch = await db.getFromIndex(
-				STORE_CARDS,
-				indexName,
-				[game, integerForm, nameField]
-			);
-			if (altMatch) return altMatch as MirrorCard;
+			const altMatch = await fetchMatch(integerForm);
+			if (altMatch) return altMatch;
 		}
 	}
 
@@ -187,7 +208,8 @@ export async function lookupCard(
 export async function lookupCardByCardNumberFuzzy(
 	game: 'boba' | 'wonders',
 	cardNumber: string,
-	rawName: string
+	rawName: string,
+	parallel: string | null = null
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const all = (await db.getAll(STORE_CARDS)) as MirrorCard[];
@@ -201,10 +223,18 @@ export async function lookupCardByCardNumberFuzzy(
 		if (integerForm) cnVariants.add(integerForm);
 	}
 
-	const candidates = all.filter(
+	let candidates = all.filter(
 		(c) => c.game_id === game && cnVariants.has(c.card_number)
 	);
 	if (candidates.length === 0) return null;
+
+	// Wonders parallel disambiguation. Restrict to the requested parallel
+	// before name-fuzzy matching when more than one candidate row exists.
+	if (game === 'wonders' && parallel && candidates.length > 1) {
+		const filtered = candidates.filter((c) => c.parallel === parallel);
+		if (filtered.length > 0) candidates = filtered;
+	}
+
 	if (candidates.length === 1) return candidates[0];
 
 	const normalized = normalizeOcrName(rawName);
