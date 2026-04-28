@@ -117,7 +117,7 @@ describe('card-db integration', () => {
 
 	it('loads cards from mock IDB data plus play cards', () => {
 		const cards = getAllCards();
-		expect(cards.length).toBe(516); // 5 boba + 2 wonders + 100 filler + 409 play cards from local JSON fallback
+		expect(cards.length).toBe(518); // 5 boba + 2 wonders + 100 filler + 411 play cards from local JSON fallback
 	});
 
 	it('findCard returns exact match by card number', () => {
