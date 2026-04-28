@@ -204,7 +204,8 @@ export const POST: RequestHandler = async ({ locals }) => {
 		}
 
 		// Read parallel from the matched card row — cards.parallel is the
-		// source of truth (defaults to 'Paper' for the Wonders catalog today).
+		// source of truth (one of Paper / Classic Foil / Formless Foil /
+		// Orbital Color Match / Stonefoil for Wonders post-migration-30).
 		const cardWithParallel = card as { parallel?: string | null };
 		const cardParallel = cardWithParallel.parallel ?? 'Paper';
 		const { error: upErr } = await adminRef
