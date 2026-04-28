@@ -7,7 +7,7 @@
  * `base_play_name` is derived from `name` (strip trailing " - htd").
  */
 
-import rawPlayCards from './play-cards.json';
+import rawPlayCards from './play-cards.generated.json';
 import type { PlayCard } from '$lib/services/playbook-engine';
 
 interface RawPlayCard {
