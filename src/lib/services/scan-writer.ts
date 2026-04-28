@@ -22,6 +22,30 @@ import { PIPELINE_VERSION } from '$lib/services/pipeline-version';
 import { userId } from '$lib/stores/auth.svelte';
 import { coerceHumanReadableParallel } from '$lib/data/wonders-parallels';
 import { reportClientEvent } from '$lib/services/diagnostics-client';
+import type {
+	OpenSessionInput,
+	RecordScanInput,
+	RecordTierResultInput,
+	UpdateScanOutcomeInput,
+	RecordClaudeResponseInput,
+	ScanTier,
+	ScanEngine,
+	ScanOutcome,
+} from './scan-writer.types';
+
+// Re-export so existing consumers can keep importing types from scan-writer.
+export type {
+	OpenSessionInput,
+	RecordScanInput,
+	RecordTierResultInput,
+	UpdateScanOutcomeInput,
+	RecordClaudeResponseInput,
+	ScanTier,
+	LegacyScanTier,
+	ScanEngine,
+	LegacyScanEngine,
+	ScanOutcome,
+} from './scan-writer.types';
 
 /**
  * Session 1.2: schema bump signal for the enriched scans-row shape. Every
@@ -29,242 +53,6 @@ import { reportClientEvent } from '$lib/services/diagnostics-client';
  * downstream readers can distinguish pre- and post-1.2 rows.
  */
 const SCAN_SCHEMA_VERSION = 2 as const;
-
-// ---------- Public input types ----------
-
-export interface OpenSessionInput {
-	gameId?: string;                 // defaults to 'boba'
-	deviceModel?: string;
-	osName?: string;
-	osVersion?: string;
-	browserName?: string;
-	browserVersion?: string;
-	appVersion?: string;
-	viewportWidth?: number;
-	viewportHeight?: number;
-	deviceMemoryGb?: number;
-	networkType?: string;
-	capabilities?: Record<string, unknown>;
-	extras?: Record<string, unknown>;
-
-	// ── NEW (Session 1.2) ──
-	/** Network Information API effective type (e.g. '4g', '3g'). Chrome/Edge only. */
-	netEffectiveType?: string | null;
-	/** Downlink estimate in Mbps. Chrome/Edge only. */
-	netDownlinkMbps?: number | null;
-	/** Round-trip time estimate in ms. Chrome/Edge only. */
-	netRttMs?: number | null;
-	/** Is the page running as an installed PWA? */
-	isPwaStandalone?: boolean | null;
-	/** Age of the current page session in ms at the time the scan session opened. */
-	pageSessionAgeMs?: number | null;
-	/** Battery level 0..1. Chrome only. */
-	batteryLevel?: number | null;
-	/** Whether the device is charging. Chrome only. */
-	batteryCharging?: boolean | null;
-	/** Deploy git SHA (set at build time via env var). */
-	releaseGitSha?: string | null;
-}
-
-export interface RecordScanInput {
-	sessionId: string;
-	gameId?: string;
-	photoStoragePath?: string | null;
-	photoThumbnailPath?: string | null;
-	photoBytes?: number | null;
-	photoWidth?: number | null;
-	photoHeight?: number | null;
-	parentScanId?: string | null;
-	retakeChainIdx?: number;
-	captureContext?: Record<string, unknown>;
-	qualitySignals?: Record<string, unknown>;
-	captureLatencyMs?: number | null;
-	extras?: Record<string, unknown>;
-
-	/**
-	 * Optional source photo. If provided, uploaded asynchronously to
-	 * scan-images/{user_id}/{scan_id}.jpg and the path patched back
-	 * into the scans row. Upload failure does not fail the scan.
-	 */
-	photoBlob?: Blob | null;
-
-	// ── NEW (Session 1.2) ──
-
-	// Capture source identity
-	captureSource?:
-		| 'camera_live'
-		| 'camera_upload'
-		| 'deck_upload'
-		| 'sell_upload'
-		| 'binder'
-		| 'batch'
-		| null;
-	photoMimeType?: string | null;
-	photoSha256?: Uint8Array | null;
-
-	// EXIF (non-PII subset — GPS never captured)
-	exifMake?: string | null;
-	exifModel?: string | null;
-	exifOrientation?: number | null;
-	exifCaptureAt?: Date | null;
-	exifSoftware?: string | null;
-
-	// Device/camera state at shutter
-	cameraFacing?: 'user' | 'environment' | null;
-	torchOn?: boolean | null;
-	focusMode?: string | null;
-	deviceOrientationBeta?: number | null;
-	deviceOrientationGamma?: number | null;
-	accelMagnitude?: number | null;
-
-	// Image quality signals
-	blurLaplacianVariance?: number | null;
-	luminanceMean?: number | null;
-	luminanceStd?: number | null;
-	overexposedPct?: number | null;
-	underexposedPct?: number | null;
-	edgeDensityCanny?: number | null;
-	cardAreaPct?: number | null;
-	perspectiveSkewDeg?: number | null;
-	qualityGatePassed?: boolean | null;
-	qualityGateFailReason?: string | null;
-
-	// Decision context (replay / counterfactual)
-	decisionContext?: Record<string, unknown>;
-}
-
-/**
- * Active scan tier values. Pre-2.5 included `tier1_hash`, `tier1_embedding`,
- * and `tier2_ocr`; those engines were retired and historical rows tagged via
- * migration 010. The DB enum/CHECK still allows the legacy values for read
- * compatibility, but new writes are restricted to this narrowed set.
- *
- * `LegacyScanTier` is exported separately for telemetry readers that still
- * need to render historical rows (see AdminPhase2Tab tierLabel).
- *
- * NAMING NOTE: the live system has TWO tiers (local OCR + Claude fallback).
- * The DB string 'tier3_claude' is preserved from the original 3-tier design
- * for telemetry continuity. UI and docs refer to the Claude fallback as
- * "Tier 2" — only the DB string carries the legacy "tier3" name.
- */
-export type ScanTier = 'tier3_claude';
-export type LegacyScanTier = 'tier1_hash' | 'tier1_embedding' | 'tier2_ocr';
-
-/**
- * Active engine values. Tier 1 PaddleOCR runs entirely client-side and never
- * writes scan_tier_results rows (its telemetry lives in scans.decision_context
- * JSONB), so `paddleocr_pp_v5` is intentionally excluded. Add it back if/when
- * a Tier 1 row-write path is added.
- */
-export type ScanEngine = 'claude_haiku' | 'claude_sonnet';
-export type LegacyScanEngine =
-	| 'phash' | 'dhash' | 'multicrop_hash'
-	| 'mobileclip_v1' | 'dinov2_s14' | 'dinov2_base'
-	| 'paddleocr_pp_v5' | 'tesseract_v5';
-
-export interface RecordTierResultInput {
-	scanId: string;
-	tier: ScanTier;
-	engine: ScanEngine;
-	engineVersion: string;
-	rawOutput: Record<string, unknown>;
-	latencyMs?: number | null;
-	costUsd?: number | null;
-	errored?: boolean;
-	errorMessage?: string | null;
-	extras?: Record<string, unknown>;
-
-	// ── NEW (Session 1.2) ──
-
-	// Hash-tier specifics
-	topnCandidates?: Array<Record<string, unknown>> | null;
-	idbCacheHit?: boolean | null;
-	sbExactHit?: boolean | null;
-	sbFuzzyHit?: boolean | null;
-	winnerDhashDistance?: number | null;
-	winnerPhashDistance?: number | null;
-	runnerUpMarginDhash?: number | null;
-	hashMatchCount?: number | null;
-	queryDhash?: string | null;
-	queryPhash256?: string | null;
-
-	// OCR-tier specifics
-	ocrTextRaw?: string | null;
-	ocrMeanConfidence?: number | null;
-	ocrWordCount?: number | null;
-	ocrDetectedCardNumber?: string | null;
-	ocrOrientationDeg?: number | null;
-
-	// LLM-tier specifics
-	llmModelRequested?: string | null;
-	llmModelResponded?: string | null;
-	llmInputTokens?: number | null;
-	llmOutputTokens?: number | null;
-	llmCacheCreationTokens?: number | null;
-	llmCacheReadTokens?: number | null;
-	llmFinishReason?: string | null;
-	pricingTableVersion?: string | null;
-	promptTemplateSha?: string | null;
-	promptTemplateVersion?: string | null;
-	claudeReturnedNameInCatalog?: boolean | null;
-
-	// Shared outcome telemetry
-	outcome?: string | null;
-	skipReason?: string | null;
-	errorCode?: string | null;
-	ranAt?: Date | null;
-}
-
-/** Closed vocabulary mirroring the `scan_outcome` Postgres enum. Pinned here
- *  so callers can't free-text new values — Postgres will reject anything
- *  outside this set with 22P02. */
-export type ScanOutcome =
-	| 'pending'
-	| 'auto_confirmed'
-	| 'user_confirmed'
-	| 'user_corrected'
-	| 'disputed'
-	| 'abandoned'
-	| 'timeout'
-	| 'low_quality_rejected'
-	| 'resolved';
-
-export interface UpdateScanOutcomeInput {
-	scanId: string;
-	/** Allow nullable: failure paths (blur reject, no match, abandoned) have
-	 *  no winning tier. Persisted as null so the dashboard's `null_abandoned`
-	 *  bucket reflects reality. */
-	winningTier: string | null;
-	/** Allow nullable: failure paths have no card. */
-	finalCardId: string | null;
-	finalConfidence: number | null;
-	/** Human-readable parallel name (e.g. "Classic Foil"). Mirrors cards.parallel
-	 *  for the matched card. */
-	finalParallel: string | null;
-	totalLatencyMs: number | null;
-	totalCostUsd: number | null;
-	userOverrode?: boolean;
-	/** Required. Maps to scans.outcome (Postgres enum). Defaults applied at
-	 *  call site, not here, so each call site owns the semantic. */
-	outcome: ScanOutcome;
-	// Session 2.1a live-OCR telemetry (schema applied via MCP).
-	liveConsensusReached?: boolean | null;
-	liveVsCanonicalAgreed?: boolean | null;
-	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
-	/** Optional replacement for decision_context JSONB. Merges with the
-	 *  baseline context set on insert (threshold values). Callers should
-	 *  include the baseline keys too if they want to preserve them. */
-	decisionContext?: Record<string, unknown> | null;
-}
-
-export interface RecordClaudeResponseInput {
-	tierResultId: string;
-	scanId: string;
-	rawResponse: Record<string, unknown>;
-	parsedOutput?: Record<string, unknown> | null;
-	parseSuccess?: boolean | null;
-	anthropicRequestId?: string | null;
-}
 
 // ---------- Module-level session cache ----------
 
