@@ -13,7 +13,9 @@
 
 	import ScannerViewfinder from './scanner/ScannerViewfinder.svelte';
 	import ScannerControls from './scanner/ScannerControls.svelte';
-	import ScannerStatus from './scanner/ScannerStatus.svelte';
+	import CameraBrackets from './scan/CameraBrackets.svelte';
+	import CameraStatusPill from './scan/CameraStatusPill.svelte';
+	import ScanEffects from './ScanEffects.svelte';
 
 	let {
 		onResult,
@@ -49,7 +51,6 @@
 
 	const scanning = $derived(phase === 'processing' || phase === 'capturing');
 	const scanSuccess = $derived(phase === 'result_success');
-	const scanFailed = $derived(phase === 'result_fail');
 	const cameraReady = $derived(!['initializing', 'error'].includes(phase));
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
@@ -87,15 +88,6 @@
 		'Capture 2/3 — tilt card slightly right',
 		'Capture 3/3 — tilt card slightly left'
 	];
-
-	// Rarity → color mapping for bracket effects
-	const RARITY_COLORS: Record<string, { color: string; glow: number; pulses: number }> = {
-		common:     { color: '#9CA3AF', glow: 8,  pulses: 1 },
-		uncommon:   { color: '#22C55E', glow: 12, pulses: 1 },
-		rare:       { color: '#3B82F6', glow: 16, pulses: 1 },
-		ultra_rare: { color: '#A855F7', glow: 20, pulses: 2 },
-		legendary:  { color: '#F59E0B', glow: 28, pulses: 3 }
-	};
 
 	/**
 	 * Resolve the visible viewfinder rect (the DOM `.scanner-guide-rect`)
@@ -155,37 +147,26 @@
 		() => computeViewfinderInVideoCoords()
 	);
 
-	const revealColor = $derived(RARITY_COLORS[revealedCard?.rarity ?? ''] ?? null);
-	const bracketAnimClass = $derived.by(() => {
-		if (!scanSuccess || !revealColor) return '';
-		if (revealColor.pulses === 3) return 'bracket-reveal-triple';
-		if (revealColor.pulses === 2) return 'bracket-reveal-double';
-		return 'bracket-reveal';
-	});
-
-	const statusText = $derived.by(() => {
-		const state = scanState();
-		switch (state.status) {
-			case 'tier1': return 'Reading card...';
-			case 'tier2': return 'AI identifying...';
-			case 'processing': return 'Processing...';
-			case 'complete':
-				if (!state.result?.card && state.result?.failReason) return state.result.failReason;
-				if (!state.result?.card) return 'Card not recognized';
-				return 'Card found!';
-			case 'error': return state.error || 'Scan failed — try again';
-			default: return 'Point camera at card';
+	// Three-state-plus-failure machine surfaced as bracket color + status pill text.
+	// 'reading' covers both alignment-detected-but-not-yet-captured AND the
+	// active capture/process window — the user just sees one continuous "we're
+	// working on it" signal until the scan resolves.
+	type CameraUIState = 'searching' | 'reading' | 'got_it' | 'try_again';
+	const cameraState = $derived.by((): CameraUIState => {
+		if (phase === 'result_success') return 'got_it';
+		if (phase === 'result_fail') return 'try_again';
+		if (phase === 'capturing' || phase === 'processing' || phase === 'foil_capturing') {
+			return 'reading';
 		}
+		if (analysis.alignmentState === 'ready' || analysis.alignmentState === 'partial') {
+			return 'reading';
+		}
+		return 'searching';
 	});
 
-	const statusType = $derived.by(() => {
-		const state = scanState();
-		if (state.status === 'complete' && state.result?.card) return 'success';
-		if (state.status === 'complete' && !state.result?.card) return 'error';
-		if (state.status === 'error') return 'error';
-		if (['tier1', 'tier2', 'processing', 'capturing'].includes(state.status)) return 'scanning';
-		return 'idle';
-	});
+	const resolvedCardName = $derived(
+		revealedCard?.hero_name || revealedCard?.name || ''
+	);
 
 	function onCameraReady() {
 		phase = 'idle';
@@ -577,18 +558,16 @@
 			aria-label="Camera viewfinder"
 		></video>
 
+		<!-- Single 5:7 bracket frame. Doubles as `.scanner-guide-rect` for crop math. -->
+		<CameraBrackets state={cameraState} />
+
+		<!-- Camera primitives: blur warning, glare regions, foil guidance, camera error, flash. -->
 		<ScannerViewfinder
 			alignmentState={analysis.alignmentState}
-			{bracketAnimClass}
-			{scanFailed}
-			{revealColor}
-			{scanSuccess}
 			{cameraReady}
 			showFlash={analysis.showFlash}
 			{blurWarning}
 			{glareRegions}
-			{statusType}
-			{revealedCard}
 			{scanning}
 			{foilMode}
 			{foilStep}
@@ -596,6 +575,14 @@
 			foilGuidance={FOIL_GUIDANCE}
 			cameraError={camera.cameraError}
 			onAlignmentStateChanged={handleAlignmentStateChanged}
+		/>
+
+		<!-- Particle reveal — runs during scan and on success, rarity-coded. -->
+		<ScanEffects
+			scanning={scanning}
+			revealed={scanSuccess}
+			rarity={revealedCard?.rarity ?? null}
+			weaponType={revealedCard?.weapon_type ?? null}
 		/>
 
 		<!-- AR Price Overlay -->
@@ -632,7 +619,10 @@
 			</button>
 		{/if}
 
-		<ScannerStatus {statusText} {statusType} />
+		<!-- Single state-driven pill replaces the persistent "Point at card" toast. -->
+		{#if !foilMode && cameraReady}
+			<CameraStatusPill state={cameraState} cardName={resolvedCardName} />
+		{/if}
 
 		{#if showFirstRunGuide && cameraReady}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
