@@ -21,9 +21,16 @@
 		onDone: () => void;
 		initialCondition?: string;
 		backLabel?: string;
+		/**
+		 * Provenance link to the scan that produced this listing. Forwarded
+		 * to /api/ebay/create-draft, which writes it to
+		 * `listing_templates.scan_id`. Null when the listing was started
+		 * from a non-scan entry point (e.g. the collection list).
+		 */
+		scanId?: string | null;
 	}
 
-	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel }: Props = $props();
+	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel, scanId = null }: Props = $props();
 
 	// ── Admin-only scraping test data ────────────────────────
 	const currentUser = $derived(user());
@@ -320,7 +327,8 @@
 					autoAcceptPrice: autoAcceptPrice ? parseFloat(autoAcceptPrice) : null,
 					autoDeclinePrice: autoDeclinePrice ? parseFloat(autoDeclinePrice) : null,
 					packageWeightOz: packageWeightOz ? parseFloat(packageWeightOz) : null,
-					listingDuration: listingDuration !== 'GTC' ? listingDuration : null
+					listingDuration: listingDuration !== 'GTC' ? listingDuration : null,
+					scanId
 				})
 			});
 

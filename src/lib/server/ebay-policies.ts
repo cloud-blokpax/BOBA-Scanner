@@ -343,6 +343,16 @@ export interface PublishResult {
 	sku: string;
 	message: string;
 	sellerHubUrl?: string;
+	/**
+	 * Populated when publish fails (success=false). Carries the parsed eBay
+	 * error reason so the caller can persist it to listing_templates and
+	 * surface it in the listings dashboard. Pre-fix this was logged to
+	 * console only; users saw a row stuck at status='pending' with no clue
+	 * why.
+	 */
+	errorMessage?: string;
+	errorCode?: string;
+	httpStatus?: number;
 }
 
 /**
@@ -410,16 +420,81 @@ export async function publishOffer(offerId: string, token: string, sku: string):
 		};
 	}
 
-	// Publish failed — offer exists but not live
+	// Publish failed — offer exists on eBay but is not live. Parse the
+	// response body for a usable reason, persist it to listing_templates
+	// (status='error' + error_message), and return success=false so the
+	// API endpoint returns 502 instead of pretending nothing went wrong.
 	const publishErr = await publishRes.text().catch(() => '');
 	console.error('[ebay-policies] Publish failed:', publishRes.status, publishErr);
 
+	let parsedMessage: string | null = null;
+	let parsedCode: string | null = null;
+	try {
+		const parsed = JSON.parse(publishErr);
+		const firstErr = parsed?.errors?.[0];
+		if (firstErr) {
+			parsedMessage = firstErr.longMessage || firstErr.message || null;
+			parsedCode = firstErr.errorId != null ? String(firstErr.errorId) : null;
+		}
+	} catch {
+		// non-JSON body — fall through to default message
+	}
+	const errorMessage = parsedMessage
+		|| `eBay publish failed (HTTP ${publishRes.status})`;
+	const errorCode = parsedCode || `ebay_publish_${publishRes.status}`;
+
+	void logEvent({
+		level: 'error',
+		event: 'ebay.policies.publish_failed',
+		error: errorMessage,
+		errorCode,
+		context: {
+			sku,
+			offer_id: offerId,
+			http_status: publishRes.status,
+			body_excerpt: publishErr.slice(0, 500)
+		}
+	});
+
+	try {
+		const adminClient = getAdminClient();
+		if (adminClient) {
+			const { error: updateErr } = await adminClient.from('listing_templates').update({
+				status: 'error',
+				ebay_offer_id: offerId,
+				error_message: `${errorCode}: ${errorMessage}`.slice(0, 1000),
+				updated_at: new Date().toISOString()
+			}).eq('sku', sku);
+			if (updateErr) {
+				console.error('[ebay-policies] Template error-state update FAILED:', updateErr.message);
+				void logEvent({
+					level: 'error',
+					event: 'ebay.policies.template_error_update_failed',
+					error: updateErr.message,
+					errorCode: updateErr.code,
+					context: { sku, offer_id: offerId }
+				});
+			}
+		}
+	} catch (err) {
+		console.error('[ebay-policies] Template error-state update FAILED:', err);
+		void logEvent({
+			level: 'error',
+			event: 'ebay.policies.template_error_update_failed',
+			error: err,
+			context: { sku, offer_id: offerId }
+		});
+	}
+
 	return {
-		success: true,
-		partial: true,
+		success: false,
+		partial: false,
 		offerId,
 		sku,
-		message: 'Listing created but could not auto-publish. Check your eBay Seller Hub.',
+		message: `Listing not published: ${errorMessage}`,
+		errorMessage,
+		errorCode,
+		httpStatus: publishRes.status,
 		sellerHubUrl: 'https://www.ebay.com/sh/lst/active'
 	};
 }
