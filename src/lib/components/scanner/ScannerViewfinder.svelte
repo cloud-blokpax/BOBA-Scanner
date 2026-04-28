@@ -158,28 +158,30 @@
 {/if}
 
 <style>
-	/* Invisible guide rect — matches the viewfinder cut-out for crop calculations */
+	/* Invisible guide rect — matches the viewfinder cut-out for crop calculations.
+	   Uses a centered, card-aspect-ratio rect so the cutout always matches a
+	   2.5:3.5 card regardless of device aspect ratio. */
 	.scanner-guide-rect {
+		--guide-width: min(80%, calc((100% - 200px) * 2.5 / 3.5));
+		--guide-aspect: calc(2.5 / 3.5);
 		position: absolute;
-		top: 15%;
-		left: 10%;
-		right: 10%;
-		bottom: 15%;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: var(--guide-width);
+		aspect-ratio: 2.5 / 3.5;
 		z-index: 0;
 		pointer-events: none;
 	}
 
-	/* Dark overlay outside scanning zone */
+	/* Dark overlay outside scanning zone — uses a giant box-shadow on the
+	   guide rect to dim everything outside it, replacing the previous fixed-%
+	   clip-path which didn't preserve card aspect ratio. */
 	.viewfinder-overlay {
-		position: absolute;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.55);
-		clip-path: polygon(evenodd,
-			0% 0%, 100% 0%, 100% 100%, 0% 100%,
-			10% 15%, 90% 15%, 90% 85%, 10% 85%
-		);
-		z-index: 1;
-		pointer-events: none;
+		display: none; /* Replaced by .scanner-guide-rect's box-shadow below. */
+	}
+	.scanner-guide-rect {
+		box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
 	}
 
 	/* L-shaped corner brackets */

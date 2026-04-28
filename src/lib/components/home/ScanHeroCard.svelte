@@ -2,6 +2,7 @@
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
+	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import type { ScanResult } from '$lib/types';
 
 	let { gameId = null }: { gameId?: 'boba' | 'wonders' | null } = $props();
@@ -82,6 +83,15 @@
 		uploadResult = null;
 		resetScanner();
 	}
+
+	function handleCameraRollClick(event: MouseEvent) {
+		// Pro feature — surface the modal here instead of letting the user
+		// land on the scan page's safety-net gate.
+		if (!isPro()) {
+			event.preventDefault();
+			setShowGoProModal(true);
+		}
+	}
 </script>
 
 {#if uploadResult}
@@ -89,7 +99,7 @@
 		result={uploadResult}
 		capturedImageUrl={uploadImageUrl}
 		isAuthenticated={true}
-		onScanAnother={dismissResult}
+		onScanAnother={() => { dismissResult(); handleUploadClick(); }}
 		onClose={dismissResult}
 	/>
 {:else if uploading}
@@ -140,7 +150,11 @@
 			<button class="btn-hero-secondary" onclick={handleUploadClick} disabled={uploading}>
 				Upload Photo
 			</button>
-			<a href={gameId ? `/scan?game=${gameId}&mode=roll` : '/scan?mode=roll'} class="btn-hero-secondary">Camera Roll</a>
+			<a
+				href={gameId ? `/scan?game=${gameId}&mode=roll` : '/scan?mode=roll'}
+				class="btn-hero-secondary"
+				onclick={handleCameraRollClick}
+			>Camera Roll</a>
 		</div>
 	</div>
 	<input

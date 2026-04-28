@@ -36,8 +36,12 @@
 		parallel?: string | null;
 	} = $props();
 
+	// Every card row has a parallel; "Paper" is the non-foil base in both BoBA
+	// (e.g., vs Battlefoil/Headliner Battlefoil/etc.) and Wonders (vs Classic
+	// Foil/Formless Foil/Orbital Color Match/Stonefoil). Anything else is a
+	// foil/special treatment that warrants the holographic overlay.
 	const isParallel = $derived(
-		parallel !== null && parallel !== 'Base'
+		parallel !== null && parallel !== 'Paper'
 	);
 
 	let showGyroHint = $state(false);

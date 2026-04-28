@@ -64,6 +64,16 @@
 	// shutter. Owned here so we can close the last bitmap before replacing it.
 	let latestVideoFrameBitmap: ImageBitmap | null = null;
 	let frameSamplerTimer: ReturnType<typeof setInterval> | null = null;
+	// Tracks the post-scan phase-reset timer scheduled in handleScanResult.
+	// Captured here so a fast Try Again → re-scan can cancel a stale timer
+	// before it overwrites the new scan's phase.
+	let phaseResetTimer: ReturnType<typeof setTimeout> | null = null;
+	function clearPhaseResetTimer() {
+		if (phaseResetTimer !== null) {
+			clearTimeout(phaseResetTimer);
+			phaseResetTimer = null;
+		}
+	}
 
 	let showFirstRunGuide = $state(false);
 
@@ -286,6 +296,7 @@
 			foilCaptures.forEach(b => b.close());
 			foilCaptures = [];
 			_cleanupVisibility?.();
+			clearPhaseResetTimer();
 		};
 	});
 
@@ -324,14 +335,23 @@
 					idb.setMeta('has_completed_first_scan', true);
 				});
 			}
-			setTimeout(() => { phase = 'idle'; revealedCard = null; }, 1800);
+			clearPhaseResetTimer();
+			phaseResetTimer = setTimeout(() => {
+				phase = 'idle';
+				revealedCard = null;
+				phaseResetTimer = null;
+			}, 1800);
 		} else {
 			revealedCard = null;
 			phase = 'result_fail';
 			lastFailReason = result?.failReason || null;
 			triggerHaptic('error');
 			if (result) onResult?.(result, imageUrl);
-			setTimeout(() => { phase = 'idle'; }, 1200);
+			clearPhaseResetTimer();
+			phaseResetTimer = setTimeout(() => {
+				phase = 'idle';
+				phaseResetTimer = null;
+			}, 1200);
 		}
 	}
 
@@ -346,6 +366,9 @@
 
 	async function handleCapture() {
 		if (!videoEl || scanning || paused) return;
+		// Cancel any pending phase reset from a previous scan — without this,
+		// a stale 'idle' set could land mid-'capturing'.
+		clearPhaseResetTimer();
 		phase = 'capturing';
 		blurWarning = false;
 		glareRegions = [];
@@ -368,6 +391,10 @@
 				triggerHaptic('error');
 				setTimeout(() => { blurWarning = false; }, 2000);
 				phase = 'idle';
+				// Resume the video stream — we paused it before quality check, and
+				// without this the analysis loop keeps reading the frozen frame
+				// and auto-firing on the same blurry image.
+				if (videoEl && videoEl.paused) videoEl.play().catch(() => {});
 				return;
 			}
 			if (quality.hasGlare) {
