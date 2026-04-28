@@ -284,8 +284,17 @@ export async function runTier2(
 
 	// Cross-validate against local DB — scoped to the detected game so card
 	// numbers that collide between games (e.g., numeric-only) hit the right index.
+	// Pass claudeParallel for Wonders so the lookup resolves to the correct
+	// parallel row instead of returning a random parallel-blind match (which
+	// would shadow Haiku's correct parallel at the merge step below).
 	const validated = crossValidateCardResult(
-		{ cardNumber: claudeNumber, heroName: claudeHero, power: claudePower, confidence: result.card.confidence || 0.9 },
+		{
+			cardNumber: claudeNumber,
+			heroName: claudeHero,
+			power: claudePower,
+			confidence: result.card.confidence || 0.9,
+			parallel: detectedGameId === 'wonders' ? claudeParallel : null
+		},
 		ctx.traceId,
 		detectedGameId
 	);

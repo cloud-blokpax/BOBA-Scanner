@@ -600,18 +600,25 @@ export function wondersCardNumberAlternates(cardNumber: string): string[] {
 }
 
 /**
- * Find a card by card number with optional hero name verification.
+ * Find a card by card number with optional hero name + parallel verification.
  *
  * @param cardNumber - Card number to search for
  * @param heroName - Optional hero name for disambiguation
  * @param gameId - When provided, only return cards belonging to this game.
  *   If the active index contains multiple games (auto-detect mode), this is
  *   critical to disambiguate card numbers that collide across games.
+ * @param parallel - Optional parallel name (e.g. "Formless Foil"). Required to
+ *   disambiguate Wonders cards post-parallel-expansion: each (card_number,
+ *   name) maps to up to 5 rows, one per parallel. When provided and gameId is
+ *   'wonders', candidates are restricted to that parallel before hero-name
+ *   matching. BoBA callers leave this null — BoBA cards are unique on
+ *   (card_number, hero_name) because each parallel has its own prefix.
  */
 export function findCard(
 	cardNumber: string,
 	heroName: string | null = null,
-	gameId: string = 'boba'
+	gameId: string = 'boba',
+	parallel: string | null = null
 ): Card | null {
 	if (!isLoaded || !cardNumber) return null;
 
@@ -620,9 +627,20 @@ export function findCard(
 
 	// Filter candidates by game_id when the active index is multi-game.
 	const rawExactMatches = cardIndex.get(normalized) || [];
-	const exactMatches = _activeGameIds.length > 1
+	let exactMatches = _activeGameIds.length > 1
 		? rawExactMatches.filter((c) => (c.game_id || 'boba') === gameId)
 		: rawExactMatches;
+
+	// Wonders parallel disambiguation. Same (card_number, name) maps to up to
+	// 5 rows post-expansion; restrict to the requested parallel before hero
+	// matching so hero_name doesn't pick the first parallel row arbitrarily.
+	// Falls back to the unfiltered set when the requested parallel has no row
+	// (data inconsistency or new parallel mid-deploy) so we degrade to
+	// pre-fix behavior rather than null.
+	if (gameId === 'wonders' && parallel && exactMatches.length > 1) {
+		const filtered = exactMatches.filter((c) => c.parallel === parallel);
+		if (filtered.length > 0) exactMatches = filtered;
+	}
 
 	if (exactMatches.length === 1) {
 		const card = exactMatches[0];
@@ -646,17 +664,23 @@ export function findCard(
 		}
 		if (!normalizedHero) return exactMatches[0];
 		console.warn(
-			`[card-db] Card number "${normalized}" has ${exactMatches.length} matches but none match hero="${normalizedHero}"`
+			`[card-db] Card number "${normalized}" has ${exactMatches.length} matches but none match hero="${normalizedHero}" parallel="${parallel ?? '(none)'}"`
 		);
 	}
 
 	const fuzzyResults = findSimilarCardNumbers(cardNumber, 2);
 	if (fuzzyResults.length > 0) {
+		// Wonders parallel disambiguation also applies to fuzzy results.
+		let candidates = fuzzyResults;
+		if (gameId === 'wonders' && parallel && fuzzyResults.length > 1) {
+			const filtered = fuzzyResults.filter((r) => r.card.parallel === parallel);
+			if (filtered.length > 0) candidates = filtered;
+		}
 		if (normalizedHero) {
-			const heroFuzzy = fuzzyResults.find((r) => heroMatches(r.card, normalizedHero));
+			const heroFuzzy = candidates.find((r) => heroMatches(r.card, normalizedHero));
 			if (heroFuzzy) return heroFuzzy.card;
 		}
-		if (!normalizedHero) return fuzzyResults[0].card;
+		if (!normalizedHero) return candidates[0].card;
 	}
 
 	return null;

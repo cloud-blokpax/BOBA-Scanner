@@ -110,10 +110,20 @@ export async function runCanonicalTier1(
 	}
 
 	// Catalog lookup — exact first, then fuzzy-by-card-number as fallback.
+	// For Wonders, parallelHumanName (from the classifier above) is required
+	// to disambiguate among same-(card_number, name) rows post-expansion;
+	// without it the lookup returns a parallel-blind first match, and
+	// final_card_id ends up pointing at the wrong parallel's row.
+	const lookupParallel = game === 'wonders' ? parallelHumanName : null;
 	let card: MirrorCard | null = null;
 	if (merged.cardNumber.validated && merged.name.collapsed) {
 		try {
-			card = await lookupCard(game, merged.cardNumber.validated, merged.name.collapsed);
+			card = await lookupCard(
+				game,
+				merged.cardNumber.validated,
+				merged.name.collapsed,
+				lookupParallel
+			);
 		} catch (err) {
 			console.debug('[tier1-canonical] lookupCard failed', err);
 		}
@@ -123,7 +133,8 @@ export async function runCanonicalTier1(
 			card = await lookupCardByCardNumberFuzzy(
 				game,
 				merged.cardNumber.validated,
-				merged.name.raw || merged.name.collapsed || ''
+				merged.name.raw || merged.name.collapsed || '',
+				lookupParallel
 			);
 		} catch (err) {
 			console.debug('[tier1-canonical] fuzzy lookup failed', err);
