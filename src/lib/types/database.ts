@@ -56,6 +56,9 @@ export interface Database {
 					quantity: number;
 					condition: string;
 					notes: string | null;
+					scan_image_url: string | null;
+					game_id: string;
+					parallel: string;
 					added_at: string;
 				};
 				Insert: {
@@ -65,6 +68,9 @@ export interface Database {
 					quantity?: number;
 					condition?: string;
 					notes?: string | null;
+					scan_image_url?: string | null;
+					game_id?: string;
+					parallel?: string;
 				};
 				Update: Partial<Database['public']['Tables']['collections']['Insert']>;
 				Relationships: [
