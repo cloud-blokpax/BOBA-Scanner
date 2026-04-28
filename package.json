@@ -14,7 +14,8 @@
     "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/lib/types/database.ts",
     "generate-play-bundle": "tsx scripts/generate-play-card-bundle.ts",
     "generate-dbs-migration": "tsx scripts/generate-dbs-sync-migration.ts",
-    "lint:bundle-drift": "tsx scripts/lint-play-bundle-drift.ts"
+    "lint:bundle-drift": "tsx scripts/lint-play-bundle-drift.ts",
+    "wonders:import-set": "tsx scripts/import-wonders-set.ts"
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",

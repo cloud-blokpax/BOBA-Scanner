@@ -308,8 +308,10 @@ export async function runTier2(
 		}
 		// Resolve parallel for DB write. cards.parallel is the source of truth —
 		// for BoBA it carries the rich parallel name (e.g. "Battlefoil") encoded
-		// from the prefix; for Wonders it'll be 'Paper' until the foil catalog
-		// expansion. Fall back to Claude's literal output, then 'Paper'.
+		// from the prefix; for Wonders it carries the per-printing parallel
+		// (one of Paper / Classic Foil / Formless Foil / Orbital Color Match /
+		// Stonefoil) post-migration-30. Fall back to Claude's literal output,
+		// then 'Paper'.
 		const resolvedParallel =
 			mergedCard.parallel ||
 			claudeParallel ||
