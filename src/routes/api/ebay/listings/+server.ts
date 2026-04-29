@@ -88,6 +88,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		sold_at: l.sold_at ?? null,
 		sold_price: l.sold_price ?? null,
 		ebay_offer_id: l.ebay_offer_id ?? null,
+		game_id: l.game_id ?? 'boba',
 		created_at: l.created_at ?? null,
 		updated_at: l.updated_at ?? null,
 		card_image_url: cardImages[l.card_id as string] || null
