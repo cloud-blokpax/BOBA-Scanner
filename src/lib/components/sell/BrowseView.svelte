@@ -121,6 +121,17 @@
 		</button>
 	</div>
 
+	<!-- Wonders Trading Post flow -->
+	<div class="wtp-section">
+		<a href="/sell/wtp" class="sell-cta wtp-cta">
+			<span class="sell-cta-icon">🐉</span>
+			<div class="sell-cta-text">
+				<span class="sell-cta-label">Sell on Wonders Trading Post</span>
+				<span class="sell-cta-hint">Wonders cards · Stripe payouts</span>
+			</div>
+		</a>
+	</div>
+
 	<!-- Whatnot batch flow -->
 	{#if onStartWhatnot}
 		<div class="whatnot-section">
@@ -381,6 +392,17 @@
 	.sell-cta-text { display: flex; flex-direction: column; gap: 0.125rem; text-align: left; }
 	.sell-cta-label { font-size: 0.9rem; font-weight: 700; }
 	.sell-cta-hint { font-size: 0.7rem; color: var(--text-muted, #475569); }
+
+	/* WTP CTA */
+	.wtp-section { margin-bottom: 1rem; }
+	.wtp-cta {
+		width: 100%;
+		border-color: #db2777;
+		text-decoration: none;
+	}
+	.wtp-cta:hover {
+		box-shadow: 0 4px 12px rgba(219, 39, 119, 0.15);
+	}
 
 	/* Whatnot CTA */
 	.whatnot-section { margin-bottom: 1rem; }
