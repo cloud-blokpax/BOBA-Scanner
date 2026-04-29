@@ -7,6 +7,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initErrorTracking } from '$lib/services/error-tracking';
 	import { installGlobalErrorReporters } from '$lib/services/diagnostics-client';
+	import { initClientErrorLogger } from '$lib/services/client-error-logger';
 	import { initVersionChecking } from '$lib/services/version.svelte';
 	import {
 		isPro, daysRemaining, proExpired,
@@ -66,6 +67,11 @@
 		// Hook window.onerror / unhandledrejection / pagehide for app_events
 		// ingestion via /api/diag. Idempotent across HMR reloads.
 		installGlobalErrorReporters();
+
+		// Heartbeat-based crash detector that writes to client_errors. Catches
+		// process-level kills (iOS Safari OOM, SW reload) where window.onerror
+		// never fires. Idempotent across HMR reloads.
+		initClientErrorLogger();
 
 		// Initialize the client-side auth store. Without this call the
 		// store's user() returns null forever, which silently breaks the

@@ -13,6 +13,9 @@
 		whatnotBatchTag, whatnotInitialized
 	} from '$lib/stores/whatnot-batch.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import {
+		startFlow, updateFlowStep, endFlow, flowBreadcrumb
+	} from '$lib/services/client-error-logger';
 	import type { ScanResult, Card } from '$lib/types';
 
 	// ── Tab routing (from category tabs) ────────────────────
@@ -123,23 +126,46 @@
 		if (uploadThumbnailUrl) URL.revokeObjectURL(uploadThumbnailUrl);
 		uploadThumbnailUrl = URL.createObjectURL(file);
 
+		// Heartbeat-tracked flow. If iOS Safari OOM-kills the page during OCR,
+		// the next page load will detect the stale heartbeat and write an
+		// `inferred_crash` row to `client_errors` tagged with the active step.
+		startFlow('whatnot_upload_card', 'file_selected', {
+			size: file.size,
+			type: file.type,
+			name: file.name
+		});
+
 		let bitmap: ImageBitmap | null = null;
 		try {
+			updateFlowStep('init_workers');
 			await initWorkers();
+
+			updateFlowStep('image_decode');
 			bitmap = await createImageBitmap(file, {
 				resizeWidth: 2048, resizeHeight: 2048, resizeQuality: 'high'
 			});
+			flowBreadcrumb('decoded', { w: bitmap.width, h: bitmap.height });
+
+			updateFlowStep('recognize_card');
 			const result = await recognizeCard(bitmap, undefined, { isAuthenticated: true, skipBlurCheck: true });
+
+			updateFlowStep('apply_result', { matched: !!result.card_id });
 			if (result.card_id && result.card) {
 				addCardToBatch(result.card, uploadThumbnailUrl);
 				showToast(`Added ${result.card.hero_name || result.card.name || 'card'} to ${whatnotBatchTag()}`, 'check');
 				uploadThumbnailUrl = null;
 				view = 'whatnot-pending';
+				endFlow('success');
 			} else {
 				uploadError = result.failReason || 'Could not identify card. Try a clearer photo.';
+				endFlow('cancelled');
 			}
 		} catch (err) {
+			flowBreadcrumb('handler_threw', {
+				message: err instanceof Error ? err.message : String(err)
+			});
 			uploadError = err instanceof Error ? err.message : 'Processing failed';
+			endFlow('error');
 		} finally {
 			bitmap?.close();
 			uploadProcessing = false;
