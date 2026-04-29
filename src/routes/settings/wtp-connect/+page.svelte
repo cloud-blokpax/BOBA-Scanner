@@ -13,7 +13,8 @@
 
 	let status = $state<Status | null>(null);
 	let loading = $state(true);
-	let token = $state('');
+	let email = $state('');
+	let password = $state('');
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let submitOk = $state(false);
@@ -34,8 +35,8 @@
 	async function connect() {
 		submitError = null;
 		submitOk = false;
-		if (token.trim().length < 8) {
-			submitError = 'Token looks invalid (too short)';
+		if (!email.trim() || !password) {
+			submitError = 'Email and password are required';
 			return;
 		}
 		submitting = true;
@@ -43,14 +44,14 @@
 			const r = await fetch('/api/wtp/connect', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ token: token.trim() })
+				body: JSON.stringify({ email: email.trim(), password })
 			});
 			const data = (await r.json()) as { ok?: boolean; error?: string };
 			if (!r.ok || !data.ok) {
-				submitError = data.error ?? 'Failed to verify token';
+				submitError = data.error ?? 'Sign-in failed';
 				return;
 			}
-			token = '';
+			password = ''; // clear immediately
 			submitOk = true;
 			await loadStatus();
 			if (returnUrl && returnUrl.startsWith('/')) {
@@ -87,7 +88,7 @@
 		<div class="state">Loading…</div>
 	{:else if status && !status.configured}
 		<div class="error-block">
-			WTP integration is not configured on the server. Ask the admin to set <code>WTP_API_BASE_URL</code> and <code>WTP_CREDENTIAL_KEY</code> in env vars.
+			WTP integration is not configured on the server. Ask the admin to set <code>WTP_SUPABASE_URL</code>, <code>WTP_SUPABASE_ANON_KEY</code>, and <code>WTP_CREDENTIAL_KEY</code> in env vars.
 		</div>
 	{:else if status?.connected}
 		<div class="connected">
@@ -106,25 +107,44 @@
 		</div>
 	{:else}
 		<div class="connect-form">
-			<h2>Paste your WTP API token</h2>
-			<ol class="steps">
-				<li>Sign in to <a href="https://wonderstradingpost.com/seller/api-tokens" target="_blank" rel="noopener">Wonders Trading Post</a></li>
-				<li>Generate a personal access token (read + listing:write scopes)</li>
-				<li>Paste it below — we'll encrypt it before storing</li>
-			</ol>
+			<h2>Sign in to your Wonders Trading Post account</h2>
+			<p class="explainer">
+				Enter your WTP credentials. We sign in once on your behalf and store a
+				rotating session token (encrypted at rest). <strong>Your password is
+				never stored.</strong> If you don't have a WTP account yet,
+				<a href="https://wonderstradingpost.com" target="_blank" rel="noopener">create one here</a> first.
+			</p>
 
 			<form onsubmit={(e) => { e.preventDefault(); connect(); }}>
-				<label class="token-label">
-					API token
-					<input type="password" bind:value={token} autocomplete="off" required />
+				<label class="field">
+					Email
+					<input type="email" bind:value={email} autocomplete="username" required />
 				</label>
-				<button type="submit" disabled={submitting} class="connect-btn">
-					{submitting ? 'Verifying…' : 'Connect to WTP'}
+				<label class="field">
+					Password
+					<input type="password" bind:value={password} autocomplete="current-password" required />
+				</label>
+
+				{#if submitError}<p class="error-block">{submitError}</p>{/if}
+				{#if submitOk}<p class="success-block">✓ Connected successfully</p>{/if}
+
+				<button class="connect-btn" type="submit" disabled={submitting || !email || !password}>
+					{submitting ? 'Signing in…' : 'Connect to WTP'}
 				</button>
 			</form>
 
-			{#if submitError}<p class="error-block">{submitError}</p>{/if}
-			{#if submitOk}<p class="success-block">Connected!</p>{/if}
+			<details class="security-note">
+				<summary>Why do you need my password?</summary>
+				<p>
+					Wonders Trading Post doesn't yet expose a partner API or "Sign in with WTP"
+					button, so signing in on your behalf is the only way to post listings to
+					your account. We send your password directly to WTP's auth server, store
+					only the rotating refresh token they return, and discard the password
+					immediately. You can disconnect at any time, which deletes the session
+					token from our database. If WTP rolls out an official API, we'll switch
+					to it and prompt you to reconnect via that flow.
+				</p>
+			</details>
 		</div>
 	{/if}
 </div>
@@ -149,12 +169,15 @@
 	.continue { display: inline-block; padding: 0.75rem 1.25rem; border-radius: 10px; background: var(--accent-primary, #3b82f6); color: #fff; text-decoration: none; font-weight: 600; margin-top: 0.5rem; }
 
 	.connect-form { display: flex; flex-direction: column; gap: 1rem; }
-	.steps { padding-left: 1.25rem; color: var(--text-secondary, #94a3b8); font-size: 0.875rem; line-height: 1.6; }
-	.steps a { color: var(--accent-primary, #3b82f6); text-decoration: underline; }
-	.token-label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; }
-	.token-label input { padding: 0.625rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-strong, rgba(148,163,184,0.3)); background: var(--surface, #0f172a); color: inherit; font-family: ui-monospace, monospace; font-size: 0.875rem; }
-	.connect-btn { padding: 0.75rem 1rem; border-radius: 10px; border: none; background: var(--accent-primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; font-size: 1rem; }
+	.explainer { color: var(--text-secondary, #94a3b8); font-size: 0.875rem; line-height: 1.55; margin: 0; }
+	.explainer a { color: var(--accent-primary, #3b82f6); text-decoration: underline; }
+	.field { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; }
+	.field input { padding: 0.625rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-strong, rgba(148,163,184,0.3)); background: var(--surface, #0f172a); color: inherit; font-size: 0.95rem; }
+	.connect-btn { padding: 0.75rem 1rem; border-radius: 10px; border: none; background: var(--accent-primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; font-size: 1rem; margin-top: 0.5rem; }
 	.connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.security-note { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); padding: 0.5rem 0; }
+	.security-note summary { cursor: pointer; font-weight: 600; }
+	.security-note p { margin: 0.5rem 0 0; line-height: 1.55; }
 
 	.error-block { padding: 0.75rem 1rem; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: var(--danger, #ef4444); font-size: 0.875rem; margin: 0; }
 	.success-block { padding: 0.75rem 1rem; border-radius: 8px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2); color: #22c55e; font-size: 0.875rem; margin: 0; }

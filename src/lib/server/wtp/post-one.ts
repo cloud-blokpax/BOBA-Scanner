@@ -11,12 +11,25 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildWtpPayload, type BuildWtpPayloadInput } from '$lib/services/wtp/listing-vocab';
+import {
+	buildWtpPayload,
+	parallelToWtpTreatmentReal,
+	type BuildWtpPayloadInput
+} from '$lib/services/wtp/listing-vocab';
 import { ensurePending, markPosted, markFailed } from './posting-tracker';
 import { postListingToWtp } from './poster';
 
 export interface PostOneInput {
 	scan_id: string;
+	// Optional card-identity overrides — composer lets the user edit any field.
+	card_name?: string;
+	set_name?: string;
+	treatment?: string;
+	orbital?: string;
+	rarity?: string;
+	special_attribute?: string;
+	card_number?: string | null;
+	// Listing details
 	condition: string;
 	price: number;
 	quantity: number;
@@ -45,6 +58,12 @@ export type PostOneResult =
 			scan_id: string;
 		};
 
+function readMetadataString(metadata: unknown, key: string): string | null {
+	if (!metadata || typeof metadata !== 'object') return null;
+	const v = (metadata as Record<string, unknown>)[key];
+	return typeof v === 'string' && v.trim() ? v : null;
+}
+
 export async function postOne(
 	admin: SupabaseClient,
 	userId: string,
@@ -57,7 +76,12 @@ export async function postOne(
 		.eq('user_id', userId)
 		.maybeSingle();
 	if (!scan?.final_card_id) {
-		return { ok: false, error: 'Scan not found or unresolved', error_code: 'scan_not_found', scan_id: body.scan_id };
+		return {
+			ok: false,
+			error: 'Scan not found or unresolved',
+			error_code: 'scan_not_found',
+			scan_id: body.scan_id
+		};
 	}
 
 	const { data: card } = await admin
@@ -66,10 +90,20 @@ export async function postOne(
 		.eq('id', scan.final_card_id)
 		.maybeSingle();
 	if (!card) {
-		return { ok: false, error: 'Card not found', error_code: 'card_not_found', scan_id: body.scan_id };
+		return {
+			ok: false,
+			error: 'Card not found',
+			error_code: 'card_not_found',
+			scan_id: body.scan_id
+		};
 	}
 	if (card.game_id !== 'wonders') {
-		return { ok: false, error: 'Card is not a Wonders card', error_code: 'wrong_game', scan_id: body.scan_id };
+		return {
+			ok: false,
+			error: 'Card is not a Wonders card',
+			error_code: 'wrong_game',
+			scan_id: body.scan_id
+		};
 	}
 
 	const tracker = await ensurePending(admin, userId, { scan_id: body.scan_id }, card.id);
@@ -83,21 +117,23 @@ export async function postOne(
 		};
 	}
 
-	const metadata = (card.metadata ?? {}) as Record<string, unknown>;
-	const setName = (typeof metadata.set_display_name === 'string' && metadata.set_display_name) || card.set_code || null;
-	const orbital = typeof metadata.orbital === 'string' ? metadata.orbital : null;
-	const specialAttribute = typeof metadata.special_attribute === 'string' ? metadata.special_attribute : null;
+	const setNameDefault =
+		readMetadataString(card.metadata, 'set_display_name') ?? card.set_code ?? 'Existence';
+	const orbitalDefault = readMetadataString(card.metadata, 'orbital') ?? 'Boundless';
+	const specialDefault = readMetadataString(card.metadata, 'special_attribute') ?? 'None';
+	const treatmentDefault = parallelToWtpTreatmentReal(card.parallel ?? 'Paper') ?? 'Paper';
+	const rarityDefault = card.rarity ?? 'Common';
 
 	const payloadInput: BuildWtpPayloadInput = {
-		card_id: card.id,
-		card_name: card.name,
-		parallel: card.parallel ?? 'Paper',
+		card_name: body.card_name ?? card.name,
+		set_name: body.set_name ?? setNameDefault,
+		treatment: body.treatment ?? treatmentDefault,
+		orbital: body.orbital ?? orbitalDefault,
+		rarity: body.rarity ?? rarityDefault,
+		special_attribute: body.special_attribute ?? specialDefault,
+		card_number:
+			typeof body.card_number !== 'undefined' ? body.card_number : card.card_number,
 		condition: body.condition,
-		rarity: card.rarity,
-		orbital,
-		set_name: setName,
-		special_attribute: specialAttribute,
-		card_number: card.card_number,
 		quantity: body.quantity,
 		price: body.price,
 		description: body.description,
@@ -113,7 +149,13 @@ export async function postOne(
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		await markFailed(admin, tracker.id, msg);
-		return { ok: false, error: msg, error_code: 'invalid_payload', posting_id: tracker.id, scan_id: body.scan_id };
+		return {
+			ok: false,
+			error: msg,
+			error_code: 'invalid_payload',
+			posting_id: tracker.id,
+			scan_id: body.scan_id
+		};
 	}
 
 	try {
@@ -130,6 +172,12 @@ export async function postOne(
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		await markFailed(admin, tracker.id, msg);
-		return { ok: false, error: msg, error_code: 'wtp_post_failed', posting_id: tracker.id, scan_id: body.scan_id };
+		return {
+			ok: false,
+			error: msg,
+			error_code: 'wtp_post_failed',
+			posting_id: tracker.id,
+			scan_id: body.scan_id
+		};
 	}
 }

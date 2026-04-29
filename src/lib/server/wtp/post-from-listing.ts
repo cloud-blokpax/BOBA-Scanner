@@ -13,7 +13,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildWtpPayload, type BuildWtpPayloadInput } from '$lib/services/wtp/listing-vocab';
+import {
+	buildWtpPayload,
+	parallelToWtpTreatmentReal,
+	type BuildWtpPayloadInput
+} from '$lib/services/wtp/listing-vocab';
 import { ensurePending, markFailed, markPosted } from './posting-tracker';
 import { postListingToWtp } from './poster';
 
@@ -144,29 +148,31 @@ export async function postOneFromListing(
 		readMetadataString(card.metadata, 'set_display_name') ??
 		card.set_code ??
 		listing.set_code ??
-		null;
-	const orbital = readMetadataString(card.metadata, 'orbital');
-	const specialAttribute = readMetadataString(card.metadata, 'special_attribute');
+		'Existence';
+	const orbital = readMetadataString(card.metadata, 'orbital') ?? 'Boundless';
+	const specialAttribute = readMetadataString(card.metadata, 'special_attribute') ?? 'None';
 
 	const cardParallel = card.parallel ?? listing.parallel ?? 'Paper';
+	const treatment = parallelToWtpTreatmentReal(cardParallel) ?? 'Paper';
 	const cardNumber = card.card_number ?? listing.card_number;
+	const rarity = card.rarity ?? 'Common';
 
-	const imageUrls = Array.isArray(body.image_urls) && body.image_urls.length > 0
-		? body.image_urls.filter((s): s is string => typeof s === 'string' && s.length > 0)
-		: [listing.scan_image_url, card.image_url].filter(
-				(u): u is string => typeof u === 'string' && u.length > 0
-			);
+	const imageUrls =
+		Array.isArray(body.image_urls) && body.image_urls.length > 0
+			? body.image_urls.filter((s): s is string => typeof s === 'string' && s.length > 0)
+			: [listing.scan_image_url, card.image_url].filter(
+					(u): u is string => typeof u === 'string' && u.length > 0
+				);
 
 	const payloadInput: BuildWtpPayloadInput = {
-		card_id: card.id,
 		card_name: card.name,
-		parallel: cardParallel,
-		condition,
-		rarity: card.rarity,
-		orbital,
 		set_name: setName,
+		treatment,
+		orbital,
+		rarity,
 		special_attribute: specialAttribute,
 		card_number: cardNumber,
+		condition,
 		quantity,
 		price,
 		description: description ?? null,

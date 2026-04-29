@@ -26,6 +26,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const input: PostOneInput = {
 		scan_id: body.scan_id,
+		card_name: typeof body.card_name === 'string' ? body.card_name : undefined,
+		set_name: typeof body.set_name === 'string' ? body.set_name : undefined,
+		treatment: typeof body.treatment === 'string' ? body.treatment : undefined,
+		orbital: typeof body.orbital === 'string' ? body.orbital : undefined,
+		rarity: typeof body.rarity === 'string' ? body.rarity : undefined,
+		special_attribute:
+			typeof body.special_attribute === 'string' ? body.special_attribute : undefined,
+		card_number:
+			typeof body.card_number !== 'undefined'
+				? (body.card_number as string | null)
+				: undefined,
 		condition: body.condition,
 		price: body.price,
 		quantity: body.quantity,
@@ -34,16 +45,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		shipping_mode: (body.shipping_mode as PostOneInput['shipping_mode']) ?? 'free',
 		shipping_fee: body.shipping_fee ?? 0,
 		description: body.description ?? null,
-		image_urls: Array.isArray(body.image_urls) ? body.image_urls.filter((s): s is string => typeof s === 'string') : []
+		image_urls: Array.isArray(body.image_urls)
+			? body.image_urls.filter((s): s is string => typeof s === 'string')
+			: []
 	};
 
 	const result = await postOne(admin, user.id, input);
 	if (!result.ok) {
-		const status = result.error_code === 'scan_not_found' || result.error_code === 'card_not_found'
-			? 404
-			: result.error_code === 'wrong_game' || result.error_code === 'invalid_payload'
-				? 400
-				: 500;
+		const status =
+			result.error_code === 'scan_not_found' || result.error_code === 'card_not_found'
+				? 404
+				: result.error_code === 'wrong_game' || result.error_code === 'invalid_payload'
+					? 400
+					: 500;
 		return apiError(result.error, status, {
 			code: result.error_code,
 			details: { posting_id: result.posting_id }

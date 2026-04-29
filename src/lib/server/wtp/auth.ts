@@ -1,82 +1,69 @@
 /**
- * WTP OAuth-style connect flow.
+ * WTP connect flow (Option B: Supabase auth bridge).
  *
- * v1: API-token paste flow. The user generates a personal access token
- * inside their WTP dashboard, pastes it into /settings/wtp-connect,
- * and we encrypt + store it via credentials.saveCredentials.
- *
- * Once WTP exposes a real OAuth flow, swap this module for an
- * authorization-code-grant implementation that mirrors
- * src/lib/server/ebay-seller-auth.ts.
+ * User provides their WTP email + password ONCE. We sign in via WTP's
+ * /auth/v1/token endpoint, store the rotating refresh_token (NOT the
+ * password), and use it to mint short-lived access tokens for posting.
  */
 
-import { env } from '$env/dynamic/private';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { saveCredentials, type WtpCredentials } from './credentials';
+import {
+	signInWithPassword,
+	fetchStripeConnectStatus,
+	isWtpConfigured,
+	WtpAuthError
+} from './wtp-client';
 
-const WTP_API_BASE = env.WTP_API_BASE_URL ?? 'https://api.wonderstradingpost.com';
-
-export function isWtpConfigured(): boolean {
-	return !!env.WTP_API_BASE_URL && !!env.WTP_CREDENTIAL_KEY;
-}
+export { isWtpConfigured };
 
 export interface VerifyResult {
 	ok: boolean;
 	wtp_username?: string;
 	stripe_connect_status?: string;
-	scopes?: string;
 	error?: string;
 }
 
-/**
- * Calls WTP to verify an API token, then stores it. Treat the WTP /me
- * endpoint shape as opaque — we extract username + Stripe status if
- * present, otherwise persist with nulls and let /api/wtp/sync update.
- */
-export async function verifyAndStoreToken(
+export async function verifyAndStoreCredentials(
 	admin: SupabaseClient,
 	userId: string,
-	token: string
+	email: string,
+	password: string
 ): Promise<VerifyResult> {
-	if (!token || token.length < 8) {
-		return { ok: false, error: 'Token looks invalid (too short)' };
+	if (!email || !password) {
+		return { ok: false, error: 'Email and password are required' };
 	}
 
-	let username: string | undefined;
-	let stripeStatus: string | undefined;
-	let scopes: string | undefined;
-
+	let session;
 	try {
-		const response = await fetch(`${WTP_API_BASE}/v1/me`, {
-			headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
-		});
-		if (!response.ok) {
-			const body = await response.text().catch(() => '');
-			return { ok: false, error: `WTP rejected token (${response.status}): ${body.slice(0, 200)}` };
-		}
-		const data = (await response.json()) as Record<string, unknown>;
-		username = typeof data.username === 'string' ? data.username : undefined;
-		stripeStatus = typeof data.stripe_connect_status === 'string' ? data.stripe_connect_status : undefined;
-		scopes = Array.isArray(data.scopes) ? (data.scopes as string[]).join(' ') : undefined;
+		session = await signInWithPassword(email, password);
 	} catch (e) {
+		if (e instanceof WtpAuthError) {
+			return {
+				ok: false,
+				error: e.httpStatus === 400 ? 'Invalid email or password' : e.message
+			};
+		}
 		return { ok: false, error: e instanceof Error ? e.message : 'Network error contacting WTP' };
 	}
 
-	const credentials: WtpCredentials = { api_token: token };
+	const stripe = await fetchStripeConnectStatus(session);
+
+	const credentials: WtpCredentials = {
+		refresh_token: session.refresh_token,
+		wtp_user_id: session.wtp_user_id,
+		email: session.email ?? email
+	};
+
 	await saveCredentials(admin, userId, credentials, {
-		wtp_username: username ?? null,
-		stripe_connect_status: stripeStatus ?? null,
-		scopes: scopes ?? null
+		wtp_username: session.email ?? email,
+		stripe_connect_status: stripe.status === 'unknown' ? null : stripe.status,
+		scopes: null
 	});
 
 	return {
 		ok: true,
-		wtp_username: username,
-		stripe_connect_status: stripeStatus,
-		scopes
+		wtp_username: session.email ?? email,
+		stripe_connect_status: stripe.status === 'unknown' ? undefined : stripe.status
 	};
-}
-
-export function getWtpApiBase(): string {
-	return WTP_API_BASE;
 }

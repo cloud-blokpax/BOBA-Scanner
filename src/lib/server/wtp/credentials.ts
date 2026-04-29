@@ -6,10 +6,15 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { encryptCredential, decryptCredential } from './crypto';
+import { refreshSession, WtpAuthError, type WtpSession } from './wtp-client';
 
 export interface WtpCredentials {
-	api_token: string;
-	refresh_token?: string | null;
+	refresh_token: string;
+	wtp_user_id: string;
+	email?: string | null;
+	// Legacy field — old token-paste records still have api_token. Tolerated on
+	// read so existing connections aren't blown up; never written by Option B.
+	api_token?: string;
 	[key: string]: unknown;
 }
 
@@ -98,4 +103,64 @@ export async function updateStripeConnectStatus(
 		})
 		.eq('user_id', userId);
 	if (error) throw error;
+}
+
+/**
+ * Persist a rotated session (new refresh_token) without touching the metadata
+ * columns. Used by getActiveSession after a refresh — we just need the new
+ * ciphertext + IV + updated_at. Stripe status, username, etc. stay as-is.
+ */
+async function persistRotatedSession(
+	admin: SupabaseClient,
+	userId: string,
+	credentials: WtpCredentials
+): Promise<void> {
+	const blob = await encryptCredential(JSON.stringify(credentials));
+	const { error } = await admin
+		.from('wtp_seller_credentials')
+		.update({
+			credential_ciphertext: blob.ciphertext,
+			credential_iv: blob.iv,
+			updated_at: new Date().toISOString()
+		})
+		.eq('user_id', userId);
+	if (error) throw error;
+}
+
+/**
+ * Get a usable WTP session for this user. Tries refresh-token first; throws
+ * a clear error if the refresh fails (user must reconnect).
+ *
+ * On every successful refresh, the rotating refresh_token is persisted.
+ */
+export async function getActiveSession(
+	admin: SupabaseClient,
+	userId: string
+): Promise<WtpSession> {
+	const record = await getCredentials(admin, userId);
+	if (!record) throw new Error('User is not connected to WTP');
+
+	const { refresh_token, wtp_user_id, email } = record.credentials;
+	if (!refresh_token) {
+		throw new Error('WTP credentials are missing refresh_token — please reconnect');
+	}
+
+	let session: WtpSession;
+	try {
+		session = await refreshSession(refresh_token);
+	} catch (e) {
+		if (e instanceof WtpAuthError && (e.httpStatus === 400 || e.httpStatus === 401)) {
+			throw new Error('WTP session expired — please reconnect under Settings → WTP');
+		}
+		throw e;
+	}
+
+	const updated: WtpCredentials = {
+		refresh_token: session.refresh_token,
+		wtp_user_id: session.wtp_user_id || wtp_user_id,
+		email: session.email ?? email ?? null
+	};
+	await persistRotatedSession(admin, userId, updated);
+
+	return session;
 }
