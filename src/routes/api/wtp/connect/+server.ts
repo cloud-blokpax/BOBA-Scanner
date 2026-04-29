@@ -2,7 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { apiError } from '$lib/server/api-response';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
-import { isWtpConfigured, verifyAndStoreToken } from '$lib/server/wtp/auth';
+import { isWtpConfigured, verifyAndStoreCredentials } from '$lib/server/wtp/auth';
 import { isCryptoConfigured } from '$lib/server/wtp/crypto';
 import type { RequestHandler } from './$types';
 
@@ -20,12 +20,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const admin = getAdminClient();
 	if (!admin) return apiError('Service unavailable', 503);
 
-	const body = (await request.json().catch(() => ({}))) as { token?: string };
-	const token = (body.token ?? '').trim();
-	if (!token) return apiError('Missing token', 400);
+	const body = (await request.json().catch(() => ({}))) as {
+		email?: string;
+		password?: string;
+	};
+	const email = (body.email ?? '').trim().toLowerCase();
+	const password = body.password ?? '';
+	if (!email || !password) return apiError('Email and password are required', 400);
 
-	const result = await verifyAndStoreToken(admin, user.id, token);
-	if (!result.ok) return apiError(result.error ?? 'Token verification failed', 400);
+	const result = await verifyAndStoreCredentials(admin, user.id, email, password);
+	if (!result.ok) return apiError(result.error ?? 'Sign-in failed', 400);
 
 	return json({
 		ok: true,

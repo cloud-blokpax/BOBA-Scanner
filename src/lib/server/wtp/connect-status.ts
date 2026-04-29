@@ -3,9 +3,9 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isWtpConfigured, getWtpApiBase } from './auth';
+import { isWtpConfigured, fetchStripeConnectStatus } from './wtp-client';
 import { isCryptoConfigured } from './crypto';
-import { getCredentials, updateStripeConnectStatus } from './credentials';
+import { getActiveSession, getCredentials, updateStripeConnectStatus } from './credentials';
 
 export interface WtpStatus {
 	configured: boolean;
@@ -16,10 +16,7 @@ export interface WtpStatus {
 	connected_at: string | null;
 }
 
-export async function getStatus(
-	admin: SupabaseClient,
-	userId: string
-): Promise<WtpStatus> {
+export async function getStatus(admin: SupabaseClient, userId: string): Promise<WtpStatus> {
 	const configured = isWtpConfigured() && isCryptoConfigured();
 	if (!configured) {
 		return {
@@ -66,21 +63,18 @@ export async function refreshStripeStatus(
 	const creds = await getCredentials(admin, userId);
 	if (!creds) return null;
 
-	const token = creds.credentials.api_token;
-	if (!token) return null;
-
+	let session;
 	try {
-		const response = await fetch(`${getWtpApiBase()}/v1/me`, {
-			headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
-		});
-		if (!response.ok) return creds.stripe_connect_status;
-		const data = (await response.json()) as { stripe_connect_status?: string };
-		const next = data.stripe_connect_status ?? null;
-		if (next && next !== creds.stripe_connect_status) {
-			await updateStripeConnectStatus(admin, userId, next);
-		}
-		return next ?? creds.stripe_connect_status;
+		session = await getActiveSession(admin, userId);
 	} catch {
 		return creds.stripe_connect_status;
 	}
+
+	const result = await fetchStripeConnectStatus(session);
+	if (result.status === 'unknown') return creds.stripe_connect_status;
+
+	if (result.status !== creds.stripe_connect_status) {
+		await updateStripeConnectStatus(admin, userId, result.status);
+	}
+	return result.status;
 }

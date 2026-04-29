@@ -1,19 +1,19 @@
 /**
- * WTP listing poster.
+ * WTP listing poster (Option B: posts directly to WTP's PostgREST
+ * /rest/v1/listings as the authenticated user).
  *
- * Takes an already-built WTP payload + a list of image URLs, relays
- * the images, and POSTs the listing to WTP. Returns the resulting
- * WTP listing id and URL.
- *
- * Caller is responsible for building the payload via buildWtpPayload,
- * tracking the wtp_postings row (see posting-tracker.ts), and handling
- * any errors thrown here.
+ * Flow per listing:
+ *   1. Mint fresh access token via refresh
+ *   2. INSERT row into WTP listings — get back the listing.id
+ *   3. Upload images to WTP storage at {wtp_user_id}/{listing_id}_{i}.{ext}
+ *   4. PATCH the listing with image_url + image_urls
+ *   5. Return WTP listing id + URL
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getCredentials } from './credentials';
-import { relayImagesToWtp } from './image-relay';
-import { getWtpApiBase } from './auth';
+import { getActiveSession } from './credentials';
+import { uploadImagesToWtp } from './image-relay';
+import { wtpFetch } from './wtp-client';
 import type { WtpListingPayload } from '$lib/services/wtp/listing-vocab';
 
 export interface PostResult {
@@ -28,41 +28,44 @@ export async function postListingToWtp(
 	payload: WtpListingPayload,
 	imageUrls: string[]
 ): Promise<PostResult> {
-	const creds = await getCredentials(admin, userId);
-	if (!creds) throw new Error('User is not connected to WTP');
+	const session = await getActiveSession(admin, userId);
 
-	const token = creds.credentials.api_token;
-	if (!token) throw new Error('WTP credentials missing api_token');
+	const insertBody = { user_id: session.wtp_user_id, ...payload };
 
-	const relayed = await relayImagesToWtp(token, imageUrls);
-	const fullPayload = { ...payload, image_urls: relayed.map(r => r.wtp_url) };
-
-	const response = await fetch(`${getWtpApiBase()}/v1/listings`, {
+	const insRes = await wtpFetch(session, '/rest/v1/listings?select=id', {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-			Accept: 'application/json'
-		},
-		body: JSON.stringify(fullPayload)
+		headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+		body: JSON.stringify(insertBody)
 	});
-
-	if (!response.ok) {
-		const body = await response.text().catch(() => '');
-		throw new Error(`WTP listing failed (${response.status}): ${body.slice(0, 500)}`);
+	if (!insRes.ok) {
+		const body = await insRes.text().catch(() => '');
+		throw new Error(`WTP listing insert failed (${insRes.status}): ${body.slice(0, 500)}`);
+	}
+	const inserted = (await insRes.json()) as Array<{ id: string }>;
+	const wtpListingId = inserted[0]?.id;
+	if (!wtpListingId) {
+		throw new Error('WTP listing insert returned no id');
 	}
 
-	const data = (await response.json()) as {
-		listing_id?: string;
-		id?: string;
-		url?: string;
-		listing_url?: string;
+	const uploaded = await uploadImagesToWtp(session, wtpListingId, imageUrls);
+
+	if (uploaded.length > 0) {
+		const urls = uploaded.map((u) => u.wtp_url);
+		const patchRes = await wtpFetch(session, `/rest/v1/listings?id=eq.${wtpListingId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ image_url: urls[0], image_urls: urls })
+		});
+		if (!patchRes.ok) {
+			console.warn(`[wtp-poster] image PATCH failed ${patchRes.status}`);
+		}
+	}
+
+	const wtpUrl = `https://wonderstradingpost.com/listing/${wtpListingId}`;
+
+	return {
+		wtp_listing_id: wtpListingId,
+		wtp_url: wtpUrl,
+		payload: { ...payload, image_urls: uploaded.map((u) => u.wtp_url) }
 	};
-	const listingId = data.listing_id ?? data.id;
-	const url = data.listing_url ?? data.url;
-	if (!listingId || !url) {
-		throw new Error('WTP listing response missing listing_id or url');
-	}
-
-	return { wtp_listing_id: listingId, wtp_url: url, payload: fullPayload };
 }

@@ -1,60 +1,65 @@
 /**
- * Server-side image relay for WTP listings.
+ * Image upload to WTP's storage bucket (card-images).
  *
- * Re-uploads images that originated from Supabase Storage (or any
- * publicly fetchable URL) to WTP's image endpoint, returning the WTP-
- * hosted URL that should be referenced in the listing payload. Most
- * marketplaces require images on their own CDN before a listing can
- * go live.
+ * Path convention (matches WTP UI's exact pattern from their bundle):
+ *   {wtp_user_id}/{listing_id}_{i}.{ext}
  *
- * The actual WTP endpoint shape isn't documented here yet — when the
- * v1 wedge ships against a real WTP API the upload call below should
- * be swapped to whatever WTP exposes (multipart upload, signed PUT,
- * etc.). For now this is a thin pass-through so the rest of the flow
- * works against image URLs that are already on a public CDN.
+ * Returns the public URL of each successfully uploaded image. Failures
+ * are logged but skipped — the listing still goes live, just with fewer
+ * images than requested.
  */
 
-import { getWtpApiBase } from './auth';
+import { wtpFetch, getWtpUrl, type WtpSession } from './wtp-client';
+
+const MAX_BYTES = 5 * 1024 * 1024; // 5MB — generous; WTP UI doesn't enforce strictly
 
 export interface RelayedImage {
 	original_url: string;
 	wtp_url: string;
 }
 
-export async function relayImagesToWtp(
-	token: string,
+export async function uploadImagesToWtp(
+	session: WtpSession,
+	listingId: string,
 	imageUrls: string[]
 ): Promise<RelayedImage[]> {
-	if (!imageUrls.length) return [];
+	const out: RelayedImage[] = [];
 
-	const apiBase = getWtpApiBase();
-	const relayed: RelayedImage[] = [];
-
-	for (const original of imageUrls) {
+	for (let i = 0; i < imageUrls.length; i++) {
+		const original = imageUrls[i];
 		try {
-			const response = await fetch(`${apiBase}/v1/images/relay`, {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ source_url: original })
-			});
+			const dl = await fetch(original);
+			if (!dl.ok) {
+				console.warn(`[wtp-image] download failed ${dl.status}: ${original}`);
+				continue;
+			}
+			const ct = dl.headers.get('content-type') || 'image/jpeg';
+			const ext = (ct.split('/')[1] || 'jpg').split(';')[0];
+			const blob = await dl.blob();
 
-			if (!response.ok) {
-				// Fallback: pass the original URL through. WTP may accept
-				// already-public URLs depending on its policy. The poster
-				// will still surface a clear error if WTP rejects it.
-				relayed.push({ original_url: original, wtp_url: original });
+			if (blob.size > MAX_BYTES) {
+				console.warn(`[wtp-image] too large (${blob.size} bytes), skipping`);
 				continue;
 			}
 
-			const data = (await response.json()) as { url?: string };
-			relayed.push({ original_url: original, wtp_url: data.url ?? original });
-		} catch {
-			relayed.push({ original_url: original, wtp_url: original });
+			const path = `${session.wtp_user_id}/${listingId}_${i}.${ext}`;
+			const up = await wtpFetch(session, `/storage/v1/object/card-images/${path}`, {
+				method: 'POST',
+				headers: { 'Content-Type': ct, 'x-upsert': 'true' },
+				body: blob
+			});
+			if (!up.ok) {
+				const text = await up.text().catch(() => '');
+				console.warn(`[wtp-image] upload failed ${up.status}: ${text.slice(0, 200)}`);
+				continue;
+			}
+
+			const wtpUrl = `${getWtpUrl()}/storage/v1/object/public/card-images/${path}`;
+			out.push({ original_url: original, wtp_url: wtpUrl });
+		} catch (e) {
+			console.warn(`[wtp-image] error:`, e);
 		}
 	}
 
-	return relayed;
+	return out;
 }

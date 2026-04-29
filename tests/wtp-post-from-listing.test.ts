@@ -165,15 +165,18 @@ describe('postOneFromListing', () => {
 		];
 		expect(payload).toMatchObject({
 			card_name: 'Verdant Whisper',
-			treatment: 'paper',
-			condition: 'NM',
-			set_name: 'Existence',
+			treatment: 'Paper',
+			condition: 'Near Mint',
+			set: 'Existence',
 			rarity: 'Rare',
 			orbital: 'Heliosynth',
-			price_cents: 1250,
+			price: 12.5,
 			quantity: 1,
 			accepting_offers: true,
-			open_to_trade: false
+			open_to_trade: false,
+			shipping_free: true,
+			shipping_per_item: false,
+			shipping_fee: 0
 		});
 		expect(imageUrls).toEqual([
 			'https://example.com/scan.jpg',
@@ -189,9 +192,9 @@ describe('postOneFromListing', () => {
 		);
 	});
 
-	it('marks failed when buildWtpPayload throws (e.g. unknown condition)', async () => {
+	it('marks failed when buildWtpPayload throws (e.g. zero price)', async () => {
 		const admin = fakeAdmin({
-			listingRow: { ...baseListingRow, condition: 'Pristine' },
+			listingRow: { ...baseListingRow, price: 0 },
 			cardRow: baseCardRow
 		});
 		ensurePending.mockResolvedValue({ id: 'posting-3', alreadyPosted: false, alreadyFailed: false });
@@ -237,10 +240,12 @@ describe('postOneFromListing', () => {
 			string[]
 		];
 		expect(payload).toMatchObject({
-			price_cents: 1999,
+			price: 19.99,
 			quantity: 2,
-			condition: 'LP',
-			shipping: { mode: 'flat', fee_cents: 400 }
+			condition: 'Lightly Played',
+			shipping_free: false,
+			shipping_per_item: false,
+			shipping_fee: 4
 		});
 	});
 });
