@@ -31,8 +31,15 @@
 		sold_at: string | null;
 		sold_price: number | null;
 		error_message: string | null;
+		game_id: string;
 		created_at: string;
 		updated_at: string | null;
+	}
+
+	interface WtpPostingState {
+		status: 'pending' | 'posted' | 'failed' | 'sold' | 'ended';
+		wtp_listing_id: string | null;
+		wtp_listing_url: string | null;
 	}
 
 	interface Summary {
@@ -72,9 +79,63 @@
 
 	const endedCount = $derived(listings.filter(l => l.status === 'ended').length);
 
+	let wtpConnected = $state(false);
+	let wtpStatusFetched = $state(false);
+	let wtpPostings = $state<Record<string, WtpPostingState>>({});
+	let wtpPosting = $state<Record<string, boolean>>({});
+
 	onMount(() => {
 		if (ebayConnected) loadListings();
+		fetch('/api/wtp/status')
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				wtpConnected = !!data?.connected;
+			})
+			.catch(() => {
+				wtpConnected = false;
+			})
+			.finally(() => {
+				wtpStatusFetched = true;
+			});
 	});
+
+	async function postToWtp(listing: ListingItem) {
+		if (!wtpConnected) {
+			showToast('Connect Wonders Trading Post in Settings first', 'x');
+			return;
+		}
+		wtpPosting = { ...wtpPosting, [listing.id]: true };
+		try {
+			const res = await fetch('/api/wtp/post-from-listing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ source_listing_id: listing.id })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				showToast(data.error || 'Failed to post to WTP', 'x');
+				return;
+			}
+			wtpPostings = {
+				...wtpPostings,
+				[listing.id]: {
+					status: 'posted',
+					wtp_listing_id: data.wtp_listing_id ?? null,
+					wtp_listing_url: data.wtp_url ?? null
+				}
+			};
+			if (data.already_posted) {
+				showToast('Already posted to Wonders Trading Post', 'check');
+			} else {
+				showToast('Posted to Wonders Trading Post', 'check');
+			}
+		} catch (err) {
+			console.warn('[ListingHistory] WTP post failed:', err);
+			showToast('Failed to post to WTP', 'x');
+		} finally {
+			wtpPosting = { ...wtpPosting, [listing.id]: false };
+		}
+	}
 
 	async function loadListings() {
 		loading = true;
@@ -415,6 +476,31 @@
 											class="lh-detail-btn lh-detail-btn-ebay">
 											View on eBay &#x2197;
 										</a>
+									{/if}
+									{#if listing.game_id === 'wonders'}
+										{@const posted = wtpPostings[listing.id]}
+										{#if posted?.status === 'posted' && posted.wtp_listing_url}
+											<a
+												href={posted.wtp_listing_url}
+												target="_blank"
+												rel="noopener noreferrer"
+												class="lh-detail-btn lh-detail-btn-wtp"
+											>
+												View on Wonders Trading Post &#x2197;
+											</a>
+										{:else if wtpStatusFetched && !wtpConnected}
+											<a href="/settings/wtp-connect" class="lh-detail-btn lh-detail-btn-wtp">
+												Connect Wonders Trading Post
+											</a>
+										{:else if wtpConnected}
+											<button
+												class="lh-detail-btn lh-detail-btn-wtp"
+												onclick={() => postToWtp(listing)}
+												disabled={!!wtpPosting[listing.id]}
+											>
+												{wtpPosting[listing.id] ? 'Posting...' : 'Post to Wonders Trading Post'}
+											</button>
+										{/if}
 									{/if}
 									{#if listing.status === 'published' || listing.status === 'draft'}
 										<button class="lh-detail-btn lh-detail-btn-end"
@@ -972,6 +1058,21 @@
 
 	.lh-detail-btn-ebay:hover {
 		background: rgba(59, 130, 246, 0.15);
+	}
+
+	.lh-detail-btn-wtp {
+		background: rgba(168, 85, 247, 0.08);
+		border-color: rgba(168, 85, 247, 0.2);
+		color: #a855f7;
+	}
+
+	.lh-detail-btn-wtp:hover:not(:disabled) {
+		background: rgba(168, 85, 247, 0.15);
+	}
+
+	.lh-detail-btn-wtp:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	.lh-detail-btn-end {
