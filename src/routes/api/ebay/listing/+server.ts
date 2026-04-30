@@ -11,6 +11,7 @@ import {
 	EBAY_INVENTORY_URL
 } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 import { incrementPersona } from '$lib/services/persona';
 import { extractScanImagePath } from '$lib/services/scan-image-url';
 import type { RequestHandler } from './$types';
@@ -19,8 +20,10 @@ export const config = { maxDuration: 60 };
 
 const EBAY_CATEGORY_TRADING_CARDS = '183454';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const user = await requireAuth(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 
 	// Server-side feature gate — check overrides (free users now get limited access)
 	if (locals.supabase) {
@@ -139,6 +142,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	try {
 		// Step 1: Create inventory item — matches create-draft pattern exactly
+		const inventoryStart = Date.now();
 		const inventoryRes = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(sku)}`, {
 			method: 'PUT',
 			headers: {
@@ -196,6 +200,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			})
 		});
 
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: 'sell.inventory.put_item',
+			httpMethod: 'PUT',
+			httpStatus: inventoryRes.status,
+			success: inventoryRes.ok,
+			errorMessage: inventoryRes.ok ? null : `HTTP ${inventoryRes.status}`,
+			requestPath: '/api/ebay/listing',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - inventoryStart
+		});
+
 		if (!inventoryRes.ok) {
 			const errData = await inventoryRes.json().catch(() => ({}));
 			const errMsg = errData?.errors?.[0]?.longMessage || errData?.errors?.[0]?.message || `Inventory item creation failed: ${inventoryRes.status}`;
@@ -240,6 +257,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		// Step 4: Create offer
+		const offerStart = Date.now();
 		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
 			method: 'POST',
 			headers: {
@@ -271,6 +289,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					returnPolicyId: policies.returnPolicyId
 				}
 			})
+		});
+
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: 'sell.inventory.create_offer',
+			httpMethod: 'POST',
+			httpStatus: offerRes.status,
+			success: offerRes.ok,
+			errorMessage: offerRes.ok ? null : `HTTP ${offerRes.status}`,
+			requestPath: '/api/ebay/listing',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - offerStart
 		});
 
 		if (!offerRes.ok) {

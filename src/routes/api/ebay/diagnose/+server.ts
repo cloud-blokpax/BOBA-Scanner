@@ -8,6 +8,7 @@
 import { json } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getSellerToken, isSellerConnected, isSellerOAuthConfigured } from '$lib/server/ebay-seller-auth';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -38,9 +39,35 @@ async function timed<T>(name: string, fn: () => Promise<T>): Promise<StepResult 
 	}
 }
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	const user = await requireAdmin(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 	const results: StepResult[] = [];
+
+	// Helper to wrap a fetch with audit logging.
+	const tracedFetch = async (
+		url: string,
+		init: RequestInit,
+		endpointLabel: string,
+		method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+	): Promise<Response> => {
+		const start = Date.now();
+		const res = await fetch(url, init);
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: endpointLabel,
+			httpMethod: method,
+			httpStatus: res.status,
+			success: res.ok,
+			errorMessage: res.ok ? null : `HTTP ${res.status}`,
+			requestPath: '/api/ebay/diagnose',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - start
+		});
+		return res;
+	};
 
 	// Step 1: OAuth configured?
 	const oauthConfigured = isSellerOAuthConfigured();
@@ -68,7 +95,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Step 4: Test privilege endpoint (lightweight auth check)
 	const privStep = await timed('4_privilege_check', async () => {
-		const res = await fetch('https://api.ebay.com/sell/account/v1/privilege', { headers });
+		const res = await tracedFetch('https://api.ebay.com/sell/account/v1/privilege', { headers }, 'sell.account.get_privilege', 'GET');
 		const body = await res.text();
 		return { status: res.status, body: body.slice(0, 500) };
 	});
@@ -76,7 +103,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Step 5: Fetch fulfillment policies
 	const fulfillStep = await timed('5_fulfillment_policies', async () => {
-		const res = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers });
+		const res = await tracedFetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers }, 'sell.account.get_fulfillment_policies', 'GET');
 		const body = await res.json();
 		return {
 			status: res.status,
@@ -92,7 +119,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Step 6: Fetch payment policies
 	const payStep = await timed('6_payment_policies', async () => {
-		const res = await fetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers });
+		const res = await tracedFetch(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, { headers }, 'sell.account.get_payment_policies', 'GET');
 		const body = await res.json();
 		return {
 			status: res.status,
@@ -108,7 +135,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Step 7: Fetch return policies
 	const retStep = await timed('7_return_policies', async () => {
-		const res = await fetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers });
+		const res = await tracedFetch(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, { headers }, 'sell.account.get_return_policies', 'GET');
 		const body = await res.json();
 		return {
 			status: res.status,
@@ -140,11 +167,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 			availability: { shipToLocationAvailability: { quantity: 1 } }
 		};
 
-		const res = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(testSku)}`, {
+		const res = await tracedFetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(testSku)}`, {
 			method: 'PUT',
 			headers: { ...headers, 'Content-Language': 'en-US', 'Accept-Language': 'en-US' },
 			body: JSON.stringify(inventoryItem)
-		});
+		}, 'sell.inventory.diagnose_put', 'PUT');
 
 		const body = await res.text();
 		return { status: res.status, body: body.slice(0, 1000) };
@@ -154,10 +181,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 	// Step 9: Clean up test inventory item
 	if (invStep.ok && (invStep.value as { status: number })?.status < 300) {
 		const cleanupStep = await timed('9_cleanup_test_item', async () => {
-			const res = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(testSku)}`, {
+			const res = await tracedFetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(testSku)}`, {
 				method: 'DELETE',
 				headers
-			});
+			}, 'sell.inventory.diagnose_delete', 'DELETE');
 			return { status: res.status };
 		});
 		results.push({ ...cleanupStep, detail: cleanupStep.value });

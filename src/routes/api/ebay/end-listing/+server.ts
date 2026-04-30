@@ -4,6 +4,7 @@ import { getSellerToken, isSellerConnected } from '$lib/server/ebay-seller-auth'
 import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { parseJsonBody, requireString, requireAuth } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 
 export const config = { maxDuration: 30 };
 
@@ -13,8 +14,10 @@ const EBAY_INVENTORY_URL = 'https://api.ebay.com/sell/inventory/v1';
  * POST /api/ebay/end-listing
  * Ends an eBay listing by withdrawing the offer, then updates the DB.
  */
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const user = await requireAuth(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 
 	const rl = await checkHeavyMutationRateLimit(user.id);
 	if (!rl.success) return json({ error: 'Too many requests' }, { status: 429 });
@@ -47,6 +50,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// If no offer ID stored, try to find it by SKU
 	if (!offerIdToWithdraw && listing.sku && token) {
 		try {
+			const lookupStart = Date.now();
 			const lookupRes = await fetch(
 				`${EBAY_INVENTORY_URL}/offer?sku=${encodeURIComponent(listing.sku)}&limit=1`,
 				{
@@ -57,6 +61,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					}
 				}
 			);
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.inventory.get_offers',
+				httpMethod: 'GET',
+				httpStatus: lookupRes.status,
+				success: lookupRes.ok,
+				errorMessage: lookupRes.ok ? null : `HTTP ${lookupRes.status}`,
+				requestPath: '/api/ebay/end-listing',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - lookupStart
+			});
 			if (lookupRes.ok) {
 				const data = await lookupRes.json();
 				offerIdToWithdraw = data.offers?.[0]?.offerId || null;
@@ -66,6 +82,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (offerIdToWithdraw && token) {
 		try {
+			const withdrawStart = Date.now();
 			const res = await fetch(
 				`${EBAY_INVENTORY_URL}/offer/${offerIdToWithdraw}/withdraw`,
 				{
@@ -77,6 +94,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					}
 				}
 			);
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.inventory.withdraw_offer',
+				httpMethod: 'POST',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/end-listing',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - withdrawStart
+			});
 			if (!res.ok && res.status !== 404) {
 				const errBody = await res.text().catch(() => '');
 				console.error('[ebay/end-listing] Withdraw failed:', res.status, errBody);
@@ -89,7 +118,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Delete the inventory item
 	if (listing.sku && token) {
 		try {
-			await fetch(
+			const deleteStart = Date.now();
+			const deleteRes = await fetch(
 				`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(listing.sku)}`,
 				{
 					method: 'DELETE',
@@ -99,6 +129,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					}
 				}
 			);
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.inventory.delete_item',
+				httpMethod: 'DELETE',
+				httpStatus: deleteRes.status,
+				success: deleteRes.ok,
+				errorMessage: deleteRes.ok ? null : `HTTP ${deleteRes.status}`,
+				requestPath: '/api/ebay/end-listing',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - deleteStart
+			});
 		} catch { /* non-critical */ }
 	}
 

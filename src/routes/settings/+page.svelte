@@ -23,6 +23,7 @@
 	let ebayConnectedSince = $state<string | null>(null);
 	let ebayLoading = $state(true);
 	let ebayDisconnecting = $state(false);
+	let ebayJustDisconnected = $state(false);
 	let ebayValidating = $state(false);
 	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
 	let ebayTokenHealth = $state<{ access_token_valid: boolean; access_token_expires_at: string; refresh_token_expires_at: string; refresh_days_remaining: number; scopes: string | null } | null>(null);
@@ -180,6 +181,7 @@
 			if (!res.ok) throw new Error();
 			ebayConnected = false;
 			ebayConnectedSince = null;
+			ebayJustDisconnected = true;
 			showToast('eBay account disconnected', 'check');
 		} catch (err) {
 			console.debug('[settings] eBay disconnect failed:', err);
@@ -362,6 +364,13 @@
 						{/if}
 					</div>
 				</div>
+				{#if ebayJustDisconnected && !ebayConnected}
+					<div class="ebay-revoke-hint">
+						Disconnected from this app. If you suspect your account was compromised, also revoke this app's authorization at
+						<a href="https://accounts.ebay.com/uas/PreferencesApplications" target="_blank" rel="noopener noreferrer">eBay → Apps you've authorized</a>.
+						Revoking here only deletes the connection from Card Scanner; revoking at eBay is what fully invalidates the access token.
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -606,6 +615,18 @@
 	.token-dot.healthy { background: var(--success); }
 	.token-dot.expired { background: var(--warning, #f59e0b); }
 	.token-warning { color: var(--warning, #f59e0b); font-size: 0.6875rem; }
+
+	.ebay-revoke-hint {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		line-height: 1.5;
+		padding: 0.75rem;
+		background: rgba(245, 158, 11, 0.08);
+		border: 1px solid rgba(245, 158, 11, 0.25);
+		border-radius: 8px;
+		margin-top: 0.5rem;
+	}
+	.ebay-revoke-hint a { color: var(--accent, #3b82f6); text-decoration: underline; }
 
 	.chevron { color: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
 
