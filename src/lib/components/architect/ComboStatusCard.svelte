@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { ComboDetectionResult, HeroRecommendation } from '$lib/services/playbook-engine';
+	import {
+		selectedPlays,
+		addPlay,
+		getUniverse
+	} from '$lib/stores/playbook-architect.svelte';
 
 	let {
 		combos,
@@ -9,10 +14,24 @@
 		heroRec: HeroRecommendation;
 	} = $props();
 
+	let expandedId = $state<string | null>(null);
+
+	const selectedNames = $derived(new Set(selectedPlays().map((p) => p.name)));
+	const universeByName = $derived(new Map(getUniverse().map((p) => [p.name, p])));
+
 	function riskBadge(risk: 'low' | 'medium' | 'high'): { label: string; color: string } {
 		if (risk === 'low') return { label: 'Low Risk', color: 'var(--success)' };
 		if (risk === 'medium') return { label: 'Med Risk', color: 'var(--warning)' };
 		return { label: 'High Risk', color: 'var(--danger)' };
+	}
+
+	function toggle(id: string) {
+		expandedId = expandedId === id ? null : id;
+	}
+
+	function handleAddEnhancer(name: string) {
+		const card = universeByName.get(name);
+		if (card) addPlay(card);
 	}
 </script>
 
@@ -23,39 +42,144 @@
 		<p class="empty">No combo engines detected yet. Add plays to discover synergies.</p>
 	{/if}
 
-	{#each combos.complete as { engine, enhancersPresent }}
+	{#each combos.complete as { engine, enhancersPresent } (engine.id)}
+		{@const isOpen = expandedId === engine.id}
 		<div class="combo complete">
-			<div class="combo-header">
-				<span class="combo-name">{engine.name}</span>
-				<span class="combo-badge complete-badge">Complete</span>
-			</div>
-			<p class="combo-tagline">{engine.tagline}</p>
-			<div class="combo-meta">
-				<span class="meta-chip">{engine.coreDBS} DBS</span>
-				<span class="meta-chip">{engine.coreHD} HD</span>
-				<span class="meta-chip" style="color: {riskBadge(engine.risk).color}">{riskBadge(engine.risk).label}</span>
-			</div>
-			{#if enhancersPresent.length > 0}
-				<p class="enhancers">+{enhancersPresent.length} enhancers active</p>
+			<button class="combo-header-btn" onclick={() => toggle(engine.id)}>
+				<div class="combo-header">
+					<span class="combo-name">{engine.name}</span>
+					<span class="header-right">
+						<span class="combo-badge complete-badge">Complete</span>
+						<span class="chevron" class:open={isOpen}>▾</span>
+					</span>
+				</div>
+				<p class="combo-tagline">{engine.tagline}</p>
+				<div class="combo-meta">
+					<span class="meta-chip">{engine.coreDBS} DBS</span>
+					<span class="meta-chip">{engine.coreHD} HD</span>
+					<span class="meta-chip" style="color: {riskBadge(engine.risk).color}">
+						{riskBadge(engine.risk).label}
+					</span>
+				</div>
+				{#if enhancersPresent.length > 0}
+					<p class="enhancers">+{enhancersPresent.length} enhancers active</p>
+				{/if}
+			</button>
+
+			{#if isOpen}
+				<div class="combo-detail">
+					<h5 class="detail-title">How it works</h5>
+					<p class="detail-chain">{engine.chain}</p>
+
+					<h5 class="detail-title">Projected impact</h5>
+					<p class="detail-impact">{engine.projectedImpact}</p>
+
+					<h5 class="detail-title">Core cards</h5>
+					<ul class="card-list">
+						{#each engine.coreCards as cardName}
+							<li class="card-row present">
+								<span class="card-mark">✓</span>
+								<span class="card-name">{cardName}</span>
+							</li>
+						{/each}
+					</ul>
+
+					{#if engine.enhancerCards.length > 0}
+						<h5 class="detail-title">Enhancer cards</h5>
+						<ul class="card-list">
+							{#each engine.enhancerCards as cardName}
+								{@const inDeck = selectedNames.has(cardName)}
+								{@const inUniverse = universeByName.has(cardName)}
+								<li class="card-row" class:present={inDeck}>
+									<span class="card-mark">{inDeck ? '✓' : '·'}</span>
+									<span class="card-name">{cardName}</span>
+									{#if !inDeck && inUniverse}
+										<button
+											class="add-btn"
+											onclick={() => handleAddEnhancer(cardName)}
+										>
+											Add
+										</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
 			{/if}
 		</div>
 	{/each}
 
-	{#each combos.partial as { engine, present, missing }}
+	{#each combos.partial as { engine, present, missing } (engine.id)}
+		{@const isOpen = expandedId === engine.id}
 		<div class="combo partial">
-			<div class="combo-header">
-				<span class="combo-name">{engine.name}</span>
-				<span class="combo-badge partial-badge">
-					{present.length}/{engine.coreCards.length}
-				</span>
-			</div>
-			<p class="combo-tagline">{engine.tagline}</p>
-			<div class="missing-cards">
-				<span class="missing-label">Missing:</span>
-				{#each missing as cardName}
-					<span class="missing-card">{cardName}</span>
-				{/each}
-			</div>
+			<button class="combo-header-btn" onclick={() => toggle(engine.id)}>
+				<div class="combo-header">
+					<span class="combo-name">{engine.name}</span>
+					<span class="header-right">
+						<span class="combo-badge partial-badge">
+							{present.length}/{engine.coreCards.length}
+						</span>
+						<span class="chevron" class:open={isOpen}>▾</span>
+					</span>
+				</div>
+				<p class="combo-tagline">{engine.tagline}</p>
+				<div class="missing-cards">
+					<span class="missing-label">Missing:</span>
+					{#each missing as cardName}
+						<span class="missing-card">{cardName}</span>
+					{/each}
+				</div>
+			</button>
+
+			{#if isOpen}
+				<div class="combo-detail">
+					<h5 class="detail-title">How it works</h5>
+					<p class="detail-chain">{engine.chain}</p>
+
+					<h5 class="detail-title">Core cards</h5>
+					<ul class="card-list">
+						{#each engine.coreCards as cardName}
+							{@const inDeck = selectedNames.has(cardName)}
+							{@const inUniverse = universeByName.has(cardName)}
+							<li class="card-row" class:present={inDeck}>
+								<span class="card-mark">{inDeck ? '✓' : '✗'}</span>
+								<span class="card-name">{cardName}</span>
+								{#if !inDeck && inUniverse}
+									<button
+										class="add-btn"
+										onclick={() => handleAddEnhancer(cardName)}
+									>
+										Add
+									</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+
+					{#if engine.enhancerCards.length > 0}
+						<h5 class="detail-title">Enhancer cards</h5>
+						<ul class="card-list">
+							{#each engine.enhancerCards as cardName}
+								{@const inDeck = selectedNames.has(cardName)}
+								{@const inUniverse = universeByName.has(cardName)}
+								<li class="card-row" class:present={inDeck}>
+									<span class="card-mark">{inDeck ? '✓' : '·'}</span>
+									<span class="card-name">{cardName}</span>
+									{#if !inDeck && inUniverse}
+										<button
+											class="add-btn"
+											onclick={() => handleAddEnhancer(cardName)}
+										>
+											Add
+										</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/each}
 
@@ -100,9 +224,9 @@
 		margin: 0 0 var(--space-3);
 	}
 	.combo {
-		padding: var(--space-3);
 		border-radius: var(--radius-md);
 		margin-bottom: var(--space-2);
+		overflow: hidden;
 	}
 	.combo.complete {
 		background: var(--success-light);
@@ -112,11 +236,35 @@
 		background: var(--warning-light);
 		border: 1px solid rgba(245, 158, 11, 0.25);
 	}
+	.combo-header-btn {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		padding: var(--space-3);
+		cursor: pointer;
+		font-family: inherit;
+		color: inherit;
+	}
 	.combo-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: var(--space-1);
+	}
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.chevron {
+		font-size: var(--text-base);
+		color: var(--text-muted);
+		transition: transform var(--transition-fast);
+	}
+	.chevron.open {
+		transform: rotate(180deg);
 	}
 	.combo-name {
 		font-family: var(--font-display);
@@ -175,6 +323,70 @@
 		background: rgba(245, 158, 11, 0.1);
 		padding: 1px 6px;
 		border-radius: var(--radius-sm);
+	}
+	.combo-detail {
+		padding: 0 var(--space-3) var(--space-3);
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+	}
+	.detail-title {
+		font-family: var(--font-display);
+		font-size: 10px;
+		font-weight: var(--font-semibold);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin: var(--space-3) 0 var(--space-1);
+	}
+	.detail-chain,
+	.detail-impact {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		line-height: 1.5;
+		margin: 0;
+	}
+	.card-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.card-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+	}
+	.card-row.present {
+		color: var(--text-primary);
+	}
+	.card-mark {
+		font-weight: var(--font-bold);
+		width: 12px;
+	}
+	.card-row.present .card-mark {
+		color: var(--success);
+	}
+	.card-name {
+		flex: 1;
+	}
+	.add-btn {
+		font-size: 10px;
+		font-weight: var(--font-medium);
+		padding: 2px 6px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		color: var(--text-secondary);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		font-family: inherit;
+		transition: color var(--transition-fast), border-color var(--transition-fast);
+	}
+	.add-btn:hover {
+		color: var(--gold);
+		border-color: var(--gold);
 	}
 	.hero-section {
 		margin-top: var(--space-4);

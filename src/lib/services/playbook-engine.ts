@@ -115,6 +115,19 @@ export interface BonusPlayEvaluation {
 	verdict: 'add' | 'marginal' | 'skip';
 }
 
+export interface OptimalPlaybookResult {
+	/** The chosen plays (standard + bonus) */
+	selected: PlayCard[];
+	/** Combo engine core cards that aren't available in the universe */
+	missing: string[];
+	/** Reason annotations per play, keyed by play name */
+	rationale: Record<string, string>;
+	/** Total DBS used */
+	totalDBS: number;
+	/** Sum of HD costs */
+	totalHD: number;
+}
+
 // ── DBS Analysis ────────────────────────────────────────────
 
 export function analyzeDBS(selectedPlays: PlayCard[], format: FormatRules): DBSAnalysis {
@@ -466,6 +479,143 @@ export function evaluateBonusPlays(
 
 	evaluations.sort((a, b) => b.netValue - a.netValue);
 	return evaluations;
+}
+
+// ── Optimal Playbook Builder ────────────────────────────────
+
+/**
+ * Build the ideal 30-card playbook for an archetype from a filtered universe.
+ *
+ * Algorithm:
+ *   1. Seed with combo engine core cards (highest priority — these define the strategy)
+ *   2. Walk archetype.categoryAllocation in priority order, filling each category
+ *      to its `min` from the universe, picking lowest-DBS plays first within category
+ *   3. Top up to playDeckSize with the next-best plays from the universe
+ *      (lowest DBS, prefers plays that match any allocated category)
+ *   4. If bonusPlayMode allows, add up to 5 (limited) or maxBonusPlays (unlimited)
+ *      best bonus plays by netValue from evaluateBonusPlays
+ *   5. Stay strictly under format.dbsCap throughout
+ *
+ * The algorithm prioritizes BREADTH (covering all category mins) over DEPTH
+ * (maximizing one category). Users can manually swap individual plays after.
+ */
+export function buildOptimalPlaybook(
+	archetype: PlaybookArchetype,
+	universe: PlayCard[],
+	format: FormatRules,
+	bonusMode: 'off' | 'limited' | 'unlimited' = 'unlimited'
+): OptimalPlaybookResult {
+	const selected: PlayCard[] = [];
+	const missing: string[] = [];
+	const rationale: Record<string, string> = {};
+	const dbsCap = format.dbsCap ?? Infinity;
+	const playDeckSize = format.playDeckSize;
+	const maxBonusForMode =
+		bonusMode === 'off' ? 0 : bonusMode === 'limited' ? 5 : format.maxBonusPlays;
+
+	const universeByName = new Map(universe.map((p) => [p.name, p]));
+	const standardUniverse = universe.filter((p) => p.type === 'PL' || p.type === 'HTD');
+	const bonusUniverse = universe.filter((p) => p.type === 'BPL');
+
+	function dbsUsed(): number {
+		return selected.reduce((sum, p) => sum + p.dbs, 0);
+	}
+
+	function tryAdd(play: PlayCard, reason: string): boolean {
+		if (selected.some((s) => s.name === play.name)) return false;
+		if (dbsUsed() + play.dbs > dbsCap) return false;
+		const isBonus = play.type === 'BPL';
+		const standardCount = selected.filter((p) => p.type !== 'BPL').length;
+		const bonusCount = selected.filter((p) => p.type === 'BPL').length;
+		if (isBonus && bonusCount >= maxBonusForMode) return false;
+		if (!isBonus && standardCount >= playDeckSize) return false;
+		selected.push(play);
+		rationale[play.name] = reason;
+		return true;
+	}
+
+	// 1. Combo engine cores — highest priority
+	for (const engineId of archetype.comboEngines) {
+		const engine = COMBO_ENGINES.find((e) => e.id === engineId);
+		if (!engine) continue;
+		for (const cardName of engine.coreCards) {
+			const card = universeByName.get(cardName);
+			if (!card) {
+				missing.push(cardName);
+				continue;
+			}
+			tryAdd(card, `Core piece of ${engine.name}`);
+		}
+	}
+
+	// 2. Fill category allocations in priority order
+	const allocations = Object.entries(archetype.categoryAllocation).sort(
+		(a, b) => a[1].priority - b[1].priority
+	);
+
+	for (const [catId, alloc] of allocations) {
+		// Candidates: plays in universe matching this category, not already selected,
+		// sorted lowest DBS first
+		const candidates = standardUniverse
+			.filter((p) => !selected.some((s) => s.name === p.name))
+			.filter((p) => categorizePlay(p).includes(catId))
+			.sort((a, b) => a.dbs - b.dbs);
+
+		const have = selected.filter((p) => categorizePlay(p).includes(catId)).length;
+		const need = Math.max(0, alloc.min - have);
+
+		for (let i = 0; i < need && i < candidates.length; i++) {
+			tryAdd(candidates[i], `Fills ${catId} (${have + i + 1}/${alloc.min})`);
+		}
+	}
+
+	// 3. Top up to playDeckSize with lowest-DBS remaining plays.
+	//    Prefer plays that match any of the archetype's allocated categories.
+	const allocCategoryIds = new Set(Object.keys(archetype.categoryAllocation));
+	const topUpCandidates = standardUniverse
+		.filter((p) => !selected.some((s) => s.name === p.name))
+		.map((p) => {
+			const cats = categorizePlay(p);
+			const matchesArchetype = cats.some((c) => allocCategoryIds.has(c));
+			return { play: p, matchesArchetype };
+		})
+		.sort((a, b) => {
+			if (a.matchesArchetype !== b.matchesArchetype) {
+				return a.matchesArchetype ? -1 : 1;
+			}
+			return a.play.dbs - b.play.dbs;
+		});
+
+	for (const { play, matchesArchetype } of topUpCandidates) {
+		const standardCount = selected.filter((p) => p.type !== 'BPL').length;
+		if (standardCount >= playDeckSize) break;
+		tryAdd(
+			play,
+			matchesArchetype ? 'Strategy fit' : 'Filler (low DBS, broadly useful)'
+		);
+	}
+
+	// 4. Bonus plays — pick best by netValue, respecting bonus mode cap
+	if (maxBonusForMode > 0 && bonusUniverse.length > 0) {
+		const standardSelected = selected.filter((p) => p.type !== 'BPL');
+		const evals = evaluateBonusPlays(
+			standardSelected,
+			bonusUniverse,
+			standardSelected.length
+		);
+		for (const ev of evals) {
+			if (ev.verdict === 'skip') break;
+			tryAdd(ev.play, `Bonus play (net value ${ev.netValue})`);
+		}
+	}
+
+	return {
+		selected,
+		missing,
+		rationale,
+		totalDBS: selected.reduce((sum, p) => sum + p.dbs, 0),
+		totalHD: selected.reduce((sum, p) => sum + p.hot_dog_cost, 0)
+	};
 }
 
 // ── Multi-Tournament Deck Allocation ────────────────────────
