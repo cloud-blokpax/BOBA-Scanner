@@ -835,7 +835,7 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `collections` | Current collection table | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `quantity` (default 1), `condition` (default `'near_mint'`), `notes`, `scan_image_url`, `game_id` (default `'boba'`), `parallel` (default `'paper'`) |
+| `collections` | Current collection table | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `quantity` (default 1), `condition` (default `'near_mint'`), `notes`, `scan_image_url` (storage PATH into the private `scan-images` bucket since migration 044 — sign with `signScanImageUrl()` to render), `game_id` (default `'boba'`), `parallel` (default `'paper'`) |
 | `collections_v2` | Next-gen collection table (scaffolded, not used in app code) | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `quantity`, `condition`, `notes` |
 
 #### Tables — Scan Pipeline (Phase 1 + 2)
@@ -1011,6 +1011,8 @@ SELECT 'lt_drift', COUNT(*) FROM listing_templates lt
 - `UPSTASH_REDIS_REST_TOKEN` — Upstash Redis token
 - `EBAY_CLIENT_ID` — eBay API client ID
 - `EBAY_CLIENT_SECRET` — eBay API client secret
+- `EBAY_TOKEN_ENCRYPTION_KEY` — AES-256-GCM key (64-hex or 32+ char passphrase) used to encrypt the access/refresh token columns of `ebay_seller_tokens`. Without this, tokens are stored in plaintext and the privacy page's "encrypted at rest" claim is inaccurate. See `src/lib/server/auth/token-crypto.ts`.
+- `OAUTH_STATE_SECRET` — HMAC secret for the state token passed through eBay OAuth (per-flow CSRF + returnTo carrier).
 
 ## CI/CD
 
@@ -1188,6 +1190,9 @@ This was the biggest drift class in the Phase 2 arc and is worth calling out exp
 - RLS enabled on all tables via Supabase Auth (see Database Schema section)
 - Rate limiting on all mutation endpoints
 - Server hooks add defense-in-depth headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy
+- **Storage buckets.** `scan-images` is private (migration 044) with owner-scoped SELECT/DELETE policies plus an admin override; client + server consumers go through `signScanImageUrl()` from `src/lib/services/scan-image-url.ts` to mint short-lived signed URLs. `card-images` and `wotf-card-images` remain public (catalog images, no enumeration policy after migration 039). `seed-temp` is private (migration 041), service-role only.
+- **eBay token encryption.** `ebay_seller_tokens.access_token` and `refresh_token` are AES-256-GCM-encrypted at rest via `src/lib/server/auth/token-crypto.ts` when `EBAY_TOKEN_ENCRYPTION_KEY` is set. The version-prefixed ciphertext (`gcm1:iv:tag:ct`) is detected by `decryptToken`, which passes legacy plaintext rows through unchanged — the next refresh upgrades them. Concurrent refreshes are funneled through an Upstash Redis SETNX lock (`acquireRefreshLock`) so eBay's refresh-token rotation can't race two callers into invalidating each other.
+- **Centralized 401 message.** All user-facing API routes use `requireAuth(locals)` from `src/lib/server/validate.ts` (or the literal string `'Authentication required'`). Cron routes use a different message because their auth scheme is bearer-token, not session.
 
 ## Common Tasks
 

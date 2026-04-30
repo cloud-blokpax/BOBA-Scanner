@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import SignedScanImage from '$lib/components/SignedScanImage.svelte';
 
 	interface Props {
 		ebayConnected: boolean;
@@ -334,7 +335,7 @@
 						<div class="lh-row">
 							<div class="lh-thumb">
 								{#if listing.scan_image_url}
-									<img src={listing.scan_image_url} alt={listing.hero_name || 'Card'} class="lh-img" />
+									<SignedScanImage path={listing.scan_image_url} alt={listing.hero_name || 'Card'} class="lh-img" />
 								{:else if listing.card_image_url}
 									<OptimizedCardImage src={listing.card_image_url} alt={listing.hero_name || 'Card'} className="lh-img" size="thumb" />
 								{:else}
@@ -744,8 +745,7 @@
 		overflow: hidden;
 	}
 
-	.lh-thumb :global(.lh-img),
-	.lh-thumb .lh-img {
+	.lh-thumb :global(.lh-img) {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

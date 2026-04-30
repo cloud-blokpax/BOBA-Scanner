@@ -13,7 +13,7 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in required');
+	if (!user) throw error(401, 'Authentication required');
 
 	const gameId = url.searchParams.get('game_id') || 'boba';
 	if (!['boba', 'wonders'].includes(gameId)) throw error(400, 'Invalid game_id');

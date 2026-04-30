@@ -9,6 +9,7 @@ import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condi
 import { incrementPersona } from '$lib/services/persona';
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 import { buildBobaDescription, buildWondersDescription } from '$lib/services/listing-generator';
+import { extractScanImagePath } from '$lib/services/scan-image-url';
 import type { Card } from '$lib/types';
 
 export const config = { maxDuration: 60 };
@@ -211,7 +212,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				condition: body.condition || 'Near Mint',
 				sku,
 				status: 'pending',
-				scan_image_url: body.scanImageUrl || null,
+				// Bucket is private (migration 044). Persist the path so render-time
+				// signing keeps working past the inbound signed URL's 1h expiry.
+				scan_image_url: extractScanImagePath(body.scanImageUrl) ?? null,
 				hero_name: heroName || null,
 				card_number: cardNumber || null,
 				set_code: body.setCode || null,

@@ -32,7 +32,7 @@ const VALID_SORTS = new Set([
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in to explore market data');
+	if (!user) throw error(401, 'Authentication required');
 
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');

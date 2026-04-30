@@ -11,7 +11,7 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in required');
+	if (!user) throw error(401, 'Authentication required');
 
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database unavailable');

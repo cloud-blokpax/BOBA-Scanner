@@ -2,8 +2,30 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+
+// Build-time version stamp. Prefer VERCEL_GIT_COMMIT_SHA (CI/prod) and fall
+// back to a local `git rev-parse` for previews and dev. Truncated to 7
+// chars — the privacy/CSP audit pulled the previous "1.1.0 (2026-02-23) +
+// changelog notes" string and used it to fingerprint feature cadence; a
+// short SHA is opaque to the same observer.
+const buildSha: string = (() => {
+	const fromEnv = (process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_SHA ?? '').trim();
+	if (fromEnv) return fromEnv.slice(0, 7);
+	try {
+		return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+			.toString()
+			.trim();
+	} catch {
+		return 'dev';
+	}
+})();
 
 export default defineConfig({
+	define: {
+		__APP_BUILD_SHA__: JSON.stringify(buildSha)
+	},
 	plugins: [
 		sveltekit(),
 		// Bundle treemap. Output lives at .svelte-kit/stats.html — outside
@@ -16,7 +38,24 @@ export default defineConfig({
 			brotliSize: true,
 			template: 'treemap',
 			emitFile: false
-		})
+		}),
+		{
+			// Writes static/version.json with the build SHA each `build`. The
+			// runtime checks /version.json against the bundled APP_VERSION to
+			// surface an update banner; both ends now use the same SHA.
+			name: 'stamp-version-json',
+			apply: 'build',
+			buildStart() {
+				try {
+					writeFileSync(
+						fileURLToPath(new URL('./static/version.json', import.meta.url)),
+						JSON.stringify({ version: buildSha }) + '\n'
+					);
+				} catch (err) {
+					this.warn(`stamp-version-json: write failed (${(err as Error).message})`);
+				}
+			}
+		}
 	],
 	resolve: {
 		alias: {

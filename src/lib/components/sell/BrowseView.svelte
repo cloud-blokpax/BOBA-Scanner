@@ -4,6 +4,7 @@
 	import { getCachedPriceMid } from '$lib/stores/prices.svelte';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import SignedScanImage from '$lib/components/SignedScanImage.svelte';
 	import CardDetail from '$lib/components/CardDetail.svelte';
 	import ListingHistory from '$lib/components/sell/ListingHistory.svelte';
 	import EbaySetupGuide from './EbaySetupGuide.svelte';
@@ -294,7 +295,7 @@
 							<div class="card-row-tappable" onclick={() => { selectedItem = item; }}>
 								<div class="card-row-thumb">
 									{#if item.scan_image_url}
-										<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="card-row-img" />
+										<SignedScanImage path={item.scan_image_url} alt={card?.hero_name || 'Card'} class="card-row-img" />
 									{:else if card?.image_url}
 										<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="card-row-img" size="thumb" />
 									{:else}
@@ -652,8 +653,7 @@
 		overflow: hidden;
 	}
 
-	.card-row-thumb :global(.card-row-img),
-	.card-row-thumb .card-row-img {
+	.card-row-thumb :global(.card-row-img) {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

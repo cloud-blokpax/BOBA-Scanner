@@ -263,7 +263,8 @@
 		try {
 			const blobUrl = URL.createObjectURL(file);
 			try {
-				const publicUrl = await uploadScanImageForListing(cardId, blobUrl);
+				// 24h signed URL — Whatnot may fetch hours after the CSV is uploaded.
+				const publicUrl = await uploadScanImageForListing(cardId, blobUrl, 86400);
 				if (publicUrl) {
 					addImageToCard(cardId, publicUrl);
 					showToast('Photo added', 'check');

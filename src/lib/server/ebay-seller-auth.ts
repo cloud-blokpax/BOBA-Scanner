@@ -8,6 +8,8 @@
 import { env } from '$env/dynamic/private';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { logEvent } from '$lib/server/diagnostics';
+import { encryptToken, decryptToken, isTokenCryptoConfigured } from '$lib/server/auth/token-crypto';
+import { getRedis } from '$lib/server/redis';
 
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
@@ -33,6 +35,26 @@ function getBasicAuth(): string {
 
 export function isSellerOAuthConfigured(): boolean {
 	return !!(env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET && env.EBAY_RUNAME);
+}
+
+/**
+ * Encrypt a token for at-rest storage. Falls back to plaintext when no
+ * EBAY_TOKEN_ENCRYPTION_KEY is configured (dev environments). Production
+ * is expected to set the key — the privacy page promises encryption.
+ */
+function maybeEncryptForStore(plaintext: string): string {
+	const ct = encryptToken(plaintext);
+	return ct ?? plaintext;
+}
+
+/**
+ * Decrypt a stored token. Returns plaintext for legacy unencrypted rows
+ * (rows written before the key was deployed) so the rollout doesn't have
+ * to re-encrypt every existing connection in one shot — the next refresh
+ * upgrades the row to ciphertext.
+ */
+function decryptStored(stored: string | null | undefined): string | null {
+	return decryptToken(stored);
 }
 
 export function buildAuthUrl(state: string): string {
@@ -77,9 +99,9 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 
 	const { error: upsertError } = await adminClient.from('ebay_seller_tokens').upsert({
 		user_id: userId,
-		access_token: data.access_token,
+		access_token: maybeEncryptForStore(data.access_token),
 		access_token_expires_at: accessExpires.toISOString(),
-		refresh_token: data.refresh_token,
+		refresh_token: maybeEncryptForStore(data.refresh_token),
 		refresh_token_expires_at: refreshExpires.toISOString(),
 		scopes: SELLER_SCOPES,
 		updated_at: new Date().toISOString()
@@ -92,11 +114,72 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 	return userId;
 }
 
+/**
+ * Try to acquire a single-flight Redis lock for a refresh. eBay rotates
+ * refresh tokens on each use, so two parallel refreshes can race and one
+ * will end up holding an invalidated token. The lock funnels concurrent
+ * callers through a single refresh; losers re-read the stored row.
+ *
+ * Returns true if THIS caller acquired the lock and should perform the
+ * refresh. Best-effort: if Redis is unavailable, the function returns
+ * true (no lock available, fall back to inline refresh).
+ */
+async function acquireRefreshLock(userId: string, ttlSeconds = 30): Promise<boolean> {
+	const r = getRedis();
+	if (!r) return true;
+	try {
+		const res = await r.set(`ebay-refresh:${userId}`, '1', { nx: true, ex: ttlSeconds });
+		return res === 'OK';
+	} catch (err) {
+		console.debug('[ebay-seller-auth] Refresh lock acquire failed (allowing inline):', err);
+		return true;
+	}
+}
+
+async function releaseRefreshLock(userId: string): Promise<void> {
+	const r = getRedis();
+	if (!r) return;
+	try {
+		await r.del(`ebay-refresh:${userId}`);
+	} catch (err) {
+		console.debug('[ebay-seller-auth] Refresh lock release failed:', err);
+	}
+}
+
+const REFRESH_WAIT_INTERVAL_MS = 200;
+const REFRESH_WAIT_MAX_MS = 5000;
+
+async function waitAndReread(
+	adminClient: NonNullable<ReturnType<typeof getServiceClient>>,
+	userId: string
+): Promise<string | null> {
+	const deadline = Date.now() + REFRESH_WAIT_MAX_MS;
+	while (Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, REFRESH_WAIT_INTERVAL_MS));
+		const { data: row } = await adminClient
+			.from('ebay_seller_tokens')
+			.select('access_token, access_token_expires_at')
+			.eq('user_id', userId)
+			.maybeSingle();
+		if (
+			row &&
+			Date.now() < new Date(row.access_token_expires_at).getTime() - 60_000
+		) {
+			return decryptStored(row.access_token);
+		}
+	}
+	return null;
+}
+
 export async function getSellerToken(userId: string): Promise<string | null> {
 	const adminClient = getServiceClient();
 	if (!adminClient) return null;
 
-	const { data: tokenRow, error } = await adminClient.from('ebay_seller_tokens').select('*').eq('user_id', userId).maybeSingle();
+	const { data: tokenRow, error } = await adminClient
+		.from('ebay_seller_tokens')
+		.select('*')
+		.eq('user_id', userId)
+		.maybeSingle();
 	if (error) {
 		console.error('[ebay-seller-auth] Token lookup failed:', error.message);
 		return null;
@@ -104,43 +187,97 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	if (!tokenRow) return null;
 
 	// Check if access token is still valid (5-minute buffer)
-	if (Date.now() < new Date(tokenRow.access_token_expires_at).getTime() - 300_000) return tokenRow.access_token;
+	if (Date.now() < new Date(tokenRow.access_token_expires_at).getTime() - 300_000) {
+		return decryptStored(tokenRow.access_token);
+	}
 
-	// Check if refresh token is expired
+	// Refresh-token expired? Wipe the row.
 	if (Date.now() >= new Date(tokenRow.refresh_token_expires_at).getTime()) {
 		await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
 		return null;
 	}
 
-	// Refresh the access token
-	const response = await fetch(EBAY_TOKEN_URL, {
-		method: 'POST',
-		headers: { Authorization: `Basic ${getBasicAuth()}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokenRow.refresh_token, scope: SELLER_SCOPES }).toString()
-	});
-
-	if (!response.ok) {
-		const errorBody = await response.text().catch(() => '');
-		console.error(`[ebay-seller-auth] Token refresh failed (${response.status}):`, errorBody);
-		if (response.status === 400 || response.status === 401) await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
-		return null;
+	// Single-flight: only one caller per user performs a refresh at a time.
+	// Losers wait for the winner to write the new access token and then read it.
+	const acquired = await acquireRefreshLock(userId);
+	if (!acquired) {
+		const fresh = await waitAndReread(adminClient, userId);
+		if (fresh) return fresh;
+		// Fall through: lock-holder didn't finish in time, try a refresh anyway.
 	}
 
-	const data = await response.json();
-	if (!data.access_token) {
-		console.error('[ebay-seller-auth] Refresh response missing access_token');
-		return null;
-	}
-	const { error: tokenError } = await adminClient.from('ebay_seller_tokens').update({
-		access_token: data.access_token,
-		access_token_expires_at: new Date(Date.now() + Math.max(data.expires_in ?? 7200, 60) * 1000).toISOString(),
-		updated_at: new Date().toISOString()
-	}).eq('user_id', userId);
-	if (tokenError) {
-		console.error('[ebay-seller-auth] Token update FAILED:', tokenError.message);
-	}
+	try {
+		const refreshPlaintext = decryptStored(tokenRow.refresh_token);
+		if (!refreshPlaintext) {
+			console.error('[ebay-seller-auth] Refresh token decrypt failed');
+			return null;
+		}
 
-	return data.access_token;
+		const response = await fetch(EBAY_TOKEN_URL, {
+			method: 'POST',
+			headers: {
+				Authorization: `Basic ${getBasicAuth()}`,
+				'Content-Type': 'application/x-www-form-urlencoded'
+			},
+			body: new URLSearchParams({
+				grant_type: 'refresh_token',
+				refresh_token: refreshPlaintext,
+				scope: SELLER_SCOPES
+			}).toString()
+		});
+
+		if (!response.ok) {
+			const errorBody = await response.text().catch(() => '');
+			console.error(`[ebay-seller-auth] Token refresh failed (${response.status}):`, errorBody);
+			if (response.status === 400 || response.status === 401) {
+				await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
+			}
+			return null;
+		}
+
+		const data = await response.json();
+		if (!data.access_token) {
+			console.error('[ebay-seller-auth] Refresh response missing access_token');
+			return null;
+		}
+
+		const update: Record<string, unknown> = {
+			access_token: maybeEncryptForStore(data.access_token),
+			access_token_expires_at: new Date(
+				Date.now() + Math.max(data.expires_in ?? 7200, 60) * 1000
+			).toISOString(),
+			updated_at: new Date().toISOString()
+		};
+		// eBay sometimes rotates the refresh token too. Persist the rotation.
+		if (typeof data.refresh_token === 'string' && data.refresh_token.length > 0) {
+			update.refresh_token = maybeEncryptForStore(data.refresh_token);
+			if (typeof data.refresh_token_expires_in === 'number') {
+				update.refresh_token_expires_at = new Date(
+					Date.now() + data.refresh_token_expires_in * 1000
+				).toISOString();
+			}
+		}
+		// Migrate legacy plaintext rows opportunistically.
+		if (
+			isTokenCryptoConfigured() &&
+			typeof tokenRow.refresh_token === 'string' &&
+			!tokenRow.refresh_token.startsWith('gcm1:')
+		) {
+			update.refresh_token = maybeEncryptForStore(refreshPlaintext);
+		}
+
+		const { error: tokenError } = await adminClient
+			.from('ebay_seller_tokens')
+			.update(update)
+			.eq('user_id', userId);
+		if (tokenError) {
+			console.error('[ebay-seller-auth] Token update FAILED:', tokenError.message);
+		}
+
+		return data.access_token as string;
+	} finally {
+		if (acquired) await releaseRefreshLock(userId);
+	}
 }
 
 export async function isSellerConnected(userId: string): Promise<boolean> {

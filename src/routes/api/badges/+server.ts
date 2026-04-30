@@ -57,7 +57,7 @@ const BADGE_DEFINITIONS: Record<string, { name: string; description: string; ico
 
 export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in to earn badges');
+	if (!user) throw error(401, 'Authentication required');
 	if (!locals.supabase) throw error(503, 'Service unavailable');
 
 	// Rate limit badge requests

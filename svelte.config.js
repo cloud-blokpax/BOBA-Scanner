@@ -30,9 +30,9 @@ const config = {
 				'script-src': ['self', 'strict-dynamic', 'wasm-unsafe-eval', 'unsafe-eval', 'https://accounts.google.com', 'https://cdn.jsdelivr.net'],
 				'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
 				'font-src': ['self', 'https://fonts.gstatic.com'],
-				'img-src': ['self', 'blob:', 'data:', 'https://*.supabase.co', 'https://lh3.googleusercontent.com', 'https://storage.googleapis.com'],
+				'img-src': ['self', 'blob:', 'data:', 'https://*.supabase.co', 'https://lh3.googleusercontent.com'],
 				'media-src': ['self', 'blob:', 'mediastream:'],
-				'connect-src': ['self', 'data:', 'blob:', 'https://*.supabase.co', 'wss://*.supabase.co', 'https://api.ebay.com', 'https://accounts.google.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://lh3.googleusercontent.com', 'https://cdn.jsdelivr.net', 'https://storage.googleapis.com', 'https://vitals.vercel-analytics.com'],
+				'connect-src': ['self', 'data:', 'blob:', 'https://*.supabase.co', 'wss://*.supabase.co', 'https://api.ebay.com', 'https://accounts.google.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://lh3.googleusercontent.com', 'https://cdn.jsdelivr.net', 'https://vitals.vercel-analytics.com'],
 				'worker-src': ['self', 'blob:'],
 				'frame-ancestors': ['none'],
 				'upgrade-insecure-requests': true
