@@ -23,19 +23,33 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');
 
-	const { data, error: dbErr } = await admin
-		.from('scraping_test_history')
-		.select('pull_date, st_total_sales, st_sales_30d')
-		.eq('game_id', 'wonders')
-		.order('pull_date', { ascending: false })
-		.limit(2000);
-	if (dbErr) throw error(500, dbErr.message);
+	// PostgREST caps un-paginated reads at db-max-rows=1000, so the previous
+	// .limit(2000) was silently returning only 1000 of ~17K rows. Paginate
+	// explicitly. The aggregate is per-pull-date and we slice to 30 dates at
+	// the end, so we only need enough rows to cover ~30 distinct pull_dates;
+	// in practice the full table fits in a few pages.
+	const PAGE_SIZE = 1000;
+	const MAX_PAGES = 20; // Hard cap so a runaway table can't pull forever.
+	const rows: HistoryRow[] = [];
+	for (let page = 0; page < MAX_PAGES; page++) {
+		const offset = page * PAGE_SIZE;
+		const { data, error: dbErr } = await admin
+			.from('scraping_test_history')
+			.select('pull_date, st_total_sales, st_sales_30d')
+			.eq('game_id', 'wonders')
+			.order('pull_date', { ascending: false })
+			.range(offset, offset + PAGE_SIZE - 1);
+		if (dbErr) throw error(500, dbErr.message);
+		if (!data || data.length === 0) break;
+		rows.push(...(data as HistoryRow[]));
+		if (data.length < PAGE_SIZE) break;
+	}
 
 	const byDate = new Map<
 		string,
 		{ date: string; cards_with_data: number; total_sold_lifetime: number; sales_30d: number }
 	>();
-	for (const row of (data ?? []) as HistoryRow[]) {
+	for (const row of rows) {
 		const k = row.pull_date;
 		const acc =
 			byDate.get(k) ??

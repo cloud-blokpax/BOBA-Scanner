@@ -76,20 +76,33 @@ export async function warmCatalog(force = false): Promise<void> {
 				return;
 			}
 
-			const { data, error } = await client
-				.from('cards')
-				.select('id, game_id, card_number, hero_name, name, parallel, set_code')
-				.in('game_id', ['boba', 'wonders']);
+			// PostgREST enforces db-max-rows=1000 server-side on this project,
+			// so a single un-ranged select silently truncates a 22K-row catalog
+			// to 1K. Paginate explicitly until we get a short page.
+			const PAGE_SIZE = 1000;
+			const allCards: MirrorCard[] = [];
+			let offset = 0;
+			while (true) {
+				const { data, error } = await client
+					.from('cards')
+					.select('id, game_id, card_number, hero_name, name, parallel, set_code')
+					.in('game_id', ['boba', 'wonders'])
+					.range(offset, offset + PAGE_SIZE - 1);
 
-			if (error || !data) {
-				console.warn('[catalog-mirror] warm failed, using stale data', error);
-				await loadShortlistsFromIDB();
-				return;
+				if (error) {
+					console.warn('[catalog-mirror] warm failed, using stale data', error);
+					await loadShortlistsFromIDB();
+					return;
+				}
+				if (!data || data.length === 0) break;
+				allCards.push(...(data as unknown as MirrorCard[]));
+				if (data.length < PAGE_SIZE) break;
+				offset += PAGE_SIZE;
 			}
 
 			const tx = db.transaction([STORE_CARDS, STORE_META], 'readwrite');
 			await tx.objectStore(STORE_CARDS).clear();
-			for (const card of data as unknown as MirrorCard[]) {
+			for (const card of allCards) {
 				await tx.objectStore(STORE_CARDS).put(card);
 			}
 			await tx.objectStore(STORE_META).put({ key: 'last_warm', value: now });
@@ -97,7 +110,7 @@ export async function warmCatalog(force = false): Promise<void> {
 
 			_warmedAt = now;
 			await loadShortlistsFromIDB();
-			console.debug('[catalog-mirror] warmed with', data.length, 'cards');
+			console.debug('[catalog-mirror] warmed with', allCards.length, 'cards');
 		} finally {
 			_warmPromise = null;
 		}

@@ -108,16 +108,27 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	// to skip already-processed cards, so no offset needed)
 
 	// ── Fetch prioritized card list (multi-game) ────────────
-	// Split budget 50/50 and call Wonders first so it consumes its share before
-	// BoBA. If Wonders returns fewer candidates than its budget (once all ~1,000
-	// Wonders cards are priced), the unused remainder flows to BoBA. This is
-	// self-balancing without a hard ratio that has to be hand-tuned.
+	// Pull half-budget from each game in parallel. Then interleave so the time
+	// cutoff doesn't preferentially starve whichever game is concatenated second.
+	// Self-balancing: if one side returns fewer candidates than halfBudget,
+	// the longer list's tail still gets processed — interleave just guarantees
+	// fairness up to min(boba.len, wonders.len) rows.
+	// BoBA goes first within each pair: it's currently the staler queue, so
+	// pulling it to the front of the time budget recovers freshness fastest.
 	const halfBudget = Math.max(1, Math.floor(callBudget / 2));
-	const wondersCandidates = await getNextCandidates(admin, halfBudget, today, 'wonders');
-	const wondersConsumed = wondersCandidates.length;
-	const bobaBudget = Math.max(1, callBudget - wondersConsumed);
-	const bobaCandidates = await getNextCandidates(admin, bobaBudget, today, 'boba');
-	const candidates = [...wondersCandidates, ...bobaCandidates];
+	const [wondersCandidates, bobaCandidates] = await Promise.all([
+		getNextCandidates(admin, halfBudget, today, 'wonders'),
+		getNextCandidates(admin, halfBudget, today, 'boba')
+	]);
+	const candidates: CardCandidate[] = [];
+	const longest = Math.max(wondersCandidates.length, bobaCandidates.length);
+	for (let i = 0; i < longest; i++) {
+		if (i < bobaCandidates.length) candidates.push(bobaCandidates[i]);
+		if (i < wondersCandidates.length) candidates.push(wondersCandidates[i]);
+	}
+	console.log(
+		`[harvest] candidates: boba=${bobaCandidates.length} wonders=${wondersCandidates.length} interleaved=${candidates.length}`
+	);
 	if (candidates.length === 0) {
 		await logHarvestComplete(admin, usedToday, chainDepth, 'no_cards_remaining');
 		return json({
