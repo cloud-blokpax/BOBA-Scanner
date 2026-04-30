@@ -56,19 +56,23 @@ export const GET: RequestHandler = async ({ params, locals, getClientAddress }) 
 		is_active: boolean;
 	}
 
-	const { data, error: dbError } = await locals.supabase
-		.from('tournaments')
-		.select('*')
-		.eq('code', code)
-		.maybeSingle() as { data: TournamentRow | null; error: { message: string; code?: string } | null };
+	// Code-gated lookup goes through the SECURITY DEFINER RPC. Direct
+	// SELECT on `tournaments` is blocked for anon/authenticated by the
+	// post-lockdown RLS — the RPC returns a whitelisted column set
+	// (no creator_id) for an active tournament matching the code.
+	const { data: rows, error: dbError } = await locals.supabase
+		.rpc('lookup_tournament_by_code', { p_code: code }) as {
+			data: TournamentRow[] | null;
+			error: { message: string; code?: string } | null;
+		};
 
-	if (dbError || !data) {
-		if (dbError && dbError.code !== 'PGRST116') {
-			// PGRST116 = "The result contains 0 rows" (expected for not found)
-			// Any other error is unexpected — log it
-			console.error('[tournament/code] DB error:', dbError);
-			throw error(500, 'Failed to look up tournament');
-		}
+	if (dbError) {
+		console.error('[tournament/code] RPC error:', dbError);
+		throw error(500, 'Failed to look up tournament');
+	}
+
+	const data = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+	if (!data) {
 		throw error(404, 'Tournament not found');
 	}
 

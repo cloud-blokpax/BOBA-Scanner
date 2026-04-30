@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { requireAuth, requireSupabase, parseJsonBody, requireString } from '$lib/server/validate';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import { apiError, rateLimited } from '$lib/server/api-response';
+import { getAdminClient } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
 async function requireOrganizer(locals: App.Locals) {
@@ -57,12 +58,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (!format) throw error(400, `Unknown format: ${formatId}`);
 		}
 
-		// Generate unique code (retry up to 5 times for collision)
+		// Generate unique code (retry up to 5 times for collision). The
+		// uniqueness check has to scan across every organizer's tournaments,
+		// which the user-scoped client can't do post-RLS-lockdown — switch
+		// to the admin client for the check only. Insert below stays on the
+		// user-scoped client so RLS still attributes ownership correctly.
+		const adminClient = getAdminClient();
+		if (!adminClient) {
+			throw error(503, 'Service unavailable');
+		}
 		let code = '';
 		let codeIsUnique = false;
 		for (let attempt = 0; attempt < 5; attempt++) {
 			code = generateCode();
-			const { data: existing } = await supabase
+			const { data: existing } = await adminClient
 				.from('tournaments')
 				.select('id')
 				.eq('code', code)

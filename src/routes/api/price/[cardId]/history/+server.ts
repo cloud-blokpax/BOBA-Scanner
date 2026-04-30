@@ -6,7 +6,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!cardId || !/^[\w-]{1,64}$/.test(cardId)) throw error(400, 'Invalid card ID');
 
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Authentication required for price history');
+	if (!user) throw error(401, 'Authentication required');
 
 	// Determine Pro status for history depth
 	let userIsPro = false;
