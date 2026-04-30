@@ -239,6 +239,36 @@ export async function ocrFullFrame(
 	}
 }
 
+/**
+ * Force-release the PaddleOCR client. The next `initPaddleOCR()` call will
+ * lazy-load a fresh instance.
+ *
+ * Use between independent scan operations on memory-constrained devices
+ * (iOS Safari) to prevent WASM heap accumulation from one scan affecting
+ * the next. Cost is a cold-start (~300–600ms) on the next call — fine for
+ * upload flows, NOT for live camera scanning where FPS matters.
+ *
+ * The underlying `@gutenye/ocr-browser` Ocr class doesn't document a
+ * termination API, so we try the common ONNX Runtime patterns
+ * (`release` / `destroy` / `terminate`) defensively and null the module
+ * locals regardless. Even without an explicit teardown call, dropping the
+ * reference lets the GC reclaim the ONNX session and OpenCV mats.
+ */
+export async function releaseOcrWorker(): Promise<void> {
+	const client = _client;
+	_client = null;
+	_initPromise = null;
+	_initStartedAt = null;
+	if (!client) return;
+	try {
+		if (typeof client.release === 'function') await client.release();
+		else if (typeof client.destroy === 'function') await client.destroy();
+		else if (typeof client.terminate === 'function') await client.terminate();
+	} catch (err) {
+		console.warn('[paddle-ocr] release failed (ignored):', err);
+	}
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildOCRResult(raw: any): OCRResult {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -16,6 +16,7 @@
 	import {
 		startFlow, updateFlowStep, endFlow, flowBreadcrumb
 	} from '$lib/services/client-error-logger';
+	import { releaseOcrWorker } from '$lib/services/paddle-ocr';
 	import type { ScanResult, Card } from '$lib/types';
 
 	// ── Tab routing (from category tabs) ────────────────────
@@ -168,6 +169,10 @@
 			endFlow('error');
 		} finally {
 			bitmap?.close();
+			// Release the PaddleOCR client between Whatnot uploads. iOS Safari's
+			// per-tab memory ceiling otherwise kills the page on the second card.
+			// Cold-start cost on the next card is acceptable for this flow.
+			await releaseOcrWorker().catch(() => {});
 			uploadProcessing = false;
 		}
 	}
