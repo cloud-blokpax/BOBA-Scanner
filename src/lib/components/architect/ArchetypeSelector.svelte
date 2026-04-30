@@ -5,11 +5,13 @@
 	let {
 		matches,
 		selectedId,
-		onselect
+		onselect,
+		showMatchScore = false
 	}: {
 		matches: ArchetypeMatchResult[];
 		selectedId: string | null;
 		onselect: (id: string) => void;
+		showMatchScore?: boolean;
 	} = $props();
 
 	/** Map match results by archetype id for quick lookup */
@@ -39,7 +41,7 @@
 			</div>
 			<p class="arch-tagline">{arch.tagline}</p>
 
-			{#if match}
+			{#if match && showMatchScore}
 				<div class="match-bar-track">
 					<div class="match-bar-fill" style="width: {match.matchScore}%"></div>
 				</div>

@@ -7,6 +7,8 @@
 		selectedPlays,
 		setFormat,
 		setOwnedPlays,
+		setUniverse,
+		getAvailablePlays,
 		addPlay,
 		removePlay,
 		clearPlaybook,
@@ -14,6 +16,7 @@
 		currentFormatId,
 		currentArchetypeId,
 		setArchetype,
+		addExcludedPlayName,
 		getDBSAnalysis,
 		getHDFlow,
 		getDrawProbability,
@@ -21,11 +24,13 @@
 		getHeroRecommendation,
 		getArchetypeMatches,
 		getStandardPlays,
-		getBonusPlays
+		getBonusPlays,
+		isOwnedFilterEnabled
 	} from '$lib/stores/playbook-architect.svelte';
 	import type { PlayCard } from '$lib/services/playbook-engine';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { getPlayCards } from '$lib/data/play-cards';
+	import { buildEbaySearchUrl } from '$lib/services/ebay';
 
 	import DBSBudgetCard from '$lib/components/architect/DBSBudgetCard.svelte';
 	import HDFlowCard from '$lib/components/architect/HDFlowCard.svelte';
@@ -33,16 +38,19 @@
 	import ComboStatusCard from '$lib/components/architect/ComboStatusCard.svelte';
 	import ArchetypeSelector from '$lib/components/architect/ArchetypeSelector.svelte';
 	import PlayBrowser from '$lib/components/architect/PlayBrowser.svelte';
+	import PlaybookFilters from '$lib/components/architect/PlaybookFilters.svelte';
 	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formatOptions = getFormatOptions();
 	const allPlays = getPlayCards().filter(
-		(p) => p.type === 'PL' || p.type === 'BPL'
+		(p) => p.type === 'PL' || p.type === 'BPL' || p.type === 'HTD'
 	);
 
 	let activeTab = $state<'browse' | 'strategy' | 'selected'>('strategy');
 
 	const selected = $derived(selectedPlays());
+	const availablePlays = $derived(getAvailablePlays());
+	const ownedFilterOn = $derived(isOwnedFilterEnabled());
 	const selectedNameSet = $derived(new Set(selected.map((p) => p.name)));
 	const dbsAnalysis = $derived(getDBSAnalysis());
 	const hdFlow = $derived(getHDFlow());
@@ -88,8 +96,13 @@
 	}
 
 	onMount(() => {
-		// Initialize with all plays as "owned" for now
-		// In full implementation, this would load from user's scanned collection
+		// Universe-first: ALL plays are eligible by default. The owned-collection
+		// filter is opt-in (see PlaybookFilters component).
+		setUniverse(allPlays);
+		// Still seed _ownedPlays for when the user toggles the owned filter on.
+		// In a real-data world this loads from scanned collection; for now it
+		// matches the universe so toggling the filter is a no-op until we wire
+		// up a real scanned-plays loader.
 		setOwnedPlays(allPlays);
 	});
 </script>
@@ -153,10 +166,12 @@
 
 			<div class="tab-content">
 				{#if activeTab === 'strategy'}
+					<PlaybookFilters />
 					<ArchetypeSelector
 						matches={archetypeMatches}
 						selectedId={archId}
 						onselect={handleArchetypeSelect}
+						showMatchScore={ownedFilterOn}
 					/>
 				{:else if activeTab === 'browse'}
 					<PlayBrowser
@@ -166,28 +181,54 @@
 						onremove={handleRemovePlay}
 					/>
 				{:else}
-					<!-- Selected plays list -->
+					<!-- Shopping list — the user's takeaway artifact -->
 					<div class="selected-list">
 						{#if selected.length === 0}
 							<p class="empty-state">
 								No plays selected yet. Pick a strategy or browse plays to get started.
 							</p>
 						{:else}
+							<p class="shopping-hint">
+								Tap any play to open eBay search with the affiliate link. Use
+								the ✕ to swap out a play, or the ⛔ to add it to your exclusion
+								list (the strategy will rebuild around it).
+							</p>
+
 							<div class="selected-section">
 								{#if standardPlays.length > 0}
 									<h4 class="section-label">
 										Standard Plays ({standardPlays.length}/30)
 									</h4>
 									{#each standardPlays as play (play.id)}
+										{@const ebayUrl = buildEbaySearchUrl({
+											card_number: play.card_number,
+											name: play.name
+										})}
 										<div class="selected-item">
-											<div class="selected-info">
-												<span class="selected-name">{play.name}</span>
-												<span class="selected-meta">
-													{play.dbs} DBS / {play.hot_dog_cost} HD
-												</span>
-											</div>
+											<a
+												class="selected-link"
+												href={ebayUrl}
+												target="_blank"
+												rel="sponsored noopener"
+											>
+												<div class="selected-info">
+													<span class="selected-name">{play.name}</span>
+													<span class="selected-meta">
+														{play.card_number} · {play.dbs} DBS / {play.hot_dog_cost} HD
+													</span>
+												</div>
+												<span class="ebay-tag">Buy →</span>
+											</a>
+											<button
+												class="btn-exclude"
+												title="Exclude from future strategy builds"
+												onclick={() => addExcludedPlayName(play.name)}
+											>
+												⛔
+											</button>
 											<button
 												class="btn-remove"
+												title="Remove from this playbook"
 												onclick={() => handleRemovePlay(play.name)}
 											>
 												&times;
@@ -201,16 +242,36 @@
 										Bonus Plays ({bonusPlays.length})
 									</h4>
 									{#each bonusPlays as play (play.id)}
+										{@const ebayUrl = buildEbaySearchUrl({
+											card_number: play.card_number,
+											name: play.name
+										})}
 										<div class="selected-item bpl">
-											<div class="selected-info">
-												<span class="selected-name">{play.name}</span>
-												<span class="selected-meta">
-													{play.dbs} DBS / {play.hot_dog_cost} HD
-													<span class="bpl-label">BPL</span>
-												</span>
-											</div>
+											<a
+												class="selected-link"
+												href={ebayUrl}
+												target="_blank"
+												rel="sponsored noopener"
+											>
+												<div class="selected-info">
+													<span class="selected-name">{play.name}</span>
+													<span class="selected-meta">
+														{play.card_number} · {play.dbs} DBS / {play.hot_dog_cost}
+														HD <span class="bpl-label">BPL</span>
+													</span>
+												</div>
+												<span class="ebay-tag">Buy →</span>
+											</a>
+											<button
+												class="btn-exclude"
+												title="Exclude from future strategy builds"
+												onclick={() => addExcludedPlayName(play.name)}
+											>
+												⛔
+											</button>
 											<button
 												class="btn-remove"
+												title="Remove from this playbook"
 												onclick={() => handleRemovePlay(play.name)}
 											>
 												&times;
@@ -222,7 +283,9 @@
 
 							<div class="total-row">
 								<span>Total DBS: {selected.reduce((s, p) => s + p.dbs, 0)}</span>
-								<span>Total HD: {selected.reduce((s, p) => s + p.hot_dog_cost, 0)}</span>
+								<span
+									>Total HD: {selected.reduce((s, p) => s + p.hot_dog_cost, 0)}</span
+								>
 							</div>
 						{/if}
 					</div>
@@ -451,5 +514,46 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-3);
+	}
+
+	/* Shopping list */
+	.shopping-hint {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		margin: 0 0 var(--space-3);
+		line-height: 1.5;
+		padding: var(--space-2) var(--space-3);
+		background: var(--bg-elevated);
+		border-radius: var(--radius-sm);
+	}
+	.selected-link {
+		flex: 1;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		text-decoration: none;
+		color: inherit;
+		gap: var(--space-2);
+	}
+	.selected-link:hover .ebay-tag {
+		color: var(--gold);
+	}
+	.ebay-tag {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		font-weight: var(--font-medium);
+		transition: color var(--transition-fast);
+	}
+	.btn-exclude {
+		font-size: var(--text-base);
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0 var(--space-2);
+		opacity: 0.5;
+		transition: opacity var(--transition-fast);
+	}
+	.btn-exclude:hover {
+		opacity: 1;
 	}
 </style>
