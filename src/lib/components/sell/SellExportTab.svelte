@@ -5,6 +5,7 @@
 	import { getCachedPriceMid } from '$lib/stores/prices.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
+	import SignedScanImage from '$lib/components/SignedScanImage.svelte';
 	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
 	import {
 		EXPORT_FIELDS,
@@ -262,7 +263,7 @@
 						<div class="preview-row">
 							<div class="preview-thumb">
 								{#if item.scan_image_url}
-									<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="preview-img" />
+									<SignedScanImage path={item.scan_image_url} alt={card?.hero_name || 'Card'} class="preview-img" />
 								{:else if card?.image_url}
 									<OptimizedCardImage src={card.image_url} alt={card?.hero_name || card?.name || 'Card'} className="preview-img" size="thumb" />
 								{:else}
@@ -486,8 +487,7 @@
 		overflow: hidden;
 	}
 
-	.preview-thumb :global(.preview-img),
-	.preview-thumb .preview-img {
+	.preview-thumb :global(.preview-img) {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

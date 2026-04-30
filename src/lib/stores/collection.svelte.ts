@@ -14,6 +14,7 @@ import {
 } from '$lib/services/collection-service';
 import { getSupabase } from '$lib/services/supabase';
 import { createListingImageBlob } from '$lib/services/scan-image-utils';
+import { signScanImageUrl } from '$lib/services/scan-image-url';
 import type { CollectionItem } from '$lib/types';
 
 /** Lazy import to avoid circular dependency (sync.ts imports from this file) */
@@ -272,34 +273,44 @@ export async function uploadScanImage(collectionItemId: string, cardId: string, 
 		return null;
 	}
 
-	const { data: urlData } = client.storage.from('scan-images').getPublicUrl(filename);
-	if (!urlData?.publicUrl) return null;
-
+	// Bucket is private (migration 044). Store the storage PATH, not a URL —
+	// consumers sign on render via signScanImageUrl(). For an immediate return
+	// to the caller (e.g. a "just-uploaded" preview), sign once here.
 	// scan_image_url is a new column not yet in generated Supabase types
 	const { error: updateError } = await client
 		.from('collections')
-		.update({ scan_image_url: urlData.publicUrl } as Record<string, unknown>)
+		.update({ scan_image_url: filename } as Record<string, unknown>)
 		.eq('id', collectionItemId);
 
 	if (updateError) {
-		console.error('[collection] Failed to save image URL:', updateError);
+		console.error('[collection] Failed to save image path:', updateError);
 		return null;
 	}
 
-	// Update local state so the URL is immediately available for listing
+	// Update local state with the path; UI components sign for display.
 	_items = _items.map(i =>
-		i.id === collectionItemId ? { ...i, scan_image_url: urlData.publicUrl } : i
+		i.id === collectionItemId ? { ...i, scan_image_url: filename } : i
 	);
 
-	return urlData.publicUrl;
+	return await signScanImageUrl(client, filename);
 }
 
 /**
  * Upload a scan image to Supabase Storage without requiring a collection item.
  * Used by the sell flow where the card may not be in the collection.
- * Returns the public URL or null on failure.
+ * Returns a short-lived signed URL or null on failure. The bucket is private
+ * (migration 044) — callers that need to persist the path should call
+ * extractScanImagePath on the returned URL.
+ *
+ * `signedTtlSeconds` controls how long the returned URL is valid. Defaults to
+ * 1h (eBay Inventory API ingests images immediately). Whatnot CSV exports
+ * pass a longer TTL because the seller may upload the CSV hours later.
  */
-export async function uploadScanImageForListing(cardId: string, imageSource: string): Promise<string | null> {
+export async function uploadScanImageForListing(
+	cardId: string,
+	imageSource: string,
+	signedTtlSeconds = 3600
+): Promise<string | null> {
 	const client = getSupabase();
 	if (!client) return null;
 
@@ -339,8 +350,11 @@ export async function uploadScanImageForListing(cardId: string, imageSource: str
 		return null;
 	}
 
-	const { data: urlData } = client.storage.from('scan-images').getPublicUrl(filename);
-	return urlData?.publicUrl || null;
+	// Bucket is private (migration 044). Sign for the immediate consumer
+	// (eBay Inventory API ingests the image straight away — a 1h signed URL
+	// is plenty). If the signed URL is later persisted, signScanImageUrl can
+	// re-sign from the path the URL embeds.
+	return await signScanImageUrl(client, filename, signedTtlSeconds);
 }
 
 export async function updateQuantity(itemId: string, quantity: number): Promise<void> {

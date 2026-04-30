@@ -15,7 +15,7 @@ export const config = { maxDuration: 60 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in to export');
+	if (!user) throw error(401, 'Authentication required');
 
 	const rateLimit = await checkMutationRateLimit(user.id);
 	if (!rateLimit.success) {

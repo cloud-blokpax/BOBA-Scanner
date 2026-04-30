@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in required');
+	if (!user) throw error(401, 'Authentication required');
 	if (!locals.supabase) throw error(503, 'Database not available');
 
 	const { data: profile } = await locals.supabase

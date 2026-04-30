@@ -19,7 +19,7 @@ type AnySupabase = import('@supabase/supabase-js').SupabaseClient<any, any, any>
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in to contribute reference images');
+	if (!user) throw error(401, 'Authentication required');
 	if (!locals.supabase) throw error(503, 'Storage unavailable');
 
 	const rateLimit = await checkMutationRateLimit(user.id);

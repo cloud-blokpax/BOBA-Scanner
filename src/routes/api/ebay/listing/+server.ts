@@ -12,6 +12,7 @@ import {
 } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
 import { incrementPersona } from '$lib/services/persona';
+import { extractScanImagePath } from '$lib/services/scan-image-url';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -73,7 +74,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const description = body.description as string || '';
 	const price = requireNumber(body.price, 'price', 0.01);
 	const condition = (body.condition as string) || 'Near Mint';
+	// Client passes the signed URL it just minted from uploadScanImageForListing.
+	// eBay copies the image immediately, so the 1h TTL is fine for that hop.
+	// For our own listing_templates row we store the storage PATH so the row
+	// stays valid past the signed URL's expiry — UI re-signs on render.
 	const scanImageUrl = (body.scanImageUrl as string) || null;
+	const scanImagePath = extractScanImagePath(scanImageUrl);
 
 	// Optional card detail fields (may be passed from ScanConfirmation)
 	const heroName = (body.heroName as string) || null;
@@ -112,7 +118,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				condition,
 				sku,
 				status: 'pending',
-				scan_image_url: scanImageUrl,
+				scan_image_url: scanImagePath,
 				hero_name: heroName,
 				card_number: cardNumber,
 				set_code: setCode,

@@ -93,9 +93,18 @@ export async function buildComposeContext(
 	};
 
 	const imageUrls: string[] = [];
-	const supabaseUrl = process.env.PUBLIC_SUPABASE_URL ?? '';
-	if (scan.photo_storage_path && supabaseUrl) {
-		imageUrls.push(`${supabaseUrl}/storage/v1/object/public/scan-images/${scan.photo_storage_path}`);
+	if (scan.photo_storage_path) {
+		// scan-images is private (migration 044). Sign with the service-role
+		// admin client and pass the signed URL to the WTP composer page;
+		// browsers fetch it directly off Supabase Storage.
+		try {
+			const { data, error: signErr } = await admin.storage
+				.from('scan-images')
+				.createSignedUrl(scan.photo_storage_path, 3600);
+			if (!signErr && data?.signedUrl) imageUrls.push(data.signedUrl);
+		} catch {
+			// Best effort — fall through to card.image_url if signing fails.
+		}
 	}
 	if (composeCard.image_url) imageUrls.push(composeCard.image_url);
 

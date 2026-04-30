@@ -157,10 +157,36 @@ export async function postOneFromListing(
 	const cardNumber = card.card_number ?? listing.card_number;
 	const rarity = card.rarity ?? 'Common';
 
+	// listing.scan_image_url stores a path into the private scan-images
+	// bucket (migration 044). Sign with the service-role admin client so
+	// the WTP composer can fetch it; pass the signed URL through to WTP.
+	// Legacy rows still hold absolute https URLs — pass those through
+	// unchanged so they keep working until backfilled to paths.
+	let signedListingImage: string | null = null;
+	if (listing.scan_image_url) {
+		const stored = listing.scan_image_url as string;
+		const looksLikeAbsoluteUrl = /^https?:\/\//i.test(stored);
+		if (looksLikeAbsoluteUrl && !stored.includes('/scan-images/')) {
+			signedListingImage = stored;
+		} else {
+			const path = stored.includes('/scan-images/')
+				? stored.replace(/.*\/scan-images\//, '').split(/[?#]/)[0]
+				: stored;
+			try {
+				const { data, error: signErr } = await admin.storage
+					.from('scan-images')
+					.createSignedUrl(path, 3600);
+				if (!signErr && data?.signedUrl) signedListingImage = data.signedUrl;
+			} catch {
+				// Fall through to card image only.
+			}
+		}
+	}
+
 	const imageUrls =
 		Array.isArray(body.image_urls) && body.image_urls.length > 0
 			? body.image_urls.filter((s): s is string => typeof s === 'string' && s.length > 0)
-			: [listing.scan_image_url, card.image_url].filter(
+			: [signedListingImage, card.image_url].filter(
 					(u): u is string => typeof u === 'string' && u.length > 0
 				);
 

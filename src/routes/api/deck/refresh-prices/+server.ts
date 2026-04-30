@@ -25,7 +25,7 @@ import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Sign in to refresh prices');
+	if (!user) throw error(401, 'Authentication required');
 
 	const rateLimit = await checkHeavyMutationRateLimit(user.id);
 	if (!rateLimit.success) {

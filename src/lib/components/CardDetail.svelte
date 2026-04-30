@@ -4,6 +4,8 @@
 	import OptimizedCardImage from '$lib/components/OptimizedCardImage.svelte';
 	import { getCardImageUrl } from '$lib/utils/image-url';
 	import { updateQuantity, removeFromCollection, uploadScanImage } from '$lib/stores/collection.svelte';
+	import { signScanImageUrl } from '$lib/services/scan-image-url';
+	import { getSupabase } from '$lib/services/supabase';
 	import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
@@ -40,6 +42,19 @@
 		ebayConnected?: boolean;
 		onClose: () => void;
 	} = $props();
+
+	// scan_image_url is now a storage path into the private scan-images bucket
+	// (migration 044). Sign it on each item change for display.
+	let signedScanImageUrl = $state<string | null>(null);
+	$effect(() => {
+		const stored = item?.scan_image_url ?? null;
+		if (!stored) { signedScanImageUrl = null; return; }
+		let cancelled = false;
+		signScanImageUrl(getSupabase(), stored).then((url) => {
+			if (!cancelled) signedScanImageUrl = url;
+		});
+		return () => { cancelled = true; };
+	});
 
 	// ── Phase 3: parallel preview state for Wonders ──────────────
 	// Defaults to the owned parallel; user can preview pricing for other parallels
@@ -165,9 +180,9 @@
 
 				<!-- Card Image -->
 				<div class="detail-header">
-					{#if item.scan_image_url}
+					{#if item.scan_image_url && signedScanImageUrl}
 						<div class="detail-image-tilt" use:tilt={{ gyro: card?.rarity !== 'common', weaponType: card?.weapon_type ?? null, shimmer: true, specular: card?.rarity !== 'common' }}>
-							<img src={item.scan_image_url} alt={card?.hero_name || 'Card'} class="detail-image card-cropped" />
+							<img src={signedScanImageUrl} alt={card?.hero_name || 'Card'} class="detail-image card-cropped" />
 						</div>
 					{:else if detailImgUrl}
 						<div class="detail-image-tilt" use:tilt={{ gyro: card?.rarity !== 'common', weaponType: card?.weapon_type ?? null, shimmer: true, specular: card?.rarity !== 'common' }}>
@@ -362,7 +377,7 @@
 				{#await import('$lib/components/sell/ListingView.svelte') then ListingView}
 					<ListingView.default
 						card={card}
-						imageUrl={item.scan_image_url || null}
+						imageUrl={signedScanImageUrl}
 						ebayConnected={ebayConnected}
 						initialCondition={item.condition?.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Near Mint'}
 						backLabel="Back"

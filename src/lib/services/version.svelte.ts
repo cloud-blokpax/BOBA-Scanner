@@ -7,7 +7,13 @@
 
 import { browser } from '$app/environment';
 
-export const APP_VERSION = '1.1.0';
+declare const __APP_BUILD_SHA__: string;
+
+// Build-time short git SHA (set in vite.config.ts). The auditor pulled the
+// previous semver + dated changelog out of the bundle to fingerprint
+// release cadence; a 7-char SHA is opaque to that signal. Locally `dev`.
+export const APP_VERSION: string =
+	typeof __APP_BUILD_SHA__ === 'string' ? __APP_BUILD_SHA__ : 'dev';
 
 export interface UpdateInfo {
 	available: boolean;

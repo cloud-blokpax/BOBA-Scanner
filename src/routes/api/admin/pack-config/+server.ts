@@ -45,7 +45,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	await requireAdmin(locals);
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Unauthorized');
+	if (!user) throw error(401, 'Authentication required');
 
 	const admin = getAdminClient();
 	if (!admin) throw error(503, 'Database not available');

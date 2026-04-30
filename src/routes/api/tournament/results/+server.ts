@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 
 async function requireOrganizerOrAdmin(locals: App.Locals): Promise<{ id: string; publicUserId: string }> {
 	const { user } = await locals.safeGetSession();
-	if (!user) throw error(401, 'Not authenticated');
+	if (!user) throw error(401, 'Authentication required');
 	if (!locals.supabase) throw error(503, 'Database not available');
 
 	const { data: profile } = await locals.supabase
