@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { showToast } from '$lib/stores/toast.svelte';
+	import { showToast, showToastWithAction } from '$lib/stores/toast.svelte';
 	import {
 		selectedPlays,
 		setFormat,
@@ -17,6 +17,8 @@
 		currentArchetypeId,
 		setArchetype,
 		addExcludedPlayName,
+		removeExcludedPlayName,
+		getExcludedPlayNames,
 		getDBSAnalysis,
 		getHDFlow,
 		getDrawProbability,
@@ -30,7 +32,6 @@
 	import type { PlayCard } from '$lib/services/playbook-engine';
 	import { getFormatOptions } from '$lib/data/tournament-formats';
 	import { getPlayCards } from '$lib/data/play-cards';
-	import { buildEbaySearchUrl } from '$lib/services/ebay';
 
 	import DBSBudgetCard from '$lib/components/architect/DBSBudgetCard.svelte';
 	import HDFlowCard from '$lib/components/architect/HDFlowCard.svelte';
@@ -39,6 +40,9 @@
 	import ArchetypeSelector from '$lib/components/architect/ArchetypeSelector.svelte';
 	import PlayBrowser from '$lib/components/architect/PlayBrowser.svelte';
 	import PlaybookFilters from '$lib/components/architect/PlaybookFilters.svelte';
+	import PlaybookListItem from '$lib/components/architect/PlaybookListItem.svelte';
+	import ExclusionsBanner from '$lib/components/architect/ExclusionsBanner.svelte';
+	import ExclusionsSheet from '$lib/components/architect/ExclusionsSheet.svelte';
 	import BoBAOnlyBanner from '$lib/components/BoBAOnlyBanner.svelte';
 
 	const formatOptions = getFormatOptions();
@@ -93,6 +97,31 @@
 	function handleClear() {
 		clearPlaybook();
 		setArchetype(null);
+	}
+
+	let exclusionsSheetOpen = $state(false);
+
+	const excludedCount = $derived(getExcludedPlayNames().size);
+
+	function handleExcludePlay(name: string) {
+		addExcludedPlayName(name);
+		showToastWithAction(
+			`${name} excluded`,
+			{
+				label: 'Undo',
+				onAction: () => removeExcludedPlayName(name)
+			},
+			'',
+			5000
+		);
+	}
+
+	function openExclusionsSheet() {
+		exclusionsSheetOpen = true;
+	}
+
+	function closeExclusionsSheet() {
+		exclusionsSheetOpen = false;
 	}
 
 	onMount(() => {
@@ -166,6 +195,7 @@
 
 			<div class="tab-content">
 				{#if activeTab === 'strategy'}
+					<ExclusionsBanner count={excludedCount} onmanage={openExclusionsSheet} />
 					<PlaybookFilters />
 					<ArchetypeSelector
 						matches={archetypeMatches}
@@ -183,101 +213,44 @@
 				{:else}
 					<!-- Shopping list — the user's takeaway artifact -->
 					<div class="selected-list">
+						<ExclusionsBanner count={excludedCount} onmanage={openExclusionsSheet} />
+
 						{#if selected.length === 0}
 							<p class="empty-state">
 								No plays selected yet. Pick a strategy or browse plays to get started.
 							</p>
 						{:else}
-							<p class="shopping-hint">
-								Tap any play to open eBay search with the affiliate link. Use
-								the ✕ to swap out a play, or the ⛔ to add it to your exclusion
-								list (the strategy will rebuild around it).
-							</p>
-
 							<div class="selected-section">
 								{#if standardPlays.length > 0}
 									<h4 class="section-label">
 										Standard Plays ({standardPlays.length}/30)
 									</h4>
-									{#each standardPlays as play (play.id)}
-										{@const ebayUrl = buildEbaySearchUrl({
-											card_number: play.card_number,
-											name: play.name
-										})}
-										<div class="selected-item">
-											<a
-												class="selected-link"
-												href={ebayUrl}
-												target="_blank"
-												rel="sponsored noopener"
-											>
-												<div class="selected-info">
-													<span class="selected-name">{play.name}</span>
-													<span class="selected-meta">
-														{play.card_number} · {play.dbs} DBS / {play.hot_dog_cost} HD
-													</span>
-												</div>
-												<span class="ebay-tag">Buy →</span>
-											</a>
-											<button
-												class="btn-exclude"
-												title="Exclude from future strategy builds"
-												onclick={() => addExcludedPlayName(play.name)}
-											>
-												⛔
-											</button>
-											<button
-												class="btn-remove"
-												title="Remove from this playbook"
-												onclick={() => handleRemovePlay(play.name)}
-											>
-												&times;
-											</button>
-										</div>
-									{/each}
+									<div class="play-list">
+										{#each standardPlays as play (play.id)}
+											<PlaybookListItem
+												{play}
+												isBonus={false}
+												onexclude={handleExcludePlay}
+												onremove={handleRemovePlay}
+											/>
+										{/each}
+									</div>
 								{/if}
 
 								{#if bonusPlays.length > 0}
 									<h4 class="section-label">
 										Bonus Plays ({bonusPlays.length})
 									</h4>
-									{#each bonusPlays as play (play.id)}
-										{@const ebayUrl = buildEbaySearchUrl({
-											card_number: play.card_number,
-											name: play.name
-										})}
-										<div class="selected-item bpl">
-											<a
-												class="selected-link"
-												href={ebayUrl}
-												target="_blank"
-												rel="sponsored noopener"
-											>
-												<div class="selected-info">
-													<span class="selected-name">{play.name}</span>
-													<span class="selected-meta">
-														{play.card_number} · {play.dbs} DBS / {play.hot_dog_cost}
-														HD <span class="bpl-label">BPL</span>
-													</span>
-												</div>
-												<span class="ebay-tag">Buy →</span>
-											</a>
-											<button
-												class="btn-exclude"
-												title="Exclude from future strategy builds"
-												onclick={() => addExcludedPlayName(play.name)}
-											>
-												⛔
-											</button>
-											<button
-												class="btn-remove"
-												title="Remove from this playbook"
-												onclick={() => handleRemovePlay(play.name)}
-											>
-												&times;
-											</button>
-										</div>
-									{/each}
+									<div class="play-list">
+										{#each bonusPlays as play (play.id)}
+											<PlaybookListItem
+												{play}
+												isBonus={true}
+												onexclude={handleExcludePlay}
+												onremove={handleRemovePlay}
+											/>
+										{/each}
+									</div>
 								{/if}
 							</div>
 
@@ -305,6 +278,8 @@
 		</section>
 	</div>
 </div>
+
+<ExclusionsSheet open={exclusionsSheetOpen} onclose={closeExclusionsSheet} />
 
 <style>
 	.architect-page {
@@ -448,50 +423,6 @@
 		letter-spacing: 0.05em;
 		margin: var(--space-3) 0 var(--space-1);
 	}
-	.selected-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--space-2) var(--space-3);
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-	}
-	.selected-item.bpl {
-		border-left: 3px solid var(--gold);
-	}
-	.selected-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.selected-name {
-		font-size: var(--text-sm);
-		color: var(--text-primary);
-		font-weight: var(--font-medium);
-	}
-	.selected-meta {
-		font-size: var(--text-xs);
-		color: var(--text-muted);
-	}
-	.bpl-label {
-		color: var(--gold);
-		font-weight: var(--font-semibold);
-		margin-left: var(--space-1);
-	}
-	.btn-remove {
-		font-size: var(--text-lg);
-		color: var(--text-muted);
-		background: none;
-		border: none;
-		cursor: pointer;
-		padding: 0 var(--space-2);
-		line-height: 1;
-		transition: color var(--transition-fast);
-	}
-	.btn-remove:hover {
-		color: var(--danger);
-	}
 	.total-row {
 		display: flex;
 		justify-content: space-between;
@@ -516,44 +447,10 @@
 		gap: var(--space-3);
 	}
 
-	/* Shopping list */
-	.shopping-hint {
-		font-size: var(--text-xs);
-		color: var(--text-muted);
-		margin: 0 0 var(--space-3);
-		line-height: 1.5;
-		padding: var(--space-2) var(--space-3);
-		background: var(--bg-elevated);
-		border-radius: var(--radius-sm);
-	}
-	.selected-link {
-		flex: 1;
+	/* Play list — rendering owned by PlaybookListItem */
+	.play-list {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		text-decoration: none;
-		color: inherit;
+		flex-direction: column;
 		gap: var(--space-2);
-	}
-	.selected-link:hover .ebay-tag {
-		color: var(--gold);
-	}
-	.ebay-tag {
-		font-size: var(--text-xs);
-		color: var(--text-muted);
-		font-weight: var(--font-medium);
-		transition: color var(--transition-fast);
-	}
-	.btn-exclude {
-		font-size: var(--text-base);
-		background: none;
-		border: none;
-		cursor: pointer;
-		padding: 0 var(--space-2);
-		opacity: 0.5;
-		transition: opacity var(--transition-fast);
-	}
-	.btn-exclude:hover {
-		opacity: 1;
 	}
 </style>
