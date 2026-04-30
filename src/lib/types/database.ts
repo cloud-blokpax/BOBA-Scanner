@@ -1757,6 +1757,32 @@ export interface Database {
 				Args: { p_auth_user_id?: string };
 				Returns: boolean;
 			};
+			lookup_tournament_by_code: {
+				Args: { p_code: string };
+				Returns: Array<{
+					id: string;
+					name: string;
+					code: string;
+					format_id: string | null;
+					deck_type: string | null;
+					max_heroes: number;
+					max_plays: number;
+					max_bonus: number;
+					event_date: string | null;
+					venue: string | null;
+					registration_closed: boolean;
+					submission_deadline: string | null;
+					deadline_mode: string | null;
+					is_active: boolean;
+					description: string | null;
+					entry_fee: string | null;
+					prize_pool: string | null;
+					max_players: number | null;
+					require_email: boolean;
+					require_name: boolean;
+					require_discord: boolean;
+				}>;
+			};
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;

@@ -65,8 +65,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const playerName = requireString(body.player_name, 'player_name', 100);
 	const playerEmail = requireEmail(body.player_email);
 
-	// Load tournament and check registration status
-	const { data: tournament, error: tournamentErr } = await supabase
+	// Load tournament and check registration status. Submitters are not
+	// the tournament owner and not yet a participant (this submit IS the
+	// registration), so the user-scoped supabase client is blocked by the
+	// post-lockdown RLS on tournaments. The admin client bypasses RLS;
+	// we still perform every is_active / deadline / capacity check below.
+	const adminClient = getAdminClient();
+	if (!adminClient) {
+		console.error('[tournament/submit-deck] Admin client unavailable');
+		throw error(503, 'Service unavailable');
+	}
+	const { data: tournament, error: tournamentErr } = await adminClient
 		.from('tournaments')
 		.select('*')
 		.eq('id', tournamentId)
@@ -252,8 +261,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const verificationCode = generateVerificationCode();
 
-	// Upsert the submission — use admin client to bypass RLS for upsert
-	const adminClient = getAdminClient() || supabase;
+	// Upsert the submission — adminClient (declared above for the
+	// tournament read) bypasses RLS for the deck_submissions write too.
 	const submissionData = {
 		tournament_id: tournamentId,
 		user_id: user.id,

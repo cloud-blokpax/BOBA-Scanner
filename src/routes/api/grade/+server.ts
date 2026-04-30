@@ -44,7 +44,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	// Auth required — grading uses Claude Sonnet which is expensive (~$0.03/call)
 	const { user } = await locals.safeGetSession();
 	if (!user) {
-		throw error(401, 'Authentication required for card grading');
+		throw error(401, 'Authentication required');
 	}
 
 	// Pro check — grading is a premium feature (prevents direct API abuse)
