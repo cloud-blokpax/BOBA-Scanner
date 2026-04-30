@@ -9,6 +9,7 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-guard';
 import { getSellerToken } from '$lib/server/ebay-seller-auth';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -24,8 +25,10 @@ function makeHeaders(token: string) {
 	};
 }
 
-export const POST: RequestHandler = async ({ locals }) => {
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	const user = await requireAdmin(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 	const token = await getSellerToken(user.id);
 	if (!token) throw error(403, 'eBay session expired. Reconnect in Settings.');
 
@@ -34,10 +37,23 @@ export const POST: RequestHandler = async ({ locals }) => {
 
 	// ── Step 1: Opt into Business Policies program ────────────────
 	try {
+		const optInStart = Date.now();
 		const optInRes = await fetch(`${EBAY_ACCOUNT_URL}/program/opt_in`, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify({ programType: 'SELLING_POLICY_MANAGEMENT' })
+		});
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: 'sell.account.opt_in',
+			httpMethod: 'POST',
+			httpStatus: optInRes.status,
+			success: optInRes.ok || optInRes.status === 204 || optInRes.status === 409,
+			errorMessage: optInRes.ok ? null : `HTTP ${optInRes.status}`,
+			requestPath: '/api/ebay/setup',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - optInStart
 		});
 
 		if (optInRes.ok || optInRes.status === 204) {
@@ -56,9 +72,22 @@ export const POST: RequestHandler = async ({ locals }) => {
 	}
 
 	// ── Step 2: Check existing policies ───────────────────────────
-	const safeJson = async (url: string) => {
+	const safeJson = async (url: string, endpointLabel: string) => {
+		const start = Date.now();
 		try {
 			const res = await fetch(url, { headers });
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: endpointLabel,
+				httpMethod: 'GET',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/setup',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - start
+			});
 			if (!res.ok) return null;
 			return await res.json();
 		} catch {
@@ -66,9 +95,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 		}
 	};
 
-	const fulfillmentData = await safeJson(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`);
-	const paymentData = await safeJson(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`);
-	const returnData = await safeJson(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`);
+	const fulfillmentData = await safeJson(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, 'sell.account.get_fulfillment_policies');
+	const paymentData = await safeJson(`${EBAY_ACCOUNT_URL}/payment_policy?marketplace_id=EBAY_US`, 'sell.account.get_payment_policies');
+	const returnData = await safeJson(`${EBAY_ACCOUNT_URL}/return_policy?marketplace_id=EBAY_US`, 'sell.account.get_return_policies');
 
 	const hasFulfillment = (fulfillmentData?.fulfillmentPolicies?.length ?? 0) > 0;
 	const hasPayment = (paymentData?.paymentPolicies?.length ?? 0) > 0;
@@ -83,6 +112,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 	// ── Step 3: Create missing policies ───────────────────────────
 	if (!hasFulfillment) {
 		try {
+			const createFulfillStart = Date.now();
 			const res = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy`, {
 				method: 'POST',
 				headers,
@@ -106,6 +136,18 @@ export const POST: RequestHandler = async ({ locals }) => {
 					}]
 				})
 			});
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.account.create_fulfillment_policy',
+				httpMethod: 'POST',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/setup',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - createFulfillStart
+			});
 			const body = await res.text().catch(() => '');
 			results.push({ step: 'create_fulfillment', ok: res.ok, detail: { status: res.status, body: body.slice(0, 500) } });
 		} catch (err) {
@@ -117,6 +159,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 
 	if (!hasPayment) {
 		try {
+			const createPaymentStart = Date.now();
 			const res = await fetch(`${EBAY_ACCOUNT_URL}/payment_policy`, {
 				method: 'POST',
 				headers,
@@ -127,6 +170,18 @@ export const POST: RequestHandler = async ({ locals }) => {
 					categoryTypes: [{ name: 'ALL_EXCLUDING_MOTORS_VEHICLES' }],
 					immediatePay: true
 				})
+			});
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.account.create_payment_policy',
+				httpMethod: 'POST',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/setup',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - createPaymentStart
 			});
 			const body = await res.text().catch(() => '');
 			results.push({ step: 'create_payment', ok: res.ok, detail: { status: res.status, body: body.slice(0, 500) } });
@@ -139,6 +194,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 
 	if (!hasReturn) {
 		try {
+			const createReturnStart = Date.now();
 			const res = await fetch(`${EBAY_ACCOUNT_URL}/return_policy`, {
 				method: 'POST',
 				headers,
@@ -149,6 +205,18 @@ export const POST: RequestHandler = async ({ locals }) => {
 					categoryTypes: [{ name: 'ALL_EXCLUDING_MOTORS_VEHICLES' }],
 					returnsAccepted: false
 				})
+			});
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.account.create_return_policy',
+				httpMethod: 'POST',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/setup',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - createReturnStart
 			});
 			const body = await res.text().catch(() => '');
 			results.push({ step: 'create_return', ok: res.ok, detail: { status: res.status, body: body.slice(0, 500) } });

@@ -3,16 +3,28 @@
  *
  * Handles per-user seller authorization for the Inventory API.
  * Separate from ebay-auth.ts which handles app-level Browse API tokens.
+ *
+ * Tokens are stored exclusively as AES-256-GCM ciphertext in the
+ * access_token_ciphertext / refresh_token_ciphertext columns of
+ * public.ebay_seller_tokens. The legacy plaintext columns were dropped
+ * in the 2.18 cleanup pass — any row reaching this code without
+ * ciphertext is treated as unrecoverable (user must reconnect).
  */
 
 import { env } from '$env/dynamic/private';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { logEvent } from '$lib/server/diagnostics';
-import { encryptToken, decryptToken, isTokenCryptoConfigured } from '$lib/server/auth/token-crypto';
+import {
+	encryptToken,
+	decryptToken,
+	isEbayCryptoConfigured
+} from '$lib/server/ebay-crypto';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 import { getRedis } from '$lib/server/redis';
 
 const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
+const EBAY_REVOKE_URL = 'https://api.ebay.com/identity/v1/oauth2/revoke';
 
 // Minimal scopes — only request what the app actually uses.
 // sell.inventory + sell.account for listing creation.
@@ -37,26 +49,6 @@ export function isSellerOAuthConfigured(): boolean {
 	return !!(env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET && env.EBAY_RUNAME);
 }
 
-/**
- * Encrypt a token for at-rest storage. Falls back to plaintext when no
- * EBAY_TOKEN_ENCRYPTION_KEY is configured (dev environments). Production
- * is expected to set the key — the privacy page promises encryption.
- */
-function maybeEncryptForStore(plaintext: string): string {
-	const ct = encryptToken(plaintext);
-	return ct ?? plaintext;
-}
-
-/**
- * Decrypt a stored token. Returns plaintext for legacy unencrypted rows
- * (rows written before the key was deployed) so the rollout doesn't have
- * to re-encrypt every existing connection in one shot — the next refresh
- * upgrades the row to ciphertext.
- */
-function decryptStored(stored: string | null | undefined): string | null {
-	return decryptToken(stored);
-}
-
 export function buildAuthUrl(state: string): string {
 	const params = new URLSearchParams({
 		client_id: env.EBAY_CLIENT_ID ?? '',
@@ -69,6 +61,7 @@ export function buildAuthUrl(state: string): string {
 }
 
 export async function exchangeCode(code: string, userId: string): Promise<string | null> {
+	const exchangeStart = Date.now();
 	const response = await fetch(EBAY_TOKEN_URL, {
 		method: 'POST',
 		headers: { Authorization: `Basic ${getBasicAuth()}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -77,6 +70,17 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 			code,
 			redirect_uri: env.EBAY_RUNAME ?? ''
 		}).toString()
+	});
+
+	void logEbayUsage({
+		userId,
+		endpoint: 'oauth.exchange_code',
+		httpMethod: 'POST',
+		httpStatus: response.status,
+		success: response.ok,
+		errorMessage: response.ok ? null : `HTTP ${response.status}`,
+		requestPath: '/auth/ebay/callback',
+		durationMs: Date.now() - exchangeStart
 	});
 
 	if (!response.ok) {
@@ -97,11 +101,22 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 	const adminClient = getServiceClient();
 	if (!adminClient) throw new Error('Service role client not configured');
 
+	if (!isEbayCryptoConfigured()) {
+		console.error('[ebay-seller-auth] EBAY_CREDENTIAL_KEY not configured — refusing to store token');
+		void logEvent({ level: 'error', event: 'ebay.seller_auth.crypto_not_configured' });
+		throw new Error('eBay credential encryption is not configured');
+	}
+
+	const accessEnc = await encryptToken(data.access_token);
+	const refreshEnc = await encryptToken(data.refresh_token);
+
 	const { error: upsertError } = await adminClient.from('ebay_seller_tokens').upsert({
 		user_id: userId,
-		access_token: maybeEncryptForStore(data.access_token),
+		access_token_ciphertext: accessEnc.ciphertext,
+		access_token_iv: accessEnc.iv,
 		access_token_expires_at: accessExpires.toISOString(),
-		refresh_token: maybeEncryptForStore(data.refresh_token),
+		refresh_token_ciphertext: refreshEnc.ciphertext,
+		refresh_token_iv: refreshEnc.iv,
 		refresh_token_expires_at: refreshExpires.toISOString(),
 		scopes: SELLER_SCOPES,
 		updated_at: new Date().toISOString()
@@ -149,6 +164,57 @@ async function releaseRefreshLock(userId: string): Promise<void> {
 const REFRESH_WAIT_INTERVAL_MS = 200;
 const REFRESH_WAIT_MAX_MS = 5000;
 
+type CipherFields = {
+	access_token_ciphertext: string | null;
+	access_token_iv: string | null;
+	refresh_token_ciphertext: string | null;
+	refresh_token_iv: string | null;
+};
+
+async function readAccessTokenFromRow(row: CipherFields, userId: string): Promise<string | null> {
+	if (!row.access_token_ciphertext || !row.access_token_iv) {
+		console.error('[ebay-seller-auth] No access token ciphertext for user', userId);
+		void logEvent({
+			level: 'error',
+			event: 'ebay.seller_auth.missing_ciphertext',
+			context: { user_id: userId, field: 'access_token' }
+		});
+		return null;
+	}
+	try {
+		return await decryptToken({
+			ciphertext: row.access_token_ciphertext,
+			iv: row.access_token_iv
+		});
+	} catch (err) {
+		console.error('[ebay-seller-auth] Access token decrypt failed:', err instanceof Error ? err.message : err);
+		void logEvent({ level: 'error', event: 'ebay.seller_auth.decrypt_failed', context: { user_id: userId, field: 'access_token' } });
+		return null;
+	}
+}
+
+async function readRefreshTokenFromRow(row: CipherFields, userId: string): Promise<string | null> {
+	if (!row.refresh_token_ciphertext || !row.refresh_token_iv) {
+		console.error('[ebay-seller-auth] No refresh token ciphertext for user', userId);
+		void logEvent({
+			level: 'error',
+			event: 'ebay.seller_auth.missing_ciphertext',
+			context: { user_id: userId, field: 'refresh_token' }
+		});
+		return null;
+	}
+	try {
+		return await decryptToken({
+			ciphertext: row.refresh_token_ciphertext,
+			iv: row.refresh_token_iv
+		});
+	} catch (err) {
+		console.error('[ebay-seller-auth] Refresh token decrypt failed:', err instanceof Error ? err.message : err);
+		void logEvent({ level: 'error', event: 'ebay.seller_auth.decrypt_failed', context: { user_id: userId, field: 'refresh_token' } });
+		return null;
+	}
+}
+
 async function waitAndReread(
 	adminClient: NonNullable<ReturnType<typeof getServiceClient>>,
 	userId: string
@@ -158,14 +224,14 @@ async function waitAndReread(
 		await new Promise((r) => setTimeout(r, REFRESH_WAIT_INTERVAL_MS));
 		const { data: row } = await adminClient
 			.from('ebay_seller_tokens')
-			.select('access_token, access_token_expires_at')
+			.select('access_token_ciphertext, access_token_iv, access_token_expires_at, refresh_token_ciphertext, refresh_token_iv')
 			.eq('user_id', userId)
 			.maybeSingle();
 		if (
 			row &&
 			Date.now() < new Date(row.access_token_expires_at).getTime() - 60_000
 		) {
-			return decryptStored(row.access_token);
+			return readAccessTokenFromRow(row as CipherFields, userId);
 		}
 	}
 	return null;
@@ -188,7 +254,7 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 
 	// Check if access token is still valid (5-minute buffer)
 	if (Date.now() < new Date(tokenRow.access_token_expires_at).getTime() - 300_000) {
-		return decryptStored(tokenRow.access_token);
+		return readAccessTokenFromRow(tokenRow as CipherFields, userId);
 	}
 
 	// Refresh-token expired? Wipe the row.
@@ -207,12 +273,13 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 	}
 
 	try {
-		const refreshPlaintext = decryptStored(tokenRow.refresh_token);
-		if (!refreshPlaintext) {
-			console.error('[ebay-seller-auth] Refresh token decrypt failed');
+		const refreshToken = await readRefreshTokenFromRow(tokenRow as CipherFields, userId);
+		if (!refreshToken) {
+			console.error('[ebay-seller-auth] No refresh token available for user', userId);
 			return null;
 		}
 
+		const refreshStart = Date.now();
 		const response = await fetch(EBAY_TOKEN_URL, {
 			method: 'POST',
 			headers: {
@@ -221,9 +288,20 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 			},
 			body: new URLSearchParams({
 				grant_type: 'refresh_token',
-				refresh_token: refreshPlaintext,
+				refresh_token: refreshToken,
 				scope: SELLER_SCOPES
 			}).toString()
+		});
+
+		void logEbayUsage({
+			userId,
+			endpoint: 'oauth.refresh_token',
+			httpMethod: 'POST',
+			httpStatus: response.status,
+			success: response.ok,
+			errorMessage: response.ok ? null : `HTTP ${response.status}`,
+			requestPath: 'internal:getSellerToken',
+			durationMs: Date.now() - refreshStart
 		});
 
 		if (!response.ok) {
@@ -241,8 +319,10 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 			return null;
 		}
 
+		const refreshedAccessEnc = await encryptToken(data.access_token);
 		const update: Record<string, unknown> = {
-			access_token: maybeEncryptForStore(data.access_token),
+			access_token_ciphertext: refreshedAccessEnc.ciphertext,
+			access_token_iv: refreshedAccessEnc.iv,
 			access_token_expires_at: new Date(
 				Date.now() + Math.max(data.expires_in ?? 7200, 60) * 1000
 			).toISOString(),
@@ -250,20 +330,14 @@ export async function getSellerToken(userId: string): Promise<string | null> {
 		};
 		// eBay sometimes rotates the refresh token too. Persist the rotation.
 		if (typeof data.refresh_token === 'string' && data.refresh_token.length > 0) {
-			update.refresh_token = maybeEncryptForStore(data.refresh_token);
+			const rotatedRefreshEnc = await encryptToken(data.refresh_token);
+			update.refresh_token_ciphertext = rotatedRefreshEnc.ciphertext;
+			update.refresh_token_iv = rotatedRefreshEnc.iv;
 			if (typeof data.refresh_token_expires_in === 'number') {
 				update.refresh_token_expires_at = new Date(
 					Date.now() + data.refresh_token_expires_in * 1000
 				).toISOString();
 			}
-		}
-		// Migrate legacy plaintext rows opportunistically.
-		if (
-			isTokenCryptoConfigured() &&
-			typeof tokenRow.refresh_token === 'string' &&
-			!tokenRow.refresh_token.startsWith('gcm1:')
-		) {
-			update.refresh_token = maybeEncryptForStore(refreshPlaintext);
 		}
 
 		const { error: tokenError } = await adminClient
@@ -306,8 +380,19 @@ export async function validateSellerConnection(userId: string): Promise<SellerVa
 	if (!token) return { valid: false, error: 'No valid token — please reconnect your eBay account' };
 
 	try {
+		const privilegeStart = Date.now();
 		const res = await fetch('https://api.ebay.com/sell/account/v1/privilege', {
 			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+		});
+		void logEbayUsage({
+			userId,
+			endpoint: 'sell.account.get_privilege',
+			httpMethod: 'GET',
+			httpStatus: res.status,
+			success: res.ok,
+			errorMessage: res.ok ? null : `HTTP ${res.status}`,
+			requestPath: 'internal:validateSellerConnection',
+			durationMs: Date.now() - privilegeStart
 		});
 
 		if (res.status === 401 || res.status === 403) {
@@ -353,8 +438,19 @@ export async function getSellerProfile(userId: string): Promise<SellerProfile> {
 	if (!token) return { username: null, email: null };
 
 	try {
+		const identityStart = Date.now();
 		const res = await fetch('https://apiz.ebay.com/commerce/identity/v1/user/', {
 			headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+		});
+		void logEbayUsage({
+			userId,
+			endpoint: 'commerce.identity.get_user',
+			httpMethod: 'GET',
+			httpStatus: res.status,
+			success: res.ok,
+			errorMessage: res.ok ? null : `HTTP ${res.status}`,
+			requestPath: 'internal:getSellerProfile',
+			durationMs: Date.now() - identityStart
 		});
 
 		if (!res.ok) {
@@ -382,5 +478,82 @@ export async function getSellerProfile(userId: string): Promise<SellerProfile> {
 export async function disconnectSeller(userId: string): Promise<void> {
 	const adminClient = getServiceClient();
 	if (!adminClient) return;
+
+	// Best-effort: revoke the refresh token at eBay so it stops working at the
+	// source even if it was previously exfiltrated. If revocation fails (network
+	// error, eBay outage, key not configured), we still proceed with local
+	// deletion — the alternative is leaving stale rows around when revocation
+	// is flaky.
+	try {
+		const { data: tokenRow } = await adminClient
+			.from('ebay_seller_tokens')
+			.select('refresh_token_ciphertext, refresh_token_iv')
+			.eq('user_id', userId)
+			.maybeSingle();
+
+		if (tokenRow) {
+			let refreshToken: string | null = null;
+			if (tokenRow.refresh_token_ciphertext && tokenRow.refresh_token_iv) {
+				try {
+					refreshToken = await decryptToken({
+						ciphertext: tokenRow.refresh_token_ciphertext,
+						iv: tokenRow.refresh_token_iv
+					});
+				} catch (err) {
+					console.warn('[ebay-seller-auth] Refresh token decrypt failed during disconnect — proceeding with local delete only:', err instanceof Error ? err.message : err);
+				}
+			}
+
+			if (refreshToken) {
+				const revokeStart = Date.now();
+				const revokeRes = await fetch(EBAY_REVOKE_URL, {
+					method: 'POST',
+					headers: {
+						Authorization: `Basic ${getBasicAuth()}`,
+						'Content-Type': 'application/x-www-form-urlencoded'
+					},
+					body: new URLSearchParams({
+						token: refreshToken,
+						token_type_hint: 'refresh_token'
+					}).toString()
+				});
+
+				void logEbayUsage({
+					userId,
+					endpoint: 'oauth.revoke_token',
+					httpMethod: 'POST',
+					httpStatus: revokeRes.status,
+					success: revokeRes.ok,
+					errorMessage: revokeRes.ok ? null : `HTTP ${revokeRes.status}`,
+					requestPath: 'internal:disconnectSeller',
+					durationMs: Date.now() - revokeStart
+				});
+
+				if (!revokeRes.ok) {
+					const body = await revokeRes.text().catch(() => '');
+					console.warn(
+						`[ebay-seller-auth] Token revocation returned ${revokeRes.status} (proceeding with local delete):`,
+						body.slice(0, 200)
+					);
+					void logEvent({
+						level: 'warn',
+						event: 'ebay.seller_auth.revoke_non_2xx',
+						context: { user_id: userId, status: revokeRes.status }
+					});
+				} else {
+					console.log('[ebay-seller-auth] Refresh token revoked at eBay for user', userId);
+				}
+			}
+		}
+	} catch (err) {
+		console.warn('[ebay-seller-auth] Token revocation request failed (proceeding with local delete):', err instanceof Error ? err.message : err);
+		void logEvent({
+			level: 'warn',
+			event: 'ebay.seller_auth.revoke_threw',
+			error: err,
+			context: { user_id: userId }
+		});
+	}
+
 	await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
 }

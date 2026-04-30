@@ -769,9 +769,11 @@ export interface Database {
 			ebay_seller_tokens: {
 				Row: {
 					user_id: string;
-					access_token: string;
+					access_token_ciphertext: string;
+					access_token_iv: string;
 					access_token_expires_at: string;
-					refresh_token: string;
+					refresh_token_ciphertext: string;
+					refresh_token_iv: string;
 					refresh_token_expires_at: string;
 					scopes: string | null;
 					created_at: string;
@@ -779,14 +781,48 @@ export interface Database {
 				};
 				Insert: {
 					user_id: string;
-					access_token: string;
+					access_token_ciphertext: string;
+					access_token_iv: string;
 					access_token_expires_at: string;
-					refresh_token: string;
+					refresh_token_ciphertext: string;
+					refresh_token_iv: string;
 					refresh_token_expires_at: string;
 					scopes?: string | null;
 					updated_at?: string;
 				};
 				Update: Partial<Database['public']['Tables']['ebay_seller_tokens']['Insert']>;
+				Relationships: [];
+			};
+			ebay_token_usage_log: {
+				Row: {
+					id: string;
+					user_id: string;
+					endpoint: string;
+					http_method: string;
+					http_status: number | null;
+					success: boolean;
+					error_message: string | null;
+					request_path: string;
+					ip_address: string | null;
+					user_agent: string | null;
+					duration_ms: number | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					endpoint: string;
+					http_method: string;
+					http_status?: number | null;
+					success: boolean;
+					error_message?: string | null;
+					request_path: string;
+					ip_address?: string | null;
+					user_agent?: string | null;
+					duration_ms?: number | null;
+					created_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['ebay_token_usage_log']['Insert']>;
 				Relationships: [];
 			};
 			listing_templates: {

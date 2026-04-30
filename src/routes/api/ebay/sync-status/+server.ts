@@ -5,6 +5,7 @@ import { checkHeavyMutationRateLimit } from '$lib/server/rate-limit';
 import { requireAuth } from '$lib/server/validate';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { apiError, rateLimited, serviceUnavailable } from '$lib/server/api-response';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 
 export const config = { maxDuration: 30 };
 
@@ -18,8 +19,10 @@ const EBAY_FULFILLMENT_URL = 'https://api.ebay.com/sell/fulfillment/v1';
  * Uses Inventory API to check offer status (works with current scopes).
  * If fulfillment scope is available, also checks for sold orders.
  */
-export const POST: RequestHandler = async ({ locals }) => {
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	const user = await requireAuth(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 
 	const rl = await checkHeavyMutationRateLimit(user.id);
 	if (!rl.success) return rateLimited(rl);
@@ -67,10 +70,23 @@ export const POST: RequestHandler = async ({ locals }) => {
 	const listingsWithOffers = activeListings.filter(l => l.ebay_offer_id);
 	for (const listing of listingsWithOffers) {
 		try {
+			const offerCheckStart = Date.now();
 			const res = await fetch(
 				`${EBAY_INVENTORY_URL}/offer/${listing.ebay_offer_id}`,
 				{ headers: ebayHeaders }
 			);
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.inventory.get_offer',
+				httpMethod: 'GET',
+				httpStatus: res.status,
+				success: res.ok,
+				errorMessage: res.ok ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/sync-status',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - offerCheckStart
+			});
 
 			if (!res.ok) {
 				if (res.status === 404) {
@@ -113,10 +129,23 @@ export const POST: RequestHandler = async ({ locals }) => {
 	const listingsWithoutOffers = activeListings.filter(l => !l.ebay_offer_id && l.sku);
 	for (const listing of listingsWithoutOffers) {
 		try {
+			const invCheckStart = Date.now();
 			const res = await fetch(
 				`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(listing.sku)}`,
 				{ headers: ebayHeaders }
 			);
+			void logEbayUsage({
+				userId: user.id,
+				endpoint: 'sell.inventory.get_item',
+				httpMethod: 'GET',
+				httpStatus: res.status,
+				success: res.ok || res.status === 404,
+				errorMessage: res.ok || res.status === 404 ? null : `HTTP ${res.status}`,
+				requestPath: '/api/ebay/sync-status',
+				ipAddress: clientIp,
+				userAgent,
+				durationMs: Date.now() - invCheckStart
+			});
 
 			if (res.status === 404) {
 				// Inventory item no longer exists
@@ -146,10 +175,23 @@ export const POST: RequestHandler = async ({ locals }) => {
 			if (endedSkus.length > 0) {
 				// Check recent orders (last 30 days)
 				const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+				const orderStart = Date.now();
 				const orderRes = await fetch(
 					`${EBAY_FULFILLMENT_URL}/order?filter=creationdate:[${since}..]&limit=50`,
 					{ headers: ebayHeaders }
 				);
+				void logEbayUsage({
+					userId: user.id,
+					endpoint: 'sell.fulfillment.get_orders',
+					httpMethod: 'GET',
+					httpStatus: orderRes.status,
+					success: orderRes.ok,
+					errorMessage: orderRes.ok ? null : `HTTP ${orderRes.status}`,
+					requestPath: '/api/ebay/sync-status',
+					ipAddress: clientIp,
+					userAgent,
+					durationMs: Date.now() - orderStart
+				});
 
 				if (orderRes.ok) {
 					const orderData = await orderRes.json();

@@ -6,6 +6,7 @@ import { parseJsonBody, requireNumber, optionalString, requireAuth } from '$lib/
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { getSellerPolicies, ensureInventoryLocation, publishOffer, optInToBusinessPolicies, EBAY_INVENTORY_URL } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
+import { logEbayUsage } from '$lib/server/ebay-usage-log';
 import { incrementPersona } from '$lib/services/persona';
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 import { buildBobaDescription, buildWondersDescription } from '$lib/services/listing-generator';
@@ -81,8 +82,10 @@ function plainTextToHtml(text: string): string {
 		.join('\n');
 }
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	const user = await requireAuth(locals);
+	const clientIp = getClientAddress();
+	const userAgent = request.headers.get('user-agent');
 
 	// Weekly listing limit for free users
 	if (locals.supabase) {
@@ -307,6 +310,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		};
 
+		const itemStart = Date.now();
 		const itemRes = await fetch(`${EBAY_INVENTORY_URL}/inventory_item/${encodeURIComponent(sku)}`, {
 			method: 'PUT',
 			headers: {
@@ -317,6 +321,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify(inventoryItem)
+		});
+
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: 'sell.inventory.put_item',
+			httpMethod: 'PUT',
+			httpStatus: itemRes.status,
+			success: itemRes.ok,
+			errorMessage: itemRes.ok ? null : `HTTP ${itemRes.status}`,
+			requestPath: '/api/ebay/create-draft',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - itemStart
 		});
 
 		if (!itemRes.ok) {
@@ -417,6 +434,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			...(body.listingDuration ? { listingDuration: body.listingDuration } : {})
 		};
 
+		const offerStart = Date.now();
 		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
 			method: 'POST',
 			headers: {
@@ -427,6 +445,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 			},
 			body: JSON.stringify(offer)
+		});
+
+		void logEbayUsage({
+			userId: user.id,
+			endpoint: 'sell.inventory.create_offer',
+			httpMethod: 'POST',
+			httpStatus: offerRes.status,
+			success: offerRes.ok,
+			errorMessage: offerRes.ok ? null : `HTTP ${offerRes.status}`,
+			requestPath: '/api/ebay/create-draft',
+			ipAddress: clientIp,
+			userAgent,
+			durationMs: Date.now() - offerStart
 		});
 
 		if (!offerRes.ok) {
