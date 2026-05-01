@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { recognizeCard, initWorkers } from '$lib/services/recognition';
+	import { releaseOcrWorker } from '$lib/services/paddle-ocr';
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 
 	let processing = $state(false);
@@ -46,6 +47,10 @@
 			error = err instanceof Error ? err.message : 'Processing failed';
 		} finally {
 			bitmap?.close();
+			// Release the PaddleOCR client between WTP uploads. iOS Safari's
+			// per-tab memory ceiling otherwise kills the page on card #2.
+			// Cold-start cost (~300–600ms) on the next card is acceptable here.
+			await releaseOcrWorker().catch(() => {});
 			processing = false;
 		}
 	}
