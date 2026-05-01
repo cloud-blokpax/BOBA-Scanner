@@ -15,8 +15,9 @@
 	import AdminPacksTab from './AdminPacksTab.svelte';
 	import AdminPhase2Tab from './AdminPhase2Tab.svelte';
 	import AdminTriageTab from './AdminTriageTab.svelte';
+	import AdminRulesTab from './AdminRulesTab.svelte';
 
-	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'phase2' | 'triage' | 'features' | 'ebay' | 'wtp' | 'changelog' | 'system' | 'parallels' | 'packs';
+	type TabId = 'pulse' | 'users' | 'cards' | 'scans' | 'phase2' | 'triage' | 'features' | 'ebay' | 'wtp' | 'changelog' | 'system' | 'parallels' | 'packs' | 'rules';
 
 	// Consolidated from 13 tabs to 9:
 	// - Stats removed (redundant with Pulse metrics)
@@ -31,6 +32,7 @@
 		{ id: 'phase2', label: 'Phase 2', group: 'main' },
 		{ id: 'triage', label: 'Triage', group: 'main' },
 		{ id: 'features', label: 'Features', group: 'main' },
+		{ id: 'rules', label: 'Rules', group: 'main' },
 		{ id: 'ebay', label: 'eBay', group: 'main' },
 		{ id: 'wtp', label: 'WTP', group: 'main' },
 		{ id: 'packs', label: 'Packs', group: 'main' },
@@ -213,6 +215,8 @@
 						<AdminTriageTab />
 					{:else if activeTab === 'features'}
 						<AdminFeaturesTab />
+					{:else if activeTab === 'rules'}
+						<AdminRulesTab />
 					{:else if activeTab === 'ebay'}
 						<AdminEbayTab />
 					{:else if activeTab === 'wtp'}
@@ -338,6 +342,8 @@
 							<AdminTriageTab />
 						{:else if activeTab === 'features'}
 							<AdminFeaturesTab />
+						{:else if activeTab === 'rules'}
+							<AdminRulesTab />
 						{:else if activeTab === 'ebay'}
 							<AdminEbayTab />
 						{:else if activeTab === 'wtp'}

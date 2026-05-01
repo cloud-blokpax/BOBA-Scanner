@@ -118,12 +118,18 @@
 	</button>
 
 	{#if menuOpen}
-		<div class="menu-popup">
-			<button class="menu-item" onclick={handleRemove}>
+		<div
+			class="menu-popup"
+			role="menu"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+		>
+			<button class="menu-item" onclick={handleRemove} role="menuitem">
 				<span class="menu-item-text">Swap out of this playbook</span>
 				<span class="menu-item-hint">Removes from the current 30 only</span>
 			</button>
-			<button class="menu-item" onclick={handleExclude}>
+			<button class="menu-item" onclick={handleExclude} role="menuitem">
 				<span class="menu-item-text">Don't suggest this play again</span>
 				<span class="menu-item-hint">Strategy will rebuild around it</span>
 			</button>
