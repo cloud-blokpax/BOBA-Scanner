@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { recognizeCard, initWorkers } from '$lib/services/recognition';
 	import { releaseOcrWorker } from '$lib/services/paddle-ocr';
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
@@ -8,6 +9,15 @@
 	let error = $state<string | null>(null);
 	let thumbUrl = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
+
+	// Pre-warm the OCR workers as soon as the user lands on this page so the
+	// model is ready before they pick a photo. initWorkers is idempotent and
+	// concurrency-safe — repeat calls share an in-flight promise.
+	onMount(() => {
+		initWorkers().catch((err) => {
+			console.warn('[sell/wtp/upload] OCR pre-warm failed; will retry on first scan', err);
+		});
+	});
 
 	async function handleFile(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -22,8 +32,36 @@
 
 		let bitmap: ImageBitmap | null = null;
 		try {
-			await initWorkers();
-			bitmap = await createImageBitmap(file, { resizeWidth: 2048, resizeHeight: 2048, resizeQuality: 'high' });
+			// Two-step decode preserves aspect ratio. createImageBitmap with both
+			// resizeWidth and resizeHeight set distorts the image to a square per
+			// the WHATWG spec — silently degrades OCR (vertical compression of a
+			// portrait card). Probe first, then proportional resize.
+			//
+			// resizeQuality 'medium' (bilinear) instead of 'high' (Lanczos): for
+			// a 12MP-to-2048 downsample the OCR-quality difference is undetectable
+			// and 'high' has a transient working buffer ~1.5x output size that
+			// matters on iOS WebKit's tighter memory budget.
+			//
+			// initWorkers runs in parallel with decode — saves the smaller of the
+			// two latencies on a cold session (pre-warm not yet complete).
+			const decodePromise = (async () => {
+				const probe = await createImageBitmap(file);
+				const longEdge = Math.max(probe.width, probe.height);
+				if (longEdge <= 2048) {
+					return probe;
+				}
+				const scale = 2048 / longEdge;
+				const resized = await createImageBitmap(probe, {
+					resizeWidth: Math.round(probe.width * scale),
+					resizeHeight: Math.round(probe.height * scale),
+					resizeQuality: 'medium'
+				});
+				probe.close();
+				return resized;
+			})();
+
+			const [, decodedBitmap] = await Promise.all([initWorkers(), decodePromise]);
+			bitmap = decodedBitmap;
 			const result = await recognizeCard(bitmap, undefined, { isAuthenticated: true, skipBlurCheck: true });
 
 			if (!result.card_id || !result.card || !result.id) {
