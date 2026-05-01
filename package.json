@@ -15,10 +15,13 @@
     "generate-play-bundle": "tsx scripts/generate-play-card-bundle.ts",
     "generate-dbs-migration": "tsx scripts/generate-dbs-sync-migration.ts",
     "lint:bundle-drift": "tsx scripts/lint-play-bundle-drift.ts",
-    "wonders:import-set": "tsx scripts/import-wonders-set.ts"
+    "wonders:import-set": "tsx scripts/import-wonders-set.ts",
+    "bench:scan": "tsx tests/scan-bench/run-bench.ts",
+    "bench:scan:compare": "tsx tests/scan-bench/compare-reports.ts"
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.8",
+    "playwright": "^1.50.0",
     "@types/qrcode": "^1.5.6",
     "@types/seedrandom": "^3.0.8",
     "dotenv": "^17.4.1",
