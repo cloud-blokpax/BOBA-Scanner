@@ -28,6 +28,7 @@ import type { RequestHandler } from './$types';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { sendAdminEmail } from '$lib/server/email';
 import { logEvent } from '$lib/server/diagnostics';
+import { escapeHtml } from '$lib/utils';
 
 export const config = { maxDuration: 60 };
 
@@ -396,11 +397,3 @@ Triggered by QStash weekly cron. Source: <code>/api/cron/qstash-check-deck-build
 </body></html>`;
 }
 
-function escapeHtml(s: string): string {
-	return String(s)
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}
