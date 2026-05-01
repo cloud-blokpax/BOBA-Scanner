@@ -213,6 +213,9 @@
 			uploadError = err instanceof Error ? err.message : 'Processing failed';
 		} finally {
 			bitmap?.close();
+			// Same OOM guard as handleWhatnotFile above. Without this, two
+			// scan-to-list uploads in succession white-screen the page.
+			await releaseOcrWorker().catch(() => {});
 			uploadProcessing = false;
 		}
 	}

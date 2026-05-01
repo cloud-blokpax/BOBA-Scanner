@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { recognizeCard, initWorkers } from '$lib/services/recognition';
+	import { releaseOcrWorker } from '$lib/services/paddle-ocr';
 	import { addToCollection } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { getPrice } from '$lib/stores/prices.svelte';
@@ -168,6 +169,14 @@
 
 			// Yield to event loop for GC
 			await new Promise(r => setTimeout(r, 100));
+
+			// Release PaddleOCR every 3 cards to prevent WASM heap accumulation
+			// from OOM-killing the page on iOS Safari. Cold-start cost is amortized
+			// across the batch — ~600ms × ⌈N/3⌉ rather than × N.
+			if ((i + 1) % 3 === 0 && i < items.length - 1) {
+				await releaseOcrWorker().catch(() => {});
+				await initWorkers();
+			}
 		}
 
 		phase = 'review';
@@ -219,6 +228,7 @@
 			item.error = err instanceof Error ? err.message : 'Retry failed';
 		} finally {
 			bitmap?.close();
+			await releaseOcrWorker().catch(() => {});
 		}
 		items = [...items];
 	}
