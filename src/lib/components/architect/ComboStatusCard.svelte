@@ -5,6 +5,7 @@
 		addPlay,
 		getUniverse
 	} from '$lib/stores/playbook-architect.svelte';
+	import { getCombo, type ComboTier } from '$lib/data/combo-registry';
 
 	let {
 		combos,
@@ -23,6 +24,32 @@
 		if (risk === 'low') return { label: 'Low Risk', color: 'var(--success)' };
 		if (risk === 'medium') return { label: 'Med Risk', color: 'var(--warning)' };
 		return { label: 'High Risk', color: 'var(--danger)' };
+	}
+
+	function tierBadge(tier: ComboTier): { label: string; color: string; description: string } {
+		if (tier === 'S')
+			return {
+				label: 'S — Game-warping',
+				color: 'var(--gold)',
+				description: 'Single-card or two-card combo that defines the metagame.'
+			};
+		if (tier === 'A')
+			return {
+				label: 'A — Tournament-viable',
+				color: 'var(--success)',
+				description: 'Proven combo with redundancy. Wins games consistently.'
+			};
+		if (tier === 'B')
+			return {
+				label: 'B — Niche / Conditional',
+				color: 'var(--warning)',
+				description: 'Combo works under specific conditions. Build-around required.'
+			};
+		return {
+			label: 'C — Synergy',
+			color: 'var(--text-muted)',
+			description: 'Value-engine support, not a primary win condition.'
+		};
 	}
 
 	function toggle(id: string) {
@@ -67,7 +94,28 @@
 			</button>
 
 			{#if isOpen}
+				{@const fullCombo = getCombo(engine.id)}
 				<div class="combo-detail">
+					{#if fullCombo}
+						{@const tb = tierBadge(fullCombo.tier)}
+						<div class="tier-row">
+							<span class="tier-badge" style:color={tb.color} style:border-color={tb.color}>
+								{tb.label}
+							</span>
+							<span class="tier-description">{tb.description}</span>
+						</div>
+
+						{#if fullCombo.ambiguity}
+							<div class="ambiguity-warning">
+								<strong>⚠ Rules ambiguity:</strong>
+								{fullCombo.ambiguity.question}
+								{#if fullCombo.ambiguity.exploitId}
+									<span class="exploit-link">(see {fullCombo.ambiguity.exploitId} in admin)</span>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+
 					<h5 class="detail-title">How it works</h5>
 					<p class="detail-chain">{engine.chain}</p>
 
@@ -105,6 +153,30 @@
 							{/each}
 						</ul>
 					{/if}
+
+					{#if fullCombo && fullCombo.counters.length > 0}
+						<h5 class="detail-title">Counters</h5>
+						<ul class="counters-list">
+							{#each fullCombo.counters as counter}
+								<li>{counter}</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if fullCombo && fullCombo.ruleCitations.length > 0}
+						<h5 class="detail-title">Rule basis</h5>
+						<ul class="citations-list">
+							{#each fullCombo.ruleCitations as cite}
+								<li>
+									<span class="cite-section">{cite.section}</span>
+									<span class="cite-relevance">{cite.relevance}</span>
+									{#if cite.exploitId}
+										<span class="cite-exploit">({cite.exploitId})</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -133,7 +205,28 @@
 			</button>
 
 			{#if isOpen}
+				{@const fullCombo = getCombo(engine.id)}
 				<div class="combo-detail">
+					{#if fullCombo}
+						{@const tb = tierBadge(fullCombo.tier)}
+						<div class="tier-row">
+							<span class="tier-badge" style:color={tb.color} style:border-color={tb.color}>
+								{tb.label}
+							</span>
+							<span class="tier-description">{tb.description}</span>
+						</div>
+
+						{#if fullCombo.ambiguity}
+							<div class="ambiguity-warning">
+								<strong>⚠ Rules ambiguity:</strong>
+								{fullCombo.ambiguity.question}
+								{#if fullCombo.ambiguity.exploitId}
+									<span class="exploit-link">(see {fullCombo.ambiguity.exploitId} in admin)</span>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+
 					<h5 class="detail-title">How it works</h5>
 					<p class="detail-chain">{engine.chain}</p>
 
@@ -173,6 +266,30 @@
 										>
 											Add
 										</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if fullCombo && fullCombo.counters.length > 0}
+						<h5 class="detail-title">Counters</h5>
+						<ul class="counters-list">
+							{#each fullCombo.counters as counter}
+								<li>{counter}</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if fullCombo && fullCombo.ruleCitations.length > 0}
+						<h5 class="detail-title">Rule basis</h5>
+						<ul class="citations-list">
+							{#each fullCombo.ruleCitations as cite}
+								<li>
+									<span class="cite-section">{cite.section}</span>
+									<span class="cite-relevance">{cite.relevance}</span>
+									{#if cite.exploitId}
+										<span class="cite-exploit">({cite.exploitId})</span>
 									{/if}
 								</li>
 							{/each}
@@ -436,5 +553,102 @@
 		font-size: var(--text-sm);
 		color: var(--text-muted);
 		margin: 0 0 var(--space-3);
+	}
+
+	/* Tier badge */
+	.tier-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3);
+		padding-bottom: var(--space-3);
+		border-bottom: 1px solid var(--border);
+		flex-wrap: wrap;
+	}
+	.tier-badge {
+		font-family: var(--font-display);
+		font-size: var(--text-xs);
+		font-weight: var(--font-bold);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: var(--space-1) var(--space-2);
+		border: 1px solid currentColor;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		flex-shrink: 0;
+	}
+	.tier-description {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		flex: 1;
+		min-width: 0;
+	}
+
+	/* Ambiguity warning */
+	.ambiguity-warning {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		background: rgba(245, 158, 11, 0.08);
+		border: 1px solid rgba(245, 158, 11, 0.2);
+		border-radius: var(--radius-sm);
+		padding: var(--space-2) var(--space-3);
+		margin-bottom: var(--space-3);
+		line-height: 1.5;
+	}
+	.ambiguity-warning strong {
+		color: var(--gold);
+		font-weight: var(--font-bold);
+	}
+	.exploit-link {
+		display: inline-block;
+		margin-left: var(--space-1);
+		color: var(--text-muted);
+		font-family: var(--font-mono);
+		font-size: 10px;
+	}
+
+	/* Counters list */
+	.counters-list {
+		margin: 0 0 var(--space-3);
+		padding-left: var(--space-4);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.counters-list li {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		line-height: 1.5;
+	}
+
+	/* Rule citations list */
+	.citations-list {
+		margin: 0 0 var(--space-3);
+		padding-left: var(--space-4);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.citations-list li {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		line-height: 1.5;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.cite-section {
+		font-family: var(--font-mono);
+		color: var(--gold);
+		font-weight: var(--font-bold);
+	}
+	.cite-relevance {
+		color: var(--text-muted);
+	}
+	.cite-exploit {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		color: var(--text-muted);
+		opacity: 0.7;
 	}
 </style>
