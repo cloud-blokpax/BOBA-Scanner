@@ -484,6 +484,87 @@ export function evaluateBonusPlays(
 // ── Optimal Playbook Builder ────────────────────────────────
 
 /**
+ * Iteratively upgrade a playbook's DBS utilization.
+ *
+ * After Phase A fills 30 slots cheaply, this pass swaps low-DBS plays for
+ * higher-DBS replacements that share a category. Each swap must:
+ *   - Not touch combo engine core cards (those define the strategy)
+ *   - Not touch BPLs (they have separate netValue evaluation)
+ *   - Have a replacement with strictly higher DBS than the current play
+ *   - Share at least one category with the current play (preserves role)
+ *   - Keep total DBS ≤ cap after the swap
+ *
+ * Mutates `selected` in place. Returns the number of swaps performed.
+ *
+ * Terminates when no further improvement is possible or 100 iterations elapse.
+ */
+function upgradePlaybookDBS(
+	selected: PlayCard[],
+	universe: PlayCard[],
+	archetype: PlaybookArchetype,
+	dbsCap: number,
+	rationale: Record<string, string>
+): number {
+	const protectedNames = new Set<string>();
+	for (const engineId of archetype.comboEngines) {
+		const engine = COMBO_ENGINES.find((e) => e.id === engineId);
+		if (!engine) continue;
+		for (const cardName of engine.coreCards) protectedNames.add(cardName);
+	}
+
+	const MAX_ITERATIONS = 100;
+	let swaps = 0;
+
+	for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+		const currentDBS = selected.reduce((sum, p) => sum + p.dbs, 0);
+		const headroom = dbsCap - currentDBS;
+
+		// Lowest-DBS replaceable plays first
+		const replaceable = selected
+			.filter((p) => p.type !== 'BPL')
+			.filter((p) => !protectedNames.has(p.name))
+			.slice()
+			.sort((a, b) => a.dbs - b.dbs);
+
+		let didSwap = false;
+
+		for (const current of replaceable) {
+			const currentCats = new Set(categorizePlay(current));
+			const maxReplacementDBS = current.dbs + headroom;
+
+			const replacement = universe
+				.filter((p) => p.type !== 'BPL')
+				.filter((p) => !selected.some((s) => s.name === p.name))
+				.filter((p) => p.dbs > current.dbs)
+				.filter((p) => p.dbs <= maxReplacementDBS)
+				.filter((p) => {
+					const cats = categorizePlay(p);
+					return cats.some((c) => currentCats.has(c));
+				})
+				.sort((a, b) => b.dbs - a.dbs)[0];
+
+			if (replacement) {
+				const idx = selected.findIndex((p) => p.name === current.name);
+				if (idx !== -1) {
+					const oldDBS = current.dbs;
+					selected[idx] = replacement;
+					delete rationale[current.name];
+					rationale[replacement.name] =
+						`Upgraded from ${current.name} (+${replacement.dbs - oldDBS} DBS)`;
+					didSwap = true;
+					swaps++;
+					break; // Restart outer loop with fresh sort
+				}
+			}
+		}
+
+		if (!didSwap) break;
+	}
+
+	return swaps;
+}
+
+/**
  * Build the ideal 30-card playbook for an archetype from a filtered universe.
  *
  * Algorithm:
@@ -595,7 +676,14 @@ export function buildOptimalPlaybook(
 		);
 	}
 
-	// 4. Bonus plays — pick best by netValue, respecting bonus mode cap
+	// 4. DBS upgrade pass — swap low-DBS plays for higher-DBS replacements
+	//    within the same category until the cap is approached.
+	if (dbsCap !== Infinity) {
+		upgradePlaybookDBS(selected, standardUniverse, archetype, dbsCap, rationale);
+	}
+
+	// 5. Bonus plays — pick best by netValue, respecting bonus mode cap.
+	//    Run AFTER the upgrade pass so dilution math reflects the final standard deck.
 	if (maxBonusForMode > 0 && bonusUniverse.length > 0) {
 		const standardSelected = selected.filter((p) => p.type !== 'BPL');
 		const evals = evaluateBonusPlays(
