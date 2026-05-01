@@ -57,6 +57,14 @@ interface PipelineResult {
 			set_code: string | null;
 		} | null;
 		resolverPath: string | null;
+		geometry?: {
+			detection_method: 'corner_detected' | 'centered_fallback';
+			px_per_mm: number | null;
+			aspect_ratio: number | null;
+			rectification_applied: boolean;
+			canonical_size: string;
+			corners: Array<{ x: number; y: number }> | null;
+		};
 	};
 }
 
@@ -300,6 +308,30 @@ function printSummary(r: BenchReport): void {
 }
 
 function printFailureBreakdown(r: BenchReport): void {
+	// Doc 1, Phase 6: geometry detection summary, the single most important
+	// signal for whether the rebuild worked.
+	const geomCounts = r.results.reduce(
+		(acc, res) => {
+			const m = res.pipeline._raw?.geometry?.detection_method;
+			if (m === 'corner_detected') acc.detected++;
+			else if (m === 'centered_fallback') acc.fallback++;
+			else acc.unknown++;
+			return acc;
+		},
+		{ detected: 0, fallback: 0, unknown: 0 }
+	);
+	const pxs = r.results
+		.map((res) => res.pipeline._raw?.geometry?.px_per_mm)
+		.filter((v): v is number => typeof v === 'number');
+	const avgPx =
+		pxs.length > 0 ? (pxs.reduce((a, b) => a + b, 0) / pxs.length).toFixed(2) : 'n/a';
+	console.log(
+		`\n=== GEOMETRY ===\n  corner_detected:   ${geomCounts.detected}/${r.totalImages}` +
+			`\n  centered_fallback: ${geomCounts.fallback}/${r.totalImages}` +
+			`\n  unknown:           ${geomCounts.unknown}/${r.totalImages}` +
+			`\n  avg px/mm (detected only): ${avgPx}`
+	);
+
 	const failed = r.results.filter((res) => !res.match.fullMatch);
 	if (failed.length === 0) {
 		console.log('\nNo failures. Suspicious — verify ground-truth normalization.');

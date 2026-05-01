@@ -5,6 +5,7 @@
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { cropToCanonical, type ViewfinderRect } from '$lib/services/constrained-crop';
+	import { detectCard, type CardDetection } from '$lib/services/upload-card-detector';
 	import { scanImage, scanState, resetScanner, startNewScan, isScanStale } from '$lib/stores/scanner.svelte';
 	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
 	import { showToast } from '$lib/stores/toast.svelte';
@@ -363,6 +364,7 @@
 
 		let rawBitmap: ImageBitmap | null = null;
 		let croppedBitmap: ImageBitmap | null = null;
+		let liveCardDetection: CardDetection | null = null;
 		try {
 			rawBitmap = await captureFrame(videoEl);
 
@@ -389,9 +391,20 @@
 			// canonical 500×700 frame for Tier 1/2. Tier 3 still sees the full
 			// bitmap via the recognition pipeline (Claude benefits from context).
 			const viewfinder = computeViewfinderInVideoCoords();
-			croppedBitmap = await cropToCanonical(rawBitmap, viewfinder ?? {
-				x: 0, y: 0, width: rawBitmap.width, height: rawBitmap.height
-			});
+			// Geometry rebuild (Doc 1): detect corners first; pass homography
+			// through to cropToCanonical so the canonical is a true perspective
+			// warp, not a viewfinder rectangle.
+			liveCardDetection = await detectCard(rawBitmap, { mode: 'live' });
+			croppedBitmap = await cropToCanonical(
+				rawBitmap,
+				viewfinder ?? {
+					x: liveCardDetection.boundingRect.x,
+					y: liveCardDetection.boundingRect.y,
+					width: liveCardDetection.boundingRect.width,
+					height: liveCardDetection.boundingRect.height
+				},
+				liveCardDetection.homography
+			);
 
 			// Keep a cropped data URL for the scan-history thumbnail — the
 			// existing UI expects one and the cropped frame is prettier than
@@ -439,7 +452,17 @@
 					gameHint,
 					alignmentStateAtCapture: alignmentAtCapture,
 					viewfinder: viewfinder ?? null,
-					liveConsensusSnapshot: preConsensus
+					liveConsensusSnapshot: preConsensus,
+					geometry: liveCardDetection
+						? {
+								detection_method: liveCardDetection.method,
+								px_per_mm_at_capture: liveCardDetection.pxPerMm,
+								aspect_ratio_at_capture: liveCardDetection.aspectRatio,
+								rectification_applied: !!liveCardDetection.homography,
+								canonical_size: '750x1050',
+								detected_corners: liveCardDetection.corners
+							}
+						: null
 				}, myGen);
 			} finally {
 				// scanImage took ownership of croppedBitmap; null the local

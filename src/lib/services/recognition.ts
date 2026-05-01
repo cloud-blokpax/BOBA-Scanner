@@ -49,7 +49,8 @@ import {
 	updateScanOutcome as writerUpdateScanOutcome
 } from './scan-writer';
 import { cropToCanonical } from './constrained-crop';
-import { detectCardRect, type CardRect } from './upload-card-detector';
+import { detectCard, type CardDetection, type CardRect } from './upload-card-detector';
+import type { ScanWriteGeometry } from './scan-writer.types';
 import { captureScanTelemetry, getBatteryStatus } from './scan-telemetry';
 import { parseExifSafe } from '$lib/utils/exif';
 import { checkpoint } from './scan-checkpoint';
@@ -103,6 +104,8 @@ interface ScanWriteExtras {
 	alignmentStateAtCapture: 'no_card' | 'partial' | 'ready' | null;
 	/** Viewfinder rect (source-pixel coords) that was used to crop the bitmap. */
 	viewfinder: { x: number; y: number; width: number; height: number } | null;
+	/** Doc 1, Phase 6: per-capture geometry telemetry from corner detection. */
+	geometry: ScanWriteGeometry | null;
 }
 
 /**
@@ -194,7 +197,10 @@ async function openScanRow(
 		qualityGateFailReason: extras.qualitySignals?.failReason ?? null,
 
 		// Decision context (replay / counterfactual)
-		decisionContext: buildDecisionContext()
+		decisionContext: buildDecisionContext(),
+
+		// Doc 1, Phase 6: per-capture geometry telemetry
+		geometry: extras.geometry
 	});
 	return scanId;
 }
@@ -309,6 +315,10 @@ export async function recognizeCard(
 		liveConsensusSnapshot?:
 			| import('./live-ocr-coordinator').LiveOCRSnapshot
 			| null;
+		/** Doc 1, Phase 6: caller-supplied geometry from live-mode corner
+		 *  detection. Upload mode runs detectCard inside this function and
+		 *  ignores any caller-supplied geometry. */
+		geometry?: ScanWriteGeometry | null;
 	}
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
@@ -420,11 +430,27 @@ export async function recognizeCard(
 	let workingBitmap: ImageBitmap = bitmap;
 	let croppedBitmapOwned: ImageBitmap | null = null;
 	let detectedCardRect: CardRect | null = null;
+	let detectedCardDetection: CardDetection | null = null;
 	if (imageSource instanceof File) {
 		try {
 			checkpoint(traceId, 'card_detect:start', performance.now() - startTime);
-			detectedCardRect = await detectCardRect(bitmap);
-			const cropped = await cropToCanonical(bitmap, detectedCardRect);
+			const detection = await detectCard(bitmap, { mode: 'upload' });
+			detectedCardDetection = detection;
+			detectedCardRect = {
+				x: detection.boundingRect.x,
+				y: detection.boundingRect.y,
+				width: detection.boundingRect.width,
+				height: detection.boundingRect.height,
+				method:
+					detection.method === 'corner_detected'
+						? 'corner_detected'
+						: 'centered_fallback'
+			};
+			const cropped = await cropToCanonical(
+				bitmap,
+				detectedCardRect,
+				detection.homography
+			);
 			croppedBitmapOwned = cropped;
 			workingBitmap = cropped;
 			checkpoint(traceId, 'card_detect:done', performance.now() - startTime, {
@@ -432,7 +458,10 @@ export async function recognizeCard(
 				x: detectedCardRect.x,
 				y: detectedCardRect.y,
 				width: detectedCardRect.width,
-				height: detectedCardRect.height
+				height: detectedCardRect.height,
+				rectification_applied: !!detection.homography,
+				px_per_mm: detection.pxPerMm,
+				aspect_ratio: detection.aspectRatio
 			});
 		} catch (err) {
 			checkpoint(traceId, 'card_detect:threw', performance.now() - startTime, {
@@ -475,6 +504,19 @@ export async function recognizeCard(
 		};
 	}
 
+	// Doc 1, Phase 6: geometry telemetry. Upload mode just ran detectCard
+	// above; live mode passes the detection through `options.geometry`.
+	const resolvedGeometry: ScanWriteGeometry | null = detectedCardDetection
+		? {
+				detection_method: detectedCardDetection.method,
+				px_per_mm_at_capture: detectedCardDetection.pxPerMm,
+				aspect_ratio_at_capture: detectedCardDetection.aspectRatio,
+				rectification_applied: !!detectedCardDetection.homography,
+				canonical_size: '750x1050',
+				detected_corners: detectedCardDetection.corners
+			}
+		: (options?.geometry ?? null);
+
 	const scanWriteExtras: ScanWriteExtras = {
 		telemetry: shutterTelemetry,
 		exif: shutterExif,
@@ -483,7 +525,8 @@ export async function recognizeCard(
 		photoHeight: bitmap.height,
 		captureSource,
 		alignmentStateAtCapture: options?.alignmentStateAtCapture ?? null,
-		viewfinder: options?.viewfinder ?? null
+		viewfinder: options?.viewfinder ?? null,
+		geometry: resolvedGeometry
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────

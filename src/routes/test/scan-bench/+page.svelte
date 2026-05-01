@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { runCanonicalTier1 } from '$lib/services/tier1-canonical';
-	import { detectCardRect } from '$lib/services/upload-card-detector';
+	import { detectCard } from '$lib/services/upload-card-detector';
 	import { cropToCanonical } from '$lib/services/constrained-crop';
 	import { initPaddleOCR } from '$lib/services/paddle-ocr';
 
@@ -17,14 +17,14 @@
 		const blob = await (await fetch(dataUrl)).blob();
 		const bitmap = await createImageBitmap(blob);
 
-		const rect = await detectCardRect(bitmap);
+		const detection = await detectCard(bitmap, { mode: 'upload' });
 		const viewfinder = {
-			x: rect.x,
-			y: rect.y,
-			width: rect.width,
-			height: rect.height
+			x: detection.boundingRect.x,
+			y: detection.boundingRect.y,
+			width: detection.boundingRect.width,
+			height: detection.boundingRect.height
 		};
-		const canonical = await cropToCanonical(bitmap, viewfinder);
+		const canonical = await cropToCanonical(bitmap, viewfinder, detection.homography);
 
 		const tier1 = await runCanonicalTier1(canonical, game);
 
@@ -66,7 +66,17 @@
 
 				// Which catalog lookup path ran. Null until tier1 exposes it.
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				resolverPath: (tier1 as any).resolverPath ?? null
+				resolverPath: (tier1 as any).resolverPath ?? null,
+
+				// Doc 1, Phase 6: geometry trace for bench delta
+				geometry: {
+					detection_method: detection.method,
+					px_per_mm: detection.pxPerMm,
+					aspect_ratio: detection.aspectRatio,
+					rectification_applied: !!detection.homography,
+					canonical_size: '750x1050',
+					corners: detection.corners
+				}
 			}
 		};
 	}
