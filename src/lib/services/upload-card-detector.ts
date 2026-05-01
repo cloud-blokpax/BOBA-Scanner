@@ -81,8 +81,14 @@ const DETECT_LONG_EDGE_DEFAULT = 800;
 const DETECT_LONG_EDGE_LIVE = 600;
 const MIN_AREA_FRAC = 0.15;
 
-const ASPECT_PRE_WARP_MIN = 1.32;
-const ASPECT_PRE_WARP_MAX = 1.48;
+// Pre-warp aspect tolerance — wide because perspective distortion shrinks
+// or stretches detected aspect significantly. Bench evidence: held cards
+// at 15–25° tilt produce aspects 1.34–1.52 even when fully visible. The
+// gate's only job is to reject obvious non-cards (table edges, book spines,
+// phone screens at ~0.56 aspect, posters at >1.7); the post-warp canonical
+// is always exactly 1.4 because we force it that way.
+const ASPECT_PRE_WARP_MIN = 1.28;
+const ASPECT_PRE_WARP_MAX = 1.55;
 
 export interface DetectCardOptions {
 	mode?: 'live' | 'upload';

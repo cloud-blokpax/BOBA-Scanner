@@ -31,16 +31,36 @@ export interface Region {
 
 import { CANONICAL_W, CANONICAL_H } from './upload-card-detector';
 
+/**
+ * Card-relative pixel coords on the rectified 750×1050 canonical (12 px/mm).
+ *
+ * Re-measured in Doc 1.1 against the actual physical card layout — Doc 1's
+ * coords were a mechanical conversion from old fractional bounds that
+ * assumed canonical-fills-frame, not canonical-is-card.
+ *
+ * Reference card: BoBA Griffey Edition Hero (BBF-82 Dumper, BF-88 Escape Artist)
+ * and Wonders Existence (350/401 Lunar Empowerment, 279/401 Punish).
+ *
+ * Margins use 4mm = 48px. Card text-region heights are deliberately generous
+ * (3-7mm tall depending on field) — region-OCR upsamples internally and a
+ * slightly oversized box is far better than a slightly undersized one.
+ */
 export const REGIONS = {
 	boba: {
-		card_number: { x: 30,  y: 966,  w: 225, h: 63  },
-		hero_name:   { x: 30,  y: 42,   w: 412, h: 105 },
-		set_code:    { x: 30,  y: 1008, w: 90,  h: 36  }
+		// Bottom-left card_number stamp. "BBF-82" / "BF-88" / "PL-71" / "GLBF-170".
+		card_number: { x: 48,  y: 1008, w: 216, h: 48  },
+		// Top-left hero name. Up to 23 chars ("Barry 'Cutback' Sanders").
+		hero_name:   { x: 48,  y: 48,   w: 456, h: 72  },
+		// "2026" year stamp below card_number.
+		set_code:    { x: 48,  y: 1032, w: 96,  h: 36  }
 	},
 	wonders: {
-		card_number: { x: 30,  y: 987,  w: 225, h: 53  },
-		card_name:   { x: 38,  y: 53,   w: 525, h: 84  },
-		ocm_serial:  { x: 0,   y: 367,  w: 45,  h: 315 }
+		// Bottom-left "279/401" / "350/401" — print-run notation.
+		card_number: { x: 48,  y: 1004, w: 216, h: 36  },
+		// Top card name, up to 35 chars ("Jarthex Pyrethane, Lord of Darkiron").
+		card_name:   { x: 60,  y: 60,   w: 528, h: 84  },
+		// Left-edge serial strip (vertical) for OCM detection.
+		ocr_serial:  { x: 0,   y: 367,  w: 45,  h: 315 }
 	}
 } as const;
 

@@ -28,6 +28,24 @@
 
 		const tier1 = await runCanonicalTier1(canonical, game);
 
+		// Doc 1.1 — when DEBUG_DUMP is set, also return the canonical PNG so
+		// the harness can write it to disk for visual inspection. Lets us see
+		// whether the rectified image actually contains the card text where
+		// REGIONS expects it.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let canonicalPng: number[] | null = null;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		if ((window as any).__BENCH_DUMP_CANONICAL === true) {
+			const cnv = new OffscreenCanvas(canonical.width, canonical.height);
+			const ctx2 = cnv.getContext('2d');
+			if (ctx2) {
+				ctx2.drawImage(canonical, 0, 0);
+				const blob = await cnv.convertToBlob({ type: 'image/png' });
+				const buf = new Uint8Array(await blob.arrayBuffer());
+				canonicalPng = Array.from(buf);
+			}
+		}
+
 		bitmap.close?.();
 		canonical.close?.();
 
@@ -76,7 +94,9 @@
 					rectification_applied: !!detection.homography,
 					canonical_size: '750x1050',
 					corners: detection.corners
-				}
+				},
+
+				canonicalPng
 			}
 		};
 	}
@@ -88,6 +108,26 @@
 		(window as any).__SCAN_BENCH_READY = true;
 		console.log('[scan-bench] ready');
 	});
+
+	// Pin the page against any navigation that would destroy the
+	// __runBenchScan function reference. Bench saw:
+	//   "Execution context was destroyed, most likely because of a navigation"
+	// on 9 of 20 runs. Vite HMR, link prefetches, and unhandled promise
+	// rejections that bubble to a redirect can all do this.
+	if (typeof window !== 'undefined') {
+		// Block beforeunload during a bench run.
+		window.addEventListener('beforeunload', (e) => {
+			e.preventDefault();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(e as any).returnValue = '';
+		});
+		// Catch and log unhandled rejections rather than letting them
+		// trigger SvelteKit error navigation.
+		window.addEventListener('unhandledrejection', (ev) => {
+			console.error('[scan-bench] unhandled rejection (suppressed):', ev.reason);
+			ev.preventDefault();
+		});
+	}
 </script>
 
 <main style="padding: 2rem; font-family: system-ui;">

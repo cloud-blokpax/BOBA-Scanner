@@ -147,6 +147,15 @@ async function main() {
 		await page.goto(BENCH_PAGE_URL, { waitUntil: 'networkidle' });
 		await page.waitForFunction('window.__SCAN_BENCH_READY === true', { timeout: 60_000 });
 
+		if (process.env.BENCH_DUMP_CANONICAL === 'true') {
+			await page.evaluate(() => {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				(window as any).__BENCH_DUMP_CANONICAL = true;
+			});
+			console.log('[bench] BENCH_DUMP_CANONICAL=true; saving canonicals to tests/scan-bench/canonicals/');
+			mkdirSync(resolve(BENCH_ROOT, 'canonicals'), { recursive: true });
+		}
+
 		for (const filename of imageFiles) {
 			const gt = groundTruth[filename];
 			const filePath = resolve(IMAGES_DIR, filename);
@@ -165,17 +174,59 @@ async function main() {
 			const start = Date.now();
 			let pipelineResult: PipelineResult | null = null;
 			const errors: string[] = [];
-			try {
-				pipelineResult = (await page.evaluate(
-					async ([url, game]) =>
+
+			// Retry once on context-destroyed / function-missing errors.
+			// Bench seen on 9/20 photos post-Doc-1: page navigates mid-run,
+			// __runBenchScan disappears. Re-acquire the page and try again.
+			for (let attempt = 0; attempt < 2 && !pipelineResult; attempt++) {
+				try {
+					// Verify __runBenchScan exists before evaluating.
+					const exists = await page.evaluate(
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						(window as any).__runBenchScan(url, game),
-					[dataUrl, gt.game]
-				)) as PipelineResult;
-			} catch (err) {
-				errors.push(String(err));
+						() => typeof (window as any).__runBenchScan === 'function'
+					);
+					if (!exists) {
+						console.warn(`[bench] ${filename}: __runBenchScan missing, re-acquiring page...`);
+						await page.goto(BENCH_PAGE_URL, { waitUntil: 'domcontentloaded' });
+						await page.waitForFunction('window.__SCAN_BENCH_READY === true', {
+							timeout: 60_000
+						});
+					}
+
+					pipelineResult = (await page.evaluate(
+						async ([url, game]) =>
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							(window as any).__runBenchScan(url, game),
+						[dataUrl, gt.game]
+					)) as PipelineResult;
+				} catch (err) {
+					errors.push(`attempt ${attempt + 1}: ${String(err)}`);
+					if (attempt === 0) {
+						// Force re-navigate before retry.
+						try {
+							await page.goto(BENCH_PAGE_URL, { waitUntil: 'domcontentloaded' });
+							await page.waitForFunction('window.__SCAN_BENCH_READY === true', {
+								timeout: 60_000
+							});
+						} catch (navErr) {
+							errors.push(`re-navigate failed: ${String(navErr)}`);
+						}
+					}
+				}
 			}
+
 			const latencyMs = Date.now() - start;
+
+			// Doc 1.1 — dump rectified canonical PNG for visual inspection.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const dumpBytes = (pipelineResult as any)?._raw?.canonicalPng;
+			if (dumpBytes && Array.isArray(dumpBytes)) {
+				const out = resolve(BENCH_ROOT, 'canonicals', filename.replace(/\.jpg$/, '.png'));
+				writeFileSync(out, Buffer.from(dumpBytes));
+				// Strip from result so it doesn't bloat the report JSON.
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				delete (pipelineResult as any)._raw.canonicalPng;
+			}
 
 			const r: BenchResult = {
 				filename,
@@ -308,6 +359,18 @@ function printSummary(r: BenchReport): void {
 }
 
 function printFailureBreakdown(r: BenchReport): void {
+	// NEW (Doc 1.1) — surface harness-level errors that masked failures
+	// as "no _raw" in Doc 1's bench run.
+	const errd = r.results.filter((res) => res.errors && res.errors.length > 0);
+	if (errd.length > 0) {
+		console.log(`\n=== HARNESS ERRORS (${errd.length}/${r.totalImages}) ===`);
+		console.log('  These rows hit Playwright/page errors before the pipeline ran.');
+		console.log('  If many, the bench page is navigating mid-run — investigate first.');
+		for (const res of errd) {
+			console.log(`  ${res.filename}: ${res.errors[0].slice(0, 200)}`);
+		}
+	}
+
 	// Doc 1, Phase 6: geometry detection summary, the single most important
 	// signal for whether the rebuild worked.
 	const geomCounts = r.results.reduce(

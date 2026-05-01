@@ -10,6 +10,7 @@ dist/
 .vercel
 scripts/output/
 static/vendor/
+tests/scan-bench/canonicals/
 
 # Prevent accidentally committing AI-generated review documents
 *-REVIEW.md
