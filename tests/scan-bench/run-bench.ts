@@ -1,0 +1,291 @@
+/**
+ * Scan pipeline benchmark runner.
+ *
+ * Runs the production scan pipeline against tests/scan-bench/images/ and
+ * emits a JSON report at tests/scan-bench/reports/{ISO timestamp}.json.
+ *
+ * Implementation note: the scan pipeline (recognition.ts, paddle-ocr.ts,
+ * upload-card-detector.ts) depends on browser globals (ImageBitmap,
+ * OffscreenCanvas, fetch for ONNX models, the OpenCV.js global). We run
+ * inside a headless Playwright Chromium against a dev-server-served test
+ * page (/test/scan-bench) that loads the actual production pipeline.
+ *
+ * This means the harness measures the REAL pipeline behavior, not a Node
+ * approximation. Latency numbers are real. OCR confidences are real.
+ */
+
+import { chromium, type Page } from 'playwright';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BENCH_ROOT = __dirname;
+const IMAGES_DIR = resolve(BENCH_ROOT, 'images');
+const REPORTS_DIR = resolve(BENCH_ROOT, 'reports');
+const GROUND_TRUTH_PATH = resolve(BENCH_ROOT, 'ground-truth.json');
+
+const DEV_SERVER = process.env.BENCH_DEV_SERVER || 'http://localhost:5173';
+const BENCH_PAGE_URL = `${DEV_SERVER}/test/scan-bench`;
+
+interface GroundTruthEntry {
+	card_number: string;
+	name: string;
+	parallel: string;
+	game: 'boba' | 'wonders';
+	condition: string;
+}
+
+interface PipelineResult {
+	cardNumber: string | null;
+	name: string | null;
+	parallel: string | null;
+	cardId: string | null;
+	confidence: number;
+	winningTier: string | null;
+	fallbackUsed: string | null;
+	ocrStrategy: string | null;
+}
+
+interface BenchResult {
+	filename: string;
+	groundTruth: GroundTruthEntry;
+	pipeline: PipelineResult;
+	match: {
+		cardNumberCorrect: boolean;
+		nameCorrect: boolean;
+		parallelCorrect: boolean;
+		fullMatch: boolean;
+	};
+	latencyMs: number;
+	errors: string[];
+}
+
+interface BenchReport {
+	generatedAt: string;
+	appBuildSha: string | null;
+	pipelineVersion: string | null;
+	totalImages: number;
+	results: BenchResult[];
+	summary: {
+		overall: {
+			fullMatch: number;
+			cardNumberCorrect: number;
+			nameCorrect: number;
+			parallelCorrect: number;
+		};
+		byCondition: Record<string, { fullMatch: number; total: number; avgLatencyMs: number }>;
+		byCard: Record<string, { fullMatch: number; total: number }>;
+		avgLatencyMs: number;
+		haikuFallbackRate: number;
+	};
+}
+
+async function main() {
+	if (!existsSync(IMAGES_DIR)) {
+		console.error(`[bench] images dir not found at ${IMAGES_DIR}. See README.`);
+		process.exit(1);
+	}
+	if (!existsSync(GROUND_TRUTH_PATH)) {
+		console.error(`[bench] ground-truth.json not found. See README.`);
+		process.exit(1);
+	}
+	if (!existsSync(REPORTS_DIR)) mkdirSync(REPORTS_DIR, { recursive: true });
+
+	const groundTruth: Record<string, GroundTruthEntry> = JSON.parse(
+		readFileSync(GROUND_TRUTH_PATH, 'utf-8')
+	);
+
+	const imageFiles = readdirSync(IMAGES_DIR)
+		.filter((f) => /\.(jpe?g|png|heic)$/i.test(f))
+		.sort();
+
+	if (imageFiles.length === 0) {
+		console.error(`[bench] no images found in ${IMAGES_DIR}. See README.`);
+		process.exit(1);
+	}
+
+	const missingGt = imageFiles.filter((f) => !groundTruth[f]);
+	if (missingGt.length > 0) {
+		console.error('[bench] images missing ground-truth entries:', missingGt);
+		process.exit(1);
+	}
+
+	console.log(`[bench] Found ${imageFiles.length} images. Launching headless Chromium…`);
+
+	const browser = await chromium.launch({ headless: true });
+	let page: Page | null = null;
+	const results: BenchResult[] = [];
+
+	try {
+		page = await browser.newPage();
+		page.on('console', (msg) => {
+			if (msg.type() === 'error') console.error(`[browser] ${msg.text()}`);
+		});
+
+		await page.goto(BENCH_PAGE_URL, { waitUntil: 'networkidle' });
+		await page.waitForFunction('window.__SCAN_BENCH_READY === true', { timeout: 60_000 });
+
+		for (const filename of imageFiles) {
+			const gt = groundTruth[filename];
+			const filePath = resolve(IMAGES_DIR, filename);
+			const buf = readFileSync(filePath);
+			const base64 = buf.toString('base64');
+			const lower = filename.toLowerCase();
+			const mime = lower.endsWith('.png')
+				? 'image/png'
+				: lower.endsWith('.heic')
+					? 'image/heic'
+					: 'image/jpeg';
+			const dataUrl = `data:${mime};base64,${base64}`;
+
+			console.log(`[bench] ${filename} (${gt.condition})…`);
+
+			const start = Date.now();
+			let pipelineResult: PipelineResult | null = null;
+			const errors: string[] = [];
+			try {
+				pipelineResult = (await page.evaluate(
+					async ([url, game]) =>
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						(window as any).__runBenchScan(url, game),
+					[dataUrl, gt.game]
+				)) as PipelineResult;
+			} catch (err) {
+				errors.push(String(err));
+			}
+			const latencyMs = Date.now() - start;
+
+			const r: BenchResult = {
+				filename,
+				groundTruth: gt,
+				pipeline: pipelineResult ?? {
+					cardNumber: null,
+					name: null,
+					parallel: null,
+					cardId: null,
+					confidence: 0,
+					winningTier: null,
+					fallbackUsed: null,
+					ocrStrategy: null
+				},
+				match: {
+					cardNumberCorrect:
+						normalizeCardNumber(pipelineResult?.cardNumber) ===
+						normalizeCardNumber(gt.card_number),
+					nameCorrect: normalizeName(pipelineResult?.name) === normalizeName(gt.name),
+					parallelCorrect:
+						normalizeParallel(pipelineResult?.parallel) === normalizeParallel(gt.parallel),
+					fullMatch: false
+				},
+				latencyMs,
+				errors
+			};
+			r.match.fullMatch =
+				r.match.cardNumberCorrect && r.match.nameCorrect && r.match.parallelCorrect;
+			results.push(r);
+			console.log(
+				`   → ${r.match.fullMatch ? '✅' : '❌'} cn=${r.pipeline.cardNumber} name=${r.pipeline.name} parallel=${r.pipeline.parallel} (${latencyMs}ms)`
+			);
+		}
+	} finally {
+		if (page) await page.close();
+		await browser.close();
+	}
+
+	const report = buildReport(results);
+	const ts = new Date().toISOString().replace(/[:.]/g, '-');
+	const reportPath = resolve(REPORTS_DIR, `${ts}.json`);
+	writeFileSync(reportPath, JSON.stringify(report, null, 2));
+	console.log(`\n[bench] Report saved to ${reportPath}`);
+	printSummary(report);
+}
+
+function normalizeCardNumber(s: string | null | undefined): string {
+	if (!s) return '';
+	return s.toUpperCase().replace(/[^A-Z0-9/-]/g, '').trim();
+}
+
+function normalizeName(s: string | null | undefined): string {
+	if (!s) return '';
+	return s.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
+
+function normalizeParallel(s: string | null | undefined): string {
+	if (!s) return '';
+	return s.toLowerCase().replace(/\s+/g, '').trim();
+}
+
+function buildReport(results: BenchResult[]): BenchReport {
+	const byCondition: BenchReport['summary']['byCondition'] = {};
+	const byCard: BenchReport['summary']['byCard'] = {};
+	for (const r of results) {
+		const c = r.groundTruth.condition;
+		if (!byCondition[c]) byCondition[c] = { fullMatch: 0, total: 0, avgLatencyMs: 0 };
+		byCondition[c].total++;
+		byCondition[c].avgLatencyMs += r.latencyMs;
+		if (r.match.fullMatch) byCondition[c].fullMatch++;
+
+		const cardId = r.filename.split('_')[0];
+		if (!byCard[cardId]) byCard[cardId] = { fullMatch: 0, total: 0 };
+		byCard[cardId].total++;
+		if (r.match.fullMatch) byCard[cardId].fullMatch++;
+	}
+	for (const c of Object.keys(byCondition)) {
+		byCondition[c].avgLatencyMs = Math.round(byCondition[c].avgLatencyMs / byCondition[c].total);
+	}
+
+	const total = results.length;
+	const fullMatch = results.filter((r) => r.match.fullMatch).length;
+	const cardNumberCorrect = results.filter((r) => r.match.cardNumberCorrect).length;
+	const nameCorrect = results.filter((r) => r.match.nameCorrect).length;
+	const parallelCorrect = results.filter((r) => r.match.parallelCorrect).length;
+	const haikuFallback = results.filter((r) => r.pipeline.fallbackUsed === 'haiku').length;
+
+	return {
+		generatedAt: new Date().toISOString(),
+		appBuildSha: process.env.GIT_SHA || null,
+		pipelineVersion: null,
+		totalImages: total,
+		results,
+		summary: {
+			overall: { fullMatch, cardNumberCorrect, nameCorrect, parallelCorrect },
+			byCondition,
+			byCard,
+			avgLatencyMs: Math.round(results.reduce((a, r) => a + r.latencyMs, 0) / total),
+			haikuFallbackRate: total > 0 ? haikuFallback / total : 0
+		}
+	};
+}
+
+function printSummary(r: BenchReport): void {
+	console.log('\n=== SUMMARY ===');
+	console.log(`Total: ${r.totalImages}`);
+	console.log(
+		`Full match: ${r.summary.overall.fullMatch}/${r.totalImages} (${(
+			(100 * r.summary.overall.fullMatch) /
+			r.totalImages
+		).toFixed(1)}%)`
+	);
+	console.log(`Card number correct: ${r.summary.overall.cardNumberCorrect}/${r.totalImages}`);
+	console.log(`Name correct: ${r.summary.overall.nameCorrect}/${r.totalImages}`);
+	console.log(`Parallel correct: ${r.summary.overall.parallelCorrect}/${r.totalImages}`);
+	console.log(`Avg latency: ${r.summary.avgLatencyMs}ms`);
+	console.log(`Haiku fallback rate: ${(r.summary.haikuFallbackRate * 100).toFixed(1)}%`);
+	console.log('\nBy condition:');
+	for (const [c, s] of Object.entries(r.summary.byCondition)) {
+		console.log(
+			`  ${c}: ${s.fullMatch}/${s.total} (${((100 * s.fullMatch) / s.total).toFixed(0)}%) ` +
+				`avg ${s.avgLatencyMs}ms`
+		);
+	}
+	console.log('\nBy card:');
+	for (const [cid, s] of Object.entries(r.summary.byCard)) {
+		console.log(`  ${cid}: ${s.fullMatch}/${s.total}`);
+	}
+}
+
+main().catch((err) => {
+	console.error(err);
+	process.exit(1);
+});
