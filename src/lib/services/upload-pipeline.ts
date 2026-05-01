@@ -28,7 +28,7 @@ import {
 	type WondersParallel
 } from './parallel-classifier';
 import { ConsensusBuilder } from './consensus-builder';
-import { generateFrames, disposeFrames, UPLOAD_AUGMENTATIONS } from './upload-frame-generator';
+import { streamFrames, UPLOAD_AUGMENTATIONS } from './upload-frame-generator';
 import {
 	lookupCard,
 	lookupCardByCardNumberFuzzy,
@@ -75,7 +75,6 @@ export async function runUploadPipeline(
 ): Promise<UploadPipelineResult> {
 	await initPaddleOCR();
 
-	const frames = await generateFrames(sourceBitmap);
 	const builder = new ConsensusBuilder(1, game, {
 		minAgreement: UPLOAD_MIN_AGREEMENT,
 		minSummedConfidence: UPLOAD_MIN_SUMMED_CONFIDENCE
@@ -84,9 +83,15 @@ export async function runUploadPipeline(
 	const perFrameResults: UploadPerFrameResult[] = [];
 	let lastParallelCode: WondersParallel | null = null;
 	let lastParallelRuleFired: string | null = null;
+	let framesProcessed = 0;
 
-	try {
-		for (const frame of frames) {
+	// Stream frames one at a time, with the next augmentation pre-computed in
+	// parallel with the current frame's OCR. Bounds peak memory to ~32MB
+	// (current + next frame) instead of ~80MB (all 5) — stops iOS WebKit OOM
+	// on uploads. Augmentation work overlaps with OCR, and we early-exit once
+	// consensus is reached (subsequent frames can't improve a passed threshold).
+	for await (const { frame } of streamFrames(sourceBitmap)) {
+		try {
 			const regions = game === 'boba' ? REGIONS.boba : REGIONS.wonders;
 			const cardNumberReg = regionToPixels(regions.card_number, frame.width, frame.height);
 			const nameReg = regionToPixels(
@@ -154,9 +159,14 @@ export async function runUploadPipeline(
 
 			builder.tickFrame();
 			perFrameResults.push(frameRecord);
+			framesProcessed++;
+		} finally {
+			frame.close();
 		}
-	} finally {
-		disposeFrames(frames);
+
+		if (builder.getConsensus().reachedThreshold) {
+			break;
+		}
 	}
 
 	const consensus = builder.getConsensus();
@@ -222,7 +232,7 @@ export async function runUploadPipeline(
 		name,
 		parallel: parallelHumanName,
 		confidence: Math.min(cnAvg, nameAvg),
-		framesProcessed: frames.length,
+		framesProcessed,
 		consensusReached: consensus.reachedThreshold && !!card,
 		parallelCode: votedParallelCode ?? null,
 		parallelRuleFired: lastParallelRuleFired,
