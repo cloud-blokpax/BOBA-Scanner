@@ -72,6 +72,10 @@ export async function scanImage(
 		liveConsensusSnapshot?:
 			| import('$lib/services/live-ocr-coordinator').LiveOCRSnapshot
 			| null;
+		/** Doc 1, Phase 6: per-capture geometry telemetry from live corner
+		 *  detection. Upload mode ignores this — recognition.ts runs
+		 *  detectCard internally for File inputs. */
+		geometry?: import('$lib/services/scan-writer.types').ScanWriteGeometry | null;
 	},
 	generation?: number
 ): Promise<ScanResult | null> {

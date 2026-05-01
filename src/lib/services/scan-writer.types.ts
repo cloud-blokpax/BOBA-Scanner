@@ -33,6 +33,21 @@ export interface OpenSessionInput {
 	releaseGitSha?: string | null;
 }
 
+/**
+ * Geometry telemetry persisted on each scans row (Doc 1, Phase 6).
+ * Populated by the corner-detection + homography pipeline. Every code path
+ * that writes a `scans` row should set this when geometry is known; NULL is
+ * fine for paths that genuinely don't have geometry (e.g. manual capture).
+ */
+export interface ScanWriteGeometry {
+	detection_method: 'corner_detected' | 'centered_fallback';
+	px_per_mm_at_capture: number | null;
+	aspect_ratio_at_capture: number | null;
+	rectification_applied: boolean;
+	canonical_size: '750x1050' | '1500x2100';
+	detected_corners: Array<{ x: number; y: number }> | null;
+}
+
 export interface RecordScanInput {
 	sessionId: string;
 	gameId?: string;
@@ -80,6 +95,7 @@ export interface RecordScanInput {
 	qualityGatePassed?: boolean | null;
 	qualityGateFailReason?: string | null;
 	decisionContext?: Record<string, unknown>;
+	geometry?: ScanWriteGeometry | null;
 }
 
 /**

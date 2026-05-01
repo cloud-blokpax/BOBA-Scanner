@@ -45,6 +45,7 @@ export type {
 	ScanEngine,
 	LegacyScanEngine,
 	ScanOutcome,
+	ScanWriteGeometry,
 } from './scan-writer.types';
 
 /**
@@ -287,6 +288,14 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 
 				// Decision context for replay / counterfactual analysis
 				decision_context: input.decisionContext ?? {},
+
+				// ── Doc 1, Phase 6: per-capture geometry telemetry ──
+				px_per_mm_at_capture: input.geometry?.px_per_mm_at_capture ?? null,
+				aspect_ratio_at_capture: input.geometry?.aspect_ratio_at_capture ?? null,
+				detection_method: input.geometry?.detection_method ?? null,
+				rectification_applied: input.geometry?.rectification_applied ?? null,
+				canonical_size: input.geometry?.canonical_size ?? null,
+				detected_corners: input.geometry?.detected_corners ?? null,
 
 				// Bump signals the new-shape insert
 				schema_version: SCAN_SCHEMA_VERSION
