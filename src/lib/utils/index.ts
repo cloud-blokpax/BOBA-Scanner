@@ -14,7 +14,7 @@ export function formatPrice(price: number | null | undefined): string {
 
 /**
  * Escape HTML special characters to prevent XSS.
- * Covers the OWASP-recommended set: & < > " ' ` / =
+ * Covers the basic five (& < > " ') plus backtick for IE9 attribute-context safety.
  */
 const HTML_ESCAPE_MAP: Record<string, string> = {
 	'&': '&amp;',
