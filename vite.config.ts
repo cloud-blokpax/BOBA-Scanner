@@ -71,6 +71,19 @@ export default defineConfig({
 			),
 			'onnxruntime-web': fileURLToPath(
 				new URL('./src/lib/shims/onnxruntime-web.ts', import.meta.url)
+			),
+			// Doc 2 — Recognition class is not in ocr-common's package.json
+			// `exports` whitelist, so deep imports fail under Node strict
+			// resolution. Aliasing the bare-specifier 'gutenye-ocr-recognition'
+			// to the file path lets paddle-ocr.ts dynamically import the rec
+			// head standalone for the rec-only sub-ROI path. Vite's alias is
+			// applied before package-export resolution, so this bypasses the
+			// boundary cleanly.
+			'gutenye-ocr-recognition': fileURLToPath(
+				new URL(
+					'./node_modules/@gutenye/ocr-common/build/models/Recognition.js',
+					import.meta.url
+				)
 			)
 		}
 	},

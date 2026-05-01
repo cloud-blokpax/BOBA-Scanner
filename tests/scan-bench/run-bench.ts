@@ -48,6 +48,7 @@ interface PipelineResult {
 	_raw?: {
 		ocrCardNumber: string | null;
 		ocrName: string | null;
+		ocrSetCode?: string | null;
 		resolvedRow: {
 			id: string;
 			card_number: string;
@@ -406,6 +407,17 @@ function printFailureBreakdown(r: BenchReport): void {
 			`\n  centered_fallback: ${geomCounts.fallback}/${r.totalImages}` +
 			`\n  unknown:           ${geomCounts.unknown}/${r.totalImages}` +
 			`\n  avg px/mm (detected only): ${avgPx}`
+	);
+
+	// Doc 2, Phase 4 — set_code populate rate (BoBA only). Wonders rows have
+	// no set_code ROI, so their _raw.ocrSetCode stays null/undefined. Counts
+	// non-null on BoBA rows only.
+	const bobaRows = r.results.filter((res) => res.groundTruth.game === 'boba');
+	const setCodePopulated = bobaRows.filter(
+		(res) => typeof res.pipeline._raw?.ocrSetCode === 'string' && res.pipeline._raw.ocrSetCode
+	).length;
+	console.log(
+		`\n=== SET_CODE (BoBA only) ===\n  populated: ${setCodePopulated}/${bobaRows.length}`
 	);
 
 	const failed = r.results.filter((res) => !res.match.fullMatch);

@@ -67,6 +67,9 @@
 				// Tells us whether failures are OCR misreads vs. resolver misses.
 				ocrCardNumber: tier1.cardNumber ?? null,
 				ocrName: tier1.name ?? null,
+				// Doc 2, Phase 4 — BoBA year stamp from the new set_code
+				// sub-ROI. Informational; not gating any matching logic.
+				ocrSetCode: tier1.perTask.setCode?.value ?? null,
 
 				// Catalog row that was resolved (if any). Null = resolver miss.
 				resolvedRow: tier1.card

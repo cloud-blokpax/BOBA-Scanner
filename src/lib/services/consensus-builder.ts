@@ -1,10 +1,18 @@
 /**
  * Per-session vote tallying for live OCR Tier 1.
  *
- * Each scan cycle emits votes (card_number, name, parallel). Votes are
- * validated against the catalog-mirror shortlists (prefix matching,
- * Levenshtein-collapse to known names) and tallied. Consensus is reached
- * when agreement count + summed confidence clear the thresholds.
+ * Each scan cycle emits votes (card_number, name, parallel, set_code, …).
+ * Votes are validated/canonicalized per-task and tallied into a label-keyed
+ * map. Consensus is reached when the required tasks clear their thresholds.
+ *
+ * Refactor (Doc 2, Phase 7):
+ *   - Storage moved from three named maps to a single `Map<task, Tallies>`
+ *     so adding a new field (`set_code`, `rarity`, …) is just adding a new
+ *     ROI in `ocr-regions.ts` plus a passthrough validator here.
+ *   - Existing literal task names ('card_number', 'name', 'parallel') keep
+ *     working; live-mode callers don't change.
+ *   - Named convenience fields on `Consensus` (cardNumber/name/parallel/setCode)
+ *     are projected from the underlying map for API stability.
  */
 
 import {
@@ -14,7 +22,13 @@ import {
 } from './catalog-mirror';
 import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
 
-export type TaskKind = 'card_number' | 'name' | 'parallel';
+/**
+ * Task label for a vote. Loosened from a fixed union to `string` so new
+ * sub-ROIs (set_code, rarity, …) can vote without touching this file.
+ * The three legacy literals are still validated/canonicalized specifically;
+ * any other task name passes through with a generic uppercase-trim.
+ */
+export type TaskKind = string;
 
 export interface Vote {
 	task: TaskKind;
@@ -31,12 +45,19 @@ export interface TaskConsensus {
 	rawVotes: string[];
 }
 
+/**
+ * Consensus shape. Named fields preserved for callsite stability — they
+ * project from the underlying task→TaskConsensus map for the canonical
+ * task names. For new tasks added post-Doc-2, use `getTask(name)` for
+ * direct access instead of growing the named-field surface.
+ */
 export interface Consensus {
 	sessionId: number;
 	reachedThreshold: boolean;
 	cardNumber: TaskConsensus | null;
 	name: TaskConsensus | null;
 	parallel: TaskConsensus | null;
+	setCode: TaskConsensus | null;
 	frameCount: number;
 }
 
@@ -60,12 +81,15 @@ interface Bucket {
 	raw: string[];
 }
 
+interface Tallies {
+	byValue: Map<string, Bucket>;
+	totalSeen: number;
+}
+
 export class ConsensusBuilder {
 	private sessionId: number;
 	private game: 'boba' | 'wonders';
-	private cardNumberVotes: Map<string, Bucket>;
-	private nameVotes: Map<string, Bucket>;
-	private parallelVotes: Map<string, Bucket>;
+	private tasks: Map<string, Tallies> = new Map();
 	private frameCount = 0;
 	private minAgreement: number;
 	private minSummedConfidence: number;
@@ -77,9 +101,6 @@ export class ConsensusBuilder {
 	) {
 		this.sessionId = sessionId;
 		this.game = game;
-		this.cardNumberVotes = new Map();
-		this.nameVotes = new Map();
-		this.parallelVotes = new Map();
 		this.minAgreement = config.minAgreement ?? DEFAULT_MIN_AGREEMENT;
 		this.minSummedConfidence = config.minSummedConfidence ?? DEFAULT_MIN_SUMMED_CONFIDENCE;
 	}
@@ -87,27 +108,44 @@ export class ConsensusBuilder {
 	addVote(vote: Vote): void {
 		if (vote.sessionId !== this.sessionId) return; // stale, drop
 
-		if (vote.task === 'card_number') {
-			const validated = this.validateCardNumber(vote.rawValue);
-			if (validated) this.tally(this.cardNumberVotes, validated, vote);
-		} else if (vote.task === 'name') {
-			const collapsed = this.collapseName(vote.rawValue);
-			if (collapsed) this.tally(this.nameVotes, collapsed, vote);
-		} else if (vote.task === 'parallel') {
-			this.tally(this.parallelVotes, vote.rawValue, vote);
+		const canonical = this.canonicalize(vote.task, vote.rawValue);
+		if (!canonical) return;
+
+		let tallies = this.tasks.get(vote.task);
+		if (!tallies) {
+			tallies = { byValue: new Map(), totalSeen: 0 };
+			this.tasks.set(vote.task, tallies);
 		}
+
+		const existing = tallies.byValue.get(canonical) ?? { count: 0, totalConf: 0, raw: [] };
+		existing.count++;
+		existing.totalConf += vote.confidence;
+		existing.raw.push(vote.rawValue);
+		tallies.byValue.set(canonical, existing);
+		tallies.totalSeen++;
 	}
 
 	tickFrame(): void {
 		this.frameCount++;
 	}
 
-	private tally(map: Map<string, Bucket>, key: string, vote: Vote): void {
-		const existing = map.get(key) || { count: 0, totalConf: 0, raw: [] };
-		existing.count++;
-		existing.totalConf += vote.confidence;
-		existing.raw.push(vote.rawValue);
-		map.set(key, existing);
+	/**
+	 * Per-task validation/canonicalization. Returns the canonical key for
+	 * `byValue` storage, or null to drop the vote.
+	 *
+	 * Three legacy tasks have specific rules; everything else passes through
+	 * with a trim+uppercase normalization so new ROIs (set_code, rarity, …)
+	 * can vote without touching this file.
+	 */
+	private canonicalize(task: string, raw: string): string | null {
+		if (task === 'card_number') return this.validateCardNumber(raw);
+		if (task === 'name') return this.collapseName(raw);
+		if (task === 'parallel') return raw && raw.trim() ? raw : null;
+		// Generic passthrough — covers set_code and any future informational
+		// sub-ROIs. Strip whitespace and uppercase for stable bucketing
+		// ("2026", "AVA", etc).
+		const cleaned = raw && raw.trim() ? raw.trim().toUpperCase() : null;
+		return cleaned || null;
 	}
 
 	private validateCardNumber(raw: string): string | null {
@@ -196,31 +234,38 @@ export class ConsensusBuilder {
 		return null;
 	}
 
-	getConsensus(): Consensus {
-		const pick = (m: Map<string, Bucket>): TaskConsensus | null => {
-			let best: { key: string; count: number; conf: number; raw: string[] } | null = null;
-			for (const [k, v] of m) {
-				if (
-					!best ||
-					v.count > best.count ||
-					(v.count === best.count && v.totalConf > best.conf)
-				) {
-					best = { key: k, count: v.count, conf: v.totalConf, raw: v.raw };
-				}
+	/**
+	 * Direct access to a task's consensus by name. New code adding sub-ROIs
+	 * should prefer this over growing the named-field surface on Consensus.
+	 */
+	getTask(taskName: string): TaskConsensus | null {
+		const tallies = this.tasks.get(taskName);
+		if (!tallies) return null;
+		let best: { key: string; count: number; conf: number; raw: string[] } | null = null;
+		for (const [key, bucket] of tallies.byValue) {
+			if (
+				!best ||
+				bucket.count > best.count ||
+				(bucket.count === best.count && bucket.totalConf > best.conf)
+			) {
+				best = { key, count: bucket.count, conf: bucket.totalConf, raw: bucket.raw };
 			}
-			if (!best) return null;
-			return {
-				value: best.key,
-				agreementCount: best.count,
-				summedConfidence: best.conf,
-				votesSeen: Array.from(m.values()).reduce((a, v) => a + v.count, 0),
-				rawVotes: best.raw
-			};
+		}
+		if (!best) return null;
+		return {
+			value: best.key,
+			agreementCount: best.count,
+			summedConfidence: best.conf,
+			votesSeen: tallies.totalSeen,
+			rawVotes: best.raw
 		};
+	}
 
-		const cn = pick(this.cardNumberVotes);
-		const nm = pick(this.nameVotes);
-		const pr = pick(this.parallelVotes);
+	getConsensus(): Consensus {
+		const cn = this.getTask('card_number');
+		const nm = this.getTask('name');
+		const pr = this.getTask('parallel');
+		const sc = this.getTask('set_code');
 
 		const textReached = (t: TaskConsensus | null) =>
 			!!t &&
@@ -231,6 +276,7 @@ export class ConsensusBuilder {
 
 		// Parallel is only required for Wonders. BoBA's parallel is baked into
 		// card_number via prefix; the classifier doesn't run there.
+		// set_code is informational — it never gates the threshold.
 		const parallelRequired = this.game === 'wonders';
 		const reachedThreshold =
 			textReached(cn) && textReached(nm) && (!parallelRequired || parallelReached(pr));
@@ -241,8 +287,8 @@ export class ConsensusBuilder {
 			cardNumber: cn,
 			name: nm,
 			parallel: pr,
+			setCode: sc,
 			frameCount: this.frameCount
 		};
 	}
 }
-

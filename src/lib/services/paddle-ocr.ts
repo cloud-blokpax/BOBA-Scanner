@@ -30,6 +30,10 @@ const PADDLE_MODEL_CONFIG = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: any = null;
+// Doc 2, Phase 4 — standalone Recognition instance for the rec-only path.
+// Skips PaddleOCR's text-detection model on known-location sub-ROIs.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _recognition: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _initPromise: Promise<any> | null = null;
 let _initStartedAt: number | null = null;
@@ -150,6 +154,32 @@ export async function initPaddleOCR(): Promise<void> {
 			(performance.now() - _initStartedAt!).toFixed(0),
 			'ms'
 		);
+
+		// Doc 2, Phase 4 — Recognition-only path. Build a standalone
+		// Recognition model using the same model paths as Ocr. Lets sub-ROI
+		// OCR skip the detection model entirely on known-location regions,
+		// cutting per-region latency and giving the rec head a cleaner input.
+		// The Recognition class is not in @gutenye/ocr-common's package.json
+		// `exports` whitelist; vite.config.ts aliases the bare specifier
+		// 'gutenye-ocr-recognition' to the file path to bypass that.
+		// Soft-fail — if init throws, ocrRecOnly falls back to ocrRegion.
+		try {
+			// The bare specifier is rewritten by vite.config.ts's resolve.alias
+			// to the file path of @gutenye/ocr-common's Recognition.js, since
+			// the class isn't in the package's `exports` whitelist. TypeScript
+			// can't see this rewrite, so we go through a string indirection
+			// that bypasses the static module resolution check at compile time.
+			const RECOGNITION_SPECIFIER = 'gutenye-ocr-recognition';
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const recMod: any = await import(/* @vite-ignore */ RECOGNITION_SPECIFIER);
+			const RecognitionClass = recMod.Recognition ?? recMod.default;
+			if (RecognitionClass && typeof RecognitionClass.create === 'function') {
+				_recognition = await RecognitionClass.create({ models: PADDLE_MODEL_CONFIG });
+			}
+		} catch (err) {
+			console.warn('[paddle-ocr] Recognition standalone init failed:', err);
+			_recognition = null;
+		}
 		return _client;
 	})();
 	await _initPromise;
@@ -194,6 +224,163 @@ export async function ocrRegion(
 		return buildOCRResult(result);
 	} finally {
 		URL.revokeObjectURL(objectUrl);
+	}
+}
+
+/**
+ * Minimal `LineImage.image` shim consumed by `Recognition.run()`. The package's
+ * own `ImageRaw` (browser flavor) builds a `<canvas>` via `document.createElement`
+ * — main-thread only. This shim wraps an `OffscreenCanvas` instead, so it works
+ * on both main thread and Web Workers, and keeps `.data`/.width/.height in
+ * sync with the canvas across `.resize()` calls.
+ *
+ * Recognition's actual contract:
+ *   1. `image.resize({ height: 48 })` → returns `this` (or compatible) with
+ *      .data/.width/.height updated. The model wants ~48px tall input.
+ *   2. `image.data[i]` indexed as RGBA bytes by `ModelBase.imageToInput`.
+ */
+class RecLineImage {
+	data: Uint8ClampedArray;
+	width: number;
+	height: number;
+	private canvas: OffscreenCanvas;
+
+	constructor(canvas: OffscreenCanvas) {
+		this.canvas = canvas;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) throw new Error('2D context unavailable');
+		const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		this.data = img.data;
+		this.width = img.width;
+		this.height = img.height;
+	}
+
+	async resize({ width, height }: { width?: number; height?: number }): Promise<RecLineImage> {
+		if (width === undefined && height === undefined) return this;
+		const newW = width ?? Math.max(1, Math.round((this.width / this.height) * (height ?? 1)));
+		const newH = height ?? Math.max(1, Math.round((this.height / this.width) * (width ?? 1)));
+		if (newW === this.width && newH === this.height) return this;
+		const next = new OffscreenCanvas(newW, newH);
+		const ctx = next.getContext('2d');
+		if (!ctx) throw new Error('2D context unavailable');
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = 'high';
+		ctx.drawImage(this.canvas, 0, 0, newW, newH);
+		const img = ctx.getImageData(0, 0, newW, newH);
+		this.canvas = next;
+		this.data = img.data;
+		this.width = newW;
+		this.height = newH;
+		return this;
+	}
+}
+
+/**
+ * Recognition-only sub-ROI OCR. Doc 2, Phase 4.
+ *
+ * Skips PaddleOCR's text-detection model entirely. The caller passes a
+ * region of the source bitmap; we crop, scale to the rec head's preferred
+ * line height, and feed it directly to `Recognition.run()` as a single
+ * pre-located text line.
+ *
+ * Use this when the text location is ALREADY KNOWN — i.e., on the rectified
+ * canonical with fixed ROIs from `ocr-regions.ts`. Faster per region than
+ * `ocrRegion` (no detection pass) and gives the rec head a controlled input
+ * size (it was trained on ~48px tall lines).
+ *
+ * Falls back to `ocrRegion` when the standalone Recognition didn't initialize
+ * — this keeps correctness while perf is lost.
+ */
+export async function ocrRecOnly(
+	bitmap: ImageBitmap,
+	region: { x: number; y: number; w: number; h: number },
+	options: { targetHeight?: number } = {}
+): Promise<OCRResult> {
+	if (!_recognition) {
+		// Fallback path — caller's pipeline still works, just slower.
+		return ocrRegion(bitmap, region, { minWidth: 800 });
+	}
+
+	const { targetHeight = 48 } = options;
+	const sx = Math.max(0, Math.floor(region.x));
+	const sy = Math.max(0, Math.floor(region.y));
+	const sw = Math.min(bitmap.width - sx, Math.floor(region.w));
+	const sh = Math.min(bitmap.height - sy, Math.floor(region.h));
+	if (sw <= 0 || sh <= 0) {
+		return { text: '', confidence: 0, boxes: [] };
+	}
+
+	// Scale to the rec head's training height. The rec head re-resizes
+	// internally via `image.resize({height: 48})` so going strictly to the
+	// requested height is fine; we draw straight to the target so the
+	// internal resize is a no-op (saves a copy).
+	const scale = targetHeight / sh;
+	const outW = Math.max(targetHeight, Math.round(sw * scale));
+	const outH = targetHeight;
+
+	const canvas = new OffscreenCanvas(outW, outH);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('2D context unavailable');
+	ctx.imageSmoothingEnabled = true;
+	ctx.imageSmoothingQuality = 'high';
+	ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, outW, outH);
+
+	const lineImage = new RecLineImage(canvas);
+	const lineImages = [
+		{
+			image: lineImage,
+			// box format: [[x1,y1],[x2,y1],[x2,y2],[x1,y2]] — clockwise from top-left.
+			// The recognition's `calculateBox` echoes this back on output.
+			box: [
+				[0, 0],
+				[outW, 0],
+				[outW, outH],
+				[0, outH]
+			]
+		}
+	];
+
+	try {
+		const t0 = performance.now();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const lines: Array<{ text: string; mean: number; box?: number[][] }> =
+			await _recognition.run(lineImages);
+		const elapsed = performance.now() - t0;
+		console.debug(
+			`[paddle-ocr] ocrRecOnly ${outW}x${outH}: ${elapsed.toFixed(1)}ms`,
+			lines?.[0]?.text ?? '∅'
+		);
+
+		if (!lines || lines.length === 0) {
+			return { text: '', confidence: 0, boxes: [] };
+		}
+		// Rec head's calculateBox filter drops `mean < 0.5` lines internally,
+		// so an empty array means rec was unsure. Treat as zero-confidence.
+		const top = lines[0];
+		const text = (top.text || '').trim();
+		const score = typeof top.mean === 'number' ? top.mean : 0;
+		return {
+			text,
+			confidence: score,
+			boxes: [
+				{
+					text,
+					score,
+					// Map the line back into source-bitmap pixel space so callers
+					// that compute centroids (regionContains, parallel classifier)
+					// see the original location, not the rec input rect.
+					box: [
+						[sx, sy],
+						[sx + sw, sy],
+						[sx + sw, sy + sh],
+						[sx, sy + sh]
+					]
+				}
+			]
+		};
+	} catch (err) {
+		console.debug('[paddle-ocr] ocrRecOnly threw, falling back to ocrRegion:', err);
+		return ocrRegion(bitmap, region, { minWidth: 800 });
 	}
 }
 
@@ -256,14 +443,22 @@ export async function ocrFullFrame(
  */
 export async function releaseOcrWorker(): Promise<void> {
 	const client = _client;
+	const recognition = _recognition;
 	_client = null;
+	_recognition = null;
 	_initPromise = null;
 	_initStartedAt = null;
-	if (!client) return;
+	if (!client && !recognition) return;
 	try {
-		if (typeof client.release === 'function') await client.release();
-		else if (typeof client.destroy === 'function') await client.destroy();
-		else if (typeof client.terminate === 'function') await client.terminate();
+		if (client) {
+			if (typeof client.release === 'function') await client.release();
+			else if (typeof client.destroy === 'function') await client.destroy();
+			else if (typeof client.terminate === 'function') await client.terminate();
+		}
+		if (recognition) {
+			if (typeof recognition.release === 'function') await recognition.release();
+			else if (typeof recognition.destroy === 'function') await recognition.destroy();
+		}
 	} catch (err) {
 		console.warn('[paddle-ocr] release failed (ignored):', err);
 	}
