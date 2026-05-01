@@ -14,7 +14,14 @@
  * All functions are stateless and side-effect-free.
  */
 
-import { COMBO_ENGINES, type ComboEngine } from '$lib/data/combo-engines';
+import {
+	COMBO_ENGINES,
+	getComboEngine as registryGetComboEngine,
+	type ComboEngine
+} from '$lib/data/combo-registry';
+
+// Re-export for consumers that import getComboEngine from playbook-engine
+export const getComboEngine = registryGetComboEngine;
 import { PLAY_CATEGORIES, categorizePlay } from '$lib/data/play-categories';
 import { PLAYBOOK_ARCHETYPES, type PlaybookArchetype } from '$lib/data/playbook-archetypes';
 import type { FormatRules } from '$lib/data/tournament-formats';
