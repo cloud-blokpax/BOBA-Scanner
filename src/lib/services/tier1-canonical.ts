@@ -17,6 +17,7 @@
 import {
 	initPaddleOCR,
 	ocrRegion,
+	ocrRecOnly,
 	ocrFullFrame,
 	boxCenterNormalized,
 	regionContains,
@@ -50,6 +51,11 @@ export interface CanonicalResult {
 		 *  code (e.g. "cf"); `value` is the human-readable name persisted to
 		 *  the DB (e.g. "Classic Foil"). */
 		parallel?: { code: string; value: string; confidence: number; ruleFired: string };
+		/** BoBA-only year stamp telemetry (e.g. "2026"). Informational —
+		 *  not yet consumed by the resolver. Doc 2 plumbs this end-to-end
+		 *  so the bench harness can measure populate rate before downstream
+		 *  consumers come online. */
+		setCode?: { raw: string; confidence: number; value: string | null };
 	};
 }
 
@@ -60,6 +66,10 @@ const REGION_CONFIDENCE_FLOOR = 0.6;
 interface OCROutputs {
 	cardNumber: { raw: string; confidence: number; validated: string | null };
 	name: { raw: string; confidence: number; collapsed: string | null };
+	/** BoBA-only year stamp (e.g. "2026"). Optional — Wonders REGIONS has
+	 *  no set_code ROI, so this stays undefined for that game. Informational
+	 *  for now; not used by the resolver. */
+	setCode?: { raw: string; confidence: number; value: string | null };
 }
 
 export async function runCanonicalTier1(
@@ -160,7 +170,8 @@ export async function runCanonicalTier1(
 		perTask: {
 			cardNumber: merged.cardNumber,
 			name: merged.name,
-			...(parallelPerTask ? { parallel: parallelPerTask } : {})
+			...(parallelPerTask ? { parallel: parallelPerTask } : {}),
+			...(merged.setCode ? { setCode: merged.setCode } : {})
 		}
 	};
 }
@@ -176,10 +187,28 @@ async function runRegionOCR(
 		bitmap.width,
 		bitmap.height
 	);
+	// BoBA's bottom-left "2026" year stamp lives below the card_number.
+	// Wonders has no equivalent ROI — leave setCodeReg null and the
+	// downstream task vote is skipped.
+	const setCodeReg =
+		game === 'boba'
+			? regionToPixels(REGIONS.boba.set_code, bitmap.width, bitmap.height)
+			: null;
 
-	const [numRes, nameRes] = await Promise.allSettled([
-		ocrRegion(bitmap, cardNumberReg, { minWidth: 800 }),
-		ocrRegion(bitmap, nameReg, { minWidth: 1000 })
+	// Doc 2, Phase 4 — rec-only path. We KNOW where each field lives on the
+	// rectified canonical, so skip PaddleOCR's text-detection model on each
+	// sub-ROI and feed the rec head directly. Falls back to ocrRegion inside
+	// ocrRecOnly when the standalone Recognition didn't initialize.
+	//   - card_number target ~56px: 3mm chars on canonical ≈ 36px, upsampled
+	//     for the rec head's preferred ~48px training height.
+	//   - name target ~64px: 5mm chars on canonical ≈ 60px, near identity.
+	//   - set_code target 48px: small year stamp; rec head's natural size.
+	const [numRes, nameRes, setRes] = await Promise.allSettled([
+		ocrRecOnly(bitmap, cardNumberReg, { targetHeight: 56 }),
+		ocrRecOnly(bitmap, nameReg, { targetHeight: 64 }),
+		setCodeReg
+			? ocrRecOnly(bitmap, setCodeReg, { targetHeight: 48 })
+			: Promise.resolve({ text: '', confidence: 0, boxes: [] })
 	]);
 
 	const builder = new ConsensusBuilder(1, game);
@@ -210,12 +239,25 @@ async function runRegionOCR(
 			});
 		}
 	}
+	if (setCodeReg && setRes.status === 'fulfilled') {
+		const top = pickTopBox(setRes.value.boxes);
+		if (top?.text) {
+			builder.addVote({
+				task: 'set_code',
+				rawValue: top.text,
+				confidence: top.score || setRes.value.confidence,
+				sessionId: 1
+			});
+		}
+	}
 	const consensus = builder.getConsensus();
 
 	const numTop = numRes.status === 'fulfilled' ? pickTopBox(numRes.value.boxes) : null;
 	const nameTop = nameRes.status === 'fulfilled' ? pickTopBox(nameRes.value.boxes) : null;
+	const setTop =
+		setCodeReg && setRes.status === 'fulfilled' ? pickTopBox(setRes.value.boxes) : null;
 
-	return {
+	const out: OCROutputs = {
 		cardNumber: {
 			raw: numTop?.text || (numRes.status === 'fulfilled' ? numRes.value.text : ''),
 			confidence:
@@ -229,6 +271,15 @@ async function runRegionOCR(
 			collapsed: consensus.name?.value || null
 		}
 	};
+	if (setCodeReg) {
+		out.setCode = {
+			raw: setTop?.text || (setRes.status === 'fulfilled' ? setRes.value.text : ''),
+			confidence:
+				setTop?.score || (setRes.status === 'fulfilled' ? setRes.value.confidence : 0),
+			value: consensus.setCode?.value || null
+		};
+	}
+	return out;
 }
 
 /**
@@ -323,10 +374,14 @@ async function runFullFrameOCR(
 }
 
 function mergeOCROutputs(region: OCROutputs, full: OCROutputs): OCROutputs {
-	return {
+	const merged: OCROutputs = {
 		cardNumber: pickField(region.cardNumber, full.cardNumber, 'validated'),
 		name: pickField(region.name, full.name, 'collapsed')
 	};
+	// set_code only ever comes from the region path (BoBA-only sub-ROI;
+	// full-frame OCR doesn't vote on it). Pass it through unchanged.
+	if (region.setCode) merged.setCode = region.setCode;
+	return merged;
 }
 
 function pickField<T extends { confidence: number }>(
