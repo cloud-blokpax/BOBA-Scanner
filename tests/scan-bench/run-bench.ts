@@ -45,6 +45,19 @@ interface PipelineResult {
 	winningTier: string | null;
 	fallbackUsed: string | null;
 	ocrStrategy: string | null;
+	_raw?: {
+		ocrCardNumber: string | null;
+		ocrName: string | null;
+		resolvedRow: {
+			id: string;
+			card_number: string;
+			name: string;
+			parallel: string | null;
+			game_id: string | null;
+			set_code: string | null;
+		} | null;
+		resolverPath: string | null;
+	};
 }
 
 interface BenchResult {
@@ -199,6 +212,7 @@ async function main() {
 	writeFileSync(reportPath, JSON.stringify(report, null, 2));
 	console.log(`\n[bench] Report saved to ${reportPath}`);
 	printSummary(report);
+	printFailureBreakdown(report);
 }
 
 function normalizeCardNumber(s: string | null | undefined): string {
@@ -282,6 +296,57 @@ function printSummary(r: BenchReport): void {
 	console.log('\nBy card:');
 	for (const [cid, s] of Object.entries(r.summary.byCard)) {
 		console.log(`  ${cid}: ${s.fullMatch}/${s.total}`);
+	}
+}
+
+function printFailureBreakdown(r: BenchReport): void {
+	const failed = r.results.filter((res) => !res.match.fullMatch);
+	if (failed.length === 0) {
+		console.log('\nNo failures. Suspicious — verify ground-truth normalization.');
+		return;
+	}
+
+	console.log(`\n=== FAILURE BREAKDOWN (${failed.length} of ${r.totalImages}) ===`);
+
+	const buckets: Record<string, string[]> = {
+		resolver_miss_no_row: [], // OCR ran but no catalog row resolved
+		card_number_mismatch: [], // catalog row found but card_number differs (e.g. Wonders 350 vs 350/401)
+		name_mismatch: [], // card_number ok, name wrong
+		parallel_mismatch: [], // both ok, parallel wrong
+		full_miss_ocr_blank: [] // no OCR output at all
+	};
+
+	for (const res of failed) {
+		const raw = res.pipeline._raw;
+		const ocrCN = raw?.ocrCardNumber ?? res.pipeline.cardNumber;
+		const ocrN = raw?.ocrName ?? res.pipeline.name;
+		const resolved = raw?.resolvedRow ?? null;
+
+		if (!ocrCN && !ocrN) {
+			buckets.full_miss_ocr_blank.push(res.filename);
+		} else if (!resolved) {
+			buckets.resolver_miss_no_row.push(
+				`${res.filename}  ocr_cn=${ocrCN ?? '∅'}  ocr_name=${ocrN ?? '∅'}`
+			);
+		} else if (!res.match.cardNumberCorrect) {
+			buckets.card_number_mismatch.push(
+				`${res.filename}  expected=${res.groundTruth.card_number}  got=${res.pipeline.cardNumber}`
+			);
+		} else if (!res.match.nameCorrect) {
+			buckets.name_mismatch.push(
+				`${res.filename}  expected=${res.groundTruth.name}  got=${res.pipeline.name}`
+			);
+		} else if (!res.match.parallelCorrect) {
+			buckets.parallel_mismatch.push(
+				`${res.filename}  expected=${res.groundTruth.parallel}  got=${res.pipeline.parallel}`
+			);
+		}
+	}
+
+	for (const [bucket, items] of Object.entries(buckets)) {
+		if (items.length === 0) continue;
+		console.log(`\n${bucket} (${items.length}):`);
+		for (const i of items) console.log(`  ${i}`);
 	}
 }
 

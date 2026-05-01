@@ -1,0 +1,181 @@
+{
+  "card1_C1.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C1_flat_clean",
+    "_source_img": "IMG_0944.jpeg",
+    "_notes": "Power 130, weapon Ice"
+  },
+  "card1_C2.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C2_15deg_tilt",
+    "_source_img": "IMG_0942.jpeg"
+  },
+  "card1_C3.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C3_25deg_two_axis",
+    "_source_img": "IMG_0941.jpeg"
+  },
+  "card1_C4.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C4_distant",
+    "_source_img": "IMG_0945.jpeg"
+  },
+  "card1_C5.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C5_low_light",
+    "_source_img": "IMG_0943.jpeg"
+  },
+  "card1_C6.jpg": {
+    "card_number": "BBF-82",
+    "name": "Dumper",
+    "parallel": "Blue Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C6_glare",
+    "_source_img": "IMG_0946.jpeg"
+  },
+  "card2_C1.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C1_flat_clean",
+    "_source_img": "IMG_0951.jpeg",
+    "_notes": "Power 120, weapon Glow. Glow is the WEAPON, parallel is plain Battlefoil."
+  },
+  "card2_C2.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C2_15deg_tilt",
+    "_source_img": "IMG_0952.jpeg"
+  },
+  "card2_C3.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C3_25deg_two_axis",
+    "_source_img": "IMG_0950.jpeg"
+  },
+  "card2_C4.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C4_distant",
+    "_source_img": "IMG_0947.jpeg"
+  },
+  "card2_C5.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C5_low_light",
+    "_source_img": "IMG_0949.jpeg"
+  },
+  "card2_C6.jpg": {
+    "card_number": "BF-88",
+    "name": "Escape Artist",
+    "parallel": "Battlefoil",
+    "game": "boba",
+    "set_code": "Griffey Edition",
+    "condition": "C6_glare",
+    "_source_img": "IMG_0948.jpeg"
+  },
+  "card3_C1.jpg": {
+    "card_number": "350",
+    "name": "Lunar Empowerment",
+    "parallel": "Classic Foil",
+    "game": "wonders",
+    "condition": "C1_flat_clean",
+    "_source_img": "IMG_0957.jpeg",
+    "_notes": "On-card reads 350/401; catalog stores just '350'. /401 is print-run total."
+  },
+  "card3_C2.jpg": {
+    "card_number": "350",
+    "name": "Lunar Empowerment",
+    "parallel": "Classic Foil",
+    "game": "wonders",
+    "condition": "C2_15deg_tilt",
+    "_source_img": "IMG_0956.jpeg"
+  },
+  "card3_C3.jpg": {
+    "card_number": "350",
+    "name": "Lunar Empowerment",
+    "parallel": "Classic Foil",
+    "game": "wonders",
+    "condition": "C3_25deg_two_axis",
+    "_source_img": "IMG_0955.jpeg"
+  },
+  "card3_C5.jpg": {
+    "card_number": "350",
+    "name": "Lunar Empowerment",
+    "parallel": "Classic Foil",
+    "game": "wonders",
+    "condition": "C5_low_light",
+    "_source_img": "IMG_0922.jpeg"
+  },
+  "card4_C1.jpg": {
+    "card_number": "279",
+    "name": "Punish",
+    "parallel": "Paper",
+    "game": "wonders",
+    "condition": "C1_flat_clean",
+    "_source_img": "IMG_0920.jpeg",
+    "_notes": "On-card reads 279/401; catalog stores '279'."
+  },
+  "card4_C5.jpg": {
+    "card_number": "279",
+    "name": "Punish",
+    "parallel": "Paper",
+    "game": "wonders",
+    "condition": "C5_low_light",
+    "_source_img": "IMG_0921.jpeg"
+  },
+  "card5_C1.jpg": {
+    "card_number": "PL-71",
+    "name": "Good Fortune",
+    "parallel": "Paper",
+    "game": "boba",
+    "release": "G",
+    "condition": "C1_flat_clean",
+    "_source_img": "IMG_0924.jpeg",
+    "_notes": "Lives in play_cards table, not cards. release='G' (Griffey). 1 hot dog, 35 DBS. PL-71 also exists as 'Rally Cap' (release=A) and 'Fire Hose' (release=U) — name disambiguates."
+  },
+  "card5_C5.jpg": {
+    "card_number": "PL-71",
+    "name": "Good Fortune",
+    "parallel": "Paper",
+    "game": "boba",
+    "release": "G",
+    "condition": "C5_low_light",
+    "_source_img": "IMG_0923.jpeg"
+  }
+}

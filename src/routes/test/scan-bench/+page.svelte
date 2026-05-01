@@ -32,6 +32,7 @@
 		canonical.close?.();
 
 		return {
+			// Existing fields — required by run-bench.ts comparison logic
 			cardNumber: tier1.cardNumber,
 			name: tier1.name,
 			parallel: tier1.parallel,
@@ -40,7 +41,33 @@
 			winningTier: tier1.card ? 'tier1' : null,
 			fallbackUsed: null, // bench harness doesn't run Haiku — gates on Tier 1 only
 			ocrStrategy: tier1.ocrStrategy,
-			latencyMs: Math.round(performance.now() - t0)
+			latencyMs: Math.round(performance.now() - t0),
+
+			// Diagnostic fields — for baseline interpretation, not for matching
+			_raw: {
+				// Exact OCR text the consensus produced, before catalog resolution.
+				// Tells us whether failures are OCR misreads vs. resolver misses.
+				ocrCardNumber: tier1.cardNumber ?? null,
+				ocrName: tier1.name ?? null,
+
+				// Catalog row that was resolved (if any). Null = resolver miss.
+				resolvedRow: tier1.card
+					? {
+							id: tier1.card.id,
+							card_number: tier1.card.card_number,
+							name: tier1.card.name,
+							parallel: tier1.card.parallel,
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							game_id: (tier1.card as any).game_id ?? null,
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							set_code: (tier1.card as any).set_code ?? null
+						}
+					: null,
+
+				// Which catalog lookup path ran. Null until tier1 exposes it.
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				resolverPath: (tier1 as any).resolverPath ?? null
+			}
 		};
 	}
 
