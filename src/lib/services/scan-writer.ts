@@ -293,6 +293,7 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 				px_per_mm_at_capture: input.geometry?.px_per_mm_at_capture ?? null,
 				aspect_ratio_at_capture: input.geometry?.aspect_ratio_at_capture ?? null,
 				detection_method: input.geometry?.detection_method ?? null,
+				detection_layer: input.geometry?.detection_layer ?? null,
 				rectification_applied: input.geometry?.rectification_applied ?? null,
 				canonical_size: input.geometry?.canonical_size ?? null,
 				detected_corners: input.geometry?.detected_corners ?? null,

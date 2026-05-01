@@ -41,6 +41,7 @@ export interface OpenSessionInput {
  */
 export interface ScanWriteGeometry {
 	detection_method: 'corner_detected' | 'centered_fallback';
+	detection_layer: string | null;
 	px_per_mm_at_capture: number | null;
 	aspect_ratio_at_capture: number | null;
 	rectification_applied: boolean;

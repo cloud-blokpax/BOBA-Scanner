@@ -59,6 +59,13 @@ export interface CardDetection {
 	aspectRatio: number | null;
 
 	method: 'corner_detected' | 'centered_fallback';
+
+	/**
+	 * Which detection layer found the corners (Doc 1.2).
+	 * 'canny_75_200' | 'canny_40_120' | 'canny_20_80' | 'adaptive' | null.
+	 * Null on centered_fallback.
+	 */
+	detection_layer?: string | null;
 }
 
 /** @deprecated Use CardDetection. Kept as a transition shim — see detectCardRect at bottom. */
@@ -140,67 +147,177 @@ export async function detectCard(
 		blurred = new cv.Mat();
 		cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
+		// Doc 1.2 — Layered detection. Try cheapest/sharpest method first;
+		// fall back to softer methods if no 4-corner contour emerges.
+		// Each layer fully resets edges/contours/hierarchy and reuses the
+		// outer-scope Mats so the finally{} cleanup still works.
+
 		edges = new cv.Mat();
-		cv.Canny(blurred, edges, 75, 200);
-
 		kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
-		cv.dilate(edges, edges, kernel);
-
 		contours = new cv.MatVector();
 		hierarchy = new cv.Mat();
-		cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
 		const minArea = dw * dh * MIN_AREA_FRAC;
+		const borderInsetPx = Math.max(2, Math.round(Math.min(dw, dh) * 0.005));
+
 		let bestCorners: [Point, Point, Point, Point] | null = null;
-		let bestArea = 0;
+		let detectionLayer: string | null = null;
 
-		const n = contours.size();
-		for (let i = 0; i < n; i++) {
-			const c = contours.get(i);
-			const area = cv.contourArea(c);
-			if (area < minArea) {
-				c.delete();
-				continue;
-			}
+		// Helper: from a populated `edges` Mat, find the best 4-corner card
+		// contour. Mutates `contours` and `hierarchy` (zero'd at start of
+		// each call to avoid stale data from previous attempts).
+		const findBestCorners = (): [Point, Point, Point, Point] | null => {
+			contours.delete();
+			contours = new cv.MatVector();
+			hierarchy.delete();
+			hierarchy = new cv.Mat();
+			cv.findContours(
+				edges,
+				contours,
+				hierarchy,
+				cv.RETR_EXTERNAL,
+				cv.CHAIN_APPROX_SIMPLE
+			);
 
-			const peri = cv.arcLength(c, true);
+			let best: [Point, Point, Point, Point] | null = null;
+			let bestArea = 0;
+			const n = contours.size();
+			for (let i = 0; i < n; i++) {
+				const c = contours.get(i);
+				const area = cv.contourArea(c);
+				if (area < minArea) {
+					c.delete();
+					continue;
+				}
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			let approx: any = null;
-			let found4 = false;
-			for (const epsilonFactor of [0.02, 0.03, 0.04, 0.05]) {
+				// Layer 4 — border-inset filter. Reject contours whose bounding
+				// rect touches the frame edge — those are usually the FRAME, not
+				// a card centered in it.
+				const br = cv.boundingRect(c);
+				if (
+					br.x < borderInsetPx ||
+					br.y < borderInsetPx ||
+					br.x + br.width > dw - borderInsetPx ||
+					br.y + br.height > dh - borderInsetPx
+				) {
+					c.delete();
+					continue;
+				}
+
+				const peri = cv.arcLength(c, true);
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				let approx: any = null;
+				let found4 = false;
+				for (const epsilonFactor of [0.02, 0.03, 0.04, 0.05]) {
+					if (approx) approx.delete();
+					approx = new cv.Mat();
+					cv.approxPolyDP(c, approx, epsilonFactor * peri, true);
+					if (approx.rows === 4) {
+						found4 = true;
+						break;
+					}
+				}
+
+				if (found4 && approx && area > bestArea) {
+					const rawCorners: Point[] = [];
+					for (let j = 0; j < 4; j++) {
+						rawCorners.push({
+							x: approx.data32S[j * 2] / scale,
+							y: approx.data32S[j * 2 + 1] / scale
+						});
+					}
+					const ordered = orderCorners(rawCorners);
+					const sides = computeSideLengths(ordered);
+					const avgLong = (sides.left + sides.right) / 2;
+					const avgShort = (sides.top + sides.bottom) / 2;
+					const aspect = avgLong / avgShort;
+					if (aspect >= ASPECT_PRE_WARP_MIN && aspect <= ASPECT_PRE_WARP_MAX) {
+						bestArea = area;
+						best = ordered;
+					}
+				}
+
 				if (approx) approx.delete();
-				approx = new cv.Mat();
-				cv.approxPolyDP(c, approx, epsilonFactor * peri, true);
-				if (approx.rows === 4) {
-					found4 = true;
+				c.delete();
+			}
+			return best;
+		};
+
+		// Layer 1 — Multi-scale Canny. Three threshold pairs from sharp to soft;
+		// each pass dilates onto the same `edges` Mat, accumulating. After each
+		// pass, try contour finding. Accept the first pass that yields a valid
+		// 4-corner card.
+		const cannyThresholds: Array<[number, number]> = [
+			[75, 200],   // default — sharp edges, high precision
+			[40, 120],   // softer — catches dim edges from glare washouts
+			[20, 80]     // softest — last resort, may pick up noise
+		];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let cannyOut: any = null;
+		try {
+			for (const [lo, hi] of cannyThresholds) {
+				if (cannyOut) cannyOut.delete();
+				cannyOut = new cv.Mat();
+				cv.Canny(blurred, cannyOut, lo, hi);
+				// OR onto accumulating edges Mat for cumulative coverage.
+				if (edges.rows === 0) {
+					cannyOut.copyTo(edges);
+				} else {
+					cv.bitwise_or(edges, cannyOut, edges);
+				}
+				// Morphological close at each scale: dilate then erode bridges
+				// small gaps from occlusion/glare without ballooning real edges.
+				cv.dilate(edges, edges, kernel);
+				cv.erode(edges, edges, kernel);
+
+				bestCorners = findBestCorners();
+				if (bestCorners) {
+					detectionLayer = `canny_${lo}_${hi}`;
 					break;
 				}
 			}
+		} finally {
+			if (cannyOut) cannyOut.delete();
+		}
 
-			if (found4 && approx && area > bestArea) {
-				const rawCorners: Point[] = [];
-				for (let j = 0; j < 4; j++) {
-					rawCorners.push({
-						x: approx.data32S[j * 2] / scale,
-						y: approx.data32S[j * 2 + 1] / scale
-					});
-				}
-				const ordered = orderCorners(rawCorners);
+		// Layer 2 — Adaptive thresholding fallback. If Canny found nothing
+		// across three scales, try adaptive Gaussian thresholding on the
+		// blurred image. Adaptive threshold compares each pixel to its
+		// local neighborhood — robust against the uneven lighting from
+		// holo glare or shadow.
+		if (!bestCorners) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let adaptive: any = null;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let largeKernel: any = null;
+			try {
+				adaptive = new cv.Mat();
+				cv.adaptiveThreshold(
+					blurred,
+					adaptive,
+					255,
+					cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+					cv.THRESH_BINARY_INV,
+					21,
+					5
+				);
+				// Larger morphological kernel for adaptive — its edges are
+				// noisier but the "card vs background" structure is more visible.
+				largeKernel = cv.getStructuringElement(
+					cv.MORPH_RECT,
+					new cv.Size(7, 7)
+				);
+				cv.morphologyEx(adaptive, adaptive, cv.MORPH_CLOSE, largeKernel);
 
-				const sides = computeSideLengths(ordered);
-				const avgLong = (sides.left + sides.right) / 2;
-				const avgShort = (sides.top + sides.bottom) / 2;
-				const aspect = avgLong / avgShort;
-
-				if (aspect >= ASPECT_PRE_WARP_MIN && aspect <= ASPECT_PRE_WARP_MAX) {
-					bestArea = area;
-					bestCorners = ordered;
-				}
+				// Replace edges with adaptive output and try contour finding again.
+				edges.delete();
+				edges = adaptive.clone();
+				bestCorners = findBestCorners();
+				if (bestCorners) detectionLayer = 'adaptive';
+			} finally {
+				if (adaptive) adaptive.delete();
+				if (largeKernel) largeKernel.delete();
 			}
-
-			if (approx) approx.delete();
-			c.delete();
 		}
 
 		if (!bestCorners) return centeredFallback(W, H);
@@ -245,7 +362,8 @@ export async function detectCard(
 			homography,
 			pxPerMm,
 			aspectRatio,
-			method: 'corner_detected'
+			method: 'corner_detected',
+			detection_layer: detectionLayer
 		};
 	} catch (err) {
 		console.debug('[card-detector] threw, using fallback:', err);

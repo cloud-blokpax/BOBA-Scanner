@@ -456,6 +456,7 @@
 					geometry: liveCardDetection
 						? {
 								detection_method: liveCardDetection.method,
+								detection_layer: liveCardDetection.detection_layer ?? null,
 								px_per_mm_at_capture: liveCardDetection.pxPerMm,
 								aspect_ratio_at_capture: liveCardDetection.aspectRatio,
 								rectification_applied: !!liveCardDetection.homography,

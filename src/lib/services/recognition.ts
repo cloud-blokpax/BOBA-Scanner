@@ -509,6 +509,7 @@ export async function recognizeCard(
 	const resolvedGeometry: ScanWriteGeometry | null = detectedCardDetection
 		? {
 				detection_method: detectedCardDetection.method,
+				detection_layer: detectedCardDetection.detection_layer ?? null,
 				px_per_mm_at_capture: detectedCardDetection.pxPerMm,
 				aspect_ratio_at_capture: detectedCardDetection.aspectRatio,
 				rectification_applied: !!detectedCardDetection.homography,
