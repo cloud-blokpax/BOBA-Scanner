@@ -59,6 +59,7 @@ interface PipelineResult {
 		resolverPath: string | null;
 		geometry?: {
 			detection_method: 'corner_detected' | 'centered_fallback';
+			detection_layer: string | null;
 			px_per_mm: number | null;
 			aspect_ratio: number | null;
 			rectification_applied: boolean;
@@ -376,20 +377,32 @@ function printFailureBreakdown(r: BenchReport): void {
 	const geomCounts = r.results.reduce(
 		(acc, res) => {
 			const m = res.pipeline._raw?.geometry?.detection_method;
-			if (m === 'corner_detected') acc.detected++;
-			else if (m === 'centered_fallback') acc.fallback++;
-			else acc.unknown++;
+			const l = res.pipeline._raw?.geometry?.detection_layer;
+			if (m === 'corner_detected') {
+				acc.detected++;
+				if (l) {
+					acc.byLayer[l] = (acc.byLayer[l] ?? 0) + 1;
+				}
+			} else if (m === 'centered_fallback') {
+				acc.fallback++;
+			} else {
+				acc.unknown++;
+			}
 			return acc;
 		},
-		{ detected: 0, fallback: 0, unknown: 0 }
+		{ detected: 0, fallback: 0, unknown: 0, byLayer: {} as Record<string, number> }
 	);
 	const pxs = r.results
 		.map((res) => res.pipeline._raw?.geometry?.px_per_mm)
 		.filter((v): v is number => typeof v === 'number');
 	const avgPx =
 		pxs.length > 0 ? (pxs.reduce((a, b) => a + b, 0) / pxs.length).toFixed(2) : 'n/a';
+	const layerLines = Object.entries(geomCounts.byLayer)
+		.map(([k, v]) => `    ${k}: ${v}`)
+		.join('\n');
 	console.log(
 		`\n=== GEOMETRY ===\n  corner_detected:   ${geomCounts.detected}/${r.totalImages}` +
+			(layerLines ? `\n${layerLines}` : '') +
 			`\n  centered_fallback: ${geomCounts.fallback}/${r.totalImages}` +
 			`\n  unknown:           ${geomCounts.unknown}/${r.totalImages}` +
 			`\n  avg px/mm (detected only): ${avgPx}`

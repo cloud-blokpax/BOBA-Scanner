@@ -89,6 +89,7 @@
 				// Doc 1, Phase 6: geometry trace for bench delta
 				geometry: {
 					detection_method: detection.method,
+					detection_layer: detection.detection_layer ?? null,
 					px_per_mm: detection.pxPerMm,
 					aspect_ratio: detection.aspectRatio,
 					rectification_applied: !!detection.homography,
