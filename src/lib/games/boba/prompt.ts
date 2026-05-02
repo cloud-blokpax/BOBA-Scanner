@@ -1,8 +1,10 @@
 /**
  * BoBA Claude AI identification prompt and structured output tool.
  *
- * Extracted from src/routes/api/scan/+server.ts so the scan endpoint
- * can load game-specific prompts via GameConfig.
+ * Doc 2.5 — minimal-field design. Tier 2 reads ONLY card_number (bottom-left)
+ * and card_name (top-left). The catalog has everything else. Parallel is
+ * derived from the card_number prefix server-side via cards.parallel and is
+ * NOT requested from Claude.
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
@@ -10,80 +12,110 @@ import type Anthropic from '@anthropic-ai/sdk';
 // ── Structured output tool definition ──────────────────────────
 export const BOBA_CARD_ID_TOOL: Anthropic.Messages.Tool = {
 	name: 'identify_card',
-	description: 'Identify a BoBA trading card from an image. Cards are either HERO cards (character cards with a power value) or PLAY cards (action/bonus/hot dog cards with no power value).',
+	description:
+		'Identify a BoBA (Bo Jackson Battle Arena) trading card. ' +
+		'Read EXACTLY two fields from two specific locations: card_number from the BOTTOM-LEFT corner, and card_name from the TOP-LEFT corner. ' +
+		'The catalog has everything else (set, rarity, weapon, power) — do not attempt to read or infer any other fields.',
 	input_schema: {
 		type: 'object' as const,
 		properties: {
-			card_type: { type: 'string', enum: ['hero', 'play', 'bonus_play', 'hot_dog'], description: 'Type of card: hero (character with power), play (PL- prefix), bonus_play (BPL- prefix), or hot_dog (HTD- prefix)' },
-			card_name: { type: 'string', description: 'Full card name as printed at the top of the card' },
-			hero_name: { type: 'string', description: 'BoBA hero name. For play/bonus/hot dog cards, set to empty string.' },
-			athlete_name: { type: 'string', description: 'Real athlete name if known, or null' },
-			set_code: { type: 'string', description: 'Set identifier, or null' },
-			card_number: { type: 'string', description: 'Exact text from BOTTOM-LEFT. Paper cards are numeric only (e.g. "130"). Parallel cards are PREFIX-NUMBER (e.g. "BF-108"). Null if unreadable.' },
-			power: { type: 'number', description: 'Large number from TOP-RIGHT corner. Only hero cards have this. Null for play cards.' },
-			rarity: { type: 'string', enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'] },
-			parallel: { type: 'string', description: 'Card parallel/treatment name. Use "paper" for standard numeric-only cards. Otherwise return the specific parallel descriptor that matches the card_number prefix (e.g. "battlefoil", "rad", "blizzard"). The server maps these to the canonical DB name from cards.parallel.' },
-			weapon_type: { type: 'string', enum: ['Fire', 'Ice', 'Steel', 'Hex', 'Glow', 'Brawl', 'Gum', 'Super', 'Alt', 'Cyber'], description: 'Weapon type or null. Only hero cards have weapons.' },
-			confidence: { type: 'number', description: '0.0 to 1.0' },
-			flags: { type: 'array', items: { type: 'string' }, description: 'Issues: blurry, glare, partial, foil_reflection' }
+			card_number: {
+				type: 'string',
+				description:
+					'EXACT text from the BOTTOM-LEFT corner of the card. ' +
+					'Two formats only: ' +
+					'(a) plain number with no prefix (e.g. "130", "82", "316") for paper/base cards; ' +
+					'(b) PREFIX-NUMBER (e.g. "BBF-82", "BF-108", "MBFA-12") for parallels. ' +
+					'NEVER use the large number in the top-right corner — that is the power stat, not the card_number. ' +
+					'Return null if the bottom-left text is unreadable. Do not guess from memory.'
+			},
+			card_name: {
+				type: 'string',
+				description:
+					'EXACT text from the TOP-LEFT corner of the card (e.g. "Dumper", "Bo Jackson", "Front Run"). ' +
+					'Read only the title text at the top-left. Do not read play type ("Hot Dog", "Bonus Play") — those are typed labels elsewhere. ' +
+					'Return null if unreadable.'
+			},
+			confidence: {
+				type: 'number',
+				description: '0.0–1.0 confidence in the card_number reading specifically. Lower this if glare or blur affected the bottom-left corner.'
+			},
+			flags: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'Optional issue flags: "glare", "blur", "partial_occlusion", "foil_reflection". Diagnostic only.'
+			}
 		},
-		required: ['card_type', 'card_name', 'confidence', 'rarity', 'parallel']
+		required: ['card_number', 'card_name', 'confidence']
 	}
 };
 
 // ── Claude system prompt ───────────────────────────────────────
-export const BOBA_SYSTEM_PROMPT = `You are a BoBA (Bo Jackson Battle Arena) trading card identification expert.
+export const BOBA_SYSTEM_PROMPT = `You identify BoBA (Bo Jackson Battle Arena) trading cards by transcribing TWO specific pieces of text from the card.
 
-There are TWO types of BoBA cards:
+YOUR JOB IS TRANSCRIPTION, NOT IDENTIFICATION.
 
-HERO CARDS (character cards):
-- Have a hero name (large title at TOP LEFT)
-- Have a power value (large number at TOP RIGHT)
-- Have a weapon type (indicated by color/icon)
-- Card number is in the BOTTOM LEFT corner
-- PAPER/BASE hero cards have a NUMERIC-ONLY card number with NO prefix (e.g. "130", "76", "200")
-- Special parallel hero cards have a PREFIX-NUMBER format (e.g. "BF-108", "RAD-45", "GBF-92")
+You read two fields:
 
-PLAY CARDS / BONUS PLAY CARDS / HOT DOG CARDS (action cards):
-- Have a play name (title at TOP of card) but NO hero name
-- Have NO power value in the top right
-- Have a hot dog cost (small number showing how many hot dogs to activate)
-- Card number prefix: PL- (plays), BPL- (bonus plays), HTD- (hot dogs)
-- Set hero_name to empty string for these cards
+1. card_number — the EXACT text printed in the BOTTOM-LEFT corner of the card.
+   - Paper/base cards have a plain number with no prefix: "130", "82", "316".
+   - Parallel cards have a PREFIX-NUMBER format: "BBF-82" (Blue Battlefoil), "BF-108" (Battlefoil), "MBFA-12" (Metallic Inspired Ink), etc.
+   - The card_number is ALWAYS in the bottom-left, ALWAYS small text, and is the ONLY thing that goes in the card_number field.
 
-CRITICAL INSTRUCTIONS FOR READING ANY CARD:
-1. CARD TYPE: First determine if this is a hero card or a play/bonus/hot dog card.
-2. CARD NUMBER: Look at the BOTTOM LEFT corner. Read the EXACT text printed there.
-   - If the text is ONLY a number with no letters (e.g. "130"), report JUST the number — do NOT add any prefix.
-   - If the text has a letter prefix followed by a dash and number (e.g. "BF-108"), report the full PREFIX-NUMBER.
-   - Do NOT guess or fabricate a prefix. Only report what is physically printed on the card.
-   - Do NOT use the power value (top right) as the card number.
-3. CARD NAME: Read the large title text at the TOP of the card. For hero cards this is the hero name. For play cards this is the play name.
-4. POWER: ONLY for hero cards — read the number in the TOP RIGHT corner. For play cards, set to null.
-5. PARALLEL: Look for special treatments. Common parallels: Inspired Ink Battlefoil (BFA-), Metallic Inspired Ink (MBFA-), 80's Rad Battlefoil (RAD-), Grandma's Linoleum Battlefoil (GBF-/GLBF-), Blizzard Battlefoil (BLBF-), Color Battlefoil (CBF-), Bubblegum Battlefoil (BGBF-), Mixtape Battlefoil (MIX-), Miami Ice Battlefoil (MI-), Fire Tracks Battlefoil (FT-), Silver (SBF-), Headliner (HBF-), Cyber (CYB-), Grillin' (GRILL-), Power Glove (PG-), Alt Art (ALT-). If the card has no special treatment (no prefix on card number), it is a standard paper card. Set parallel="paper" or the specific descriptor matching the prefix.
+2. card_name — the EXACT title text printed in the TOP-LEFT corner of the card.
+   - This is the hero or play name. Examples: "Dumper", "Bo Jackson", "Cruze-Control", "Front Run".
+   - The card_name is ALWAYS in the top-left.
 
-If a field is unclear, return null rather than guessing.`;
+IGNORE EVERYTHING ELSE. The database already has:
+- The set name and year
+- The rarity
+- The weapon type and color
+- The power value
+- Whether it's a hero, play, bonus play, or hot dog card
+- The athlete real name
+- The parallel name (derived from the card_number prefix)
+
+Do not read any of those. Reading them confuses your output.
+
+CRITICAL — TWO PIECES OF TEXT YOU MUST NOT MISTAKE:
+
+A) The big number in the TOP-RIGHT corner is the POWER STAT, not the card_number.
+   - Power values are typically multiples of 5 (130, 150, 175, 200).
+   - Some cards have a card_number that happens to equal the power (e.g. paper card #130 with power 130). When in doubt, READ THE BOTTOM-LEFT — that's the card_number, regardless of what the top-right says.
+
+B) The bottom edge sometimes shows a year stamp ("2026") and a set name ("BATTLE ARENA"). Neither is the card_number. The card_number is the SMALL text directly in the bottom-LEFT corner, NOT the centered set name.
+
+If you cannot read the bottom-left text confidently, return card_number=null. Returning null lets the system fall back; returning a guess sends the user to the wrong card.`;
 
 // ── Claude user prompt ─────────────────────────────────────────
-export const BOBA_USER_PROMPT = `<task>Identify this BoBA trading card. Read EACH field independently from its physical location on the card.</task>
+export const BOBA_USER_PROMPT = `<task>
+Transcribe two pieces of text from this BoBA trading card:
+1. card_number — the text in the BOTTOM-LEFT corner (e.g. "BBF-82" or "130")
+2. card_name — the title text in the TOP-LEFT corner (e.g. "Dumper")
+</task>
 
 <critical_rules>
-- CARD NUMBER: Read the EXACT text from the BOTTOM-LEFT corner box. It may be a plain number (paper cards like "130") or PREFIX-NUMBER (parallel cards like "BF-108"). Report EXACTLY what is printed — do NOT add a prefix if there is none.
-- POWER: Read the LARGE number from the TOP-RIGHT corner. NEVER use it as card_number.
-- HERO NAME: Read the large title text from the TOP-LEFT area.
-- If card_number text is obscured, blurry, or you are uncertain, set card_number to null.
-- Do NOT confabulate a card number from memory — only report what you can physically read.
+- card_number is in the BOTTOM-LEFT. Always. The big number in the top-right is the POWER stat — never the card_number.
+- card_name is in the TOP-LEFT. Always. Read just the hero/play name, not anything else.
+- Do not read or infer set name, rarity, weapon, power, parallel, athlete name, year, or anything else. The database has them.
+- If a field is obscured or you are uncertain, return null. Do not guess from memory.
 </critical_rules>
 
-<known_prefixes>NONE (paper/base cards are numeric only like "130"), BF, BFA, BBFA, BBF, BLBF, ABF, CBF, GBF, OBF, PBF, SBF, HBF, IBF, RBF, BGBF, RHBF, OHBF, MBFA, GLBF, PL, BPL, HTD, RAD, MIX, MI, BL, GGL, LOGO, FT, SF, SL, CHILL, ALT, CJ, PG, HD</known_prefixes>
-
-<weapons>Fire=red, Ice=blue, Steel=gray, Hex=purple, Glow=yellow-green, Brawl=orange, Gum=pink, Super=gold 1/1, Alt=purple alternate art, Cyber=cyan/teal digital circuit</weapons>
-
 <examples>
-card_type="hero", card_number="130", card_name="Dart-Board", hero_name="Dart-Board", power=130, weapon_type="Steel", parallel="paper" (paper card — numeric only, NO prefix)
-card_type="hero", card_number="BF-108", card_name="BoJax", hero_name="BoJax", power=200, weapon_type="Super", parallel="battlefoil"
-card_type="play", card_number="PL-46", card_name="Front Run", hero_name="", power=null
-card_type="bonus_play", card_number="BPL-12", card_name="Bonus Card Name", hero_name="", power=null
-card_type="hot_dog", card_number="HTD-5", card_name="Hot Dog Card Name", hero_name="", power=null
-card_type="hero", card_number=null (unreadable), card_name="The Kid", hero_name="The Kid", power=180, flags=["foil_reflection"]
+Paper hero (top-right shows "130", bottom-left shows "BBF-82"):
+  card_number="BBF-82", card_name="Dumper", confidence=0.95
+  (NOT card_number="130" — 130 is the power stat in top-right.)
+
+Paper hero where card_number happens to equal power (top-right "130", bottom-left "130"):
+  card_number="130", card_name="Dart-Board", confidence=0.95
+  (Bottom-left was the source of truth; happens to match top-right by coincidence.)
+
+Battlefoil parallel (bottom-left "BF-108"):
+  card_number="BF-108", card_name="Bo Jackson", confidence=0.92
+
+Play card (no power value, bottom-left "PL-46"):
+  card_number="PL-46", card_name="Front Run", confidence=0.95
+
+Unreadable bottom-left:
+  card_number=null, card_name="The Kid", confidence=0.4, flags=["foil_reflection"]
 </examples>`;
