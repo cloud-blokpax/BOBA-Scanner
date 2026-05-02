@@ -48,6 +48,28 @@ describe('ConsensusBuilder.validateCardNumber (via addVote/getConsensus)', () =>
 		const c = b.getConsensus();
 		expect(c.cardNumber).toBeNull();
 	});
+	it('Phase 1 Doc 1.1 — corrects single-edit prefix typos (UBF → BBF) when unambiguous', () => {
+		// Spaced vocab — only one prefix is at distance 1 from "UBF".
+		vi.mocked(getBobaPrefixes).mockReturnValue(new Set(['BBF', 'RAD', 'GRILL']));
+		vi.mocked(getBobaHeroes).mockReturnValue(['Bo Jackson', 'Dumper']);
+		const b = new ConsensusBuilder(1, 'boba');
+		b.addVote({ task: 'card_number', rawValue: 'UBF-82', confidence: 0.95, sessionId: 1 });
+		b.addVote({ task: 'card_number', rawValue: 'UBF-82', confidence: 0.92, sessionId: 1 });
+		b.addVote({ task: 'name', rawValue: 'Dumper', confidence: 0.95, sessionId: 1 });
+		b.addVote({ task: 'name', rawValue: 'Dumper', confidence: 0.92, sessionId: 1 });
+		const c = b.getConsensus();
+		expect(c.cardNumber?.value).toBe('BBF-82');
+	});
+
+	it('Phase 1 Doc 1.1 — drops ambiguous prefix corrections', () => {
+		vi.mocked(getBobaPrefixes).mockReturnValue(new Set(['BBF', 'HBF']));
+		const b = new ConsensusBuilder(1, 'boba');
+		// "ZBF" is distance 1 from both BBF and HBF — should reject.
+		b.addVote({ task: 'card_number', rawValue: 'ZBF-1', confidence: 0.95, sessionId: 1 });
+		b.addVote({ task: 'card_number', rawValue: 'ZBF-1', confidence: 0.92, sessionId: 1 });
+		const c = b.getConsensus();
+		expect(c.cardNumber).toBeNull();
+	});
 	it('accepts plain-numeric card numbers (BoBA paper)', () => {
 		const b = new ConsensusBuilder(1, 'boba');
 		b.addVote({ task: 'card_number', rawValue: '108', confidence: 0.95, sessionId: 1 });

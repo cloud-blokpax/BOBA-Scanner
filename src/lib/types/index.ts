@@ -122,6 +122,12 @@ export interface ScanResult {
 	 *  distinguish 'tier1_local_ocr' (canonical won) from
 	 *  'tier1_upload_tta' (canonical failed, TTA rescued). */
 	winningTier?: string | null;
+	/** Phase 1 Doc 1.0: catalog cross-validation outcome. Forwarded to the
+	 *  scans.catalog_validation_passed / .catalog_validation_failure_reason
+	 *  columns by recognition.finalize(). NULL when the validation flag is
+	 *  off or this scan never reached Tier 1. */
+	catalogValidationPassed?: boolean | null;
+	catalogValidationFailureReason?: string | null;
 }
 
 export interface ScanPipelineState {

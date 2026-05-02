@@ -266,6 +266,9 @@ export async function recordScan(input: RecordScanInput): Promise<string | null>
 				exif_software: input.exifSoftware ?? null,
 				exif_gps_stripped: true,
 
+				// Phase 1 Doc 1.2 — orientation correction applied before Tier 1 OCR
+				orientation_correction_deg: input.orientationCorrectionDeg ?? null,
+
 				// Device/camera state at shutter
 				camera_facing: input.cameraFacing ?? null,
 				torch_on: input.torchOn ?? null,
@@ -497,6 +500,14 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 		}
 		if (input.decisionContext) {
 			updates.decision_context = input.decisionContext;
+		}
+		// Phase 1 Doc 1.0 — catalog cross-validation outcome on dedicated columns.
+		// undefined = "leave alone"; explicit null = clear back to NULL.
+		if (input.catalogValidationPassed !== undefined) {
+			updates.catalog_validation_passed = input.catalogValidationPassed;
+		}
+		if (input.catalogValidationFailureReason !== undefined) {
+			updates.catalog_validation_failure_reason = input.catalogValidationFailureReason;
 		}
 		// Patch the resolved game_id when finalize() knows it. The initial
 		// INSERT defaulted to 'boba' for auto-detect scans; a Wonders match

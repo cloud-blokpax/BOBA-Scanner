@@ -44,6 +44,12 @@ export interface CanonicalResult {
 	confidence: number;
 	/** Which OCR strategy produced the winning fields. */
 	ocrStrategy: 'region' | 'full_frame' | 'mixed';
+	/** Phase 1 Doc 1.0 — strict triangulation result. Populated whenever
+	 *  the catalog-validation feature flag is enabled; null otherwise. */
+	validation: {
+		passed: boolean;
+		reason: string | null;
+	} | null;
 	perTask: {
 		cardNumber: { raw: string; confidence: number; validated: string | null };
 		name: { raw: string; confidence: number; collapsed: string | null };
@@ -79,7 +85,50 @@ export async function runCanonicalTier1(
 	await initPaddleOCR();
 
 	// Stage 1: region-cropped OCR (fast path)
-	const regionOut = await runRegionOCR(bitmap, game);
+	let regionOut = await runRegionOCR(bitmap, game);
+	let activeBitmap: ImageBitmap = bitmap;
+	// When the 180° retry creates a rotated bitmap we own, this holds it so
+	// callers don't have to know about the rotation. Closed at end of fn.
+	let rotatedRetryBitmap: ImageBitmap | null = null;
+
+	// Phase 1 Doc 1.2 — 180° retry safety net. Only fires when EVERYTHING
+	// is missing on the region path. EXIF correction handles the common
+	// case; this catches the rare "EXIF tag was wrong/absent and the photo
+	// is upside-down" failure mode.
+	const bothRegionsFailed =
+		!regionOut.cardNumber.validated && !regionOut.name.collapsed;
+	if (bothRegionsFailed) {
+		try {
+			const orientFlag = await (async () => {
+				try {
+					const m = await import('$lib/stores/feature-flags.svelte');
+					return m.featureEnabled('phase1_orientation_correction_v1')();
+				} catch { return false; }
+			})();
+			if (orientFlag) {
+				const { rotateBitmap } = await import('./orientation-correction');
+				const rotated = await rotateBitmap(bitmap, 180);
+				let usedRotated = false;
+				try {
+					const retry = await runRegionOCR(rotated, game);
+					const retryHasField = !!retry.cardNumber.validated || !!retry.name.collapsed;
+					if (retryHasField) {
+						regionOut = retry;
+						activeBitmap = rotated;
+						rotatedRetryBitmap = rotated;
+						usedRotated = true;
+					}
+				} finally {
+					if (!usedRotated) {
+						try { rotated.close(); } catch { /* ignore */ }
+					}
+				}
+			}
+		} catch (err) {
+			console.debug('[tier1-canonical] 180° retry skipped', err);
+		}
+	}
+
 	let strategy: CanonicalResult['ocrStrategy'] = 'region';
 	let merged: OCROutputs = regionOut;
 
@@ -92,7 +141,7 @@ export async function runCanonicalTier1(
 
 	if (regionLooksBad) {
 		try {
-			const fullOut = await runFullFrameOCR(bitmap, game);
+			const fullOut = await runFullFrameOCR(activeBitmap, game);
 			merged = mergeOCROutputs(regionOut, fullOut);
 			strategy =
 				regionOut.cardNumber.validated || regionOut.name.collapsed ? 'mixed' : 'full_frame';
@@ -102,7 +151,7 @@ export async function runCanonicalTier1(
 	}
 
 	// Parallel classification (Wonders only)
-	const parallelRes = game === 'wonders' ? await safeClassifyParallel(bitmap) : null;
+	const parallelRes = game === 'wonders' ? await safeClassifyParallel(activeBitmap) : null;
 
 	let parallelHumanName: string | null = null;
 	let parallelPerTask: CanonicalResult['perTask']['parallel'] | undefined;
@@ -160,6 +209,40 @@ export async function runCanonicalTier1(
 		parallel = parallelHumanName;
 	}
 
+	// Phase 1 Doc 1.0 — Catalog cross-validation gate.
+	// We always compute the result; the *gate* (whether validation forces
+	// fallback) is enforced by the caller in recognition-tiers.ts so we
+	// can keep this function pure / testable.
+	let validation: { passed: boolean; reason: string | null } | null = null;
+	try {
+		const validationFlagOn = await (async () => {
+			try {
+				const m = await import('$lib/stores/feature-flags.svelte');
+				return m.featureEnabled('phase1_catalog_validation_v1')();
+			} catch { return false; }
+		})();
+		if (validationFlagOn) {
+			const { validateCatalogTriangulation } = await import('./catalog-validation');
+			const r = validateCatalogTriangulation({
+				game,
+				ocrCardNumber: merged.cardNumber.validated,
+				ocrName: merged.name.collapsed,
+				ocrParallel: parallelHumanName,
+				candidateCard: card
+			});
+			validation = r.passed
+				? { passed: true, reason: null }
+				: { passed: false, reason: r.reason };
+		}
+	} catch (err) {
+		console.debug('[tier1-canonical] validation skipped', err);
+	}
+
+	// Close the 180°-retry bitmap if we created one. Owned by this fn.
+	if (rotatedRetryBitmap) {
+		try { rotatedRetryBitmap.close(); } catch { /* ignore */ }
+	}
+
 	return {
 		card,
 		cardNumber: merged.cardNumber.validated,
@@ -167,6 +250,7 @@ export async function runCanonicalTier1(
 		parallel,
 		confidence: Math.min(merged.cardNumber.confidence, merged.name.confidence),
 		ocrStrategy: strategy,
+		validation,
 		perTask: {
 			cardNumber: merged.cardNumber,
 			name: merged.name,

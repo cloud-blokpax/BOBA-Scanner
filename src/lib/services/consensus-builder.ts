@@ -21,6 +21,7 @@ import {
 	getWondersNames
 } from './catalog-mirror';
 import { normalizeOcrName, levenshtein } from '$lib/utils/normalize-ocr-name';
+import { correctAgainstVocab } from './vocab-correction';
 
 /**
  * Task label for a vote. Loosened from a fixed union to `string` so new
@@ -195,7 +196,21 @@ export class ConsensusBuilder {
 			if (this.game === 'boba') {
 				try {
 					const prefixes = getBobaPrefixes();
-					if (!prefixes.has(prefixMatch[1])) return null;
+					if (prefixes.has(prefixMatch[1])) {
+						return cleaned;
+					}
+					// Phase 1 Doc 1.1 — single-edit-distance correction against
+					// the closed prefix vocabulary. Only accept when exactly
+					// one prefix is at distance 1 ("UBF" → "BBF"); ambiguous
+					// matches are dropped, preserving the prior reject behavior.
+					const corrected = correctAgainstVocab(prefixMatch[1], prefixes);
+					if (corrected && corrected.source === 'edit_1') {
+						const repaired = cleaned.replace(/^[A-Z]+-/, `${corrected.corrected}-`);
+						if (PREFIX_PATTERN.test(repaired)) {
+							return repaired;
+						}
+					}
+					return null;
 				} catch {
 					// Catalog not warmed yet — accept and rely on downstream lookup
 				}
@@ -230,7 +245,16 @@ export class ConsensusBuilder {
 			const d = levenshtein(rawNorm, normalizeOcrName(known));
 			if (!best || d < best.dist) best = { name: known, dist: d };
 		}
-		if (best && best.dist <= Math.max(2, Math.floor(best.name.length * 0.15))) return best.name;
+		// Phase 1 Doc 1.1 — name-length-aware threshold.
+		// Floor at 1 for short names (≤6 chars) to avoid accepting wrong
+		// neighbors at distance 2; previously max(2, floor(len*0.15)) which
+		// was too permissive on short names like "Bojax", "Brawn", "Cicada".
+		const threshold = best
+			? best.name.length <= 6
+				? 1
+				: Math.max(2, Math.floor(best.name.length * 0.15))
+			: 0;
+		if (best && best.dist <= threshold) return best.name;
 		return null;
 	}
 
