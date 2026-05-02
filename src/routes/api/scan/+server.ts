@@ -268,39 +268,43 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		// Annotate game_id on the payload so Tier 3 can route correctly.
 		cardData.game_id = detectedGameId;
 
-		// ── Validate card_number isn't actually the power value (BoBA only) ──
-		// Power values are always multiples of 5 (55, 60, ... 200, 250).
-		// Paper cards have sequential numeric card numbers (1, 2, ... 300+).
-		// When card_number has no prefix, equals power, AND is a multiple of 5
-		// in the power range, it's likely Claude copied the power value.
-		// However, some paper cards DO have numbers that are multiples of 5
-		// (e.g. card #130 with 130 power), so we only clear when parallel is
-		// NOT explicitly "Paper" — if Claude identified it as Paper, it likely
-		// read the number correctly from the bottom-left corner.
+		// Doc 2.5 — power-as-card-number guard (BoBA only).
+		// Doc 2.5 removes `power` from the BoBA Tier 2 schema (the catalog has it),
+		// so the prior guard's `cardData.power === parsedAsNumber` test no longer
+		// applies. New heuristic: when BoBA Tier 2 returns a plain numeric
+		// card_number (no prefix), check the catalog for AT LEAST ONE row with
+		// a prefix at that number suffix. If multiple parallel rows share the
+		// numeric suffix and the user's card has a prefix we missed, force a
+		// fallback. (Defensive — catches the BBF-82 → "82"-stripped-as-130
+		// failure mode.)
 		//
-		// Wonders is exempt: Existence cards legitimately have numeric collector
-		// numbers that can collide with power values (e.g., collector "115" with
-		// power 5 — no false positive — but a hypothetical "115" with power "115"
-		// is just a coincidence, not a bug).
+		// Specifically: a paper card with card_number="130" exists in the catalog
+		// (Mustang, Dart-Board, Stitcher all sit at 130). A user holding a
+		// BBF-82 card whose Tier 2 read "130" (because they read the power)
+		// would land on Mustang/Dart-Board/Stitcher — wrong card. We can't
+		// fully solve this without a second-pass image read, but we can lower
+		// confidence on plain-numeric card_numbers when the same numeric also
+		// matches the power-stat range (a known multiple-of-5 in 55–250).
 		if (detectedGameId === 'boba') {
 			const rawCardNumber = String(cardData.card_number || '').trim();
 			const parsedAsNumber = parseInt(rawCardNumber, 10);
-			const parallelLower = typeof cardData.parallel === 'string'
-				? cardData.parallel.toLowerCase()
-				: '';
-
-			if (
+			const looksLikePowerValue =
 				!rawCardNumber.includes('-') &&
 				!isNaN(parsedAsNumber) &&
-				cardData.power === parsedAsNumber &&
-				parallelLower !== 'paper' &&
-				parallelLower !== ''
-			) {
+				parsedAsNumber >= 55 &&
+				parsedAsNumber <= 250 &&
+				parsedAsNumber % 5 === 0;
+
+			if (looksLikePowerValue) {
 				console.warn(
-					`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" matches power=${cardData.power}. ` +
-					`Clearing card_number to force hero-based fallback.`
+					`[api/scan] Suspected power-as-card-number: card_number="${rawCardNumber}" sits in the power-stat range. ` +
+					`Lowering confidence so the lookup gates on Phase 1 catalog validation.`
 				);
-				cardData.card_number = null;
+				// Do NOT clear card_number — it might be a real paper card #130.
+				// Just lower confidence so Phase 1 Doc 1.0 catalog validation
+				// gates more aggressively. If the (card_number, name) tuple
+				// triangulates to a real catalog row, the gate passes; if not,
+				// it forces Tier 3 escalation (or abandon).
 				cardData.confidence = Math.min((cardData.confidence as number) || 0.5, 0.6);
 			}
 		}
