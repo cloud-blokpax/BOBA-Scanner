@@ -289,7 +289,7 @@ function patchAbandonedScan(
  * back out. Used at the Comlink boundary so main-thread bitmap ownership
  * survives regardless of Comlink's auto-transfer semantics for ImageBitmap.
  */
-async function cloneImageBitmap(src: ImageBitmap): Promise<ImageBitmap> {
+export async function cloneImageBitmap(src: ImageBitmap): Promise<ImageBitmap> {
 	const canvas = new OffscreenCanvas(src.width, src.height);
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('no 2d ctx');
@@ -655,6 +655,13 @@ export async function recognizeCard(
 
 	// Helper to record scan result to history and auto-tag before returning
 	async function finalize(result: ScanResult): Promise<ScanResult> {
+		// Phase 1 Doc 1.2 cleanup — close the rotated pre-detection bitmap
+		// owned by this scan. Held reference doesn't hurt correctness but
+		// prevents GC reclaim until the next major sweep on long sessions.
+		if (preDetectBitmapOwned) {
+			try { preDetectBitmap.close(); } catch { /* ignore */ }
+			preDetectBitmapOwned = false;
+		}
 		// Prefer the card's own game_id, then the result's tier-set game_id,
 		// then the caller's hint, and finally 'boba' for legacy rows without game_id.
 		const resolvedGameId = result.card?.game_id
