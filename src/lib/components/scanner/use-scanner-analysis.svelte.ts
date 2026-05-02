@@ -16,7 +16,7 @@
  */
 
 import { captureFrame } from '$lib/services/camera';
-import { computeFrameHash } from '$lib/services/recognition';
+import { cloneImageBitmap, computeFrameHash } from '$lib/services/recognition';
 import { getImageWorker, initWorkers } from '$lib/services/recognition-workers';
 import { triggerHaptic } from '$lib/utils/haptics';
 import { lookupOverlayPrice, type OverlayData } from './overlay-price-lookup';
@@ -104,23 +104,24 @@ export function useScannerAnalysis(
 				height: Math.round(bitmap.height * 0.75)
 			};
 
-			// Phase 2 Doc 2.2 — kick off live quad detection in parallel
-			// with alignment-signal computation. Both consume the same
-			// bitmap. Quad detection runs on main (OpenCV); signals run
-			// in the worker. Bitmap is closed in the finally clause; we
-			// must not close it before both consumers are done.
+			// Phase 2 Doc 2.2.1 (under Doc 2.4.1) — Comlink calls effectively
+			// transfer ImageBitmap; without a clone, whichever consumer
+			// completes its bitmap reads first "wins" and the loser silently
+			// fails. Match the recognition.ts pattern: clone for the worker
+			// call, leave the original for the main-thread quad detection.
+			const workerBitmap = quadEnabled()
+				? await cloneImageBitmap(bitmap)
+				: bitmap;
+
 			const quadPromise = quadEnabled()
 				? quadDetection.processBitmap(
 					bitmap,
-					/* alignmentReady — we'll know it after signals; pass
-					   the previous tick's state as a hint, then upgrade
-					   below if today's tick lifts to ready. */
 					_alignmentState === 'ready',
 					videoEl
 				)
 				: Promise.resolve();
 
-			const signals = await getImageWorker().computeAlignmentSignals(bitmap, {
+			const signals = await getImageWorker().computeAlignmentSignals(workerBitmap, {
 				x: vf.x,
 				y: vf.y,
 				w: vf.width,
