@@ -128,6 +128,11 @@ export interface ScanResult {
 	 *  off or this scan never reached Tier 1. */
 	catalogValidationPassed?: boolean | null;
 	catalogValidationFailureReason?: string | null;
+	/** Phase 2 Doc 2.0: TRUE when Tier 1 returned via the pre-shutter live
+	 *  consensus short-circuit, skipping the canonical OCR pass. FALSE when
+	 *  canonical ran. NULL when Tier 1 didn't run. Forwarded to
+	 *  scans.tier1_short_circuited by recognition.finalize(). */
+	tier1ShortCircuited?: boolean | null;
 }
 
 export interface ScanPipelineState {
