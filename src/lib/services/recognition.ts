@@ -755,7 +755,10 @@ export async function recognizeCard(
 					catalogValidationPassed: final.catalogValidationPassed ?? null,
 					catalogValidationFailureReason: final.catalogValidationFailureReason ?? null,
 					// Phase 2 Doc 2.0 — short-circuit cohort flag.
-					tier1ShortCircuited: final.tier1ShortCircuited ?? null
+					tier1ShortCircuited: final.tier1ShortCircuited ?? null,
+					// Phase 2 Doc 2.4 — batched recognition telemetry.
+					ocrRegionBatchSize: final.ocrRegionBatchSize ?? null,
+					ocrRegionTotalMs: final.ocrRegionTotalMs ?? null
 				});
 			}
 		}

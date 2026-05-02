@@ -133,6 +133,9 @@ export interface ScanResult {
 	 *  canonical ran. NULL when Tier 1 didn't run. Forwarded to
 	 *  scans.tier1_short_circuited by recognition.finalize(). */
 	tier1ShortCircuited?: boolean | null;
+	/** Phase 2 Doc 2.4: region-OCR batching telemetry. */
+	ocrRegionBatchSize?: number | null;
+	ocrRegionTotalMs?: number | null;
 }
 
 export interface ScanPipelineState {

@@ -18,11 +18,14 @@ import {
 	initPaddleOCR,
 	ocrRegion,
 	ocrRecOnly,
+	ocrRecOnlyBatch,
 	ocrFullFrame,
 	boxCenterNormalized,
 	regionContains,
-	pickTopBox
+	pickTopBox,
+	type OCRResult
 } from './paddle-ocr';
+import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 import { REGIONS, regionToPixels } from './ocr-regions';
 import { classifyWondersParallel } from './parallel-classifier';
 import { ConsensusBuilder } from './consensus-builder';
@@ -50,6 +53,10 @@ export interface CanonicalResult {
 		passed: boolean;
 		reason: string | null;
 	} | null;
+	/** Phase 2 Doc 2.4 — region-OCR batching telemetry. NULL when the
+	 *  scan didn't reach the region-OCR pass or the flag was off. */
+	ocrRegionBatchSize: number | null;
+	ocrRegionTotalMs: number | null;
 	perTask: {
 		cardNumber: { raw: string; confidence: number; validated: string | null };
 		name: { raw: string; confidence: number; collapsed: string | null };
@@ -76,6 +83,11 @@ interface OCROutputs {
 	 *  no set_code ROI, so this stays undefined for that game. Informational
 	 *  for now; not used by the resolver. */
 	setCode?: { raw: string; confidence: number; value: string | null };
+	/** Phase 2 Doc 2.4 — number of regions in the batched call.
+	 *  NULL = serial path (flag off or batch-failure fallback). */
+	ocrRegionBatchSize?: number | null;
+	/** Phase 2 Doc 2.4 — wall-clock for the batched/serial recognition pass. */
+	ocrRegionTotalMs?: number | null;
 }
 
 export async function runCanonicalTier1(
@@ -251,6 +263,8 @@ export async function runCanonicalTier1(
 		confidence: Math.min(merged.cardNumber.confidence, merged.name.confidence),
 		ocrStrategy: strategy,
 		validation,
+		ocrRegionBatchSize: merged.ocrRegionBatchSize ?? null,
+		ocrRegionTotalMs: merged.ocrRegionTotalMs ?? null,
 		perTask: {
 			cardNumber: merged.cardNumber,
 			name: merged.name,
@@ -287,13 +301,63 @@ async function runRegionOCR(
 	//     for the rec head's preferred ~48px training height.
 	//   - name target ~64px: 5mm chars on canonical ≈ 60px, near identity.
 	//   - set_code target 48px: small year stamp; rec head's natural size.
-	const [numRes, nameRes, setRes] = await Promise.allSettled([
-		ocrRecOnly(bitmap, cardNumberReg, { targetHeight: 56 }),
-		ocrRecOnly(bitmap, nameReg, { targetHeight: 64 }),
-		setCodeReg
-			? ocrRecOnly(bitmap, setCodeReg, { targetHeight: 48 })
-			: Promise.resolve({ text: '', confidence: 0, boxes: [] })
-	]);
+	// Phase 2 Doc 2.4 — batched call when flag on. The batched path returns
+	// results in input order (matching the per-region indexing below) and
+	// throws on failure → caller catch falls back to serial path.
+	const batchedEnabled = featureEnabled('phase2_batched_recognition_v1')();
+	const regionInputs: Array<{
+		region: { x: number; y: number; w: number; h: number };
+		targetHeight: number;
+	}> = [
+		{ region: cardNumberReg, targetHeight: 56 },
+		{ region: nameReg, targetHeight: 64 }
+	];
+	if (setCodeReg) {
+		regionInputs.push({ region: setCodeReg, targetHeight: 48 });
+	}
+
+	let numRes: PromiseSettledResult<OCRResult>;
+	let nameRes: PromiseSettledResult<OCRResult>;
+	let setRes: PromiseSettledResult<OCRResult>;
+	let regionBatchSize: number | null = null;
+	let regionBatchMs: number | null = null;
+
+	if (batchedEnabled) {
+		const tBatchStart = performance.now();
+		try {
+			const batched = await ocrRecOnlyBatch(bitmap, regionInputs);
+			regionBatchMs = Math.round(performance.now() - tBatchStart);
+			regionBatchSize = regionInputs.length;
+			numRes = { status: 'fulfilled', value: batched[0] };
+			nameRes = { status: 'fulfilled', value: batched[1] };
+			setRes = setCodeReg
+				? { status: 'fulfilled', value: batched[2] }
+				: { status: 'fulfilled', value: { text: '', confidence: 0, boxes: [] } };
+		} catch (err) {
+			console.debug('[tier1-canonical] batched recognition threw, falling back to serial', err);
+			// Serial fallback path — same call shape as pre-Doc-2.4.
+			[numRes, nameRes, setRes] = await Promise.allSettled([
+				ocrRecOnly(bitmap, cardNumberReg, { targetHeight: 56 }),
+				ocrRecOnly(bitmap, nameReg, { targetHeight: 64 }),
+				setCodeReg
+					? ocrRecOnly(bitmap, setCodeReg, { targetHeight: 48 })
+					: Promise.resolve({ text: '', confidence: 0, boxes: [] })
+			]);
+			regionBatchMs = Math.round(performance.now() - tBatchStart);
+			regionBatchSize = null; // explicitly NULL — serial fallback after batch failure
+		}
+	} else {
+		const tSerialStart = performance.now();
+		[numRes, nameRes, setRes] = await Promise.allSettled([
+			ocrRecOnly(bitmap, cardNumberReg, { targetHeight: 56 }),
+			ocrRecOnly(bitmap, nameReg, { targetHeight: 64 }),
+			setCodeReg
+				? ocrRecOnly(bitmap, setCodeReg, { targetHeight: 48 })
+				: Promise.resolve({ text: '', confidence: 0, boxes: [] })
+		]);
+		regionBatchMs = Math.round(performance.now() - tSerialStart);
+		// regionBatchSize stays null when flag off — distinguishes the cohorts.
+	}
 
 	const builder = new ConsensusBuilder(1, game);
 	if (numRes.status === 'fulfilled') {
@@ -353,7 +417,10 @@ async function runRegionOCR(
 			confidence:
 				nameTop?.score || (nameRes.status === 'fulfilled' ? nameRes.value.confidence : 0),
 			collapsed: consensus.name?.value || null
-		}
+		},
+		// Phase 2 Doc 2.4 — propagate to CanonicalResult for scan-writer.
+		ocrRegionBatchSize: regionBatchSize,
+		ocrRegionTotalMs: regionBatchMs
 	};
 	if (setCodeReg) {
 		out.setCode = {
@@ -460,7 +527,10 @@ async function runFullFrameOCR(
 function mergeOCROutputs(region: OCROutputs, full: OCROutputs): OCROutputs {
 	const merged: OCROutputs = {
 		cardNumber: pickField(region.cardNumber, full.cardNumber, 'validated'),
-		name: pickField(region.name, full.name, 'collapsed')
+		name: pickField(region.name, full.name, 'collapsed'),
+		// Phase 2 Doc 2.4 — preserve region-path batching telemetry.
+		ocrRegionBatchSize: region.ocrRegionBatchSize ?? null,
+		ocrRegionTotalMs: region.ocrRegionTotalMs ?? null
 	};
 	// set_code only ever comes from the region path (BoBA-only sub-ROI;
 	// full-frame OCR doesn't vote on it). Pass it through unchanged.
