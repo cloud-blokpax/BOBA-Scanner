@@ -509,6 +509,10 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 		if (input.catalogValidationFailureReason !== undefined) {
 			updates.catalog_validation_failure_reason = input.catalogValidationFailureReason;
 		}
+		// Phase 2 Doc 2.0 — short-circuit cohort flag.
+		if (input.tier1ShortCircuited !== undefined) {
+			updates.tier1_short_circuited = input.tier1ShortCircuited;
+		}
 		// Patch the resolved game_id when finalize() knows it. The initial
 		// INSERT defaulted to 'boba' for auto-detect scans; a Wonders match
 		// must overwrite it so downstream telemetry (and the parallel

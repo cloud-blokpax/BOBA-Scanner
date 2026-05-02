@@ -753,7 +753,9 @@ export async function recognizeCard(
 					// decision_context.catalog_validation, but indexed for
 					// cheap filtering in admin queries.
 					catalogValidationPassed: final.catalogValidationPassed ?? null,
-					catalogValidationFailureReason: final.catalogValidationFailureReason ?? null
+					catalogValidationFailureReason: final.catalogValidationFailureReason ?? null,
+					// Phase 2 Doc 2.0 — short-circuit cohort flag.
+					tier1ShortCircuited: final.tier1ShortCircuited ?? null
 				});
 			}
 		}

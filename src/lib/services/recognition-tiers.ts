@@ -18,6 +18,8 @@ import { getImageWorker } from './recognition-workers';
 import { crossValidateCardResult } from './recognition-validation';
 import { recordTierResult as writerRecordTierResult } from './scan-writer';
 import { runCanonicalTier1, type CanonicalResult } from './tier1-canonical';
+import { tryLiveShortCircuit } from './tier1-short-circuit';
+import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 import { runUploadPipeline } from './upload-pipeline';
 import { toParallelName } from '$lib/data/wonders-parallels';
 import { checkpoint } from './scan-checkpoint';
@@ -464,6 +466,29 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 	let ttaTelemetry: Tier1Telemetry['tta'] = null;
 	let canonicalAttempts: Tier1Telemetry['canonicalAttempts'] = [];
 
+	// Phase 2 Doc 2.0 — pre-shutter consensus short-circuit. When live OCR
+	// has reached STRONG consensus and Doc 1.0 validation passes against
+	// the live values, skip canonical entirely. tryLiveShortCircuit returns
+	// null on any guard failure → fall through to canonical unchanged.
+	const shortCircuitEnabled = featureEnabled('phase2_short_circuit_v1')();
+	if (shortCircuitEnabled) {
+		try {
+			const sc = await tryLiveShortCircuit({
+				liveConsensusSnapshot,
+				gameHint,
+				isAutoDetect,
+				cardDetectContext,
+				traceId,
+				startTime
+			});
+			if (sc) return sc;
+		} catch (err) {
+			// Defensive — short-circuit must never throw out of runTier1.
+			// Log and fall through to canonical.
+			console.debug('[tier1] short-circuit attempt threw, falling through', err);
+		}
+	}
+
 	checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
 	try {
 		// Auto-detect runs Tier 1 against both games sequentially. Explicit
@@ -572,7 +597,11 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				catalogValidationPassed: canonical.validation?.passed ?? null,
 				catalogValidationFailureReason: canonical.validation?.passed === false
 					? (canonical.validation.reason ?? null)
-					: null
+					: null,
+				// Phase 2 Doc 2.0 — flag canonical-path scans as the non-short-
+				// circuit cohort. When the flag is off this stays false; when on
+				// and short-circuit declined, this is the canonical-path arm.
+				tier1ShortCircuited: false
 			};
 			return {
 				result: tier1Result,
@@ -641,7 +670,9 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 						catalogValidationPassed: canonical.validation?.passed ?? null,
 						catalogValidationFailureReason: canonical.validation?.passed === false
 							? (canonical.validation.reason ?? null)
-							: null
+							: null,
+						// Phase 2 Doc 2.0 — TTA path is canonical-cohort.
+						tier1ShortCircuited: false
 					};
 					return {
 						result: ttaResult,
