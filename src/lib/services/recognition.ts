@@ -106,6 +106,21 @@ interface ScanWriteExtras {
 	viewfinder: { x: number; y: number; width: number; height: number } | null;
 	/** Doc 1, Phase 6: per-capture geometry telemetry from corner detection. */
 	geometry: ScanWriteGeometry | null;
+	/** Phase 1 Doc 1.2 — orientation correction. */
+	orientationCorrectionDeg?: 0 | 90 | 180 | 270 | null;
+}
+
+/**
+ * Read a feature flag from a non-Svelte context. Lazy-imports the runes
+ * store so cold-start boot doesn't pay for it. Returns false on any error.
+ */
+async function isFeatureEnabledFor(key: string): Promise<boolean> {
+	try {
+		const mod = await import('$lib/stores/feature-flags.svelte');
+		return mod.featureEnabled(key)();
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -180,6 +195,9 @@ async function openScanRow(
 		exifOrientation: extras.exif.orientation ?? null,
 		exifCaptureAt: extras.exif.captureAt ?? null,
 		exifSoftware: extras.exif.software ?? null,
+
+		// Phase 1 Doc 1.2 — orientation correction applied before Tier 1 OCR
+		orientationCorrectionDeg: extras.orientationCorrectionDeg ?? null,
 
 		// Device state at shutter
 		deviceOrientationBeta: extras.telemetry.deviceOrientationBeta ?? null,
@@ -431,10 +449,34 @@ export async function recognizeCard(
 	let croppedBitmapOwned: ImageBitmap | null = null;
 	let detectedCardRect: CardRect | null = null;
 	let detectedCardDetection: CardDetection | null = null;
+	// Phase 1 Doc 1.2 — EXIF-rotated source for card-detect/crop. Starts as
+	// the original bitmap; replaced by a rotated bitmap when the EXIF tag
+	// indicates a non-zero rotation. Cleaned up at end of scan.
+	let preDetectBitmap: ImageBitmap = bitmap;
+	let preDetectBitmapOwned = false;
+	let orientationCorrectionApplied: 0 | 90 | 180 | 270 = 0;
 	if (imageSource instanceof File) {
+		// Phase 1 Doc 1.2 — apply EXIF orientation BEFORE detection.
+		// Detector operates on raw pixels; if the bitmap is sideways from
+		// the camera's recorded orientation, the detected card_number/name
+		// ROIs will land on the wrong part of the canonical.
+		try {
+			const { rotationFromExif, rotateBitmap } = await import('./orientation-correction');
+			const exifRot = rotationFromExif(shutterExif.orientation);
+			if (exifRot !== 0 && (await isFeatureEnabledFor('phase1_orientation_correction_v1'))) {
+				const rotated = await rotateBitmap(bitmap, exifRot);
+				preDetectBitmap = rotated;
+				preDetectBitmapOwned = true;
+				orientationCorrectionApplied = exifRot;
+				checkpoint(traceId, 'orient:exif_applied', performance.now() - startTime, { deg: exifRot });
+			}
+		} catch (err) {
+			console.debug('[scan] EXIF orientation correction skipped:', err);
+		}
+
 		try {
 			checkpoint(traceId, 'card_detect:start', performance.now() - startTime);
-			const detection = await detectCard(bitmap, { mode: 'upload' });
+			const detection = await detectCard(preDetectBitmap, { mode: 'upload' });
 			detectedCardDetection = detection;
 			detectedCardRect = {
 				x: detection.boundingRect.x,
@@ -447,7 +489,7 @@ export async function recognizeCard(
 						: 'centered_fallback'
 			};
 			const cropped = await cropToCanonical(
-				bitmap,
+				preDetectBitmap,
 				detectedCardRect,
 				detection.homography
 			);
@@ -493,6 +535,9 @@ export async function recognizeCard(
 		if (croppedBitmapOwned) {
 			try { croppedBitmapOwned.close(); } catch { /* ignore */ }
 		}
+		if (preDetectBitmapOwned) {
+			try { preDetectBitmap.close(); } catch { /* ignore */ }
+		}
 		// Bitmap invalid runs BEFORE openScanRow so there's no row to patch.
 		return {
 			card_id: null,
@@ -527,7 +572,8 @@ export async function recognizeCard(
 		captureSource,
 		alignmentStateAtCapture: options?.alignmentStateAtCapture ?? null,
 		viewfinder: options?.viewfinder ?? null,
-		geometry: resolvedGeometry
+		geometry: resolvedGeometry,
+		orientationCorrectionDeg: orientationCorrectionApplied
 	};
 
 	// ── Open scan row EARLY so tier_results can FK to it ────
@@ -571,6 +617,9 @@ export async function recognizeCard(
 			if (ownsBitmap) bitmap.close();
 			if (croppedBitmapOwned) {
 				try { croppedBitmapOwned.close(); } catch { /* ignore */ }
+			}
+			if (preDetectBitmapOwned) {
+				try { preDetectBitmap.close(); } catch { /* ignore */ }
 			}
 			return {
 				card_id: null,
@@ -699,7 +748,12 @@ export async function recognizeCard(
 					// scans don't know the game until matching completes). Patch
 					// to the resolved value so a Wonders match doesn't keep
 					// claiming game_id='boba'.
-					gameId: resolvedGameId
+					gameId: resolvedGameId,
+					// Phase 1 Doc 1.0 — dedicated columns mirror what's also in
+					// decision_context.catalog_validation, but indexed for
+					// cheap filtering in admin queries.
+					catalogValidationPassed: final.catalogValidationPassed ?? null,
+					catalogValidationFailureReason: final.catalogValidationFailureReason ?? null
 				});
 			}
 		}
@@ -855,6 +909,14 @@ export async function recognizeCard(
 		tier2Result.fallbackTierUsed = 'haiku';
 		tier2Result.liveConsensusReached = liveConsensusReached;
 		tier2Result.liveVsCanonicalAgreed = null;
+		// Phase 1 Doc 1.0 — surface the canonical Tier 1 validation outcome
+		// on the scan row even when Tier 2 rescued the scan.
+		const canonValidation = tier1Telemetry.canonical?.validation ?? null;
+		tier2Result.catalogValidationPassed = canonValidation?.passed ?? null;
+		tier2Result.catalogValidationFailureReason =
+			canonValidation && canonValidation.passed === false
+				? (canonValidation.reason ?? null)
+				: null;
 		// Preserve what canonical / TTA saw so we can debug which stage
 		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.

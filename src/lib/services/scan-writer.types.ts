@@ -79,6 +79,8 @@ export interface RecordScanInput {
 	exifOrientation?: number | null;
 	exifCaptureAt?: Date | null;
 	exifSoftware?: string | null;
+	/** Phase 1 Doc 1.2 — degrees of rotation applied before Tier 1 OCR. */
+	orientationCorrectionDeg?: 0 | 90 | 180 | 270 | null;
 	cameraFacing?: 'user' | 'environment' | null;
 	torchOn?: boolean | null;
 	focusMode?: string | null;
@@ -188,6 +190,9 @@ export interface UpdateScanOutcomeInput {
 	liveVsCanonicalAgreed?: boolean | null;
 	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
 	decisionContext?: Record<string, unknown> | null;
+	/** Phase 1 Doc 1.0 — catalog cross-validation outcome. NULL when flag off. */
+	catalogValidationPassed?: boolean | null;
+	catalogValidationFailureReason?: string | null;
 	/**
 	 * Resolved game_id for the matched card. The initial INSERT in
 	 * recordScan() can only see the active session's gameHint — which is

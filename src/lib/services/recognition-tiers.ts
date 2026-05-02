@@ -390,6 +390,10 @@ export interface Tier1Telemetry {
 	canonical: {
 		perTask: CanonicalResult['perTask'];
 		ocrStrategy: CanonicalResult['ocrStrategy'];
+		/** Phase 1 Doc 1.0 — catalog cross-validation outcome from the
+		 *  canonical Tier 1 attempt. Used by the orchestrator to populate
+		 *  scans.catalog_validation_* even when Tier 2 rescues the scan. */
+		validation: { passed: boolean; reason: string | null } | null;
 	} | null;
 	tta: {
 		frames_processed: number;
@@ -490,7 +494,8 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 
 		canonicalTelemetry = {
 			perTask: canonical.perTask,
-			ocrStrategy: canonical.ocrStrategy
+			ocrStrategy: canonical.ocrStrategy,
+			validation: canonical.validation
 		};
 
 		const liveSnap = liveConsensusSnapshot;
@@ -514,7 +519,13 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 			live_agreed: liveAgreed
 		});
 
-		if (canonical.card && canonical.confidence >= confidenceFloor) {
+		// Phase 1 Doc 1.0 — Catalog cross-validation gate enforcement.
+		// When the gate ran AND failed, force fallback regardless of OCR
+		// confidence. validation==null means flag was off → preserve legacy
+		// behavior (accept on confidence alone).
+		const validationGated =
+			canonical.validation !== null && !canonical.validation.passed;
+		if (canonical.card && canonical.confidence >= confidenceFloor && !validationGated) {
 			const divergent: string[] = [];
 			if (live) {
 				if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
@@ -532,6 +543,7 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 					agreed: liveAgreed,
 					divergent_fields: live ? divergent : null
 				},
+				catalog_validation: canonical.validation, // Phase 1 Doc 1.0
 				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 			};
 			const tier1Result: ScanResult = {
@@ -554,16 +566,24 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				liveVsCanonicalAgreed: liveAgreed,
 				fallbackTierUsed: null,
 				winningTier: 'tier1_local_ocr',
-				decisionContext: decisionCtx
+				decisionContext: decisionCtx,
+				// Phase 1 Doc 1.0 — surface validation outcome for the dedicated
+				// scans.catalog_validation_* columns. NULL when flag is off.
+				catalogValidationPassed: canonical.validation?.passed ?? null,
+				catalogValidationFailureReason: canonical.validation?.passed === false
+					? (canonical.validation.reason ?? null)
+					: null
 			};
 			return {
 				result: tier1Result,
 				telemetry: { canonical: canonicalTelemetry, tta: null, canonicalAttempts }
 			};
 		}
-		// Below confidence floor — fall through to TTA (uploads only) or
-		// Tier 2 Haiku.
-		ctx.lastTier2FailReason = null;
+		// Below confidence floor OR validation gate fired — fall through to
+		// TTA (uploads only) or Tier 2 Haiku.
+		ctx.lastTier2FailReason = validationGated && canonical.validation
+			? `validation_${canonical.validation.reason}`
+			: null;
 
 		// ── Upload TTA voting (Session 2.1b) ────────────────
 		const ttaEligible = imageSource instanceof File;
@@ -592,6 +612,7 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 						canonical_attempts: canonicalAttempts,
 						winning_game: game,
 						upload_tta: ttaTelemetry,
+						catalog_validation: canonical.validation, // Phase 1 Doc 1.0
 						...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
 					};
 					const ttaResult: ScanResult = {
@@ -614,7 +635,13 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 						liveVsCanonicalAgreed: null,
 						fallbackTierUsed: null,
 						winningTier: 'tier1_upload_tta',
-						decisionContext: ttaDecisionCtx
+						decisionContext: ttaDecisionCtx,
+						// Phase 1 Doc 1.0 — preserve canonical validation outcome
+						// even when TTA rescued the scan.
+						catalogValidationPassed: canonical.validation?.passed ?? null,
+						catalogValidationFailureReason: canonical.validation?.passed === false
+							? (canonical.validation.reason ?? null)
+							: null
 					};
 					return {
 						result: ttaResult,
