@@ -21,6 +21,8 @@ import { getImageWorker, initWorkers } from '$lib/services/recognition-workers';
 import { triggerHaptic } from '$lib/utils/haptics';
 import { lookupOverlayPrice, type OverlayData } from './overlay-price-lookup';
 import type { ViewfinderRect } from '$lib/services/constrained-crop';
+import { useQuadDetection, type QuadDetectionState } from './use-quad-detection.svelte';
+import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 
 const READY_DWELL_MS = 300;
 const ALIGN_BLUR_THRESHOLD = 5500;
@@ -36,6 +38,8 @@ export interface AnalysisState {
 	readonly overlayVisible: boolean;
 	readonly showFlash: boolean;
 	readonly alignmentReadySince: number | null;
+	/** Phase 2 Doc 2.2 — read-through to the quad-detection composable. */
+	readonly quad: QuadDetectionState;
 	shouldAutoTrigger: () => boolean;
 	start: () => void;
 	stop: () => void;
@@ -62,6 +66,11 @@ export function useScannerAnalysis(
 	let _lastOverlayHash: string | null = null;
 	let _autoCaptureFired = false;
 
+	// Phase 2 Doc 2.2 — quad-detection composable. State is read through
+	// the AnalysisState interface so callers see one source of truth.
+	const quadDetection = useQuadDetection();
+	const quadEnabled = featureEnabled('phase2_quad_overlay_v1');
+
 	function guidanceFor(state: AlignmentState): string {
 		if (state === 'ready') return 'Hold still…';
 		if (state === 'partial') return 'Align with frame';
@@ -75,6 +84,7 @@ export function useScannerAnalysis(
 			_alignmentReadySince = null;
 			_guidanceText = null;
 			_autoCaptureFired = false;
+			quadDetection.reset();
 			return;
 		}
 
@@ -94,6 +104,22 @@ export function useScannerAnalysis(
 				height: Math.round(bitmap.height * 0.75)
 			};
 
+			// Phase 2 Doc 2.2 — kick off live quad detection in parallel
+			// with alignment-signal computation. Both consume the same
+			// bitmap. Quad detection runs on main (OpenCV); signals run
+			// in the worker. Bitmap is closed in the finally clause; we
+			// must not close it before both consumers are done.
+			const quadPromise = quadEnabled()
+				? quadDetection.processBitmap(
+					bitmap,
+					/* alignmentReady — we'll know it after signals; pass
+					   the previous tick's state as a hint, then upgrade
+					   below if today's tick lifts to ready. */
+					_alignmentState === 'ready',
+					videoEl
+				)
+				: Promise.resolve();
+
 			const signals = await getImageWorker().computeAlignmentSignals(bitmap, {
 				x: vf.x,
 				y: vf.y,
@@ -108,6 +134,10 @@ export function useScannerAnalysis(
 					: signals.cornerGradientScore >= ALIGN_CORNER_PARTIAL
 						? 'partial'
 						: 'no_card';
+
+			// Wait for the parallel quad detection so we don't race the
+			// finally{ bitmap.close() } below. Already started above.
+			await quadPromise;
 
 			const now = performance.now();
 			if (nextState !== _alignmentState) {
@@ -185,6 +215,7 @@ export function useScannerAnalysis(
 			clearInterval(_interval);
 			_interval = null;
 		}
+		quadDetection.reset();
 	}
 
 	function destroy() {
@@ -227,6 +258,9 @@ export function useScannerAnalysis(
 		},
 		get alignmentReadySince() {
 			return _alignmentReadySince;
+		},
+		get quad() {
+			return quadDetection;
 		},
 		shouldAutoTrigger,
 		start,

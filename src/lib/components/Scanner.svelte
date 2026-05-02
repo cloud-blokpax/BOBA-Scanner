@@ -15,6 +15,7 @@
 	import ScannerViewfinder from './scanner/ScannerViewfinder.svelte';
 	import ScannerControls from './scanner/ScannerControls.svelte';
 	import CameraBrackets from './scan/CameraBrackets.svelte';
+	import QuadOverlay from './scanner/QuadOverlay.svelte';
 	import CameraStatusPill from './scan/CameraStatusPill.svelte';
 	import ScanEffects from './ScanEffects.svelte';
 
@@ -55,6 +56,30 @@
 	const cameraReady = $derived(!['initializing', 'error'].includes(phase));
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
+	// Phase 2 Doc 2.2 — track displayed video size for the quad overlay's
+	// SVG viewBox. Updated on resize / orientation change via ResizeObserver.
+	let videoDisplayW = $state(0);
+	let videoDisplayH = $state(0);
+
+	$effect(() => {
+		if (!videoEl) return;
+		const ro = new ResizeObserver(() => {
+			if (!videoEl) return;
+			videoDisplayW = videoEl.clientWidth;
+			videoDisplayH = videoEl.clientHeight;
+		});
+		ro.observe(videoEl);
+		// Initial measurement
+		videoDisplayW = videoEl.clientWidth;
+		videoDisplayH = videoEl.clientHeight;
+		return () => ro.disconnect();
+	});
+
+	// Reduced-motion preference — disables fade and pulse animations.
+	const prefersReducedMotion = $derived.by(() => {
+		if (typeof window === 'undefined' || !window.matchMedia) return false;
+		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	});
 	// svelte-ignore state_referenced_locally
 	const camera = useScannerCamera(embedded);
 	let revealedCard = $state<Card | null>(null);
@@ -581,6 +606,19 @@
 			class="camera-feed"
 			aria-label="Camera viewfinder"
 		></video>
+
+		<!-- Phase 2 Doc 2.2 — AR live-quad overlay. Renders the detected
+		     card outline that follows the card in real-time. Sits below
+		     CameraBrackets so the bracket target remains the dominant
+		     visual; the quad is a confirmation that the system has the
+		     card in sight. -->
+		<QuadOverlay
+			corners={analysis.quad.cssCorners}
+			quadState={analysis.quad.quadState}
+			viewportW={videoDisplayW}
+			viewportH={videoDisplayH}
+			reducedMotion={prefersReducedMotion}
+		/>
 
 		<!-- Single 5:7 bracket frame. Doubles as `.scanner-guide-rect` for crop math. -->
 		<CameraBrackets state={cameraState} />
