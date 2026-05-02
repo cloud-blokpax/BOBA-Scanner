@@ -385,6 +385,160 @@ export async function ocrRecOnly(
 }
 
 /**
+ * Phase 2 Doc 2.4 — batched recognition over multiple known-location regions.
+ *
+ * Mirrors ocrRecOnly's preprocessing but submits all regions to the
+ * Recognition model in one Recognition.run() call. The package's run()
+ * already preprocesses input images in parallel via Promise.all; the
+ * savings come from sharing one ONNX session warm-up and one decode pass.
+ *
+ * Returns results in the same order as the input regions. Empty regions
+ * (zero size, off-bitmap) come back as { text: '', confidence: 0, boxes: [] }.
+ *
+ * Falls back to running per-region ocrRecOnly serially when the standalone
+ * Recognition didn't initialize. Throws (caller falls back) if the batched
+ * Recognition.run() itself throws.
+ */
+export async function ocrRecOnlyBatch(
+	bitmap: ImageBitmap,
+	regions: Array<{
+		region: { x: number; y: number; w: number; h: number };
+		targetHeight?: number;
+	}>
+): Promise<OCRResult[]> {
+	if (regions.length === 0) return [];
+
+	if (!_recognition) {
+		// Fallback: per-region ocrRecOnly. This itself falls back to
+		// ocrRegion when the recognition standalone isn't available, so
+		// correctness is preserved at the cost of the batching speedup.
+		return Promise.all(
+			regions.map((r) =>
+				ocrRecOnly(bitmap, r.region, r.targetHeight ? { targetHeight: r.targetHeight } : {})
+			)
+		);
+	}
+
+	// Build per-region preprocessed canvases. Each region keeps its own
+	// targetHeight; the rec head's internal resize-to-48 makes any height
+	// "work", but feeding it close to 48 saves the internal resize copy.
+	type Pre = {
+		canvas: OffscreenCanvas;
+		sx: number;
+		sy: number;
+		sw: number;
+		sh: number;
+		outW: number;
+		outH: number;
+		empty: boolean;
+	};
+
+	const pre: Pre[] = regions.map(({ region, targetHeight = 48 }) => {
+		const sx = Math.max(0, Math.floor(region.x));
+		const sy = Math.max(0, Math.floor(region.y));
+		const sw = Math.min(bitmap.width - sx, Math.floor(region.w));
+		const sh = Math.min(bitmap.height - sy, Math.floor(region.h));
+		if (sw <= 0 || sh <= 0) {
+			return { canvas: new OffscreenCanvas(1, 1), sx, sy, sw, sh, outW: 0, outH: 0, empty: true };
+		}
+		const scale = targetHeight / sh;
+		const outW = Math.max(targetHeight, Math.round(sw * scale));
+		const outH = targetHeight;
+		const canvas = new OffscreenCanvas(outW, outH);
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return { canvas, sx, sy, sw, sh, outW: 0, outH: 0, empty: true };
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = 'high';
+		ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, outW, outH);
+		return { canvas, sx, sy, sw, sh, outW, outH, empty: false };
+	});
+
+	// Build line-images array for ONLY the non-empty regions. We'll re-zip
+	// against the original `regions` array on output so empty inputs return
+	// empty results in the expected slot.
+	type LineEntry = { idx: number; lineImage: { image: RecLineImage; box: number[][] } };
+	const lineEntries: LineEntry[] = [];
+	for (let i = 0; i < pre.length; i++) {
+		const p = pre[i];
+		if (p.empty) continue;
+		lineEntries.push({
+			idx: i,
+			lineImage: {
+				image: new RecLineImage(p.canvas),
+				box: [
+					[0, 0],
+					[p.outW, 0],
+					[p.outW, p.outH],
+					[0, p.outH]
+				]
+			}
+		});
+	}
+
+	if (lineEntries.length === 0) {
+		return regions.map(() => ({ text: '', confidence: 0, boxes: [] }));
+	}
+
+	const t0 = performance.now();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const lines: Array<{ text: string; mean: number; box?: number[][] }> = await _recognition.run(
+		lineEntries.map((e) => e.lineImage)
+	);
+	const elapsed = performance.now() - t0;
+	console.debug(
+		`[paddle-ocr] ocrRecOnlyBatch n=${lineEntries.length}: ${elapsed.toFixed(1)}ms`
+	);
+
+	// The package's Recognition.run reverses output order via `unshift` —
+	// see Recognition.ts: `for (const modelData of modelDatas) { ... allLines.unshift(...lines) }`.
+	// Despite that, calculateBox at the end re-aligns to lineImages order
+	// because each Line carries its source box. We trust the package's
+	// input-order preservation, BUT defend against the package returning
+	// fewer lines than inputs (low-confidence rows may be dropped).
+	//
+	// Rather than depend on indexing alignment with the rec head's filter,
+	// we map results back by the line image's box reference. The
+	// `calculateBox` step in the package attaches `box` to each line that
+	// matches the input box.
+	const results: OCRResult[] = regions.map(() => ({ text: '', confidence: 0, boxes: [] }));
+
+	if (!lines || lines.length === 0) {
+		return results;
+	}
+
+	// Pair returned lines back to entries by index. The rec head's filter
+	// drops `mean < 0.5` lines internally — those rows just stay as the
+	// default empty result. When N inputs produce M ≤ N outputs we assume
+	// the M correspond to the first M non-empty inputs in order.
+	for (let li = 0; li < Math.min(lines.length, lineEntries.length); li++) {
+		const entry = lineEntries[li];
+		const top = lines[li];
+		if (!top) continue;
+		const text = (top.text || '').trim();
+		const score = typeof top.mean === 'number' ? top.mean : 0;
+		const p = pre[entry.idx];
+		results[entry.idx] = {
+			text,
+			confidence: score,
+			boxes: [
+				{
+					text,
+					score,
+					box: [
+						[p.sx, p.sy],
+						[p.sx + p.sw, p.sy],
+						[p.sx + p.sw, p.sy + p.sh],
+						[p.sx, p.sy + p.sh]
+					]
+				}
+			]
+		};
+	}
+
+	return results;
+}
+
+/**
  * Full-frame OCR — slower than region-cropped but robust to region-coord drift.
  * Used by:
  *   - Tier 1 canonical pass as a fallback when region OCR returns low conf

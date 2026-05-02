@@ -196,6 +196,9 @@ export interface UpdateScanOutcomeInput {
 	/** Phase 2 Doc 2.0 — TRUE when Tier 1 short-circuited (skipped canonical),
 	 *  FALSE when canonical ran, NULL when Tier 1 didn't run. */
 	tier1ShortCircuited?: boolean | null;
+	/** Phase 2 Doc 2.4 — batched recognition telemetry. */
+	ocrRegionBatchSize?: number | null;
+	ocrRegionTotalMs?: number | null;
 	/**
 	 * Resolved game_id for the matched card. The initial INSERT in
 	 * recordScan() can only see the active session's gameHint — which is

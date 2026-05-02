@@ -601,7 +601,10 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				// Phase 2 Doc 2.0 — flag canonical-path scans as the non-short-
 				// circuit cohort. When the flag is off this stays false; when on
 				// and short-circuit declined, this is the canonical-path arm.
-				tier1ShortCircuited: false
+				tier1ShortCircuited: false,
+				// Phase 2 Doc 2.4 — region-OCR batching telemetry.
+				ocrRegionBatchSize: canonical.ocrRegionBatchSize,
+				ocrRegionTotalMs: canonical.ocrRegionTotalMs
 			};
 			return {
 				result: tier1Result,
@@ -672,7 +675,10 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 							? (canonical.validation.reason ?? null)
 							: null,
 						// Phase 2 Doc 2.0 — TTA path is canonical-cohort.
-						tier1ShortCircuited: false
+						tier1ShortCircuited: false,
+						// Phase 2 Doc 2.4 — region-OCR batching telemetry.
+						ocrRegionBatchSize: canonical.ocrRegionBatchSize,
+						ocrRegionTotalMs: canonical.ocrRegionTotalMs
 					};
 					return {
 						result: ttaResult,
