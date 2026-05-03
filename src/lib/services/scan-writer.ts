@@ -470,25 +470,30 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 	if (!client) return;
 
 	try {
-		// Defensive coercion at the persistence boundary. In a healthy
-		// pipeline every parallel reaching this point is already human-readable;
-		// this exists to turn a short-code leak into a logged warning + correct
-		// value rather than a silently-corrupt DB row. See
-		// `$lib/data/wonders-parallels.ts` for the canonical mapping.
-		const safeParallel = coerceHumanReadableParallel(
-			input.finalParallel,
-			'scan-writer/updateScanOutcome'
-		);
-		const updates: Record<string, unknown> = {
-			winning_tier: input.winningTier,
-			final_card_id: input.finalCardId,
-			final_confidence: input.finalConfidence,
-			final_parallel: safeParallel,
-			total_latency_ms: input.totalLatencyMs,
-			total_cost_usd: input.totalCostUsd,
-			user_overrode: input.userOverrode ?? false,
-			outcome: input.outcome
-		};
+		// Phase 2 Doc 2.6 — partial-patch support. Undefined means "leave
+		// the column alone"; explicit null clears it. Pre-Doc-2.6 these
+		// were unconditionally set, which made it impossible to patch a
+		// single column (e.g. tier1_attempted at Tier 1 entry) without
+		// clobbering the eventual resolution.
+		const updates: Record<string, unknown> = {};
+		if (input.winningTier !== undefined) updates.winning_tier = input.winningTier;
+		if (input.finalCardId !== undefined) updates.final_card_id = input.finalCardId;
+		if (input.finalConfidence !== undefined) updates.final_confidence = input.finalConfidence;
+		if (input.finalParallel !== undefined) {
+			// Defensive coercion at the persistence boundary. In a healthy
+			// pipeline every parallel reaching this point is already human-readable;
+			// this exists to turn a short-code leak into a logged warning + correct
+			// value rather than a silently-corrupt DB row. See
+			// `$lib/data/wonders-parallels.ts` for the canonical mapping.
+			updates.final_parallel = coerceHumanReadableParallel(
+				input.finalParallel,
+				'scan-writer/updateScanOutcome'
+			);
+		}
+		if (input.totalLatencyMs !== undefined) updates.total_latency_ms = input.totalLatencyMs;
+		if (input.totalCostUsd !== undefined) updates.total_cost_usd = input.totalCostUsd;
+		if (input.userOverrode !== undefined) updates.user_overrode = input.userOverrode;
+		if (input.outcome !== undefined) updates.outcome = input.outcome;
 		if (input.liveConsensusReached !== undefined) {
 			updates.live_consensus_reached = input.liveConsensusReached;
 		}
@@ -512,6 +517,10 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 		// Phase 2 Doc 2.0 — short-circuit cohort flag.
 		if (input.tier1ShortCircuited !== undefined) {
 			updates.tier1_short_circuited = input.tier1ShortCircuited;
+		}
+		// Phase 2 Doc 2.6 — Tier 1 invocation observable.
+		if (input.tier1Attempted !== undefined) {
+			updates.tier1_attempted = input.tier1Attempted;
 		}
 		// Phase 2 Doc 2.4 — batched recognition telemetry.
 		if (input.ocrRegionBatchSize !== undefined) {

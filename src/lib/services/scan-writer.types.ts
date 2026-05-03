@@ -178,14 +178,21 @@ export type ScanOutcome =
 
 export interface UpdateScanOutcomeInput {
 	scanId: string;
-	winningTier: string | null;
-	finalCardId: string | null;
-	finalConfidence: number | null;
-	finalParallel: string | null;
-	totalLatencyMs: number | null;
-	totalCostUsd: number | null;
+	/**
+	 * Phase 2 Doc 2.6 — these were required; now optional so the writer
+	 * supports partial patches (e.g. setting tier1_attempted at Tier 1
+	 * entry without clobbering finalize()'s later resolution write).
+	 * Undefined = "leave the column alone". Existing callers that pass
+	 * explicit values are unchanged.
+	 */
+	winningTier?: string | null;
+	finalCardId?: string | null;
+	finalConfidence?: number | null;
+	finalParallel?: string | null;
+	totalLatencyMs?: number | null;
+	totalCostUsd?: number | null;
 	userOverrode?: boolean;
-	outcome: ScanOutcome;
+	outcome?: ScanOutcome;
 	liveConsensusReached?: boolean | null;
 	liveVsCanonicalAgreed?: boolean | null;
 	fallbackTierUsed?: 'none' | 'haiku' | 'sonnet' | 'manual' | null;
@@ -196,6 +203,10 @@ export interface UpdateScanOutcomeInput {
 	/** Phase 2 Doc 2.0 — TRUE when Tier 1 short-circuited (skipped canonical),
 	 *  FALSE when canonical ran, NULL when Tier 1 didn't run. */
 	tier1ShortCircuited?: boolean | null;
+	/** Phase 2 Doc 2.6 — TRUE when runTier1 was invoked for this scan.
+	 *  Independent of whether canonical succeeded; lets us tell whether
+	 *  the live_ocr_tier1_v1 flag resolved on uploads. */
+	tier1Attempted?: boolean | null;
 	/** Phase 2 Doc 2.4 — batched recognition telemetry. */
 	ocrRegionBatchSize?: number | null;
 	ocrRegionTotalMs?: number | null;
