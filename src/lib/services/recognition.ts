@@ -262,14 +262,43 @@ function winningTierFromResult(result: ScanResult): string {
  *   - all-tiers no match (resolved with null final_card_id — keeps the
  *     "AI couldn't identify" cohort separate from infra abandonments)
  */
+async function readExistingDecisionContext(scanId: string): Promise<Record<string, unknown> | null> {
+	try {
+		const client = getSupabase();
+		if (!client) return null;
+		const { data, error } = await client
+			.from('scans')
+			.select('decision_context')
+			.eq('id', scanId)
+			.maybeSingle();
+		if (error || !data) return null;
+		const ctx = (data as { decision_context: unknown }).decision_context;
+		return ctx && typeof ctx === 'object' ? (ctx as Record<string, unknown>) : null;
+	} catch {
+		return null;
+	}
+}
+
 function patchAbandonedScan(
 	scanIdPromise: Promise<string | null>,
 	outcome: import('./scan-writer').ScanOutcome,
 	startTime: number,
 	failReason: string | null
 ): void {
-	void scanIdPromise.then((scanId) => {
+	void scanIdPromise.then(async (scanId) => {
 		if (!scanId) return;
+		// Phase 2 Doc 2.6 — merge with existing decision_context. The
+		// canonical_attempts / tier2_telemetry / catalog_validation that
+		// were written during scan execution must survive into the abandon
+		// patch, otherwise we can't see what the pipeline did when it
+		// failed. Pre-Doc-2.6 this overwrote with just {abandon_reason},
+		// blinding all post-failure debugging.
+		const existing = await readExistingDecisionContext(scanId);
+		const mergedDecisionCtx = {
+			...(existing ?? {}),
+			...(failReason ? { abandon_reason: failReason } : {})
+		};
+
 		void writerUpdateScanOutcome({
 			scanId,
 			winningTier: null,
@@ -279,7 +308,7 @@ function patchAbandonedScan(
 			totalLatencyMs: Math.round(performance.now() - startTime),
 			totalCostUsd: null,
 			outcome,
-			decisionContext: failReason ? { abandon_reason: failReason } : null
+			decisionContext: Object.keys(mergedDecisionCtx).length > 0 ? mergedDecisionCtx : null
 		});
 	}).catch(() => { /* swallow */ });
 }
@@ -454,6 +483,10 @@ export async function recognizeCard(
 	// indicates a non-zero rotation. Cleaned up at end of scan.
 	let preDetectBitmap: ImageBitmap = bitmap;
 	let preDetectBitmapOwned = false;
+	// Phase 2 Doc 2.6 — set when detectCard returns centered_fallback. Lets
+	// runTier2 send the EXIF-rotated original to Haiku instead of the
+	// stretched-to-750×1050 canonical, which would lose small text.
+	let cardDetectionFailed = false;
 	let orientationCorrectionApplied: 0 | 90 | 180 | 270 = 0;
 	if (imageSource instanceof File) {
 		// Phase 1 Doc 1.2 — apply EXIF orientation BEFORE detection.
@@ -488,6 +521,12 @@ export async function recognizeCard(
 						? 'corner_detected'
 						: 'centered_fallback'
 			};
+			// Phase 2 Doc 2.6 — when detection corners are missing (centered_fallback
+			// path), cropToCanonical's drawImageCrop stretches an 85%-of-frame
+			// rectangle to 750×1050. On phone photos that downsamples small text
+			// (card_number, card_name) below the Tier 2 OCR floor. Track the
+			// fallback so runTier2 can fall back to the EXIF-rotated full-frame.
+			cardDetectionFailed = detection.method !== 'corner_detected';
 			const cropped = await cropToCanonical(
 				preDetectBitmap,
 				detectedCardRect,
@@ -873,6 +912,16 @@ export async function recognizeCard(
 
 	if (liveOCREnabled) {
 		onTierChange?.(1);
+		// Phase 2 Doc 2.6 — observable Tier 1 invocation. Patch immediately
+		// so we can tell whether Tier 1 ran on every scan, independent of
+		// whether canonical succeeded or fell through to Tier 2.
+		void scanIdPromise.then((scanId) => {
+			if (!scanId) return;
+			void writerUpdateScanOutcome({
+				scanId,
+				tier1Attempted: true
+			});
+		}).catch(() => { /* swallow */ });
 		const ttaEnabled = imageSource instanceof File ? await isUploadTtaEnabled() : false;
 		const tier1Outcome = await runTier1({
 			workingBitmap,
@@ -904,7 +953,12 @@ export async function recognizeCard(
 		// No outer race: the fetch to /api/scan is the only network op and it's
 		// bounded by the server-side Anthropic client + Vercel function timeout.
 		// runTier2 emits its scan_tier_results row inside try/finally now.
-		tier2Result = await runTier2(workingBitmap, ctx, tier2Tel, scanIdPromise);
+		// Phase 2 Doc 2.6 — when card detection failed, pass the EXIF-rotated
+		// original bitmap as a higher-resolution fallback. runTier2 prefers
+		// fallback over the stretched canonical only when the flag is set.
+		tier2Result = await runTier2(workingBitmap, ctx, tier2Tel, scanIdPromise, {
+			detectionFailedFallbackBitmap: cardDetectionFailed ? preDetectBitmap : null
+		});
 		checkpoint(traceId, 'tier2:done', performance.now() - startTime, {
 			hit: tier2Result !== null,
 			outcome: tier2Tel.outcome
@@ -932,20 +986,22 @@ export async function recognizeCard(
 		// Preserve what canonical / TTA saw so we can debug which stage
 		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.
-		if (tier1Telemetry.canonical || tier1Telemetry.tta || cardDetectContext) {
-			tier2Result.decisionContext = {
-				...(tier2Result.decisionContext ?? {}),
-				...(tier1Telemetry.canonical
-					? {
-						canonical_result: tier1Telemetry.canonical.perTask,
-						canonical_ocr_strategy: tier1Telemetry.canonical.ocrStrategy,
-						canonical_attempts: tier1Telemetry.canonicalAttempts
-					}
-					: {}),
-				...(tier1Telemetry.tta ? { upload_tta: tier1Telemetry.tta } : {}),
-				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
-			};
-		}
+		// Phase 2 Doc 2.6 — also surface tier2 telemetry (including
+		// detectionFailedFallbackUsed) so failed scans expose whether Tier 2
+		// sent the EXIF-rotated original or the canonical crop.
+		tier2Result.decisionContext = {
+			...(tier2Result.decisionContext ?? {}),
+			tier2_telemetry: tier2Tel,
+			...(tier1Telemetry.canonical
+				? {
+					canonical_result: tier1Telemetry.canonical.perTask,
+					canonical_ocr_strategy: tier1Telemetry.canonical.ocrStrategy,
+					canonical_attempts: tier1Telemetry.canonicalAttempts
+				}
+				: {}),
+			...(tier1Telemetry.tta ? { upload_tta: tier1Telemetry.tta } : {}),
+			...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
+		};
 	}
 	if (tier2Result) {
 		console.debug(`[scan] Tier 2 HIT: card_id=${tier2Result.card_id}, card=${tier2Result.card?.card_number}, confidence=${tier2Result.confidence}, game=${tier2Result.game_id ?? tier2Result.card?.game_id ?? gameHint}, parallel=${tier2Result.parallel}`);

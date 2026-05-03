@@ -43,6 +43,10 @@ export interface Tier2Telemetry {
 	attempted: boolean;
 	skipReason: string | null;
 	imageBytesUploaded: number | null;
+	/** Phase 2 Doc 2.6. TRUE when Tier 2 sent the EXIF-rotated original
+	 *  instead of the canonical crop because detectCard failed. NULL when
+	 *  Tier 2 didn't run. */
+	detectionFailedFallbackUsed?: boolean | null;
 	llmModelRequested: string | null;
 	llmModelResponded: string | null;
 	llmInputTokens: number | null;
@@ -65,6 +69,7 @@ export function emptyTier2Telemetry(): Tier2Telemetry {
 		attempted: false,
 		skipReason: null,
 		imageBytesUploaded: null,
+		detectionFailedFallbackUsed: null,
 		llmModelRequested: null,
 		llmModelResponded: null,
 		llmInputTokens: null,
@@ -147,11 +152,22 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
 
 // ── Tier 2: Claude API ──────────────────────────────────────
 
+/**
+ * Phase 2 Doc 2.6 — options bag for runTier2. `detectionFailedFallbackBitmap`
+ * is the EXIF-rotated original; when present, runTier2 sends THIS to Haiku
+ * instead of the canonical-stretched bitmap. Used when detectCard returned
+ * centered_fallback and the canonical crop would lose small-text resolution.
+ */
+export interface Tier2Options {
+	detectionFailedFallbackBitmap?: ImageBitmap | null;
+}
+
 export async function runTier2(
 	bitmap: ImageBitmap,
 	ctx: ScanContext,
 	telemetry: Tier2Telemetry = emptyTier2Telemetry(),
-	scanIdPromise: Promise<string | null> = Promise.resolve(null)
+	scanIdPromise: Promise<string | null> = Promise.resolve(null),
+	options: Tier2Options = {}
 ): Promise<ScanResult | null> {
 	const started = performance.now();
 	ctx.lastTier2FailReason = null;
@@ -162,7 +178,20 @@ export async function runTier2(
 	// Resize and send to API
 	let response: Response;
 	try {
-		const imageBlob = await getImageWorker().resizeForUpload(bitmap, 1024);
+		// Phase 2 Doc 2.6 — when card detection failed, prefer the EXIF-rotated
+		// original over the canonical crop. The canonical's drawImageCrop path
+		// stretches an 85%-of-frame rect to 750×1050, which downsamples small
+		// text below Haiku's reliable-read threshold. The EXIF-rotated original
+		// retains card-resolution. resizeForUpload caps long edge at 1024 either
+		// way, so payload size stays bounded.
+		const uploadBitmap = options.detectionFailedFallbackBitmap ?? bitmap;
+		if (options.detectionFailedFallbackBitmap) {
+			console.debug(`[scan:${ctx.traceId}:tier2] Detection failed — sending EXIF-rotated original (${uploadBitmap.width}×${uploadBitmap.height}) to Haiku`);
+			telemetry.detectionFailedFallbackUsed = true;
+		} else {
+			telemetry.detectionFailedFallbackUsed = false;
+		}
+		const imageBlob = await getImageWorker().resizeForUpload(uploadBitmap, 1024);
 		telemetry.imageBytesUploaded = imageBlob.size;
 		console.debug(`[scan:${ctx.traceId}:tier2] Image resized for upload: ${(imageBlob.size / 1024).toFixed(1)}KB`);
 		const formData = new FormData();
