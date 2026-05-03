@@ -283,7 +283,12 @@ function patchAbandonedScan(
 	scanIdPromise: Promise<string | null>,
 	outcome: import('./scan-writer').ScanOutcome,
 	startTime: number,
-	failReason: string | null
+	failReason: string | null,
+	tier2GateOutcome?: {
+		passed: boolean;
+		reason: string | null;
+		gated: boolean;
+	} | null
 ): void {
 	void scanIdPromise.then(async (scanId) => {
 		if (!scanId) return;
@@ -308,7 +313,16 @@ function patchAbandonedScan(
 			totalLatencyMs: Math.round(performance.now() - startTime),
 			totalCostUsd: null,
 			outcome,
-			decisionContext: Object.keys(mergedDecisionCtx).length > 0 ? mergedDecisionCtx : null
+			decisionContext: Object.keys(mergedDecisionCtx).length > 0 ? mergedDecisionCtx : null,
+			// Phase 1 Doc 1.1 — when the Tier 2 gate caused this abandon,
+			// surface the outcome onto the scan row's dedicated columns.
+			...(tier2GateOutcome
+				? {
+						tier2ValidationPassed: tier2GateOutcome.passed,
+						tier2ValidationFailureReason: tier2GateOutcome.reason,
+						tier2ValidationGated: tier2GateOutcome.gated
+					}
+				: {})
 		});
 	}).catch(() => { /* swallow */ });
 }
@@ -800,6 +814,11 @@ export async function recognizeCard(
 					// cheap filtering in admin queries.
 					catalogValidationPassed: final.catalogValidationPassed ?? null,
 					catalogValidationFailureReason: final.catalogValidationFailureReason ?? null,
+					// Phase 1 Doc 1.1 — Tier 2 (Haiku) validation gate outcome.
+					// Independent from canonical Tier 1's catalog_validation_*.
+					tier2ValidationPassed: final.tier2ValidationPassed ?? null,
+					tier2ValidationFailureReason: final.tier2ValidationFailureReason ?? null,
+					tier2ValidationGated: final.tier2ValidationGated ?? null,
 					// Phase 2 Doc 2.0 — short-circuit cohort flag.
 					tier1ShortCircuited: final.tier1ShortCircuited ?? null,
 					// Phase 2 Doc 2.4 — batched recognition telemetry.
@@ -983,6 +1002,9 @@ export async function recognizeCard(
 			canonValidation && canonValidation.passed === false
 				? (canonValidation.reason ?? null)
 				: null;
+		// Phase 1 Doc 1.1 — Tier 2 validation outcome was set inside runTier2
+		// directly on tier2Result. Nothing to copy here; this comment exists
+		// so future readers know to look in recognition-tiers.ts:runTier2.
 		// Preserve what canonical / TTA saw so we can debug which stage
 		// would have caught which card. Merged with anything Tier 2 already
 		// set on decisionContext.
@@ -1011,7 +1033,8 @@ export async function recognizeCard(
 	// All tiers exhausted — resolved with null final_card_id. Keeps this
 	// cohort separate from infra abandonments in outcomeDistribution.
 	patchAbandonedScan(scanIdPromise, 'resolved', startTime,
-		ctx.lastTier2FailReason || 'all_tiers_no_match');
+		ctx.lastTier2FailReason || 'all_tiers_no_match',
+		ctx.tier2GateOutcome ?? null);
 	return finalize(
 		{ card_id: null, card: null, scan_method: 'claude' as ScanMethod, confidence: 0, processing_ms: Math.round(performance.now() - startTime), failReason: ctx.lastTier2FailReason || 'AI could not identify this card' }
 	);
