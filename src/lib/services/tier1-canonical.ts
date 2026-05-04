@@ -359,7 +359,14 @@ async function runRegionOCR(
 		// regionBatchSize stays null when flag off — distinguishes the cohorts.
 	}
 
-	const builder = new ConsensusBuilder(1, game);
+	// Phase 1 Doc 1.2 — canonical path is single-frame, so it cannot
+	// produce 2 votes for any task. Switch to single-vote acceptance with
+	// a 0.6 per-vote confidence floor (PaddleOCR's typical floor for
+	// readable text under good lighting).
+	const builder = new ConsensusBuilder(1, game, {
+		singleVoteAcceptance: true,
+		minSummedConfidence: 0.6
+	});
 	if (numRes.status === 'fulfilled') {
 		// card_number regions usually return a single box; pickTopBox is a
 		// no-op there. Kept for symmetry with the name path.
@@ -479,7 +486,10 @@ async function runFullFrameOCR(
 		0.5
 	);
 
-	const builder = new ConsensusBuilder(1, game);
+	const builder = new ConsensusBuilder(1, game, {
+		singleVoteAcceptance: true,
+		minSummedConfidence: 0.6
+	});
 	for (const box of result.boxes) {
 		if (!box.text) continue;
 		const center = boxCenterNormalized(box.box, bitmap.width, bitmap.height);

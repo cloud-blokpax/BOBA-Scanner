@@ -74,6 +74,12 @@ const DEFAULT_MIN_SUMMED_CONFIDENCE = 1.5;
 export interface ConsensusBuilderConfig {
 	minAgreement?: number;
 	minSummedConfidence?: number;
+	/** Phase 1 Doc 1.2 — when true, treat a single high-confidence vote
+	 *  as consensus. Used by the canonical (single-frame) path which has
+	 *  no opportunity to accumulate multiple votes. The minSummedConfidence
+	 *  floor still applies and acts as the per-vote confidence floor in
+	 *  this mode. Live and TTA paths leave this false. */
+	singleVoteAcceptance?: boolean;
 }
 
 interface Bucket {
@@ -94,6 +100,7 @@ export class ConsensusBuilder {
 	private frameCount = 0;
 	private minAgreement: number;
 	private minSummedConfidence: number;
+	private singleVoteAcceptance: boolean;
 
 	constructor(
 		sessionId: number,
@@ -104,6 +111,7 @@ export class ConsensusBuilder {
 		this.game = game;
 		this.minAgreement = config.minAgreement ?? DEFAULT_MIN_AGREEMENT;
 		this.minSummedConfidence = config.minSummedConfidence ?? DEFAULT_MIN_SUMMED_CONFIDENCE;
+		this.singleVoteAcceptance = config.singleVoteAcceptance ?? false;
 	}
 
 	addVote(vote: Vote): void {
@@ -291,12 +299,21 @@ export class ConsensusBuilder {
 		const pr = this.getTask('parallel');
 		const sc = this.getTask('set_code');
 
-		const textReached = (t: TaskConsensus | null) =>
-			!!t &&
-			t.agreementCount >= this.minAgreement &&
-			t.summedConfidence >= this.minSummedConfidence;
-		const parallelReached = (t: TaskConsensus | null) =>
-			!!t && t.agreementCount >= this.minAgreement;
+		// Phase 1 Doc 1.2 — single-vote acceptance for the canonical path.
+		// When enabled, a single vote at or above the per-vote confidence
+		// floor (minSummedConfidence treated as floor) is sufficient.
+		const textReached = this.singleVoteAcceptance
+			? (t: TaskConsensus | null) =>
+				!!t &&
+				t.agreementCount >= 1 &&
+				t.summedConfidence >= this.minSummedConfidence
+			: (t: TaskConsensus | null) =>
+				!!t &&
+				t.agreementCount >= this.minAgreement &&
+				t.summedConfidence >= this.minSummedConfidence;
+		const parallelReached = this.singleVoteAcceptance
+			? (t: TaskConsensus | null) => !!t && t.agreementCount >= 1
+			: (t: TaskConsensus | null) => !!t && t.agreementCount >= this.minAgreement;
 
 		// Parallel is only required for Wonders. BoBA's parallel is baked into
 		// card_number via prefix; the classifier doesn't run there.
