@@ -7,12 +7,10 @@
  *   3. Heartbeat staleness on next load → 'inferred_crash' (catches OOM, SW reload)
  *   4. flowBreadcrumb() calls           → 'manual_breadcrumb' (rare; usually attached to others)
  *
- * Writes to public.client_errors. RLS allows anon insert.
- *
- * This complements the existing diagnostics-client (which writes to
- * app_events). app_events captures errors that fire INSIDE the JS layer;
- * client_errors adds a heartbeat-based detector that catches process-level
- * kills (iOS Safari OOM, SW reload) where window.onerror never fires.
+ * Phase 1 Doc 1.2 — events now POST to /api/events, which writes to
+ * app_events via the server-side logEvent helper. The legacy
+ * `client_errors` table was consolidated into app_events as part of
+ * the same doc.
  *
  * Usage in a flow:
  *   import { startFlow, updateFlowStep, endFlow } from '$lib/services/client-error-logger';
@@ -27,7 +25,6 @@
  *     throw e;
  *   }
  */
-import { getSupabase } from '$lib/services/supabase';
 
 const HEARTBEAT_KEY = 'cs_active_flow';
 const SESSION_KEY = 'cs_session_id';
@@ -194,7 +191,7 @@ function envSnapshot() {
 	};
 }
 
-// ---------- Supabase write ----------
+// ---------- /api/events POST ----------
 
 type LogPayload = {
 	error_type: 'error' | 'unhandledrejection' | 'inferred_crash' | 'manual_breadcrumb';
@@ -210,22 +207,52 @@ type LogPayload = {
 
 async function logError(payload: LogPayload) {
 	try {
-		const client = getSupabase();
-		if (!client) return;
-		const { data: userResp } = await client.auth.getUser();
 		const env = envSnapshot();
 		const breadcrumbs = readBreadcrumbs();
-		const { error } = await client.from('client_errors').insert({
-			user_id: userResp?.user?.id ?? null,
-			session_id: getSessionId(),
-			breadcrumbs,
-			...env,
-			...payload
+		const body = {
+			events: [
+				{
+					level: 'error',
+					event: `client.${payload.error_type}`,
+					error: payload.message
+						? {
+								message: payload.message,
+								stack: payload.stack
+							}
+						: undefined,
+					context: {
+						session_id: getSessionId(),
+						breadcrumbs,
+						source_file: payload.source,
+						line: payload.line,
+						col: payload.col,
+						flow: payload.flow,
+						step: payload.step,
+						heartbeat_age_ms: payload.heartbeat_age_ms,
+						...env
+					},
+					requestPath: typeof location !== 'undefined' ? location.pathname : null
+				}
+			]
+		};
+
+		// Prefer sendBeacon on pagehide/unload paths so the request survives
+		// the navigation. Fall back to fetch keepalive otherwise.
+		const json = JSON.stringify(body);
+		if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+			const blob = new Blob([json], { type: 'application/json' });
+			const sent = navigator.sendBeacon('/api/events', blob);
+			if (sent) return;
+		}
+		await fetch('/api/events', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: json,
+			keepalive: true
 		});
-		if (error) console.error('[client-error-logger] insert error', error);
 	} catch (err) {
 		// never let the logger itself blow up
-		console.error('[client-error-logger] insert threw', err);
+		console.error('[client-error-logger] post threw', err);
 	}
 }
 

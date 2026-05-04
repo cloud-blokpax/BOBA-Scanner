@@ -503,23 +503,15 @@ export async function recognizeCard(
 	let cardDetectionFailed = false;
 	let orientationCorrectionApplied: 0 | 90 | 180 | 270 = 0;
 	if (imageSource instanceof File) {
-		// Phase 1 Doc 1.2 — apply EXIF orientation BEFORE detection.
-		// Detector operates on raw pixels; if the bitmap is sideways from
-		// the camera's recorded orientation, the detected card_number/name
-		// ROIs will land on the wrong part of the canonical.
-		try {
-			const { rotationFromExif, rotateBitmap } = await import('./orientation-correction');
-			const exifRot = rotationFromExif(shutterExif.orientation);
-			if (exifRot !== 0 && (await isFeatureEnabledFor('phase1_orientation_correction_v1'))) {
-				const rotated = await rotateBitmap(bitmap, exifRot);
-				preDetectBitmap = rotated;
-				preDetectBitmapOwned = true;
-				orientationCorrectionApplied = exifRot;
-				checkpoint(traceId, 'orient:exif_applied', performance.now() - startTime, { deg: exifRot });
-			}
-		} catch (err) {
-			console.debug('[scan] EXIF orientation correction skipped:', err);
-		}
+		// Phase 1 Doc 1.2 — EXIF orientation correction was REMOVED. Modern
+		// iOS Safari's createImageBitmap already applies EXIF orientation,
+		// so re-rotating the bitmap puts the card on its side before the
+		// detector and OCR see it. Telemetry showed upload success rate
+		// dropped from ~50% to ~5% when the flag was on. Keep the column
+		// `orientation_correction_deg` on `scans` for historical comparison
+		// queries, but never write a non-zero value.
+		// If a future iOS version stops auto-applying EXIF, re-introduce
+		// this with proper detection of whether the bitmap is already upright.
 
 		try {
 			checkpoint(traceId, 'card_detect:start', performance.now() - startTime);
