@@ -16,6 +16,7 @@ import { idb } from './idb';
 import { getAllCards } from './card-db';
 import { getImageWorker } from './recognition-workers';
 import { crossValidateCardResult } from './recognition-validation';
+import { validateCatalogTriangulation } from './catalog-validation';
 import { recordTierResult as writerRecordTierResult } from './scan-writer';
 import { runCanonicalTier1, type CanonicalResult } from './tier1-canonical';
 import { tryLiveShortCircuit } from './tier1-short-circuit';
@@ -34,6 +35,13 @@ export interface ScanContext {
 	cropRegion?: { x: number; y: number; width: number; height: number } | null;
 	/** Game hint for scoping Claude prompts + Phase 2 canonical OCR. Defaults to 'boba'. */
 	gameHint: string;
+	/** Phase 1 Doc 1.1 — Tier 2 gate outcome captured for the abandon
+	 *  patch. Null when the gate didn't fire. */
+	tier2GateOutcome?: {
+		passed: boolean;
+		reason: string | null;
+		gated: boolean;
+	} | null;
 }
 
 // ── Per-tier telemetry (Session 1.2-tier-miss-telemetry) ────
@@ -357,6 +365,108 @@ export async function runTier2(
 			claudeParallel ||
 			(detectedGameId === 'boba' ? 'Paper' : null) ||
 			null;
+
+		// ── Phase 1 Doc 1.1 — Tier 2 catalog validation gate ────────────
+		// Re-run validateCatalogTriangulation against Haiku's claimed
+		// (card_number, name, parallel) and the resolved candidate. When
+		// they disagree AND Haiku is confident in the card_number it read,
+		// abandon the match — this is the case where name-only fallback in
+		// crossValidateCardResult picked the wrong printing of a real card.
+		// When Haiku's CN confidence is low, leave the candidate alone:
+		// the fuzzy/trigram match was probably correcting a misread.
+		let tier2ValidationPassed: boolean | null = null;
+		let tier2ValidationFailureReason: string | null = null;
+		let tier2ValidationGated: boolean | null = null;
+
+		const tier2GateOn = featureEnabled('phase1_tier2_validation_v1')();
+		if (tier2GateOn && (detectedGameId === 'boba' || detectedGameId === 'wonders')) {
+			const tier2Validation = validateCatalogTriangulation({
+				game: detectedGameId,
+				ocrCardNumber: claudeNumber || null,
+				ocrName: claudeHero || null,
+				// Wonders only — BoBA derives parallel from the prefix.
+				ocrParallel: detectedGameId === 'wonders' ? (claudeParallel || null) : null,
+				candidateCard: {
+					id: mergedCard.id,
+					game_id: mergedCard.game_id ?? detectedGameId,
+					card_number: mergedCard.card_number ?? '',
+					hero_name: mergedCard.hero_name ?? null,
+					name: mergedCard.name ?? null,
+					parallel: mergedCard.parallel ?? null,
+					set_code: mergedCard.set_code ?? null
+				}
+			});
+
+			if (tier2Validation.passed) {
+				tier2ValidationPassed = true;
+				tier2ValidationFailureReason = null;
+				tier2ValidationGated = false;
+			} else {
+				tier2ValidationPassed = false;
+				tier2ValidationFailureReason = tier2Validation.reason;
+				const cnConf = collectorNumberConfidence ?? 0;
+				const highCnConfidence = cnConf >= 0.8;
+				tier2ValidationGated = highCnConfidence;
+
+				if (highCnConfidence) {
+					console.warn(
+						`[scan:${ctx.traceId}:tier2] Validation gate FIRED. ` +
+						`Haiku said number="${claudeNumber}" name="${claudeHero}" ` +
+						`(cn_conf=${cnConf}) but candidate is "${mergedCard.card_number}" ` +
+						`name="${mergedCard.name ?? mergedCard.hero_name}" — abandoning. ` +
+						`reason=${tier2Validation.reason}`
+					);
+					ctx.lastTier2FailReason =
+						`Tier 2 validation failed: ${tier2Validation.reason} ` +
+						`(Haiku read "${claudeNumber}" but matched candidate is "${mergedCard.card_number}")`;
+					ctx.tier2GateOutcome = {
+						passed: false,
+						reason: tier2Validation.reason,
+						gated: true
+					};
+					// Surface gate context onto telemetry's rawResponse for forensics.
+					(telemetry as unknown as Record<string, unknown>).tier2ValidationGate = {
+						passed: false,
+						reason: tier2Validation.reason,
+						haiku_card_number: claudeNumber,
+						haiku_card_name: claudeHero,
+						haiku_cn_confidence: cnConf,
+						candidate_card_number: mergedCard.card_number,
+						candidate_name: mergedCard.name ?? mergedCard.hero_name,
+						gated: true
+					};
+					telemetry.outcome = 'miss';
+					telemetry.latencyMs = Math.round(performance.now() - started);
+					// Negative-cache the unrecognized number so we don't re-pay for
+					// the same Haiku call on the same card immediately.
+					if (claudeNumber) {
+						try {
+							const hash = await getImageWorker().computeDHash(bitmap);
+							await idb.setHash({ phash: hash, card_id: `__unrecognized:${claudeNumber}`, confidence: 0 });
+						} catch (err) {
+							console.debug(`[scan:${ctx.traceId}:tier2] negative cache write failed`, err);
+						}
+					}
+					return null;
+				} else {
+					console.debug(
+						`[scan:${ctx.traceId}:tier2] Validation failed but cn_conf=${cnConf} ` +
+						`< 0.8 — letting candidate through. reason=${tier2Validation.reason}`
+					);
+					(telemetry as unknown as Record<string, unknown>).tier2ValidationGate = {
+						passed: false,
+						reason: tier2Validation.reason,
+						haiku_card_number: claudeNumber,
+						haiku_card_name: claudeHero,
+						haiku_cn_confidence: cnConf,
+						candidate_card_number: mergedCard.card_number,
+						candidate_name: mergedCard.name ?? mergedCard.hero_name,
+						gated: false
+					};
+				}
+			}
+		}
+
 		telemetry.claudeReturnedNameInCatalog = true;
 		telemetry.outcome = 'hit';
 		telemetry.latencyMs = Math.round(performance.now() - started);
@@ -373,6 +483,11 @@ export async function runTier2(
 			game_id: mergedCard.game_id ?? null,
 			validationMethod: validated.validationMethod,
 			validationWarnings: validated.warnings,
+			// Phase 1 Doc 1.1 — propagate Tier 2 validation outcome up
+			// to the orchestrator so it can write the dedicated columns.
+			tier2ValidationPassed,
+			tier2ValidationFailureReason,
+			tier2ValidationGated
 		};
 	}
 

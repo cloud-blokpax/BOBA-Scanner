@@ -128,6 +128,14 @@ export interface ScanResult {
 	 *  off or this scan never reached Tier 1. */
 	catalogValidationPassed?: boolean | null;
 	catalogValidationFailureReason?: string | null;
+	/** Phase 1 Doc 1.1: Tier 2 (Haiku) catalog cross-validation outcome.
+	 *  Independent from catalogValidationPassed (which reflects Tier 1
+	 *  canonical). NULL when Tier 2 didn't run validation (flag off or no
+	 *  Tier 2 match). When false, tier2ValidationGated indicates whether
+	 *  the gate caused us to abandon the match. */
+	tier2ValidationPassed?: boolean | null;
+	tier2ValidationFailureReason?: string | null;
+	tier2ValidationGated?: boolean | null;
 	/** Phase 2 Doc 2.0: TRUE when Tier 1 returned via the pre-shutter live
 	 *  consensus short-circuit, skipping the canonical OCR pass. FALSE when
 	 *  canonical ran. NULL when Tier 1 didn't run. Forwarded to

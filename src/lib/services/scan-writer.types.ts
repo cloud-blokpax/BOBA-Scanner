@@ -200,6 +200,10 @@ export interface UpdateScanOutcomeInput {
 	/** Phase 1 Doc 1.0 — catalog cross-validation outcome. NULL when flag off. */
 	catalogValidationPassed?: boolean | null;
 	catalogValidationFailureReason?: string | null;
+	/** Phase 1 Doc 1.1 — Tier 2 catalog validation outcome. */
+	tier2ValidationPassed?: boolean | null;
+	tier2ValidationFailureReason?: string | null;
+	tier2ValidationGated?: boolean | null;
 	/** Phase 2 Doc 2.0 — TRUE when Tier 1 short-circuited (skipped canonical),
 	 *  FALSE when canonical ran, NULL when Tier 1 didn't run. */
 	tier1ShortCircuited?: boolean | null;

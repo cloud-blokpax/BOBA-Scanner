@@ -514,6 +514,18 @@ export async function updateScanOutcome(input: UpdateScanOutcomeInput): Promise<
 		if (input.catalogValidationFailureReason !== undefined) {
 			updates.catalog_validation_failure_reason = input.catalogValidationFailureReason;
 		}
+		// Phase 1 Doc 1.1 — Tier 2 (Haiku) catalog validation outcome.
+		// Independent from catalog_validation_* (which reflects canonical
+		// Tier 1). Either, both, or neither may be NULL.
+		if (input.tier2ValidationPassed !== undefined) {
+			updates.tier2_validation_passed = input.tier2ValidationPassed;
+		}
+		if (input.tier2ValidationFailureReason !== undefined) {
+			updates.tier2_validation_failure_reason = input.tier2ValidationFailureReason;
+		}
+		if (input.tier2ValidationGated !== undefined) {
+			updates.tier2_validation_gated = input.tier2ValidationGated;
+		}
 		// Phase 2 Doc 2.0 — short-circuit cohort flag.
 		if (input.tier1ShortCircuited !== undefined) {
 			updates.tier1_short_circuited = input.tier1ShortCircuited;
