@@ -35,6 +35,8 @@ export interface EbayCardInfo {
 	metadata?: Record<string, unknown> | null;
 }
 
+import { parallelPrefix as bobaParallelPrefix, isPaperParallel } from './parallel-prefix';
+
 const SKIP_PARALLELS = new Set(['paper', 'base']);
 
 // ── Wonders parallel name mapping ─────────────────────────────
@@ -71,10 +73,18 @@ function wondersCardName(card: EbayCardInfo): string {
 	return (card.name || card.hero_name || '').trim();
 }
 
+/**
+ * BoBA-only: returns the eBay-friendly short form of the parallel for
+ * inclusion in titles and search queries. Empty string for paper/base or
+ * when the parallel is missing.
+ *
+ * Wonders has its own mapping (WONDERS_PARALLEL_TITLE) and does not call
+ * this function.
+ */
 function cleanParallel(parallel: string | null | undefined): string {
-	const p = (parallel || '').trim();
-	if (!p || SKIP_PARALLELS.has(p.toLowerCase())) return '';
-	return p;
+	if (isPaperParallel(parallel)) return '';
+	const short = bobaParallelPrefix(parallel);
+	return short ?? '';
 }
 
 /**
