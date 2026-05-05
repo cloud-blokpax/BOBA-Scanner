@@ -256,7 +256,7 @@ describe('POST /api/scan', () => {
 			expect(body.success).toBe(false);
 		});
 
-		it('detects power-as-card-number and clears card_number', async () => {
+		it('detects power-as-card-number and lowers confidence', async () => {
 			const locals = makeLocals();
 			mockAnthropicCreate.mockResolvedValue(makeToolUseResponse({
 				card_number: '200', hero_name: 'BoJax', power: 200,
@@ -266,7 +266,9 @@ describe('POST /api/scan', () => {
 			const response = await POST({ request, locals } as any);
 			const body = await response.json();
 			expect(body.success).toBe(true);
-			expect(body.card.card_number).toBeNull();
+			// card_number is preserved (might be a real paper card like #130);
+			// only confidence is lowered so Phase 1 catalog validation gates harder.
+			expect(body.card.card_number).toBe('200');
 			expect(body.card.confidence).toBeLessThanOrEqual(0.6);
 		});
 	});
