@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { scanImage, scanState, resetScanner, initScanner } from '$lib/stores/scanner.svelte';
 	import ScanConfirmation from '$lib/components/ScanConfirmation.svelte';
+	import UploadAnalyzingModal from '$lib/components/UploadAnalyzingModal.svelte';
 	import { ALL_GAMES } from '$lib/games/all-games';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import type { ScanResult } from '$lib/types';
@@ -84,6 +85,17 @@
 		resetScanner();
 	}
 
+	function cancelUpload() {
+		// Best-effort cancel — the in-flight scan will resolve and be ignored
+		// because uploading is set false and uploadResult stays null.
+		uploading = false;
+		if (uploadImageUrl) {
+			URL.revokeObjectURL(uploadImageUrl);
+			uploadImageUrl = null;
+		}
+		resetScanner();
+	}
+
 	function handleCameraRollClick(event: MouseEvent) {
 		// Pro feature — surface the modal here instead of letting the user
 		// land on the scan page's safety-net gate.
@@ -103,10 +115,11 @@
 		onClose={dismissResult}
 	/>
 {:else if uploading}
-	<div class="upload-status">
-		<div class="upload-spinner"></div>
-		<span>{statusText || 'Processing...'}</span>
-	</div>
+	<UploadAnalyzingModal
+		imageUrl={uploadImageUrl}
+		statusText={statusText || 'Processing...'}
+		onCancel={cancelUpload}
+	/>
 {/if}
 
 <div class="scan-hero-card">
@@ -232,17 +245,7 @@
 	}
 	.btn-hero-secondary:hover { border-color: var(--border-strong, rgba(148,163,184,0.20)); color: var(--text-primary, #e2e8f0); }
 	.btn-hero-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-	.upload-status {
-		display: flex; align-items: center; justify-content: center; gap: 0.75rem;
-		margin: 1rem 0; padding: 1rem; border-radius: var(--radius-lg, 12px);
-		background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.15);
-		color: var(--text-primary, #e2e8f0);
-	}
-	.upload-spinner {
-		width: 18px; height: 18px; border: 2px solid rgba(255, 255, 255, 0.2);
-		border-top-color: var(--primary, #3b82f6); border-radius: 50%; animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
+	/* Upload-status styles moved into UploadAnalyzingModal. */
 	@media (max-width: 360px) {
 		.scan-hero-card { flex-direction: column; text-align: center; }
 		.scan-hero-actions { justify-content: center; }

@@ -29,6 +29,12 @@ const ALIGN_BLUR_THRESHOLD = 5500;
 const ALIGN_CORNER_READY = 140;
 const ALIGN_CORNER_PARTIAL = 100;
 
+// Phase 2 Doc 2.2.x — second auto-capture trigger path: quad-stability.
+// Slightly longer dwell than alignment because the geometric signal can
+// flicker on focus pulses. 8 px in bitmap coords ≈ ~4 px on a 720p preview.
+const QUAD_READY_DWELL_MS = 400;
+const QUAD_MAX_MOTION_PX = 8;
+
 export type AlignmentState = 'no_card' | 'partial' | 'ready';
 
 export interface AnalysisState {
@@ -70,6 +76,7 @@ export function useScannerAnalysis(
 	// the AnalysisState interface so callers see one source of truth.
 	const quadDetection = useQuadDetection();
 	const quadEnabled = featureEnabled('phase2_quad_overlay_v1');
+	const quadAutoCaptureEnabled = featureEnabled('phase2_quad_autocapture_v1');
 
 	function guidanceFor(state: AlignmentState): string {
 		if (state === 'ready') return 'Hold still…';
@@ -181,13 +188,25 @@ export function useScannerAnalysis(
 				_lastOverlayHash = null;
 			}
 
-			// Fire auto-capture once per sustained 'ready' dwell.
-			if (
+			// Path A (existing): alignment-heuristic dwell.
+			const alignmentReadyToFire =
 				nextState === 'ready' &&
-				!_autoCaptureFired &&
 				_alignmentReadySince !== null &&
-				now - _alignmentReadySince >= READY_DWELL_MS
-			) {
+				now - _alignmentReadySince >= READY_DWELL_MS;
+
+			// Path B (new): quad-detection stability, gated by feature flag.
+			// Safety: never fire when alignment says no_card — protects against
+			// the OpenCV detector latching onto a non-card 5:7 rectangle.
+			const quadReadyToFire =
+				quadEnabled() &&
+				quadAutoCaptureEnabled() &&
+				nextState !== 'no_card' &&
+				quadDetection.detectedSince !== null &&
+				now - quadDetection.detectedSince >= QUAD_READY_DWELL_MS &&
+				quadDetection.motionPx !== null &&
+				quadDetection.motionPx <= QUAD_MAX_MOTION_PX;
+
+			if (!_autoCaptureFired && (alignmentReadyToFire || quadReadyToFire)) {
 				_autoCaptureFired = true;
 				_overlayData = null;
 				_overlayVisible = false;
@@ -233,12 +252,21 @@ export function useScannerAnalysis(
 	}
 
 	function shouldAutoTrigger(): boolean {
-		return (
+		if (_autoCaptureFired) return false;
+		const now = performance.now();
+		const alignmentReady =
 			_alignmentState === 'ready' &&
 			_alignmentReadySince !== null &&
-			performance.now() - _alignmentReadySince >= READY_DWELL_MS &&
-			!_autoCaptureFired
-		);
+			now - _alignmentReadySince >= READY_DWELL_MS;
+		const quadReady =
+			quadEnabled() &&
+			quadAutoCaptureEnabled() &&
+			_alignmentState !== 'no_card' &&
+			quadDetection.detectedSince !== null &&
+			now - quadDetection.detectedSince >= QUAD_READY_DWELL_MS &&
+			quadDetection.motionPx !== null &&
+			quadDetection.motionPx <= QUAD_MAX_MOTION_PX;
+		return alignmentReady || quadReady;
 	}
 
 	return {
