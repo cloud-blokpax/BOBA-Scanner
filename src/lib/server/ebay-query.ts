@@ -31,61 +31,10 @@ export type { EbayCardInfo as EbayQueryCard };
 
 const EBAY_Q_MAX = 340;
 
-/**
- * BoBA parallel → search-prefix mapping.
- *
- * Sellers list cards under the parallel's familiar short form, not the
- * canonical catalog name. e.g. "Headlines Battlefoil" is sold as just
- * "Headlines"; "80's Rad Battlefoil" is sold as "RAD".
- *
- * The Battlefoil-family entries strip the trailing " Battlefoil" suffix.
- * Color Battlefoils (Blue/Orange/etc.) drop the suffix entirely. Cards with
- * no shared family (e.g. plain "Superfoil") stay as-is.
- *
- * Paper is handled by isPaper() — never mapped here.
- */
-const PARALLEL_PREFIX_MAP: Record<string, string> = {
-	// BoBA Battlefoil families — drop "Battlefoil" suffix
-	"80's Rad Battlefoil": 'RAD',
-	'Inspired Ink Battlefoil': 'Inspired Ink',
-	'Inspired Ink Metallic Battlefoil': 'Inspired Ink Metallic',
-	"Grandma's Linoleum Battlefoil": "Grandma's Linoleum",
-	"Great Grandma's Linoleum Battlefoil": "Great Grandma's Linoleum",
-	'Blizzard Battlefoil': 'Blizzard',
-	'Bubblegum Battlefoil': 'Bubblegum',
-	'Mixtape Battlefoil': 'Mixtape',
-	'Miami Ice Battlefoil': 'Miami Ice',
-	'Fire Tracks Battlefoil': 'Fire Tracks',
-	'Power Glove Battlefoil': 'Power Glove',
-	'Headlines Battlefoil': 'Headlines',
-	'Blue Headlines Battlefoil': 'Blue Headlines',
-	// Color Battlefoils
-	'Blue Battlefoil': 'Blue',
-	'Orange Battlefoil': 'Orange',
-	'Pink Battlefoil': 'Pink',
-	'Green Battlefoil': 'Green',
-	'Silver Battlefoil': 'Silver',
-	// No-suffix parallels stay as-is
-	Superfoil: 'Superfoil'
-};
+import { parallelPrefix, isPaperParallel as isPaper } from '$lib/utils/parallel-prefix';
 
 function quoteIfMultiWord(value: string): string {
 	return value.includes(' ') ? `"${value}"` : value;
-}
-
-function isPaper(parallel: string | null | undefined): boolean {
-	if (!parallel) return true;
-	return parallel.trim().toLowerCase() === 'paper';
-}
-
-function parallelPrefix(parallel: string | null | undefined): string | null {
-	if (isPaper(parallel)) return null;
-	const trimmed = parallel!.trim();
-	const mapped = PARALLEL_PREFIX_MAP[trimmed];
-	if (mapped) return mapped;
-	// Fallback: strip trailing " Battlefoil"
-	const stripped = trimmed.replace(/\s*Battlefoil\s*$/i, '').trim();
-	return stripped || null;
 }
 
 /**
