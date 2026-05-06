@@ -726,6 +726,28 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['parallel_rarity_config']['Insert']>;
 				Relationships: [];
 			};
+			hero_set_status: {
+				Row: {
+					game_id: string;
+					hero_name: string;
+					set_code: string;
+					status: string;
+					source: string;
+					notes: string | null;
+					updated_at: string;
+				};
+				Insert: {
+					game_id?: string;
+					hero_name: string;
+					set_code: string;
+					status: string;
+					source?: string;
+					notes?: string | null;
+					updated_at?: string;
+				};
+				Update: Partial<Database['public']['Tables']['hero_set_status']['Insert']>;
+				Relationships: [];
+			};
 			price_history: {
 				Row: {
 					id: string;
