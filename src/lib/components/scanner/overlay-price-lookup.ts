@@ -6,21 +6,12 @@
  * before the user even captures the card.
  */
 
-// ── Fuzzy-hash RPC circuit breaker ──────────────────────────
-// If find_similar_hash ever returns an error we disable further
-// calls for the life of the tab. The AR overlay is best-effort —
-// never bother the Supabase connection with a repeatedly-failing
-// RPC just to find out it still fails.
-let _fuzzyHashRpcDisabled = false;
-function isFuzzyHashRpcDisabled(): boolean { return _fuzzyHashRpcDisabled; }
-function disableFuzzyHashRpc(): void { _fuzzyHashRpcDisabled = true; }
-
 export interface OverlayData {
 	cardName: string;
 	cardNumber: string | null;
 	price: number | null;
 	priceFetchedAt: string | null;
-	source: 'local' | 'community';
+	source: 'local';
 }
 
 export async function lookupOverlayPrice(hash: string): Promise<OverlayData | null> {
@@ -33,65 +24,11 @@ export async function lookupOverlayPrice(hash: string): Promise<OverlayData | nu
 
 	// Step 1: Local IndexedDB hash lookup
 	let cardId: string | null = null;
-	let source: 'local' | 'community' = 'local';
+	const source = 'local' as const;
 
 	const localEntry = await idb.getHash(hash) as { card_id: string; confidence: number } | undefined;
 	if (localEntry && !localEntry.card_id.startsWith('__unrecognized:')) {
 		cardId = localEntry.card_id;
-		source = 'local';
-	}
-
-	// Step 2: Supabase shared hash lookup (only on local miss + online)
-	if (!cardId && navigator.onLine) {
-		try {
-			const { getSupabase } = await import('$lib/services/supabase');
-			const client = getSupabase();
-			if (client) {
-				// Exact match first
-				const { data: exactMatch } = await client
-					.from('hash_cache')
-					.select('card_id, confidence')
-					.eq('phash', hash)
-					.maybeSingle();
-
-				if (exactMatch && !(exactMatch.card_id as string).startsWith('__unrecognized:')) {
-					cardId = exactMatch.card_id as string;
-					source = 'community';
-					await idb.setHash({
-						phash: hash,
-						card_id: exactMatch.card_id as string,
-						confidence: exactMatch.confidence as number
-					});
-				}
-
-				// Fuzzy match if exact missed
-				if (!cardId && !isFuzzyHashRpcDisabled() && /^[0-9a-f]{16}$/.test(hash)) {
-					const { data: fuzzyMatch, error: fuzzyErr } = await client.rpc('find_similar_hash', {
-						query_hash: hash,
-						max_distance: 5
-					});
-					if (fuzzyErr) {
-						disableFuzzyHashRpc();
-					}
-
-					if (fuzzyMatch && (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>).length > 0) {
-						const match = (fuzzyMatch as Array<{ card_id: string; confidence: number; distance: number }>)[0];
-						if (!match.card_id.startsWith('__unrecognized:')) {
-							cardId = match.card_id;
-							source = 'community';
-							const confidence = match.confidence * (1 - match.distance * 0.015);
-							await idb.setHash({
-								phash: hash,
-								card_id: match.card_id,
-								confidence
-							});
-						}
-					}
-				}
-			}
-		} catch (err) {
-			console.debug('[ar-overlay] Supabase hash lookup failed:', err);
-		}
 	}
 
 	if (!cardId) return null;

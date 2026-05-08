@@ -76,7 +76,6 @@ npm test                      # Run tests (vitest)
 npm run test:watch            # Tests in watch mode
 npm run generate:card-seed    # Generate SQL seed from card-database.json
 npm run db:types              # Generate TypeScript types from Supabase schema
-npm run backfill:boba-hashes  # Backfill pHash entries for BoBA catalog (uses scripts/backfill-boba-hashes.ts)
 ```
 
 ## Project Structure
@@ -436,7 +435,7 @@ Card-Scanner/
 │   │   │   ├── scan-checkpoint.ts          # Per-stage trace writes to scan_pipeline_checkpoint
 │   │   │   ├── pipeline-version.ts         # Pipeline version pin (stamps scans.pipeline_version)
 │   │   │   ├── catalog-mirror.ts           # Client-side catalog mirror for (card_number, name) → card_id lookup
-│   │   │   ├── image-harvester.ts          # captureCardImage(): per-listing image capture (sharp re-encode + Storage upload + cards.image_url update). Driven by /api/cron/image-harvest via $lib/server/harvester/image-capture; can also be re-piggybacked onto price-harvest if image_harvest_in_price_cron_v1 is flipped on. (Legacy hash_cache seed call left in place but no-ops post migration 58.)
+│   │   │   ├── image-harvester.ts          # captureCardImage(): per-listing image capture (sharp re-encode + Storage upload + cards.image_url update). Driven by /api/cron/image-harvest via $lib/server/harvester/image-capture; can also be re-piggybacked onto price-harvest if image_harvest_in_price_cron_v1 is flipped on.
 │   │   │   │
 │   │   │   # Card data + search
 │   │   │   ├── card-db.ts                  # Card database: load, index, search, fuzzy match
@@ -544,7 +543,6 @@ Card-Scanner/
 ├── scripts/
 │   ├── generate-card-seed.js       # Generate SQL seed from card-database.json
 │   ├── json-to-card-seed.js        # JSON → SQL seed conversion utility
-│   ├── backfill-boba-hashes.ts     # Backfill pHash + dHash for BoBA catalog cards missing hash_cache entries
 │   ├── carde-image-backfill.ts     # Backfill card images from Carde.io (historical — note: Carde.io is no longer used for matching per Session 2.5)
 │   ├── download-carde-images.ts    # Download reference images from Carde.io (legacy utility, not in active use)
 │   ├── generate-hash-fixtures.mjs  # Regenerate the tests/fixtures/hash-parity/ image set from catalog sources
@@ -611,7 +609,7 @@ The DB row written for this tier carries `tier='tier3_claude'` and `winning_tier
 #### What's no longer in the pipeline
 
 Retired in Session 2.5:
-- **Hash cache lookup** (pHash against IndexedDB + Supabase `hash_cache`, formerly Tier 1). Not used for recognition anymore. The `hash_cache` table was dropped in migration 58 — the recognition orchestrator never queried it post-2.5, and the image-harvester's seed call is now a no-op (the dropped RPC fails silently in its try/catch wrapper).
+- **Hash cache lookup** (pHash against IndexedDB + Supabase `hash_cache`, formerly Tier 1). Not used for recognition anymore. The `hash_cache` table was dropped in migration 58 and `find_similar_hash()` in migration 60; all consumer code (image-harvester seed call, AR overlay Supabase fallback, admin backfill routes/UI, backfill script) was removed in Phase 0.5. Local IndexedDB hash storage (`idb.getHash`/`setHash`) survives for AR overlay first-recognition cache and Tier 2 negative cache.
 - **Tesseract OCR** (formerly Tier 2 in the original three-tier design). `tesseract.js` was removed from dependencies entirely. OCR is now exclusively PaddleOCR.
 
 Any CLAUDE.md or docs references to "Tier 2 = Tesseract" or to the `hash/ocr/ai/manual` scan_method enum refer to pre-2.5 architecture and are inaccurate.
@@ -907,8 +905,7 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 #### RPC Functions
 
 Recognition & catalog:
-- `find_similar_hash(query_hash, max_distance, p_game_id)` — Hamming-distance fuzzy pHash lookup (used only by AR overlay post-2.5; recognition pipeline no longer calls it)
-- `find_similar_phash_256(query_phash_256, max_distance, p_game_id, p_limit)` — same as above for 256-bit pHash variant
+- `find_similar_phash_256(query_phash_256, max_distance, p_game_id, p_limit)` — Hamming-distance fuzzy pHash lookup for 256-bit pHash variant. (Sister function `find_similar_hash` was dropped in migration 60 along with the AR overlay's Supabase fallback.)
 - `match_card_embedding(query_embedding, target_game_id, top_k, min_similarity)` — pgvector similarity search against `card_embeddings`
 - `get_wonders_cards_to_seed(p_limit)` — feeds the DINOv2 embedding seeder script
 - `lookup_correction(p_ocr_reading)` — community OCR corrections (requires 3+ confirmations)
