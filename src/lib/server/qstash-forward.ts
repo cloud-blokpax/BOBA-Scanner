@@ -4,7 +4,7 @@
  * Three of our QStash receivers do the same thing: verify the Upstash
  * signature, then internally call a `/api/cron/*` endpoint with the
  * CRON_SECRET to bypass Vercel Deployment Protection. This helper is the
- * shared body of `qstash-harvest`, `qstash-mark-stale-listings`, and
+ * shared body of `qstash-harvest`, `qstash-daily-maintenance`, and
  * `qstash-vercel-mirror`.
  *
  * `qstash-check-deck-builder-version` is intentionally NOT a caller — it

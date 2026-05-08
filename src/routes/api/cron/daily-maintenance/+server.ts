@@ -1,20 +1,23 @@
 /**
- * GET /api/cron/mark-stale-listings — Daily maintenance for the eBay listing
- * observation tables.
+ * GET /api/cron/daily-maintenance — Daily maintenance for the eBay harvest tables.
  *
- * Runs three SQL maintenance functions back-to-back:
- *   - `mark_stale_ebay_listings()` — flips `ebay_card_images.is_active` to
- *     false for rows that haven't been re-observed for 7 days. Approximates
- *     eBay's relist cycle — anything older has either sold, ended, or been
- *     pulled.
+ * Runs SQL maintenance functions back-to-back. Each is independent — one
+ * failing does not stop the others.
+ *
  *   - `prune_old_observations()` — deletes `ebay_listing_observations` rows
- *     older than 30 days. Bounds steady-state storage to ~1.2 GB.
- *   - `refresh_filter_health()` — refreshes mv_filter_health for the admin
- *     Filter Health tab. CONCURRENTLY so it doesn't block tab reads.
+ *     older than 30 days. Bounds steady-state storage. Phase 2 will tighten
+ *     this window to 7 days once R2 archives are stable.
  *
- * Triggered by QStash (via /api/cron/qstash-mark-stale-listings, server-to-
+ *   - `refresh_filter_health()` — refreshes mv_filter_health for ad-hoc
+ *     diagnosis via /api/admin/filter-health. CONCURRENTLY so it doesn't
+ *     block reads.
+ *
+ * (Previously also called mark_stale_ebay_listings(); that function flipped
+ * a boolean nobody read. Removed in migration 058.)
+ *
+ * Triggered by QStash (via /api/cron/qstash-daily-maintenance, server-to-
  * server, bypassing Vercel Deployment Protection). Same security model as
- * qstash-harvest / qstash-vercel-mirror.
+ * qstash-harvest.
  *
  * Auth: CRON_SECRET header.
  */
@@ -41,32 +44,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	const startedAt = new Date().toISOString();
 
-	// Mark stale image rows inactive — fire even if pruning fails so the two
-	// concerns stay independent.
-	let markStaleError: string | null = null;
-	try {
-		const { error: rpcError } = await (
-			admin.rpc as unknown as (
-				name: 'mark_stale_ebay_listings'
-			) => Promise<{ error: { message: string } | null }>
-		)('mark_stale_ebay_listings');
-		if (rpcError) {
-			markStaleError = rpcError.message;
-			void logEvent({
-				level: 'error',
-				event: 'harvest.observations.mark_stale_failed',
-				error: rpcError.message
-			});
-		}
-	} catch (err) {
-		markStaleError = err instanceof Error ? err.message : 'unknown';
-		void logEvent({
-			level: 'error',
-			event: 'harvest.observations.mark_stale_threw',
-			error: err
-		});
-	}
-
+	// ── 1. Prune old observations (best-effort) ───────────────
 	let pruneError: string | null = null;
 	try {
 		const { error: rpcError } = await (
@@ -78,7 +56,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			pruneError = rpcError.message;
 			void logEvent({
 				level: 'error',
-				event: 'harvest.observations.prune_failed',
+				event: 'maintenance.prune_observations_failed',
 				error: rpcError.message
 			});
 		}
@@ -86,13 +64,12 @@ export const GET: RequestHandler = async ({ request }) => {
 		pruneError = err instanceof Error ? err.message : 'unknown';
 		void logEvent({
 			level: 'error',
-			event: 'harvest.observations.prune_threw',
+			event: 'maintenance.prune_observations_threw',
 			error: err
 		});
 	}
 
-	// Refresh the filter-health materialized view. Independent of mark-stale /
-	// prune so neither failure mode masks the other. Best-effort.
+	// ── 2. Refresh filter-health MV (best-effort) ─────────────
 	let filterHealthRefreshError: string | null = null;
 	let filterHealthRows: number | null = null;
 	try {
@@ -108,7 +85,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			filterHealthRefreshError = rpcError.message;
 			void logEvent({
 				level: 'error',
-				event: 'harvest.filter_health.refresh_failed',
+				event: 'maintenance.filter_health_refresh_failed',
 				error: rpcError.message
 			});
 		} else if (data && data.length > 0) {
@@ -118,16 +95,15 @@ export const GET: RequestHandler = async ({ request }) => {
 		filterHealthRefreshError = err instanceof Error ? err.message : 'unknown';
 		void logEvent({
 			level: 'error',
-			event: 'harvest.filter_health.refresh_threw',
+			event: 'maintenance.filter_health_refresh_threw',
 			error: err
 		});
 	}
 
 	return json({
-		ok: !markStaleError && !pruneError && !filterHealthRefreshError,
+		ok: !pruneError && !filterHealthRefreshError,
 		startedAt,
 		finishedAt: new Date().toISOString(),
-		markStaleError,
 		pruneError,
 		filterHealthRefreshError,
 		filterHealthRows

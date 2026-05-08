@@ -40,6 +40,7 @@ migration — check them in with the code change that depends on them.
 | 31 | `031_get_harvest_candidates_no_seed.sql` | Replace migration 002's `get_harvest_candidates` RPC with one that no longer UNIONs the dropped seed table or `collections`/`listing_templates`. Output shape unchanged — consumer code in `$lib/server/harvester/candidates.ts` and `/api/cron/price-harvest` needs no edit. |
 | 32 | `032_drop_wotf_cards.sql` | Drop unused `wotf_cards` table and `wonders_cards_full` view. Code reads orbital / dragon-points / card-class data from `cards.metadata` JSONB; both objects had no application consumers. `DROP IF EXISTS` makes this a no-op if either is already absent. |
 | 33 | `033_cards_per_game_parallel_unique.sql` | Add `UNIQUE (game_id, card_number, parallel)` constraint on `cards`. Lets new-set imports use `ON CONFLICT DO NOTHING` and makes catalog-mirror lookups assert-safe. Run after 30. |
+| 58 | `058_drop_dead_storage_artifacts.sql` | Phase 0 storage cleanup. Drops dead `hash_cache` table + `upsert_hash_cache` / `upsert_hash_cache_v2` RPCs (Tier 1 hash lookup retired in Phase 2.5; nothing reads it anymore). Drops `mark_stale_ebay_listings()` and `ebay_card_images.is_active` column — the flag was never read by any app code. |
 
 ### Phase 2 deploy ordering (applied via Supabase MCP pre-deploy)
 

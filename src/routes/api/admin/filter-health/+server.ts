@@ -2,7 +2,7 @@
  * GET  /api/admin/filter-health             — list view
  * GET  /api/admin/filter-health?card_id=... — drawer detail (samples)
  *
- * Reads from mv_filter_health (refreshed daily by mark-stale-listings cron)
+ * Reads from mv_filter_health (refreshed daily by daily-maintenance cron)
  * for the list view, and from ebay_listing_observations (live, indexed by
  * card_id) for the drawer detail.
  *
