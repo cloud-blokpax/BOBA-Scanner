@@ -205,8 +205,8 @@ Card-Scanner/
 │   │       │   ├── image-harvest/+server.ts        # Cron: Hourly image-only backfill (CPU-throttled successor to the price-harvest piggyback)
 │   │       │   ├── vercel-log-mirror/+server.ts    # Cron: Pulls Vercel runtime logs into app_events (Phase 2.5)
 │   │       │   ├── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
-│   │       │   ├── mark-stale-listings/+server.ts        # Cron: Marks ebay_card_images inactive after 7 days + prunes ebay_listing_observations after 30 days
-│   │       │   └── qstash-mark-stale-listings/+server.ts # QStash: Daily trigger for mark-stale-listings (recommended 04:00 UTC)
+│   │       │   ├── daily-maintenance/+server.ts        # Cron: Prunes ebay_listing_observations >30d + refreshes mv_filter_health
+│   │       │   └── qstash-daily-maintenance/+server.ts # QStash: Daily trigger for daily-maintenance (04:00 UTC)
 │   │       ├── diag/+server.ts                     # POST: Client-side diagnostic event ingestion (window errors, fire-and-forget catches)
 │   │       ├── admin/
 │   │       │   ├── stats/+server.ts          # GET: Aggregated dashboard metrics, trends, alerts
@@ -436,7 +436,7 @@ Card-Scanner/
 │   │   │   ├── scan-checkpoint.ts          # Per-stage trace writes to scan_pipeline_checkpoint
 │   │   │   ├── pipeline-version.ts         # Pipeline version pin (stamps scans.pipeline_version)
 │   │   │   ├── catalog-mirror.ts           # Client-side catalog mirror for (card_number, name) → card_id lookup
-│   │   │   ├── image-harvester.ts          # captureCardImage(): per-listing image capture (sharp re-encode + Storage upload + cards.image_url update + hash_cache seed). Driven by /api/cron/image-harvest via $lib/server/harvester/image-capture; can also be re-piggybacked onto price-harvest if image_harvest_in_price_cron_v1 is flipped on.
+│   │   │   ├── image-harvester.ts          # captureCardImage(): per-listing image capture (sharp re-encode + Storage upload + cards.image_url update). Driven by /api/cron/image-harvest via $lib/server/harvester/image-capture; can also be re-piggybacked onto price-harvest if image_harvest_in_price_cron_v1 is flipped on. (Legacy hash_cache seed call left in place but no-ops post migration 58.)
 │   │   │   │
 │   │   │   # Card data + search
 │   │   │   ├── card-db.ts                  # Card database: load, index, search, fuzzy match
@@ -611,7 +611,7 @@ The DB row written for this tier carries `tier='tier3_claude'` and `winning_tier
 #### What's no longer in the pipeline
 
 Retired in Session 2.5:
-- **Hash cache lookup** (pHash against IndexedDB + Supabase `hash_cache`, formerly Tier 1). Not used for recognition anymore. The `hash_cache` table still exists — image-harvester and AR overlay still write/read it — but the recognition orchestrator never queries it.
+- **Hash cache lookup** (pHash against IndexedDB + Supabase `hash_cache`, formerly Tier 1). Not used for recognition anymore. The `hash_cache` table was dropped in migration 58 — the recognition orchestrator never queried it post-2.5, and the image-harvester's seed call is now a no-op (the dropped RPC fails silently in its try/catch wrapper).
 - **Tesseract OCR** (formerly Tier 2 in the original three-tier design). `tesseract.js` was removed from dependencies entirely. OCR is now exclusively PaddleOCR.
 
 Any CLAUDE.md or docs references to "Tier 2 = Tesseract" or to the `hash/ocr/ai/manual` scan_method enum refer to pre-2.5 architecture and are inaccurate.
@@ -688,13 +688,13 @@ Plus a `handleError` handler for structured error logging.
 The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_price_cache` and backfills `cards.image_url` from the same eBay listings. It runs on **two** QStash schedules — never on Vercel cron — so we don't double-fire:
 
 - **5-min price chain.** QStash POSTs `/api/cron/qstash-harvest`, which forwards to `/api/cron/price-harvest` (server-to-server, bypassing Vercel Deployment Protection). Each invocation processes up to 25 hero cards + 5–10 plays, then fires a self-chain link until the daily eBay quota is exhausted. This is the cadence and shape that has run since Session 2.x — unchanged.
-- **Hourly image backfill.** QStash GETs `/api/cron/image-harvest` directly (no qstash-harvest indirection — the price chain is what needs that, image-harvest is one-shot). The endpoint calls `runImageCapture({ maxBatch: 20 })` from `src/lib/server/harvester/image-capture.ts`, which selects BoBA cards with `image_url IS NULL`, queries eBay for each, and hands the first relevant listing's image to `captureCardImage()` (sharp re-encode → Supabase Storage → cards.image_url update → hash_cache seed).
+- **Hourly image backfill.** QStash GETs `/api/cron/image-harvest` directly (no qstash-harvest indirection — the price chain is what needs that, image-harvest is one-shot). The endpoint calls `runImageCapture({ maxBatch: 20 })` from `src/lib/server/harvester/image-capture.ts`, which selects BoBA cards with `image_url IS NULL`, queries eBay for each, and hands the first relevant listing's image to `captureCardImage()` (sharp re-encode → Supabase Storage → cards.image_url update).
 
 **Why the split.** Image work — sharp re-encode + Storage upload — was the dominant chunk of Vercel Hobby Fluid Active CPU when it ran piggybacked on every price call (~30 captures × 288 runs/day = ~8,640/day). Hourly + bounded batch cuts that to ~480/day worst-case while keeping price refresh on the same 5-min cadence. After the catalog is fully populated the image-harvest endpoint becomes a no-op until the 30-day recapture TTL expires.
 
 **Flag.** `image_harvest_in_price_cron_v1` (default OFF, seeded by `migrations/022_image_harvest_flag.sql`) gates the legacy price-harvest piggyback. Flip ON via the admin Features tab if the dedicated endpoint is ever retired and the inline path needs to come back. The cron reads the flag once per invocation via `isFeatureEnabledGlobally()` in `src/lib/server/feature-flags.ts` (30s TTL cache).
 
-**Per-listing observation persistence.** The price-harvest cron also persists every (listing × cycle) snapshot to `ebay_listing_observations` and dedupes unique `(card_id, ebay_item_id)` rows into `ebay_card_images` via `persistObservations()` from `src/lib/server/harvester/listing-observations.ts`. Pure write-side: no HTTP fetches, no `sharp`, no Storage uploads — every column is parsed from the eBay JSON the harvester already has in memory. The filter-decision (`accepted_by_filter`, `rejection_reason`, `weapon_conflict`) is tagged onto each observation so rejected listings are queryable for filter regression hunting. Best-effort wrapper around the call — any insert failure is logged and swallowed so price harvesting (`price_cache` + `price_harvest_log`) is never blocked. Daily maintenance: `/api/cron/mark-stale-listings` (triggered by `qstash-mark-stale-listings`, recommended 04:00 UTC) flips images inactive after 7 days and prunes observations after 30 days.
+**Per-listing observation persistence.** The price-harvest cron also persists every (listing × cycle) snapshot to `ebay_listing_observations` and dedupes unique `(card_id, ebay_item_id)` rows into `ebay_card_images` via `persistObservations()` from `src/lib/server/harvester/listing-observations.ts`. Pure write-side: no HTTP fetches, no `sharp`, no Storage uploads — every column is parsed from the eBay JSON the harvester already has in memory. The filter-decision (`accepted_by_filter`, `rejection_reason`, `weapon_conflict`) is tagged onto each observation so rejected listings are queryable for filter regression hunting. Best-effort wrapper around the call — any insert failure is logged and swallowed so price harvesting (`price_cache` + `price_harvest_log`) is never blocked. Daily maintenance: `/api/cron/daily-maintenance` (triggered by `qstash-daily-maintenance`, 04:00 UTC) prunes observations after 30 days and refreshes `mv_filter_health`.
 
 **eBay search query (BoBA).** `buildEbayQuery()` in `src/lib/server/ebay-query.ts` builds a boolean OR-grouped expression validated against ~40 real seller titles:
 
@@ -793,9 +793,9 @@ Estimated module coverage is ~30%. Key untested areas by priority:
 
 Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute_sql` for one-off data ops). Committed migration files in `/migrations/` are the canonical history — prod and the migrations folder are kept in sync; fresh Supabase branches must converge to the same state when all migrations run in order. Card seed data is generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo).
 
-**Multi-game scoping.** `game_id TEXT DEFAULT 'boba'` is present on: `cards`, `collections`, `scans`, `hash_cache`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scan_sessions`, `scraping_test`. All queries that span multiple games must filter on `game_id` explicitly — defaulting to `'boba'` keeps pre-Phase-3 code working without changes.
+**Multi-game scoping.** `game_id TEXT DEFAULT 'boba'` is present on: `cards`, `collections`, `scans`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scan_sessions`, `scraping_test`. All queries that span multiple games must filter on `game_id` explicitly — defaulting to `'boba'` keeps pre-Phase-3 code working without changes.
 
-**Parallel column is the source of truth, not `variant`.** During the Phase 2 arc the `variant` column was renamed to `parallel` across every table that had it. `parallel TEXT` is present on 9 tables: `cards`, `card_embeddings`, `collections`, `hash_cache`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`. (`variant_harvest_seed` was dropped in migration 30; `wonders_cards_full` view was dropped in migration 32.) Default value is `'paper'` on most; `cards.parallel` has no default (must be specified at insert) and is part of the `cards_game_card_parallel_unique` constraint. There are no CHECK constraints on parallel values — it's a free-text column so that BoBA's 49 parallel types and Wonders' 5 variants can coexist without a shared enum.
+**Parallel column is the source of truth, not `variant`.** During the Phase 2 arc the `variant` column was renamed to `parallel` across every table that had it. `parallel TEXT` is present on 8 tables: `cards`, `card_embeddings`, `collections`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`. (`variant_harvest_seed` was dropped in migration 30; `wonders_cards_full` view in migration 32; `hash_cache` in migration 58.) Default value is `'paper'` on most; `cards.parallel` has no default (must be specified at insert) and is part of the `cards_game_card_parallel_unique` constraint. There are no CHECK constraints on parallel values — it's a free-text column so that BoBA's 49 parallel types and Wonders' 5 variants can coexist without a shared enum.
 
 **Wonders parallel names.** Stored as full human-readable strings: `'Paper'`, `'Classic Foil'`, `'Formless Foil'`, `'Orbital Color Match'`, `'Stonefoil'`. The parallel classifier emits short codes (`paper/cf/ff/ocm/sf`) which are mapped to these full names before DB write. The catalog has one row per parallel — migration 30 expanded the original Paper-only catalog ~5x; the `cards_game_card_parallel_unique` constraint from migration 33 enforces the per-`(game_id, card_number, parallel)` uniqueness consumers rely on.
 
@@ -850,7 +850,6 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `scan_resolutions` | Consensus snapshot for confirmed scan outcomes | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `card_id`, `parallel` (default `'paper'`), `consensus_score`, `tier_agreement_bits`, `confirmed_at`, `confirmed_by`, `superseded_at`, `superseded_by`, `extras`, `schema_version` |
 | `scan_disputes` | User-reported incorrect scans | `id` (UUID PK), scan + card refs, dispute metadata |
 | `alignment_signal_telemetry` | Pre-capture alignment signal data (live camera) | `id` (PK) |
-| `hash_cache` | Perceptual hash cache — NO LONGER part of recognition pipeline; used only by image-harvester and AR overlay | `phash` (TEXT PK), `card_id` (FK `cards`), `confidence`, `scan_count`, `phash_256`, `game_id` (default `'boba'`), `parallel` (default `'paper'`), `source` (enum `hash_source`, default `'admin'`), `consensus_count`, `dispute_count`, `last_confirmed_at`, `superseded_at`, `extras` (JSONB), `schema_version`, `last_seen`, `created_at` |
 
 #### Tables — Pricing & Commerce
 
@@ -865,7 +864,7 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `scraping_test` | External pricing intelligence (third-party lookup results) | `id` (UUID PK), `card_id` (UUID UNIQUE, FK `cards`), `st_price/low/high`, `st_source_id`, `st_card_name`, `st_set_name`, `st_variant`, `st_rarity`, `st_image_url`, `st_raw_data` (JSONB), `st_updated`, `game_id` |
 | `ebay_api_log` | eBay quota tracking (per harvest run) | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (`running`/`quota_exhausted`/`no_cards_remaining`/`triggered_manual`) |
 | `ebay_listing_observations` | Per-listing snapshot from each harvest cycle. Populated by the price-harvest cron via `persistObservations()`. 30-day retention (see `prune_old_observations()`). Admin-only RLS. | `id` (BIGSERIAL PK), `observed_at`, `run_id`, `card_id` (FK `cards`), `game_id` (default `'boba'`), `parallel`, `ebay_item_id`, `title`, `price_value/currency`, `bid_count`, `current_bid_value`, `buying_options` (TEXT[]), `condition_label/_id`, `seller_username/_feedback_pct/_feedback_score`, `category_path`, `item_created_at/ends_at`, `priority_listing`, `marketing_original_value`, `image_url`, `item_web_url/_affiliate_url`, `accepted_by_filter`, `rejection_reason`, `weapon_conflict`, `raw_payload` (JSONB) |
-| `ebay_card_images` | Image dedupe table — one row per unique `(card_id, ebay_item_id)` ever observed. `is_active` flips false after 7 days without re-observation. Authenticated users can read active rows. | **PK: `(card_id, ebay_item_id)`**. `image_url`, `thumbnail_url`, `first_seen_at`, `last_seen_at`, `observation_count`, `is_active`, `last_title`, `parallel` |
+| `ebay_card_images` | Image dedupe table — one row per unique `(card_id, ebay_item_id)` ever observed. Authenticated users can read all rows. | **PK: `(card_id, ebay_item_id)`**. `image_url`, `thumbnail_url`, `first_seen_at`, `last_seen_at`, `observation_count`, `last_title`, `parallel` |
 
 #### Tables — Tournaments
 
@@ -910,8 +909,6 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 Recognition & catalog:
 - `find_similar_hash(query_hash, max_distance, p_game_id)` — Hamming-distance fuzzy pHash lookup (used only by AR overlay post-2.5; recognition pipeline no longer calls it)
 - `find_similar_phash_256(query_phash_256, max_distance, p_game_id, p_limit)` — same as above for 256-bit pHash variant
-- `upsert_hash_cache(p_phash, p_card_id, ...)` — legacy entrypoint, kept for backward compatibility
-- `upsert_hash_cache_v2(p_phash, p_card_id, p_phash_256, p_game_id, p_parallel, p_source, p_confidence)` — current entrypoint used by image-harvester
 - `match_card_embedding(query_embedding, target_game_id, top_k, min_similarity)` — pgvector similarity search against `card_embeddings`
 - `get_wonders_cards_to_seed(p_limit)` — feeds the DINOv2 embedding seeder script
 - `lookup_correction(p_ocr_reading)` — community OCR corrections (requires 3+ confirmations)
@@ -969,7 +966,6 @@ Diagnostic logging:
 - `collections`: `quantity` default 1, `condition` default `'near_mint'`, `parallel` default `'paper'`. No CHECK on parallel (free-text — see Wonders note at top of section).
 - `price_cache`: PK `(card_id, source, parallel)`. Numeric prices; no monotonicity constraint (low may exceed mid in sparse-listing edge cases; consumers filter on `confidence_score`).
 - `play_price_cache`: PK `(card_id, source)`. No `parallel` — plays don't vary by parallel.
-- `hash_cache`: PK `phash`. `source` is enum `hash_source`. `confidence_count`/`dispute_count` default 0.
 - `scans`: `outcome` is enum `scan_outcome`. `fallback_tier_used` CHECK `'none'\|'haiku'\|'sonnet'\|'manual'\|NULL`. `capture_source` CHECK includes `'camera_live'`, `'upload_library'`, `'camera_roll_import'`, `'binder_live_cell'`, `'manual'`.
 - `scan_tier_results`: `tier` is enum `scan_tier`. `engine` is enum `scan_engine`.
 - `listing_templates`: `status` CHECK `'draft'\|'pending'\|'published'\|'sold'\|'ended'\|'error'`. `scan_id` FK `scans(id)` ON DELETE SET NULL.
@@ -1152,7 +1148,7 @@ Wonders cards use a separate query builder (`ebay-query-wonders.ts`) that quotes
 
 This was the biggest drift class in the Phase 2 arc and is worth calling out explicitly.
 
-- **Column name is `parallel`, not `variant`.** The column was renamed across the catalog tables in Phase 2 and is currently present on 9 (`cards`, `card_embeddings`, `collections`, `hash_cache`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`). `variant_harvest_seed` was dropped in migration 30 and `wonders_cards_full` view in migration 32. Zero tables have a `variant` column — any code referencing `variant` is either dead or wrong.
+- **Column name is `parallel`, not `variant`.** The column was renamed across the catalog tables in Phase 2 and is currently present on 8 (`cards`, `card_embeddings`, `collections`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`). `variant_harvest_seed` was dropped in migration 30, `wonders_cards_full` view in migration 32, and `hash_cache` in migration 58. Zero tables have a `variant` column — any code referencing `variant` is either dead or wrong.
 - **Stored values are full names.** BoBA parallels use human-readable names (`'Paper'`, `'Battlefoil'`, `'Silver Battlefoil'`, etc.). Wonders parallels use title-cased full names (`'Paper'`, `'Classic Foil'`, `'Formless Foil'`, `'Orbital Color Match'`, `'Stonefoil'`). The Wonders parallel classifier emits short codes (`paper/cf/ff/ocm/sf`) which are mapped to full names before DB write — short codes are never persisted.
 - **No CHECK constraint on parallel values.** Free-text column. BoBA has 49 parallel names; Wonders has 5. They coexist in the same column with no union constraint — game separation happens via `game_id`, not via a parallel enum.
 - **`(card_number, name, parallel)` is the unique key** for identifying a card row in both games. Recognition pipeline consumers can assume this is unique.

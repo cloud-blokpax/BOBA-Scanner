@@ -1,5 +1,5 @@
 /**
- * POST /api/cron/qstash-mark-stale-listings — daily QStash trigger for the
+ * POST /api/cron/qstash-daily-maintenance — daily QStash trigger for the
  * eBay listing observation tables maintenance job.
  *
  * Recommended QStash schedule: 0 4 * * * (04:00 UTC daily).
@@ -13,8 +13,8 @@ export const config = { maxDuration: 60 };
 
 export const POST: RequestHandler = async ({ request, url }) => {
 	return verifyAndForward(request, url, {
-		logTag: 'qstash-mark-stale',
-		receiverPath: '/api/cron/qstash-mark-stale-listings',
-		targetPath: '/api/cron/mark-stale-listings'
+		logTag: 'qstash-daily-maintenance',
+		receiverPath: '/api/cron/qstash-daily-maintenance',
+		targetPath: '/api/cron/daily-maintenance'
 	});
 };
