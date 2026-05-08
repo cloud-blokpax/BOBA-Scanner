@@ -1,11 +1,11 @@
 /**
  * QStash → internal cron forwarder.
  *
- * Three of our QStash receivers do the same thing: verify the Upstash
+ * Four of our QStash receivers do the same thing: verify the Upstash
  * signature, then internally call a `/api/cron/*` endpoint with the
  * CRON_SECRET to bypass Vercel Deployment Protection. This helper is the
- * shared body of `qstash-harvest`, `qstash-daily-maintenance`, and
- * `qstash-vercel-mirror`.
+ * shared body of `qstash-harvest`, `qstash-daily-maintenance`,
+ * `qstash-archive-to-r2`, and `qstash-vercel-mirror`.
  *
  * `qstash-check-deck-builder-version` is intentionally NOT a caller — it
  * runs its own logic rather than forwarding.
