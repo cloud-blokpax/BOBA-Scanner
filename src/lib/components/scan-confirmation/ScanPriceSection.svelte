@@ -2,6 +2,7 @@
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { buildEbaySearchUrl } from '$lib/services/ebay';
 	import AffiliateNotice from '$lib/components/AffiliateNotice.svelte';
+	import ComparableListings from '$lib/components/ComparableListings.svelte';
 
 	let {
 		priceData,
@@ -20,7 +21,7 @@
 		historyData: Array<{ date: string; price_mid: number | null }>;
 		historyLoading: boolean;
 		showPriceHistory: boolean;
-		card?: { card_number?: string | null; hero_name?: string | null; athlete_name?: string | null; parallel?: string | null; weapon_type?: string | null } | null;
+		card?: { id?: string | null; card_number?: string | null; hero_name?: string | null; athlete_name?: string | null; parallel?: string | null; weapon_type?: string | null } | null;
 	} = $props();
 
 	const ebayUrl = $derived(card ? buildEbaySearchUrl(card) : null);
@@ -65,6 +66,10 @@
 			View on eBay →
 		</a>
 		<AffiliateNotice compact />
+	{/if}
+
+	{#if card?.id && !priceLoading && (priceData?.listings_count ?? 0) > 0}
+		<ComparableListings cardId={card.id} limit={8} />
 	{/if}
 </div>
 
