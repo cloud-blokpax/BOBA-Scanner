@@ -111,7 +111,8 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 	const SOURCE_TABLES = [
 		{ table: 'ebay_listing_observations', timeColumn: 'observed_at' as const },
-		{ table: 'price_harvest_log', timeColumn: 'processed_at' as const }
+		{ table: 'price_harvest_log', timeColumn: 'processed_at' as const },
+		{ table: 'external_pricing_history', timeColumn: 'created_at' as const }
 	];
 
 	for (const { table, timeColumn } of SOURCE_TABLES) {
@@ -176,7 +177,7 @@ interface ArchiveTableArgs {
 	admin: NonNullable<ReturnType<typeof getAdminClient>>;
 	appId: string;
 	sourceTable: string;
-	timeColumn: 'observed_at' | 'processed_at';
+	timeColumn: 'observed_at' | 'processed_at' | 'created_at';
 	dryRun: boolean;
 }
 
@@ -314,7 +315,7 @@ async function archiveOneTable(args: ArchiveTableArgs): Promise<RunResult> {
 interface ArchiveDayArgs {
 	admin: NonNullable<ReturnType<typeof getAdminClient>>;
 	sourceTable: string;
-	timeColumn: 'observed_at' | 'processed_at';
+	timeColumn: 'observed_at' | 'processed_at' | 'created_at';
 	dayStart: Date;
 	dayEnd: Date;
 	appId: string;
