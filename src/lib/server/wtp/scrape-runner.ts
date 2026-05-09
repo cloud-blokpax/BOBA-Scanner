@@ -197,9 +197,13 @@ export async function runWtpScrape(supabase: SupabaseClient): Promise<ScrapeRunS
 
 	let historyCount = 0;
 	if (historyRows.length) {
+		// UPSERT instead of INSERT — external_pricing_history has a UNIQUE
+		// constraint on (card_id, pull_date) so a same-day re-run would
+		// otherwise hit duplicate-key violations and 500. Same-day re-runs
+		// SHOULD overwrite the audit row (idempotent rerun semantics).
 		const { error: histErr } = await supabase
 			.from('external_pricing_history')
-			.insert(historyRows);
+			.upsert(historyRows, { onConflict: 'card_id,pull_date' });
 		if (histErr) throw histErr;
 		historyCount = historyRows.length;
 	}
