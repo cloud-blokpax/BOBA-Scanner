@@ -1,7 +1,7 @@
 /**
  * GET /api/admin/wtp/runs
  *
- * Returns recent WTP scrape activity by aggregating scraping_test_history
+ * Returns recent WTP scrape activity by aggregating external_pricing_history
  * rows (game_id='wonders') by pull_date. One row per day with rolled-up
  * card count and sales totals.
  */
@@ -13,8 +13,8 @@ import type { RequestHandler } from './$types';
 
 interface HistoryRow {
 	pull_date: string;
-	st_total_sales: number | null;
-	st_sales_30d: number | null;
+	ep_total_sales: number | null;
+	ep_sales_30d: number | null;
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -34,8 +34,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 	for (let page = 0; page < MAX_PAGES; page++) {
 		const offset = page * PAGE_SIZE;
 		const { data, error: dbErr } = await admin
-			.from('scraping_test_history')
-			.select('pull_date, st_total_sales, st_sales_30d')
+			.from('external_pricing_history')
+			.select('pull_date, ep_total_sales, ep_sales_30d')
 			.eq('game_id', 'wonders')
 			.order('pull_date', { ascending: false })
 			.range(offset, offset + PAGE_SIZE - 1);
@@ -55,8 +55,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 			byDate.get(k) ??
 			{ date: k, cards_with_data: 0, total_sold_lifetime: 0, sales_30d: 0 };
 		acc.cards_with_data += 1;
-		acc.total_sold_lifetime += row.st_total_sales ?? 0;
-		acc.sales_30d += row.st_sales_30d ?? 0;
+		acc.total_sold_lifetime += row.ep_total_sales ?? 0;
+		acc.sales_30d += row.ep_sales_30d ?? 0;
 		byDate.set(k, acc);
 	}
 

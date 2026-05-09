@@ -438,13 +438,29 @@ export async function runTier2(
 					telemetry.outcome = 'miss';
 					telemetry.latencyMs = Math.round(performance.now() - started);
 					// Negative-cache the unrecognized number so we don't re-pay for
-					// the same Haiku call on the same card immediately.
+					// the same Haiku call on the same card immediately. Writes to
+					// both local IDB (fast lookup) and global Supabase
+					// (cross-tab/cross-device dedup + catalog gap surfacing).
 					if (claudeNumber) {
 						try {
 							const hash = await getImageWorker().computeDHash(bitmap);
 							await idb.setHash({ phash: hash, card_id: `__unrecognized:${claudeNumber}`, confidence: 0 });
 						} catch (err) {
-							console.debug(`[scan:${ctx.traceId}:tier2] negative cache write failed`, err);
+							console.debug(`[scan:${ctx.traceId}:tier2] IDB negative cache write failed`, err);
+						}
+						// Global negative cache (best-effort, non-blocking)
+						try {
+							const { getSupabase } = await import('$lib/services/supabase');
+							const client = getSupabase();
+							if (client) {
+								await client.rpc('record_unrecognized_card', {
+									p_card_number: claudeNumber,
+									p_game_id: detectedGameId,
+									p_haiku_hero_name: claudeHero ?? null
+								});
+							}
+						} catch (err) {
+							console.debug(`[scan:${ctx.traceId}:tier2] global negative cache write failed`, err);
 						}
 					}
 					return null;
@@ -499,13 +515,29 @@ export async function runTier2(
 		? `AI identified "${claudeNumber}" (${claudeHero}) — play cards not loaded, please reload the app`
 		: `AI identified "${claudeNumber}" (${claudeHero}) but card not found in database`;
 
-	// Negative cache to prevent repeated Tier 2 calls for the same unrecognized card
+	// Negative cache to prevent repeated Tier 2 calls for the same unrecognized
+	// card. Writes to both local IDB (fast lookup) and global Supabase
+	// (cross-tab/cross-device dedup + catalog gap surfacing).
 	if (claudeNumber) {
 		try {
 			const hash = await getImageWorker().computeDHash(bitmap);
 			await idb.setHash({ phash: hash, card_id: `__unrecognized:${claudeNumber}`, confidence: 0 });
 		} catch (err) {
-			console.debug(`[scan:${ctx.traceId}:tier2] Failed to write negative cache entry:`, err);
+			console.debug(`[scan:${ctx.traceId}:tier2] Failed to write IDB negative cache entry:`, err);
+		}
+		// Global negative cache (best-effort, non-blocking)
+		try {
+			const { getSupabase } = await import('$lib/services/supabase');
+			const client = getSupabase();
+			if (client) {
+				await client.rpc('record_unrecognized_card', {
+					p_card_number: claudeNumber,
+					p_game_id: detectedGameId,
+					p_haiku_hero_name: claudeHero ?? null
+				});
+			}
+		} catch (err) {
+			console.debug(`[scan:${ctx.traceId}:tier2] Failed to write global negative cache entry:`, err);
 		}
 	}
 

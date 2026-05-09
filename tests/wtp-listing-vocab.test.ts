@@ -6,7 +6,7 @@ import {
 	CONDITION_TO_WTP
 } from '$lib/services/wtp/listing-vocab';
 
-describe('parallelToWtpTreatment (legacy mapping — used by harvester / scraping_test)', () => {
+describe('parallelToWtpTreatment (legacy mapping — used by harvester / external_pricing)', () => {
 	it('maps Wonders full names to WTP treatment codes', () => {
 		expect(parallelToWtpTreatment('Paper')).toBe('paper');
 		expect(parallelToWtpTreatment('Classic Foil')).toBe('classic_foil');

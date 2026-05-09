@@ -1,24 +1,12 @@
 /**
  * GET /api/cron/daily-maintenance — Daily maintenance for the eBay harvest tables.
  *
- * Runs SQL maintenance functions back-to-back. Each is independent — one
- * failing does not stop the others.
- *
+ * Currently runs one SQL maintenance function:
  *   - `prune_old_observations()` — deletes `ebay_listing_observations` rows
- *     older than 30 days. Bounds steady-state storage. Phase 2 will tighten
- *     this window to 7 days once R2 archives are stable.
+ *     older than 30 days. Phase 2 will tighten this to 7 days once the
+ *     R2 archive cron has run cleanly for a week.
  *
- *   - `refresh_filter_health()` — refreshes mv_filter_health for ad-hoc
- *     diagnosis via /api/admin/filter-health. CONCURRENTLY so it doesn't
- *     block reads.
- *
- * (Previously also called mark_stale_ebay_listings(); that function flipped
- * a boolean nobody read. Removed in migration 058.)
- *
- * Triggered by QStash (via /api/cron/qstash-daily-maintenance, server-to-
- * server, bypassing Vercel Deployment Protection). Same security model as
- * qstash-harvest.
- *
+ * Triggered by QStash via /api/cron/qstash-daily-maintenance, daily 04:00 UTC.
  * Auth: CRON_SECRET header.
  */
 
@@ -69,43 +57,10 @@ export const GET: RequestHandler = async ({ request }) => {
 		});
 	}
 
-	// ── 2. Refresh filter-health MV (best-effort) ─────────────
-	let filterHealthRefreshError: string | null = null;
-	let filterHealthRows: number | null = null;
-	try {
-		const { data, error: rpcError } = await (
-			admin.rpc as unknown as (
-				name: 'refresh_filter_health'
-			) => Promise<{
-				data: Array<{ refreshed_rows: number; ran_at: string }> | null;
-				error: { message: string } | null;
-			}>
-		)('refresh_filter_health');
-		if (rpcError) {
-			filterHealthRefreshError = rpcError.message;
-			void logEvent({
-				level: 'error',
-				event: 'maintenance.filter_health_refresh_failed',
-				error: rpcError.message
-			});
-		} else if (data && data.length > 0) {
-			filterHealthRows = data[0].refreshed_rows;
-		}
-	} catch (err) {
-		filterHealthRefreshError = err instanceof Error ? err.message : 'unknown';
-		void logEvent({
-			level: 'error',
-			event: 'maintenance.filter_health_refresh_threw',
-			error: err
-		});
-	}
-
 	return json({
-		ok: !pruneError && !filterHealthRefreshError,
+		ok: !pruneError,
 		startedAt,
 		finishedAt: new Date().toISOString(),
-		pruneError,
-		filterHealthRefreshError,
-		filterHealthRows
+		pruneError
 	});
 };

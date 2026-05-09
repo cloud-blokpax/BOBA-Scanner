@@ -1495,37 +1495,37 @@ export interface Database {
 				Update: Partial<Database['public']['Tables']['play_price_history']['Insert']>;
 				Relationships: [];
 			};
-			scraping_test: {
+			external_pricing: {
 				Row: {
 					card_id: string;
-					st_price: number | null;
-					st_low: number | null;
-					st_high: number | null;
-					st_source_id: string | null;
-					st_card_name: string | null;
-					st_set_name: string | null;
-					st_variant: string | null;
-					st_rarity: string | null;
-					st_image_url: string | null;
-					st_raw_data: Record<string, unknown> | null;
-					st_updated: string | null;
+					ep_price: number | null;
+					ep_low: number | null;
+					ep_high: number | null;
+					ep_source_id: string | null;
+					ep_card_name: string | null;
+					ep_set_name: string | null;
+					ep_variant: string | null;
+					ep_rarity: string | null;
+					ep_image_url: string | null;
+					ep_raw_data: Record<string, unknown> | null;
+					ep_updated: string | null;
 					created_at: string;
 				};
 				Insert: {
 					card_id: string;
-					st_price?: number | null;
-					st_low?: number | null;
-					st_high?: number | null;
-					st_source_id?: string | null;
-					st_card_name?: string | null;
-					st_set_name?: string | null;
-					st_variant?: string | null;
-					st_rarity?: string | null;
-					st_image_url?: string | null;
-					st_raw_data?: Record<string, unknown> | null;
-					st_updated?: string | null;
+					ep_price?: number | null;
+					ep_low?: number | null;
+					ep_high?: number | null;
+					ep_source_id?: string | null;
+					ep_card_name?: string | null;
+					ep_set_name?: string | null;
+					ep_variant?: string | null;
+					ep_rarity?: string | null;
+					ep_image_url?: string | null;
+					ep_raw_data?: Record<string, unknown> | null;
+					ep_updated?: string | null;
 				};
-				Update: Partial<Database['public']['Tables']['scraping_test']['Insert']>;
+				Update: Partial<Database['public']['Tables']['external_pricing']['Insert']>;
 				Relationships: [];
 			};
 			app_events: {
@@ -1706,6 +1706,14 @@ export interface Database {
 			lookup_correction: {
 				Args: { p_ocr_reading: string };
 				Returns: Array<{ correct_card_number: string; confirmation_count: number }>;
+			};
+			record_unrecognized_card: {
+				Args: { p_card_number: string; p_game_id?: string; p_haiku_hero_name?: string | null };
+				Returns: void;
+			};
+			refresh_harvest_runs: {
+				Args: Record<string, never>;
+				Returns: void;
 			};
 			award_badge_if_new: {
 				Args: { p_user_id: string; p_badge_key: string; p_badge_name?: string; p_description?: string; p_icon?: string };

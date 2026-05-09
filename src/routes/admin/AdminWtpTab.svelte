@@ -91,9 +91,9 @@
 		<p class="muted">
 			Pulls all listings from
 			<a href="https://wonderstradingpost.com" target="_blank" rel="noopener">wonderstradingpost.com</a>,
-			matches them to our Wonders catalog, and writes pricing rows to <code>scraping_test</code>
-			with <code>game_id='wonders'</code>. Read-only against WTP. Same pattern as the BoBA scraping
-			test.
+			matches them to our Wonders catalog, and writes pricing rows to <code>external_pricing</code>
+			with <code>game_id='wonders'</code>. Read-only against WTP. Same pattern as the BoBA external
+			pricing flow.
 		</p>
 	</header>
 
@@ -224,7 +224,7 @@
 		<section>
 			<h3>Recent runs</h3>
 			<p class="muted">
-				Daily activity from <code>scraping_test_history</code> (game_id='wonders').
+				Daily activity from <code>external_pricing_history</code> (game_id='wonders').
 			</p>
 			<table>
 				<thead>
