@@ -204,7 +204,7 @@ Card-Scanner/
 │   │       │   ├── image-harvest/+server.ts        # Cron: Hourly image-only backfill (CPU-throttled successor to the price-harvest piggyback)
 │   │       │   ├── vercel-log-mirror/+server.ts    # Cron: Pulls Vercel runtime logs into app_events (Phase 2.5)
 │   │       │   ├── qstash-vercel-mirror/+server.ts # QStash: Daily trigger for vercel-log-mirror
-│   │       │   ├── daily-maintenance/+server.ts        # Cron: Prunes ebay_listing_observations >30d + refreshes mv_filter_health
+│   │       │   ├── daily-maintenance/+server.ts        # Cron: Prunes ebay_listing_observations >30d
 │   │       │   └── qstash-daily-maintenance/+server.ts # QStash: Daily trigger for daily-maintenance (04:00 UTC)
 │   │       ├── diag/+server.ts                     # POST: Client-side diagnostic event ingestion (window errors, fire-and-forget catches)
 │   │       ├── admin/
@@ -229,7 +229,7 @@ Card-Scanner/
 │   │       │   ├── triage/+server.ts         # GET/PUT: Diagnostic event triage (active/archive/patterns/storage views, fingerprint status changes)
 │   │       │   ├── dragon-points/+server.ts  # Admin: Wonders dragon points config
 │   │       │   ├── migrate-images/+server.ts # Admin: image migration utility
-│   │       │   └── st-data/+server.ts        # Admin: external pricing data lookup
+│   │       │   └── ep-data/+server.ts        # Admin: external pricing data lookup
 │   │       └── ebay/
 │   │           ├── browse/+server.ts    # eBay Browse API proxy
 │   │           ├── listing/+server.ts   # POST: Generate/post eBay listings
@@ -316,6 +316,7 @@ Card-Scanner/
 │   │   │   ├── sell/               # Sell page sub-components
 │   │   │   │   ├── BrowseView.svelte    # Scanned cards + listings browser
 │   │   │   │   ├── ListingView.svelte   # Individual listing editor (eBay + Whatnot)
+│   │   │   │   ├── ListingExternalPricingPanel.svelte # Admin-only external pricing detail panel (renamed from ListingScrapingTestPanel)
 │   │   │   │   ├── ListingHistory.svelte # Listing history (active/ended)
 │   │   │   │   ├── EbaySetupGuide.svelte # eBay connection guide
 │   │   │   │   ├── SellExportTab.svelte  # Whatnot/CSV export tab
@@ -546,7 +547,7 @@ Card-Scanner/
 │   ├── carde-image-backfill.ts     # Backfill card images from Carde.io (historical — note: Carde.io is no longer used for matching per Session 2.5)
 │   ├── download-carde-images.ts    # Download reference images from Carde.io (legacy utility, not in active use)
 │   ├── generate-hash-fixtures.mjs  # Regenerate the tests/fixtures/hash-parity/ image set from catalog sources
-│   └── import-st-data.ts           # Import external pricing intelligence data into scraping_test table
+│   └── import-ep-data.ts           # Import external pricing intelligence data into external_pricing table
 ├── middleware.ts                    # Vercel Edge Middleware: bot/scraper/AI-crawler blocking
 ├── svelte.config.js                # SvelteKit config (Vercel adapter, path aliases, CSP)
 ├── vite.config.ts                  # Vite config (sourcemaps, ES2020, Web Workers as ES modules)
@@ -692,7 +693,7 @@ The harvester writes catalog-wide eBay price snapshots to `price_cache` / `play_
 
 **Flag.** `image_harvest_in_price_cron_v1` (default OFF, seeded by `migrations/022_image_harvest_flag.sql`) gates the legacy price-harvest piggyback. Flip ON via the admin Features tab if the dedicated endpoint is ever retired and the inline path needs to come back. The cron reads the flag once per invocation via `isFeatureEnabledGlobally()` in `src/lib/server/feature-flags.ts` (30s TTL cache).
 
-**Per-listing observation persistence.** The price-harvest cron also persists every (listing × cycle) snapshot to `ebay_listing_observations` and dedupes unique `(card_id, ebay_item_id)` rows into `ebay_card_images` via `persistObservations()` from `src/lib/server/harvester/listing-observations.ts`. Pure write-side: no HTTP fetches, no `sharp`, no Storage uploads — every column is parsed from the eBay JSON the harvester already has in memory. The filter-decision (`accepted_by_filter`, `rejection_reason`, `weapon_conflict`) is tagged onto each observation so rejected listings are queryable for filter regression hunting. Best-effort wrapper around the call — any insert failure is logged and swallowed so price harvesting (`price_cache` + `price_harvest_log`) is never blocked. Daily maintenance: `/api/cron/daily-maintenance` (triggered by `qstash-daily-maintenance`, 04:00 UTC) prunes observations after 30 days and refreshes `mv_filter_health`.
+**Per-listing observation persistence.** The price-harvest cron also persists every (listing × cycle) snapshot to `ebay_listing_observations` and dedupes unique `(card_id, ebay_item_id)` rows into `ebay_card_images` via `persistObservations()` from `src/lib/server/harvester/listing-observations.ts`. Pure write-side: no HTTP fetches, no `sharp`, no Storage uploads — every column is parsed from the eBay JSON the harvester already has in memory. The filter-decision (`accepted_by_filter`, `rejection_reason`, `weapon_conflict`) is tagged onto each observation so rejected listings are queryable for filter regression hunting. Best-effort wrapper around the call — any insert failure is logged and swallowed so price harvesting (`price_cache` + `price_harvest_log`) is never blocked. Daily maintenance: `/api/cron/daily-maintenance` (triggered by `qstash-daily-maintenance`, 04:00 UTC) prunes observations after 30 days. After each price-harvest cycle the cron also refreshes `mv_harvest_runs` (per-run summary materialized view) so the admin observability surface always reflects the latest run.
 
 **eBay search query (BoBA).** `buildEbayQuery()` in `src/lib/server/ebay-query.ts` builds a boolean OR-grouped expression validated against ~40 real seller titles:
 
@@ -791,7 +792,7 @@ Estimated module coverage is ~30%. Key untested areas by priority:
 
 Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute_sql` for one-off data ops). Committed migration files in `/migrations/` are the canonical history — prod and the migrations folder are kept in sync; fresh Supabase branches must converge to the same state when all migrations run in order. Card seed data is generated via `scripts/generate-card-seed.js` (requires a local `card-database.json` file, not checked into the repo).
 
-**Multi-game scoping.** `game_id TEXT DEFAULT 'boba'` is present on: `cards`, `collections`, `scans`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scan_sessions`, `scraping_test`. All queries that span multiple games must filter on `game_id` explicitly — defaulting to `'boba'` keeps pre-Phase-3 code working without changes.
+**Multi-game scoping.** `game_id TEXT DEFAULT 'boba'` is present on: `cards`, `collections`, `scans`, `price_cache`, `price_history`, `listing_templates`, `price_harvest_log`, `scan_sessions`, `external_pricing`. All queries that span multiple games must filter on `game_id` explicitly — defaulting to `'boba'` keeps pre-Phase-3 code working without changes.
 
 **Parallel column is the source of truth, not `variant`.** During the Phase 2 arc the `variant` column was renamed to `parallel` across every table that had it. `parallel TEXT` is present on 8 tables: `cards`, `card_embeddings`, `collections`, `listing_templates`, `price_cache`, `price_harvest_log`, `price_history`, `scan_resolutions`. (`variant_harvest_seed` was dropped in migration 30; `wonders_cards_full` view in migration 32; `hash_cache` in migration 58.) Default value is `'paper'` on most; `cards.parallel` has no default (must be specified at insert) and is part of the `cards_game_card_parallel_unique` constraint. There are no CHECK constraints on parallel values — it's a free-text column so that BoBA's 49 parallel types and Wonders' 5 variants can coexist without a shared enum.
 
@@ -859,7 +860,9 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `play_price_history` | Historical play price tracking | `id` (UUID PK), `card_id` (TEXT), `source`, `price_low/mid/high`, `listings_count`, `recorded_at` |
 | `price_harvest_log` | Per-card harvest attempt log (heroes only — play harvests log to `play_price_cache.fetched_at`) | `id` (UUID PK), `run_id`, `chain_depth`, `priority` (1-4), `card_id`, `hero_name`, `card_name`, `card_number`, `search_query`, eBay result stats, pricing (`price_low/mid/high/mean`, `buy_now_*`, `confidence_score`, `buy_now_confidence`), deltas (`previous_mid`, `price_changed`, `price_delta/_pct`, `is_new_price`), `success`, `zero_results`, `threshold_rejected`, `error_message`, `duration_ms`, `game_id`, `parallel`, `confidence_cold_start`, `processed_at` |
 | `listing_templates` | eBay listing drafts (one per scan→listing) | `id` (UUID PK), `user_id`, `card_id` (FK `cards`), `scan_id` (UUID FK `scans`, added 2.1a), `title`, `description`, `suggested_price`, `price`, `condition` (default `'near_mint'`), `status` (CHECK `draft\|pending\|published\|sold\|ended\|error`), eBay fields (`ebay_listing_id`, `ebay_offer_id`, `ebay_listing_url`, `sku`), card denorm (`hero_name`, `card_number`, `set_code`, `parallel`, `weapon_type`), images (`scan_image_url`, `image_url`), sale tracking (`sold_at`, `sold_price`), `game_id` (default `'boba'`), `error_message`, timestamps |
-| `scraping_test` | External pricing intelligence (third-party lookup results) | `id` (UUID PK), `card_id` (UUID UNIQUE, FK `cards`), `st_price/low/high`, `st_source_id`, `st_card_name`, `st_set_name`, `st_variant`, `st_rarity`, `st_image_url`, `st_raw_data` (JSONB), `st_updated`, `game_id` |
+| `external_pricing` | External pricing intelligence (third-party lookup results) | `id` (UUID PK), `card_id` (UUID UNIQUE, FK `cards`), `ep_price/low/high`, `ep_source_id`, `ep_card_name`, `ep_set_name`, `ep_variant`, `ep_rarity`, `ep_image_url`, `ep_raw_data` (JSONB), `ep_updated`, `game_id`. Renamed from `scraping_test` in migration 064. |
+| `external_pricing_history` | Daily per-card audit rows for the WTP scrape pass (one row per `(card_id, pull_date)` per game). | `id` (UUID PK), `card_id`, `pull_date`, `game_id`, `ep_price`, `ep_total_sales`, `ep_sales_30d`, `ep_avg_30d`, `ep_last_sale_date`, `ep_source_id`, `ep_raw_data`. Renamed from `scraping_test_history` in migration 064. |
+| `unrecognized_card_cache` | Tier 2 negative cache. When Haiku returns a card_number not in our catalog, we record it here to skip repeat Haiku calls and surface catalog gaps. Authenticated read; service-role write. | PK `(card_number, game_id)`. `first_seen_at`, `last_seen_at`, `occurrence_count`, `haiku_hero_name`. Written via `record_unrecognized_card()` RPC from the Tier 2 dispatcher (`recognition-tiers.ts`). |
 | `ebay_api_log` | eBay quota tracking (per harvest run) | `calls_used/remaining/limit`, `chain_depth`, `cards_processed/updated/errored`, `status` (`running`/`quota_exhausted`/`no_cards_remaining`/`triggered_manual`) |
 | `ebay_listing_observations` | Per-listing snapshot from each harvest cycle. Populated by the price-harvest cron via `persistObservations()`. 30-day retention (see `prune_old_observations()`). Admin-only RLS. | `id` (BIGSERIAL PK), `observed_at`, `run_id`, `card_id` (FK `cards`), `game_id` (default `'boba'`), `parallel`, `ebay_item_id`, `title`, `price_value/currency`, `bid_count`, `current_bid_value`, `buying_options` (TEXT[]), `condition_label/_id`, `seller_username/_feedback_pct/_feedback_score`, `category_path`, `item_created_at/ends_at`, `priority_listing`, `marketing_original_value`, `image_url`, `item_web_url/_affiliate_url`, `accepted_by_filter`, `rejection_reason`, `weapon_conflict`, `raw_payload` (JSONB) |
 | `ebay_card_images` | Image dedupe table — one row per unique `(card_id, ebay_item_id)` ever observed. Authenticated users can read all rows. | **PK: `(card_id, ebay_item_id)`**. `image_url`, `thumbnail_url`, `first_seen_at`, `last_seen_at`, `observation_count`, `last_title`, `parallel` |
@@ -930,6 +933,10 @@ Pricing & harvest:
 - `get_harvest_summary(p_run_id)` — harvest run summary statistics
 - `get_price_status_summary()` — pricing coverage stats by card type
 - `get_latest_harvest_per_card(p_card_ids)` — most recent harvest result per card
+- `refresh_harvest_runs()` — refreshes the `mv_harvest_runs` materialized view (called at the end of each price-harvest cron run).
+
+Recognition cache:
+- `record_unrecognized_card(p_card_number, p_game_id, p_haiku_hero_name)` — upsert into `unrecognized_card_cache` (Tier 2 negative cache). Increments `occurrence_count` on conflict. Called best-effort from `recognition-tiers.ts` when Haiku returns a number not in the catalog.
 
 Admin & maintenance:
 - `get_daily_trends(p_days)` — daily trend aggregation (default 14 days)

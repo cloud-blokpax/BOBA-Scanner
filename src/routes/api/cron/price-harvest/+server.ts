@@ -242,6 +242,17 @@ export const GET: RequestHandler = async ({ request, url }) => {
 				context: { batch_size: harvestLogs.length }
 			});
 		}
+
+		// Refresh the per-run summary MV so downstream observability is current.
+		// Best-effort — failure here doesn't matter to the harvest run itself,
+		// just delays the summary by one run.
+		try {
+			await (admin.rpc as unknown as (
+				name: 'refresh_harvest_runs'
+			) => Promise<{ error: { message: string } | null }>)('refresh_harvest_runs');
+		} catch (err) {
+			console.warn('[harvest] mv_harvest_runs refresh failed:', err instanceof Error ? err.message : err);
+		}
 	}
 
 	// Skip self-chaining when triggered manually (browser handles the loop)

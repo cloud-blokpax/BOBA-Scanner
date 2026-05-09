@@ -1,10 +1,10 @@
 /**
- * GET /api/admin/st-data?card_id=UUID
+ * GET /api/admin/ep-data?card_id=UUID
  *
- * Returns scraping test pricing data for a single card.
+ * Returns external pricing data for a single card.
  * Admin-only — uses requireAdmin guard + RLS double protection.
  *
- * Response: { data: { st_price, st_low, st_high, st_card_name, ... } | null }
+ * Response: { data: { ep_price, ep_low, ep_high, ep_card_name, ... } | null }
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -22,25 +22,25 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!admin) throw error(503, 'Database not available');
 
 	const { data, error: dbErr } = await admin
-		.from('scraping_test')
+		.from('external_pricing')
 		.select(`
-			st_price,
-			st_low,
-			st_high,
-			st_source_id,
-			st_card_name,
-			st_set_name,
-			st_variant,
-			st_rarity,
-			st_image_url,
-			st_raw_data,
-			st_updated
+			ep_price,
+			ep_low,
+			ep_high,
+			ep_source_id,
+			ep_card_name,
+			ep_set_name,
+			ep_variant,
+			ep_rarity,
+			ep_image_url,
+			ep_raw_data,
+			ep_updated
 		`)
 		.eq('card_id', cardId)
 		.maybeSingle();
 
 	if (dbErr) {
-		console.error('[st-data] Query failed:', dbErr);
+		console.error('[ep-data] Query failed:', dbErr);
 		throw error(500, 'Query failed');
 	}
 

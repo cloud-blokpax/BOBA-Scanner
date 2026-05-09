@@ -3,13 +3,13 @@
  *   1. Fetch all WTP listings + load Wonders catalog lookup
  *   2. Bucket card-typed listings by matched card_id
  *   3. Aggregate per-card pricing (median ask, low, high, sold counts)
- *   4. Upsert into scraping_test (game_id='wonders')
- *   5. Append per-card audit rows to scraping_test_history
+ *   4. Upsert into external_pricing (game_id='wonders')
+ *   5. Append per-card audit rows to external_pricing_history
  *   6. Return a summary for the admin UI
  *
  * Intentionally takes an untyped SupabaseClient — the generated types do
- * not yet include game_id on scraping_test or scraping_test_history at all,
- * but both columns exist in production (game_id default 'boba').
+ * not yet include game_id on external_pricing or external_pricing_history
+ * at all, but both columns exist in production (game_id default 'boba').
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -135,7 +135,7 @@ export async function runWtpScrape(supabase: SupabaseClient): Promise<ScrapeRunS
 	const pullDate = now.toISOString().slice(0, 10);
 	const cutoff30d = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
 
-	const stRows: Array<Record<string, unknown>> = [];
+	const epRows: Array<Record<string, unknown>> = [];
 	const historyRows: Array<Record<string, unknown>> = [];
 
 	for (const [cardId, items] of buckets) {
@@ -143,28 +143,28 @@ export async function runWtpScrape(supabase: SupabaseClient): Promise<ScrapeRunS
 		const sold = items.filter((i) => i.status === 'sold');
 		const sold30d = sold.filter((i) => new Date(i.updated_at) >= cutoff30d);
 
-		// Active prices drive st_price (asks). Skip if 0 active — scraping_test is
-		// keyed UNIQUE on card_id so we just don't update for that card this run.
+		// Active prices drive ep_price (asks). Skip if 0 active — external_pricing
+		// is keyed UNIQUE on card_id so we just don't update for that card this run.
 		if (active.length === 0) continue;
 
 		const activePrices = active.map((i) => Number(i.price)).filter(Number.isFinite);
 		if (activePrices.length === 0) continue;
 
 		const sample = items[0];
-		stRows.push({
+		epRows.push({
 			card_id: cardId,
 			game_id: 'wonders',
-			st_price: median(activePrices),
-			st_low: Math.min(...activePrices),
-			st_high: Math.max(...activePrices),
-			st_source_id: `wtp:${sample.id}`,
-			st_card_name: sample.card_name,
-			st_set_name: sample.set,
-			st_variant: wtpTreatmentToParallel(sample.treatment),
-			st_rarity: sample.rarity,
-			st_image_url: sample.image_url ?? sample.image_urls?.[0] ?? null,
-			st_raw_data: { listings: items, ts: now.toISOString() },
-			st_updated: now.toISOString()
+			ep_price: median(activePrices),
+			ep_low: Math.min(...activePrices),
+			ep_high: Math.max(...activePrices),
+			ep_source_id: `wtp:${sample.id}`,
+			ep_card_name: sample.card_name,
+			ep_set_name: sample.set,
+			ep_variant: wtpTreatmentToParallel(sample.treatment),
+			ep_rarity: sample.rarity,
+			ep_image_url: sample.image_url ?? sample.image_urls?.[0] ?? null,
+			ep_raw_data: { listings: items, ts: now.toISOString() },
+			ep_updated: now.toISOString()
 		});
 
 		const sold30Prices = sold30d.map((i) => Number(i.price)).filter(Number.isFinite);
@@ -176,29 +176,29 @@ export async function runWtpScrape(supabase: SupabaseClient): Promise<ScrapeRunS
 			card_id: cardId,
 			pull_date: pullDate,
 			game_id: 'wonders',
-			st_price: median(activePrices),
-			st_total_sales: sold.length,
-			st_sales_30d: sold30d.length,
-			st_avg_30d: sold30Prices.length ? median(sold30Prices) : null,
-			st_last_sale_date: lastSale ? lastSale.updated_at.slice(0, 10) : null,
-			st_source_id: `wtp:bulk:${pullDate}`,
-			st_raw_data: { active_count: active.length, sold_count: sold.length }
+			ep_price: median(activePrices),
+			ep_total_sales: sold.length,
+			ep_sales_30d: sold30d.length,
+			ep_avg_30d: sold30Prices.length ? median(sold30Prices) : null,
+			ep_last_sale_date: lastSale ? lastSale.updated_at.slice(0, 10) : null,
+			ep_source_id: `wtp:bulk:${pullDate}`,
+			ep_raw_data: { active_count: active.length, sold_count: sold.length }
 		});
 	}
 
 	let upserted = 0;
-	if (stRows.length) {
+	if (epRows.length) {
 		const { error: upErr } = await supabase
-			.from('scraping_test')
-			.upsert(stRows, { onConflict: 'card_id' });
+			.from('external_pricing')
+			.upsert(epRows, { onConflict: 'card_id' });
 		if (upErr) throw upErr;
-		upserted = stRows.length;
+		upserted = epRows.length;
 	}
 
 	let historyCount = 0;
 	if (historyRows.length) {
 		const { error: histErr } = await supabase
-			.from('scraping_test_history')
+			.from('external_pricing_history')
 			.insert(historyRows);
 		if (histErr) throw histErr;
 		historyCount = historyRows.length;
@@ -211,7 +211,7 @@ export async function runWtpScrape(supabase: SupabaseClient): Promise<ScrapeRunS
 		active_count: listings.filter((l) => l.status === 'active').length,
 		sold_count: listings.filter((l) => l.status === 'sold').length,
 		card_listings_count: cardListings.length,
-		matched_card_count: stRows.length,
+		matched_card_count: epRows.length,
 		unmatched_listing_count: unmatched.length,
 		ambiguous_listing_count: 0,
 		upserted_rows: upserted,

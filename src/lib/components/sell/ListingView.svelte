@@ -6,12 +6,12 @@
 	import { uploadScanImageForListing } from '$lib/stores/collection.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	// Whatnot single-card export removed — batch flow lives in WhatnotPendingView
-	import type { Card, PriceData, ScrapingTestData } from '$lib/types';
+	import type { Card, PriceData, ExternalPricingData } from '$lib/types';
 	import { user } from '$lib/stores/auth.svelte';
 	import { isPro, setShowGoProModal } from '$lib/stores/pro.svelte';
 	import { uiPref } from '$lib/stores/ui-prefs.svelte';
 	import { getUserProfile, ensureProfileLoaded } from '$lib/stores/feature-flags.svelte';
-	import ListingScrapingTestPanel from './ListingScrapingTestPanel.svelte';
+	import ListingExternalPricingPanel from './ListingExternalPricingPanel.svelte';
 
 	interface Props {
 		card: Card;
@@ -32,14 +32,14 @@
 
 	let { card, imageUrl, ebayConnected, onScanNext, onDone, initialCondition, backLabel, scanId = null }: Props = $props();
 
-	// ── Admin-only scraping test data ────────────────────────
+	// ── Admin-only external pricing data ────────────────────
 	const currentUser = $derived(user());
 	const isAdmin = $derived(
 		getUserProfile()?.is_admin === true ||
 		currentUser?.app_metadata?.is_admin === true
 	);
-	let stData = $state<ScrapingTestData | null>(null);
-	let stLoading = $state(false);
+	let epData = $state<ExternalPricingData | null>(null);
+	let epLoading = $state(false);
 
 	// svelte-ignore state_referenced_locally
 	const _init = {
@@ -229,25 +229,25 @@
 		ensureProfileLoaded();
 	});
 
-	// Fetch scraping test data for admin only — server-side protected
+	// Fetch external pricing data for admin only — server-side protected
 	$effect(() => {
 		if (isAdmin && card.id) {
-			loadStData();
+			loadEpData();
 		}
 	});
 
-	async function loadStData() {
-		stLoading = true;
+	async function loadEpData() {
+		epLoading = true;
 		try {
-			const res = await fetch(`/api/admin/st-data?card_id=${encodeURIComponent(card.id)}`);
+			const res = await fetch(`/api/admin/ep-data?card_id=${encodeURIComponent(card.id)}`);
 			if (res.ok) {
 				const json = await res.json();
-				stData = json.data;
+				epData = json.data;
 			}
 		} catch {
 			// Silent fail — non-critical admin feature
 		}
-		stLoading = false;
+		epLoading = false;
 	}
 
 	async function loadPrice() {
@@ -460,23 +460,23 @@
 				<span class="stl-field-hint">No market data available</span>
 			{/if}
 
-			<!-- Admin-only: ST price comparison (never rendered for non-admin) -->
+			<!-- Admin-only: external pricing comparison (never rendered for non-admin) -->
 			{#if isAdmin}
 				<div class="stl-st-price-row">
-					{#if stLoading}
-						<span class="stl-st-label">ST</span>
+					{#if epLoading}
+						<span class="stl-st-label">EP</span>
 						<span class="stl-st-value stl-st-loading">loading...</span>
-					{:else if stData?.st_price != null}
-						<span class="stl-st-label">ST</span>
-						<span class="stl-st-value">${stData.st_price.toFixed(2)}</span>
+					{:else if epData?.ep_price != null}
+						<span class="stl-st-label">EP</span>
+						<span class="stl-st-value">${epData.ep_price.toFixed(2)}</span>
 						{#if priceData?.buy_now_mid != null}
-							{@const diff = ((priceData.buy_now_mid - stData.st_price) / stData.st_price * 100)}
+							{@const diff = ((priceData.buy_now_mid - epData.ep_price) / epData.ep_price * 100)}
 							<span class="stl-st-diff" class:positive={diff > 0} class:negative={diff < 0}>
 								{diff > 0 ? '+' : ''}{diff.toFixed(0)}% vs eBay
 							</span>
 						{/if}
 					{:else}
-						<span class="stl-st-label">ST</span>
+						<span class="stl-st-label">EP</span>
 						<span class="stl-st-value stl-st-na">N/A</span>
 					{/if}
 				</div>
@@ -489,9 +489,9 @@
 		</div>
 	</div>
 
-	<!-- Admin-only: Scraping Test expandable detail panel (in Price section, not Edit Details) -->
+	<!-- Admin-only: External pricing expandable detail panel (in Price section, not Edit Details) -->
 	{#if isAdmin}
-		<ListingScrapingTestPanel {stData} {stLoading} />
+		<ListingExternalPricingPanel {epData} {epLoading} />
 	{/if}
 
 	<!-- ── PRIMARY ACTION (visible without scrolling) ── -->

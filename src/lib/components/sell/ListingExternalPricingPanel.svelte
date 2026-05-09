@@ -1,73 +1,73 @@
 <script lang="ts">
-	import type { ScrapingTestData } from '$lib/types';
+	import type { ExternalPricingData } from '$lib/types';
 
 	interface Props {
-		stData: ScrapingTestData | null;
-		stLoading: boolean;
+		epData: ExternalPricingData | null;
+		epLoading: boolean;
 	}
 
-	let { stData, stLoading }: Props = $props();
+	let { epData, epLoading }: Props = $props();
 
-	let stExpanded = $state(false);
+	let epExpanded = $state(false);
 </script>
 
-<details class="stl-st-details" bind:open={stExpanded}>
-	<summary class="stl-st-summary">Scraping Test</summary>
+<details class="stl-st-details" bind:open={epExpanded}>
+	<summary class="stl-st-summary">External Pricing</summary>
 	<div class="stl-st-grid">
-		{#if stLoading}
+		{#if epLoading}
 			<div class="stl-st-row">
 				<span class="stl-st-key">Status</span>
 				<span class="stl-st-val stl-st-loading">Loading...</span>
 			</div>
-		{:else if !stData}
+		{:else if !epData}
 			<div class="stl-st-row">
 				<span class="stl-st-key">Status</span>
-				<span class="stl-st-val stl-st-na">No scrape data for this card</span>
+				<span class="stl-st-val stl-st-na">No external pricing data for this card</span>
 			</div>
 		{/if}
-		{#if stData}
+		{#if epData}
 			<div class="stl-st-row">
-				<span class="stl-st-key">ST Price</span>
-				<span class="stl-st-val">{stData.st_price != null ? `$${stData.st_price.toFixed(2)}` : '—'}</span>
+				<span class="stl-st-key">Ext. Price</span>
+				<span class="stl-st-val">{epData.ep_price != null ? `$${epData.ep_price.toFixed(2)}` : '—'}</span>
 			</div>
 			<div class="stl-st-row">
-				<span class="stl-st-key">ST Low</span>
-				<span class="stl-st-val">{stData.st_low != null ? `$${stData.st_low.toFixed(2)}` : '—'}</span>
+				<span class="stl-st-key">Ext. Low</span>
+				<span class="stl-st-val">{epData.ep_low != null ? `$${epData.ep_low.toFixed(2)}` : '—'}</span>
 			</div>
 			<div class="stl-st-row">
-				<span class="stl-st-key">ST High</span>
-				<span class="stl-st-val">{stData.st_high != null ? `$${stData.st_high.toFixed(2)}` : '—'}</span>
+				<span class="stl-st-key">Ext. High</span>
+				<span class="stl-st-val">{epData.ep_high != null ? `$${epData.ep_high.toFixed(2)}` : '—'}</span>
 			</div>
 			<div class="stl-st-row">
 				<span class="stl-st-key">Source Card Name</span>
-				<span class="stl-st-val">{stData.st_card_name || '—'}</span>
+				<span class="stl-st-val">{epData.ep_card_name || '—'}</span>
 			</div>
 			<div class="stl-st-row">
 				<span class="stl-st-key">Source Set</span>
-				<span class="stl-st-val">{stData.st_set_name || '—'}</span>
+				<span class="stl-st-val">{epData.ep_set_name || '—'}</span>
 			</div>
 			<div class="stl-st-row">
 				<span class="stl-st-key">Source Variant</span>
-				<span class="stl-st-val">{stData.st_variant || '—'}</span>
+				<span class="stl-st-val">{epData.ep_variant || '—'}</span>
 			</div>
 			<div class="stl-st-row">
 				<span class="stl-st-key">Source Rarity</span>
-				<span class="stl-st-val">{stData.st_rarity || '—'}</span>
+				<span class="stl-st-val">{epData.ep_rarity || '—'}</span>
 			</div>
 			<div class="stl-st-row">
 				<span class="stl-st-key">Last Updated</span>
-				<span class="stl-st-val">{stData.st_updated ? new Date(stData.st_updated).toLocaleDateString() : '—'}</span>
+				<span class="stl-st-val">{epData.ep_updated ? new Date(epData.ep_updated).toLocaleDateString() : '—'}</span>
 			</div>
-			{#if stData.st_image_url}
+			{#if epData.ep_image_url}
 				<div class="stl-st-row stl-st-image-row">
 					<span class="stl-st-key">Source Image</span>
-					<img src={stData.st_image_url} alt="Source card" class="stl-st-image" />
+					<img src={epData.ep_image_url} alt="Source card" class="stl-st-image" />
 				</div>
 			{/if}
-			{#if stData.st_raw_data}
+			{#if epData.ep_raw_data}
 				<details class="stl-st-raw">
 					<summary class="stl-st-raw-summary">Raw Data</summary>
-					<pre class="stl-st-raw-pre">{JSON.stringify(stData.st_raw_data, null, 2)}</pre>
+					<pre class="stl-st-raw-pre">{JSON.stringify(epData.ep_raw_data, null, 2)}</pre>
 				</details>
 			{/if}
 		{/if}

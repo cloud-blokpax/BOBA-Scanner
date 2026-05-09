@@ -3,8 +3,8 @@
  *
  * Manually-triggered Wonders Trading Post scrape pass. Fetches all WTP
  * listings, matches them to our Wonders catalog, upserts pricing rows
- * into scraping_test (game_id='wonders'), and appends per-card audit
- * rows to scraping_test_history.
+ * into external_pricing (game_id='wonders'), and appends per-card audit
+ * rows to external_pricing_history.
  *
  * Admin-only. No cron, no rate limit beyond the admin guard.
  */

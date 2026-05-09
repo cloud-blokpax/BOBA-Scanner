@@ -224,17 +224,17 @@ export interface OcrResult {
 	words: Array<{ text: string; confidence: number }>;
 }
 
-// ── Scraping Test (admin-only pricing intelligence) ─────
-export interface ScrapingTestData {
-	st_price: number | null;
-	st_low: number | null;
-	st_high: number | null;
-	st_source_id: string | null;
-	st_card_name: string | null;
-	st_set_name: string | null;
-	st_variant: string | null;
-	st_rarity: string | null;
-	st_image_url: string | null;
-	st_raw_data: Record<string, unknown> | null;
-	st_updated: string | null;
+// ── External Pricing (admin-only pricing intelligence) ─────
+export interface ExternalPricingData {
+	ep_price: number | null;
+	ep_low: number | null;
+	ep_high: number | null;
+	ep_source_id: string | null;
+	ep_card_name: string | null;
+	ep_set_name: string | null;
+	ep_variant: string | null;
+	ep_rarity: string | null;
+	ep_image_url: string | null;
+	ep_raw_data: Record<string, unknown> | null;
+	ep_updated: string | null;
 }

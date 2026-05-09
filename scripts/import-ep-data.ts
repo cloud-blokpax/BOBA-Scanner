@@ -1,10 +1,10 @@
 /**
- * Import Scraping Test Data
+ * Import External Pricing Data
  *
- * Reads the source data dump and imports it into the scraping_test table,
+ * Reads the source data dump and imports it into the external_pricing table,
  * matching cards by hero_name + card_number.
  *
- * Usage: npx tsx scripts/import-st-data.ts <path-to-dump.json>
+ * Usage: npx tsx scripts/import-ep-data.ts <path-to-dump.json>
  *
  * Adjust field names in SOURCE_FIELD_MAP to match your dump format.
  */
@@ -47,7 +47,7 @@ interface SourceRecord {
 async function main() {
   const dumpPath = process.argv[2];
   if (!dumpPath) {
-    console.error('Usage: npx tsx scripts/import-st-data.ts <path-to-dump.json>');
+    console.error('Usage: npx tsx scripts/import-ep-data.ts <path-to-dump.json>');
     process.exit(1);
   }
 
@@ -108,24 +108,24 @@ async function main() {
       continue;
     }
 
-    const stPrice = typeof price === 'number' ? price : parseFloat(String(price));
+    const epPrice = typeof price === 'number' ? price : parseFloat(String(price));
 
     rows.push({
       card_id: cardId,
-      st_price: isNaN(stPrice) ? null : stPrice,
-      st_low: rec[SOURCE_FIELD_MAP.low] != null ? Number(rec[SOURCE_FIELD_MAP.low]) : null,
-      st_high: rec[SOURCE_FIELD_MAP.high] != null ? Number(rec[SOURCE_FIELD_MAP.high]) : null,
-      st_source_id: rec[SOURCE_FIELD_MAP.sourceId] ? String(rec[SOURCE_FIELD_MAP.sourceId]) : null,
-      st_card_name: name,
-      st_set_name: rec[SOURCE_FIELD_MAP.setName] ? String(rec[SOURCE_FIELD_MAP.setName]) : null,
-      st_variant: rec[SOURCE_FIELD_MAP.variant] ? String(rec[SOURCE_FIELD_MAP.variant]) : null,
-      st_rarity: rec[SOURCE_FIELD_MAP.rarity] ? String(rec[SOURCE_FIELD_MAP.rarity]) : null,
-      st_image_url: rec[SOURCE_FIELD_MAP.imageUrl] ? String(rec[SOURCE_FIELD_MAP.imageUrl]) : null,
-      st_raw_data: rec,
-      st_updated: new Date().toISOString(),
+      ep_price: isNaN(epPrice) ? null : epPrice,
+      ep_low: rec[SOURCE_FIELD_MAP.low] != null ? Number(rec[SOURCE_FIELD_MAP.low]) : null,
+      ep_high: rec[SOURCE_FIELD_MAP.high] != null ? Number(rec[SOURCE_FIELD_MAP.high]) : null,
+      ep_source_id: rec[SOURCE_FIELD_MAP.sourceId] ? String(rec[SOURCE_FIELD_MAP.sourceId]) : null,
+      ep_card_name: name,
+      ep_set_name: rec[SOURCE_FIELD_MAP.setName] ? String(rec[SOURCE_FIELD_MAP.setName]) : null,
+      ep_variant: rec[SOURCE_FIELD_MAP.variant] ? String(rec[SOURCE_FIELD_MAP.variant]) : null,
+      ep_rarity: rec[SOURCE_FIELD_MAP.rarity] ? String(rec[SOURCE_FIELD_MAP.rarity]) : null,
+      ep_image_url: rec[SOURCE_FIELD_MAP.imageUrl] ? String(rec[SOURCE_FIELD_MAP.imageUrl]) : null,
+      ep_raw_data: rec,
+      ep_updated: new Date().toISOString(),
     });
 
-    if (isNaN(stPrice)) noPrice++;
+    if (isNaN(epPrice)) noPrice++;
     matched++;
   }
 
@@ -143,7 +143,7 @@ async function main() {
     for (let i = 0; i < rows.length; i += BATCH) {
       const batch = rows.slice(i, i + BATCH);
       const { error: err } = await supabase
-        .from('scraping_test')
+        .from('external_pricing')
         .upsert(batch, { onConflict: 'card_id' });
 
       if (err) {
@@ -158,8 +158,8 @@ async function main() {
   // Save unmatched for review
   mkdirSync('scripts/output', { recursive: true });
   if (unmatchedRecords.length > 0) {
-    writeFileSync('scripts/output/st-unmatched.json', JSON.stringify(unmatchedRecords, null, 2));
-    console.log(`Saved ${unmatchedRecords.length} unmatched records to scripts/output/st-unmatched.json`);
+    writeFileSync('scripts/output/ep-unmatched.json', JSON.stringify(unmatchedRecords, null, 2));
+    console.log(`Saved ${unmatchedRecords.length} unmatched records to scripts/output/ep-unmatched.json`);
   }
 
   console.log('Done!');
