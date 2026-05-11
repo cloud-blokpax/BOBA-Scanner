@@ -22,6 +22,11 @@ export interface R2Config {
 	endpoint: string;
 }
 
+// Cloudflare R2 account IDs are 32-char hex strings. Misconfiguration
+// (URL, trailing slash, full endpoint) silently breaks the SDK at
+// first archive run — fail loud at config read instead.
+const R2_ACCOUNT_ID_REGEX = /^[0-9a-f]{32}$/;
+
 export function readR2Config(): R2Config | null {
 	const accountId = env.R2_ACCOUNT_ID;
 	const accessKeyId = env.R2_ACCESS_KEY_ID;
@@ -29,6 +34,14 @@ export function readR2Config(): R2Config | null {
 	const bucket = env.R2_BUCKET ?? 'tcg-archive';
 
 	if (!accountId || !accessKeyId || !secretAccessKey) return null;
+
+	if (!R2_ACCOUNT_ID_REGEX.test(accountId)) {
+		throw new Error(
+			`R2_ACCOUNT_ID is malformed: expected 32-char hex string, got ${
+				accountId.length
+			}-char value starting with "${accountId.slice(0, 8)}". Use the bare account ID, not a URL or endpoint.`
+		);
+	}
 
 	return {
 		accountId,
