@@ -82,6 +82,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
+	// Per-invocation identifier. `today` doubles as the dedup key (one card
+	// fetched per day) but collapses all ~288 daily QStash cycles into the
+	// same string, making per-cycle observability impossible. cycleId lets
+	// us measure latency, throughput, and chain-depth distribution per call.
+	// See migration 20260512195134.
+	const cycleId = crypto.randomUUID();
 	const confidenceThreshold = await getHarvestConfidenceThreshold();
 	let usedToday = 0;
 	try {
@@ -192,7 +198,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		const card = candidates[i];
 
 		try {
-			const result = await refreshCardPrice(admin, card, redis, today, chainDepth, confidenceThreshold, imageCaptureEnabled);
+			const result = await refreshCardPrice(admin, card, redis, today, cycleId, chainDepth, confidenceThreshold, imageCaptureEnabled);
 			processed++;
 
 			if (result.success) {
@@ -297,7 +303,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
 					const playCard = playCandidates[i];
 					try {
-						const result = await refreshPlayCardPrice(admin, playCard, redis, today, chainDepth, confidenceThreshold, imageCaptureEnabled);
+						const result = await refreshPlayCardPrice(admin, playCard, redis, today, cycleId, chainDepth, confidenceThreshold, imageCaptureEnabled);
 						playUsed++;
 						if (result.logEntry) {
 							const errMsg = String(result.logEntry.error_message || '');
@@ -408,11 +414,21 @@ async function refreshCardPrice(
 	card: CardCandidate,
 	redis: NonNullable<ReturnType<typeof getRedis>>,
 	today: string,
+	cycleId: string,
 	chainDepth: number,
 	confidenceThreshold: number,
 	imageCaptureEnabled: boolean
 ): Promise<RefreshResult> {
-	const parallel = card.card_parallel_name || card.parallel || 'paper';
+	// candidates.ts guarantees a non-null `parallel` on every candidate it
+	// returns — null-parallel rows are dropped there with a logged error.
+	// Belt-and-braces here: a future regression upstream surfaces as a clean
+	// runtime error rather than silently writing a lowercase 'paper' default.
+	const parallel = card.parallel;
+	if (!parallel) {
+		throw new Error(
+			`refreshCardPrice received candidate with null parallel: card_id=${card.id}`
+		);
+	}
 	const gameId = (card.game_id || 'boba').toLowerCase();
 	const isWonders = gameId === 'wonders';
 	const callStart = Date.now();
@@ -443,7 +459,7 @@ async function refreshCardPrice(
 	if (!outcome.ok) {
 		return {
 			success: false,
-			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, callStart, {
+			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, cycleId, callStart, {
 				success: false,
 				error_message: outcome.errorMessage ?? 'Unknown error',
 				isNewPrice,
@@ -499,7 +515,11 @@ async function refreshCardPrice(
 		adjustedConfidence = adjustedConfidence * 0.6 + wondersAvgTitleScore * 0.4;
 	}
 
-	const coldStart = isWonders && isNewPrice;
+	// Cold-start semantics: any refresh with <2 accepted listings is cold-start;
+	// ≥2 clears the flag. The pre-fix condition `isWonders && isNewPrice` never
+	// cleared once set, so cards stayed "cold" forever even after harvesting
+	// healthy sample sizes.
+	const coldStart = allPrices.length < 2;
 
 	const priceData: Record<string, unknown> = {
 		card_id: card.id,
@@ -586,6 +606,7 @@ async function refreshCardPrice(
 		success: true,
 		logEntry: {
 			run_id: today,
+			cycle_id: cycleId,
 			chain_depth: chainDepth,
 			priority: card.priority,
 			card_id: card.id,
@@ -632,13 +653,14 @@ async function refreshCardPrice(
  * but writes to play_price_cache (TEXT card_id) instead of price_cache (UUID).
  *
  * play_price_cache has no parallel column, so we don't persist parallel for
- * plays; pass 'paper' to searchAndEvaluate so the BoBA query builder is used.
+ * plays; pass 'Paper' to searchAndEvaluate so the BoBA query builder is used.
  */
 async function refreshPlayCardPrice(
 	admin: NonNullable<ReturnType<typeof getAdminClient>>,
 	card: CardCandidate,
 	redis: NonNullable<ReturnType<typeof getRedis>>,
 	today: string,
+	cycleId: string,
 	chainDepth: number,
 	confidenceThreshold: number,
 	imageCaptureEnabled: boolean
@@ -666,12 +688,15 @@ async function refreshPlayCardPrice(
 		console.debug('[harvest] Play card previous price fetch failed:', err instanceof Error ? err.message : err);
 	}
 
-	const outcome = await searchAndEvaluate(card, 'paper', redis, today);
+	// Play cards have no parallel column on play_price_cache. This routing
+	// flag tells searchAndEvaluate to use the BoBA query builder; the literal
+	// is never persisted to a row with a parallel column.
+	const outcome = await searchAndEvaluate(card, 'Paper', redis, today);
 
 	if (!outcome.ok) {
 		return {
 			success: false,
-			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, callStart, {
+			logEntry: buildLogEntry(card, outcome.query, chainDepth, today, cycleId, callStart, {
 				success: false,
 				error_message: outcome.errorMessage ?? 'Unknown error',
 				isNewPrice,
@@ -773,11 +798,13 @@ function buildLogEntry(
 	query: string,
 	chainDepth: number,
 	today: string,
+	cycleId: string,
 	callStart: number,
 	result: { success: boolean; error_message: string | null; isNewPrice: boolean; previousMid: number | null }
 ): Record<string, unknown> {
 	return {
 		run_id: today,
+		cycle_id: cycleId,
 		chain_depth: chainDepth,
 		priority: card.priority,
 		card_id: card.id,
@@ -787,7 +814,7 @@ function buildLogEntry(
 		// Phase 3: tag the harvest log row with game + parallel so admin dashboards
 		// can distinguish BoBA harvests from Wonders harvests.
 		game_id: card.game_id || 'boba',
-		parallel: card.card_parallel_name || card.parallel || 'paper',
+		parallel: card.parallel || card.card_parallel_name || 'Paper',
 		search_query: query,
 		ebay_results_raw: 0,
 		auction_count: 0,

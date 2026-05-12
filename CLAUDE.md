@@ -1002,6 +1002,41 @@ SELECT 'lt_drift', COUNT(*) FROM listing_templates lt
   WHERE c.game_id <> lt.game_id;
 ```
 
+### Session 2.16 invariants (added 2026-05-12)
+
+Six bugs (A/B/C/D/E/F) traced to a single lowercase `'paper'` row in `collections`. Drift checks below should all return 0:
+
+```sql
+SELECT 'pc_lowercase', COUNT(*) FROM price_cache WHERE parallel = 'paper'
+UNION ALL SELECT 'ph_lowercase', COUNT(*) FROM price_history WHERE parallel = 'paper'
+UNION ALL SELECT 'coll_lowercase', COUNT(*) FROM collections WHERE parallel = 'paper'
+UNION ALL SELECT 'lt_lowercase', COUNT(*) FROM listing_templates WHERE parallel = 'paper'
+UNION ALL SELECT 'pc_parallel_mismatch', COUNT(*) FROM price_cache pc JOIN cards c ON c.id=pc.card_id WHERE pc.parallel != c.parallel
+UNION ALL SELECT 'ph_parallel_mismatch', COUNT(*) FROM price_history ph JOIN cards c ON c.id=ph.card_id WHERE ph.parallel != c.parallel
+UNION ALL SELECT 'coll_parallel_mismatch', COUNT(*) FROM collections coll JOIN cards c ON c.id=coll.card_id WHERE coll.parallel != c.parallel
+UNION ALL SELECT 'hero_name_drift', COUNT(*) FROM cards WHERE game_id='boba' AND hero_name IS NOT NULL AND hero_name != name;
+```
+
+Guards:
+- CHECK constraint blocking lowercase 'paper' on 4 tables (price_cache, price_history, collections, listing_templates)
+- UNIQUE constraint `collections_unique_user_card_parallel_condition`
+- Trigger `collection_parallel_consistency` (collection.parallel must match cards.parallel)
+- Triggers `price_cache_parallel_consistency` + `price_history_parallel_consistency`
+- `get_harvest_candidates` RPC uses `LOWER()` on every parallel comparison
+- All `parallel` column defaults dropped (no more silent literal stamping)
+
+### Session 2.17 — Bug D canonical attribution + cycle_id (added 2026-05-12)
+
+**Bug D (cross-card listing contamination).** 99.6% of BoBA cards share a name with ≥21 others; the game name "Bo Jackson Battle Arena" contains "Bo Jackson", auto-athlete-matching every Bojax card on every listing. 27.4% of accepted BoBA listings were contaminated. The Superbaby case: one eBay listing counted as a "real listing" for 16 different cards.
+
+**Solution.** Materialized view `canonical_listing_attributions` scores each (card, listing) pair by discriminator strength: card_number=100, parallel=10, weapon=5, name=1. Per ebay_item_id, the unique top-scoring card is canonical. Ties drop. 91.1% of BoBA listings resolve cleanly.
+
+`canonical_price_cache` derives from canonical attributions. **price_cache was rewritten from it on 2026-05-12** — current row count 2,957 (was 18,446). Daily-maintenance cron refreshes both views nightly via `refresh_canonical_listing_attributions()`.
+
+**Cycle_id.** `price_harvest_log.run_id` is the per-day dedup key. `cycle_id` (per-QStash-invocation UUID) is new for per-cycle latency/throughput observability. Harvester writes both.
+
+Diagnostic views: `price_cache_with_canonical`, `harvester_daily_summary`, `harvester_parallel_health`, `price_cache_quality_alerts`.
+
 ## Environment Variables
 
 ### Public (exposed to browser)

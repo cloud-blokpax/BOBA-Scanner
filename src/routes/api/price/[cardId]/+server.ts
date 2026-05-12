@@ -28,10 +28,17 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 
 	// Phase 2.5: price is keyed by (card_id, source, parallel). The DB stores
 	// human-readable parallel names. Accept both the new `parallel` query param
-	// (preferred) and the legacy `variant` param for backward compat. Default
-	// to 'Paper' when omitted.
-	const rawParallel = (url.searchParams.get('parallel') || url.searchParams.get('variant') || 'Paper').trim();
-	const parallel = rawParallel.length > 0 ? rawParallel : 'Paper';
+	// (preferred) and the legacy `variant` param for backward compat.
+	//
+	// IMPORTANT: when the query param is omitted, we resolve `parallel` from
+	// the card's catalog row below (cards.parallel) instead of defaulting to
+	// a literal 'Paper'. The literal default caused price_cache rows to be
+	// written for the wrong parallel — e.g. D-Harp RBF-95 (Red Battlefoil) had
+	// a Paper row written when the frontend price store called this endpoint
+	// without a parallel query param. The card_id is unique-per-parallel post
+	// the Wonders 5x expansion, so cards.parallel is the right canonical fallback.
+	const queryParamParallel = (url.searchParams.get('parallel') || url.searchParams.get('variant') || '').trim();
+	let parallel = queryParamParallel || '';
 
 	// Play cards use TEXT IDs (e.g., A---PL-1); hero cards use UUIDs.
 	// Detect early so we route to the correct cache table before the card lookup.
@@ -66,37 +73,9 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 		return json({ error: 'Database not available' }, { status: 503 });
 	}
 
-	// Check price cache (4-hour freshness) — use service role to bypass RLS.
-	// Play cards use play_price_cache (TEXT key); heroes use price_cache (UUID key).
-	// Phase 2.5: price_cache is keyed by (card_id, source, parallel).
-	const cacheTable = isPlayCard ? 'play_price_cache' : 'price_cache';
-	const cacheClient = getAdminClient() || locals.supabase;
-	let cacheQuery = cacheClient
-		.from(cacheTable)
-		.select('*')
-		.eq('card_id', cardId)
-		.eq('source', 'ebay');
-	// play_price_cache doesn't have a parallel column (play cards are always 'Paper');
-	// only filter by parallel on the hero cards table.
-	if (!isPlayCard) {
-		cacheQuery = (cacheQuery as unknown as { eq: (c: string, v: string) => typeof cacheQuery }).eq('parallel', parallel);
-	}
-	const { data: cachedRaw } = await cacheQuery.single();
-
-	const cached = cachedRaw as { card_id: string; source: string; price_low: number | null; price_mid: number | null; price_high: number | null; listings_count: number | null; fetched_at: string } | null;
-
-	if (cached) {
-		const age = Date.now() - new Date(cached.fetched_at).getTime();
-		if (age < 14400_000) { // 4-hour TTL — BoBA card prices don't move hourly
-			return json(cached, {
-				headers: {
-					'Cache-Control': 's-maxage=14400, stale-while-revalidate=28800'
-				}
-			});
-		}
-	}
-
-	// Get card details for search query — check hero cards first, fall back to play cards
+	// Load card row first so we can resolve `parallel` from the catalog
+	// when the query param was omitted. Hero cards live in `cards`; play
+	// cards in `play_cards` (TEXT id, no parallel column).
 	let card: { name: string | null; hero_name: string | null; athlete_name: string | null; card_number: string | null; set_code: string | null; parallel: string | null; weapon_type: string | null; game_id: string | null } | null = null;
 
 	const { data: heroCard } = await locals.supabase
@@ -133,6 +112,42 @@ export const GET: RequestHandler = async ({ params, url, locals, getClientAddres
 
 	if (!card) {
 		throw error(404, 'Card not found');
+	}
+
+	// Resolve parallel: query param wins, then card.parallel, then 'Paper' as
+	// last resort (play cards have no parallel column).
+	if (!parallel) {
+		parallel = card.parallel || 'Paper';
+	}
+
+	// Check price cache (4-hour freshness) — use service role to bypass RLS.
+	// Play cards use play_price_cache (TEXT key); heroes use price_cache (UUID key).
+	// Phase 2.5: price_cache is keyed by (card_id, source, parallel).
+	const cacheTable = isPlayCard ? 'play_price_cache' : 'price_cache';
+	const cacheClient = getAdminClient() || locals.supabase;
+	let cacheQuery = cacheClient
+		.from(cacheTable)
+		.select('*')
+		.eq('card_id', cardId)
+		.eq('source', 'ebay');
+	// play_price_cache doesn't have a parallel column (play cards are always 'Paper');
+	// only filter by parallel on the hero cards table.
+	if (!isPlayCard) {
+		cacheQuery = (cacheQuery as unknown as { eq: (c: string, v: string) => typeof cacheQuery }).eq('parallel', parallel);
+	}
+	const { data: cachedRaw } = await cacheQuery.single();
+
+	const cached = cachedRaw as { card_id: string; source: string; price_low: number | null; price_mid: number | null; price_high: number | null; listings_count: number | null; fetched_at: string } | null;
+
+	if (cached) {
+		const age = Date.now() - new Date(cached.fetched_at).getTime();
+		if (age < 14400_000) { // 4-hour TTL — BoBA card prices don't move hourly
+			return json(cached, {
+				headers: {
+					'Cache-Control': 's-maxage=14400, stale-while-revalidate=28800'
+				}
+			});
+		}
 	}
 
 	const query = buildEbaySearchQuery(card);

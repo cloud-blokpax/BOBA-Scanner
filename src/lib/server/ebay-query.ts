@@ -258,6 +258,27 @@ export function evaluateListings<T extends { title?: string }>(
 			};
 		}
 
+		// 3b. Strict identity gate for parallels whose search keyword is shared
+		// across multiple catalog parallels (Blast colors → "Alpha Blast";
+		// Inspired Ink families → "Metallic" / "Bubblegum"). Without this gate,
+		// a Blue Blast Coopanova search would accept an Orange Blast Coopanova
+		// listing because hero + generic-keyword both match. Card_number is the
+		// only safe differentiator. See Bug D harvester_parallel_health.
+		const isAmbiguousParallel =
+			parallelStr.includes('BLAST') ||
+			parallelStr === 'INSPIRED INK METALLIC BATTLEFOIL' ||
+			parallelStr === 'INSPIRED INK BUBBLE GUM BATTLEFOIL';
+		if (isAmbiguousParallel && cardNum && !cardNumMatch) {
+			return {
+				item,
+				decision: {
+					accepted: false,
+					rejection_reason: 'parallel_keyword_mismatch',
+					weapon_conflict: false
+				}
+			};
+		}
+
 		// 4. Weapon disambiguation
 		const wConflict = weaponConflicts(title, card.weapon_type ?? null);
 		if (wConflict) {

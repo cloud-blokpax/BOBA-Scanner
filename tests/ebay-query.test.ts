@@ -127,6 +127,51 @@ describe('buildEbayQuery — BoBA OR-grouped boolean', () => {
 		});
 		expect(q).toBe(`X "Bo Jackson Battle Arena" (SN-1, "Some New")`);
 	});
+
+	it('maps every Blast color variant to the generic "Alpha Blast" search keyword', () => {
+		// Sellers never write "Blue Blast" / "Orange Blast" etc. in eBay titles;
+		// they say "Alpha Blast" plus the color in the card_number prefix.
+		const variants: Array<[string, string]> = [
+			['Blue Blast', 'BL-B156'],
+			['Green Blast', 'BL-G47'],
+			['Silver Blast', 'BL-S80'],
+			['Orange Blast', 'BL-O112'],
+			['Pink Blast', 'BL-P23'],
+			['Bubble Gum Blast', 'BL-BG53'],
+			['Blast Inspired Ink', 'BL-II-1']
+		];
+		for (const [parallel, cardNumber] of variants) {
+			const q = buildEbayQuery({
+				hero_name: 'Test', name: 'Test', parallel,
+				weapon_type: 'Glow', athlete_name: null, card_number: cardNumber
+			});
+			expect(q, `parallel=${parallel}`).toContain('"Alpha Blast"');
+			expect(q, `parallel=${parallel}`).toContain(cardNumber);
+		}
+	});
+
+	it('maps Inspired Ink Metallic to "Metallic" so seller titles match', () => {
+		const q = buildEbayQuery({
+			hero_name: 'Windmill', name: 'Windmill',
+			parallel: 'Inspired Ink Metallic Battlefoil',
+			weapon_type: 'Steel', athlete_name: 'Dominique Wilkins',
+			card_number: 'MBFA-20'
+		});
+		// Single-word tokens are emitted bare (quoteIfMultiWord only quotes multi-word).
+		expect(q).toContain('Metallic');
+		expect(q).toContain('MBFA-20');
+	});
+
+	it('maps Inspired Ink Bubble Gum to "Bubblegum" (one word, per seller convention)', () => {
+		const q = buildEbayQuery({
+			hero_name: 'Shells', name: 'Shells',
+			parallel: 'Inspired Ink Bubble Gum Battlefoil',
+			weapon_type: 'Gum', athlete_name: 'Donnie Shell',
+			card_number: 'DSA-2'
+		});
+		expect(q).toContain('Bubblegum');
+		expect(q).toContain('DSA-2');
+	});
 });
 
 describe('filterRelevantListings — hardened pipeline', () => {
@@ -238,5 +283,26 @@ describe('filterRelevantListings — hardened pipeline', () => {
 			{ title: 'Shohei Ohtani Showtime Bo Jackson Battle Arena HBF-12 Headlines Steel' }
 		];
 		expect(filterRelevantListings(items, headlinesCard)).toHaveLength(1);
+	});
+
+	it('rejects cross-color Blast contamination via parallel_keyword_mismatch gate', () => {
+		// Blast colors all map to "Alpha Blast" in the search prefix. Without
+		// this gate, a Blue Blast Coopanova search would match an Orange Blast
+		// Coopanova listing on hero + generic keyword. card_number is the
+		// only safe color discriminator.
+		const blueBlastCoopanova: EbayQueryCard = {
+			hero_name: 'Coopanova', name: 'Coopanova',
+			athlete_name: 'Cynthia Cooper', parallel: 'Blue Blast',
+			weapon_type: 'Ice', card_number: 'BL-B112'
+		};
+		const wrongColorListing = [
+			{ title: 'Bo Jackson Battle Arena Alpha Blast Coopanova Cynthia Cooper BL-O112 Ice' }
+		];
+		expect(filterRelevantListings(wrongColorListing, blueBlastCoopanova)).toHaveLength(0);
+
+		const correctColorListing = [
+			{ title: 'Bo Jackson Battle Arena Alpha Blast Coopanova Cynthia Cooper BL-B112 Ice' }
+		];
+		expect(filterRelevantListings(correctColorListing, blueBlastCoopanova)).toHaveLength(1);
 	});
 });

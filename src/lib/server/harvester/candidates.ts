@@ -63,11 +63,28 @@ export async function getNextCandidates(
 	}
 
 	const raw = (data as unknown as CardCandidate[]) || [];
-	return raw.map((r) => ({
-		...r,
-		parallel: r.card_parallel_name || r.parallel || 'paper',
-		game_id: r.game_id || gameId
-	}));
+	const mapped: (CardCandidate | null)[] = raw.map((r) => {
+		// Precedence matters. `r.parallel` is the *queue parallel* — what
+		// the RPC's UNION decided we need to harvest. `r.card_parallel_name`
+		// is the catalog-side parallel for the joined card row, fetched
+		// only for downstream use. Earlier versions inverted these and
+		// added a lowercase 'paper' fallback, which silently rewrote
+		// non-Paper queue entries to Paper for collection-driven rows
+		// (Wonders Progo OCM → harvested as Paper → dedup keys never
+		// matched → same card thrashed every cycle for 9+ days).
+		// CHECK constraints on price_cache/price_history/collections/
+		// listing_templates block any future regression to lowercase
+		// 'paper'. The RPC guarantees a non-null parallel on every row.
+		const parallel = r.parallel || r.card_parallel_name || null;
+		if (!parallel) {
+			console.error(
+				`[harvest] candidate has null parallel — skipping. card_id=${r.id} game=${gameId}`
+			);
+			return null;
+		}
+		return { ...r, parallel, game_id: r.game_id || gameId };
+	});
+	return mapped.filter((r): r is CardCandidate => r !== null);
 }
 
 export async function getPlayCandidates(

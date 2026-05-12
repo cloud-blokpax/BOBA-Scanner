@@ -18,7 +18,6 @@ const PARALLEL_PREFIX_MAP: Record<string, string> = {
 	// BoBA Battlefoil families — drop "Battlefoil" suffix
 	"80's Rad Battlefoil": 'RAD',
 	'Inspired Ink Battlefoil': 'Inspired Ink',
-	'Inspired Ink Metallic Battlefoil': 'Inspired Ink Metallic',
 	"Grandma's Linoleum Battlefoil": "Grandma's Linoleum",
 	"Great Grandma's Linoleum Battlefoil": "Great Grandma's Linoleum",
 	'Blizzard Battlefoil': 'Blizzard',
@@ -36,7 +35,28 @@ const PARALLEL_PREFIX_MAP: Record<string, string> = {
 	'Green Battlefoil': 'Green',
 	'Silver Battlefoil': 'Silver',
 	// No-suffix parallels stay as-is
-	Superfoil: 'Superfoil'
+	Superfoil: 'Superfoil',
+
+	// Sellers write "Alpha Blast" generically; color is encoded only in
+	// card_number prefix (BL-B/BL-G/BL-S/BL-O/BL-P/BL-BG). Without these
+	// mappings, the harvester searches the literal catalog parallel name
+	// which never appears in seller titles. See Bug B harvester_parallel_health.
+	'Blue Blast': 'Alpha Blast',
+	'Green Blast': 'Alpha Blast',
+	'Silver Blast': 'Alpha Blast',
+	'Orange Blast': 'Alpha Blast',
+	'Pink Blast': 'Alpha Blast',
+	'Bubble Gum Blast': 'Alpha Blast',
+	'Blast Inspired Ink': 'Alpha Blast',
+
+	// Sellers write "Metallic" or "Metallic Foil" (not "Inspired Ink
+	// Metallic Battlefoil"). Card_number prefix MBFA- differentiates from
+	// other Inspired Ink families. Same fix shape as Blast.
+	'Inspired Ink Metallic Battlefoil': 'Metallic',
+
+	// Sellers write "Bubblegum" (one word) — confirmed via observation
+	// sample (Donnie Shell DSA-2 "Bubblegum Inspired Ink").
+	'Inspired Ink Bubble Gum Battlefoil': 'Bubblegum'
 };
 
 const PAPER_VALUES = new Set(['paper', 'base']);

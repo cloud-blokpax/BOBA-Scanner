@@ -151,12 +151,54 @@ export const GET: RequestHandler = async ({ request }) => {
 		context: { totalDeleted, results: pruneResults }
 	});
 
+	// ── 3. Refresh canonical attribution views ──
+	// canonical_listing_attributions deduplicates eBay listings across cards
+	// that share names (Bug D). canonical_price_cache derives from it. The
+	// SQL function refreshes both in correct order. CONCURRENTLY so reads
+	// aren't blocked. See migration 20260512195404 / 20260512201215.
+	let canonicalRefresh: { ok: boolean; durationMs: number; error?: string } = {
+		ok: false,
+		durationMs: 0
+	};
+	const refreshStart = Date.now();
+	try {
+		const { error: refreshErr } = await (
+			admin.rpc as unknown as (
+				name: 'refresh_canonical_listing_attributions'
+			) => Promise<{ data: unknown; error: { message: string } | null }>
+		)('refresh_canonical_listing_attributions');
+		canonicalRefresh = {
+			ok: !refreshErr,
+			durationMs: Date.now() - refreshStart,
+			...(refreshErr ? { error: refreshErr.message } : {})
+		};
+		if (refreshErr) {
+			void logEvent({
+				level: 'error',
+				event: 'maintenance.canonical_refresh_failed',
+				error: refreshErr.message
+			});
+		}
+	} catch (err) {
+		canonicalRefresh = {
+			ok: false,
+			durationMs: Date.now() - refreshStart,
+			error: err instanceof Error ? err.message : 'unknown'
+		};
+		void logEvent({
+			level: 'error',
+			event: 'maintenance.canonical_refresh_threw',
+			error: err
+		});
+	}
+
 	return json({
-		ok: pruneResults.every((r) => !r.error),
+		ok: pruneResults.every((r) => !r.error) && canonicalRefresh.ok,
 		startedAt,
 		finishedAt: new Date().toISOString(),
 		pruned: true,
 		totalDeleted,
-		results: pruneResults
+		results: pruneResults,
+		canonicalRefresh
 	});
 };
