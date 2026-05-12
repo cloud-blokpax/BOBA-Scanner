@@ -184,6 +184,51 @@ const authGuard: Handle = async ({ event, resolve }) => {
 };
 
 /**
+ * API error mirror — safety net for SvelteKit's HttpError gap.
+ *
+ * SvelteKit's `handleError` hook only fires for *unhandled* errors. Any
+ * explicit `throw error(N, msg)` or `return json({...}, {status: 5xx})` in
+ * a route handler is considered "expected" and bypasses handleError, so
+ * without this mirror those failures are invisible in Admin → Triage.
+ *
+ * We log:
+ *   - 5xx → level=error  (always interesting)
+ *   - 409 + 422 → level=warn  (conflict / validation reject — useful signal)
+ *
+ * We skip 400/401/403/404/429 to keep bot-scan + expected-user-error noise
+ * out of the triage feed.
+ *
+ * If a route already logged via `throwLogged()` it sets
+ * `event.locals.__diagLogged` and we skip — no double-write.
+ */
+const apiErrorMirror: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+
+	if (!event.url.pathname.startsWith('/api/')) return response;
+	if (event.locals.__diagLogged) return response;
+
+	const status = response.status;
+	const isServerError = status >= 500;
+	const isInterestingClientError = status === 409 || status === 422;
+	if (!isServerError && !isInterestingClientError) return response;
+
+	void logEvent({
+		level: isServerError ? 'error' : 'warn',
+		event: isServerError ? 'api.error_5xx' : 'api.client_conflict',
+		source: 'server',
+		errorCode: String(status),
+		requestPath: event.url.pathname,
+		userId: event.locals?.user?.id ?? null,
+		context: {
+			method: event.request.method
+		},
+		vercelRequestId: event.request.headers.get('x-vercel-id')
+	});
+
+	return response;
+};
+
+/**
  * Lightweight API request logger for observability.
  * Only logs API routes — skips page navigation and static assets.
  */
@@ -209,7 +254,7 @@ const requestLogger: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(globalRateLimit, supabaseHandle, securityHeaders, authGuard, requestLogger);
+export const handle = sequence(globalRateLimit, supabaseHandle, securityHeaders, authGuard, requestLogger, apiErrorMirror);
 
 export const handleError = ({
 	error,
