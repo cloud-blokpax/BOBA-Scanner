@@ -440,6 +440,8 @@ export async function validateSellerConnection(userId: string): Promise<SellerVa
 }
 
 export interface SellerProfile {
+	/** Stable eBay user identifier — used to match account-deletion notifications. */
+	userId: string | null;
 	username: string | null;
 	email: string | null;
 }
@@ -451,7 +453,7 @@ export interface SellerProfile {
  */
 export async function getSellerProfile(userId: string): Promise<SellerProfile> {
 	const token = await getSellerToken(userId);
-	if (!token) return { username: null, email: null };
+	if (!token) return { userId: null, username: null, email: null };
 
 	try {
 		const identityStart = Date.now();
@@ -476,18 +478,19 @@ export async function getSellerProfile(userId: string): Promise<SellerProfile> {
 			} else {
 				console.error(`[ebay-seller-auth] Identity API error (${res.status}):`, await res.text().catch(() => ''));
 			}
-			return { username: null, email: null };
+			return { userId: null, username: null, email: null };
 		}
 
 		const data = await res.json();
 		return {
+			userId: data.userId ?? null,
 			username: data.username ?? null,
 			email: data.email ?? null
 		};
 	} catch (err) {
 		console.error('[ebay-seller-auth] Identity API network error:', err);
 		void logEvent({ level: 'error', event: 'ebay.seller_auth.identity_api_network_error', error: err });
-		return { username: null, email: null };
+		return { userId: null, username: null, email: null };
 	}
 }
 
@@ -667,6 +670,7 @@ export async function refreshSellerProfileCache(userId: string): Promise<void> {
 	const { error: updateErr } = await adminClient
 		.from('ebay_seller_tokens')
 		.update({
+			ebay_user_id: profile.userId,
 			ebay_username: profile.username,
 			ebay_email: profile.email,
 			seller_account_ready: readiness.ready,
