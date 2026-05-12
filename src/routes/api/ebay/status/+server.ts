@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { isSellerOAuthConfigured, getSellerProfile } from '$lib/server/ebay-seller-auth';
+import { isSellerOAuthConfigured } from '$lib/server/ebay-seller-auth';
 import { getAdminClient } from '$lib/server/supabase-admin';
 import { checkMutationRateLimit } from '$lib/server/rate-limit';
 import type { RequestHandler } from './$types';
@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const { data } = await admin
 		.from('ebay_seller_tokens')
-		.select('access_token_expires_at, refresh_token_expires_at, scopes, created_at, updated_at')
+		.select('access_token_expires_at, refresh_token_expires_at, scopes, created_at, updated_at, ebay_username, ebay_email, seller_account_ready, seller_account_status_message, profile_last_refreshed_at')
 		.eq('user_id', user.id)
 		.maybeSingle();
 
@@ -30,15 +30,17 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const accessExpiresAt = data ? new Date(data.access_token_expires_at).getTime() : 0;
 	const connected = !!data && refreshExpiresAt > now;
 
-	// Fetch seller profile (username/email) in parallel if connected
-	const profile = connected ? await getSellerProfile(user.id) : null;
-
 	return json({
 		configured,
 		connected,
 		connected_since: connected && data?.created_at ? data.created_at : null,
-		seller_username: profile?.username ?? null,
-		seller_email: profile?.email ?? null,
+		// Cached from the connect flow + the Test button. Reading from the row
+		// avoids a per-page-load commerce.identity.get_user call to eBay.
+		seller_username: connected ? data?.ebay_username ?? null : null,
+		seller_email: connected ? data?.ebay_email ?? null : null,
+		seller_account_ready: connected ? data?.seller_account_ready ?? null : null,
+		seller_account_status_message: connected ? data?.seller_account_status_message ?? null : null,
+		profile_last_refreshed_at: connected ? data?.profile_last_refreshed_at ?? null : null,
 		token_health: connected ? {
 			access_token_valid: accessExpiresAt > now,
 			access_token_expires_at: data!.access_token_expires_at,

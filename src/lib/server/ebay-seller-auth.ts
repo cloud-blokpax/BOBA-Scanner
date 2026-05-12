@@ -27,14 +27,14 @@ const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const EBAY_REVOKE_URL = 'https://api.ebay.com/identity/v1/oauth2/revoke';
 
 // Minimal scopes — only request what the app actually uses.
-// sell.inventory + sell.account for listing creation.
-// sell.fulfillment.readonly for tracking sold items / orders.
+// sell.inventory: read + write inventory items and offers (covers .readonly).
+// sell.account: read + write business policies (covers .readonly).
+// commerce.identity.readonly: seller username + email shown in settings UI.
+// api_scope: base scope required on every authorization request.
 const SELLER_SCOPES = [
 	'https://api.ebay.com/oauth/api_scope',
 	'https://api.ebay.com/oauth/api_scope/sell.inventory',
-	'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
 	'https://api.ebay.com/oauth/api_scope/sell.account',
-	'https://api.ebay.com/oauth/api_scope/sell.account.readonly',
 	'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly'
 ].join(' ');
 
@@ -126,6 +126,18 @@ export async function exchangeCode(code: string, userId: string): Promise<string
 		console.error('[ebay-seller-auth] Token storage failed:', upsertError);
 		throw new Error('Failed to store eBay tokens');
 	}
+
+	// Populate cached profile + readiness immediately so the settings UI
+	// can show "Connected as @username" and a setup-needed warning without
+	// firing eBay API calls on every page load.
+	// Non-blocking — if this throws, the row is still created with NULL cache
+	// columns and the Test button can refresh later.
+	try {
+		await refreshSellerProfileCache(userId);
+	} catch (err) {
+		console.warn('[ebay-seller-auth] Initial profile cache refresh failed (non-blocking):', err instanceof Error ? err.message : err);
+	}
+
 	return userId;
 }
 
@@ -364,7 +376,6 @@ export async function isSellerConnected(userId: string): Promise<boolean> {
 
 export interface SellerValidationResult {
 	valid: boolean;
-	username?: string;
 	sellingLimit?: { amount: number; quantity: number };
 	error?: string;
 }
@@ -409,6 +420,11 @@ export async function validateSellerConnection(userId: string): Promise<SellerVa
 		}
 
 		const data = await res.json();
+
+		// The user pressed "Test" — also refresh the cached profile + readiness
+		// flag so the settings UI reflects the latest eBay-side state.
+		void refreshSellerProfileCache(userId);
+
 		return {
 			valid: true,
 			sellingLimit: data.sellingLimit ? {
@@ -556,4 +572,118 @@ export async function disconnectSeller(userId: string): Promise<void> {
 	}
 
 	await adminClient.from('ebay_seller_tokens').delete().eq('user_id', userId);
+}
+
+// ─── Seller account readiness ────────────────────────────────────────────────
+//
+// eBay's Inventory API requires a fully-onboarded seller: Managed Payments
+// enrolled, identity verified, payment method on file. Brand-new accounts pass
+// OAuth but fail the first `sell.inventory.put_item` call with HTTP 500 +
+// errorId 25001 ("A system error has occurred. Core Inventory Service internal
+// error"). The `/sell/account/v1/privilege` endpoint is the cheapest signal
+// for whether the account is Inventory-API-ready.
+
+export interface SellerReadiness {
+	ready: boolean;
+	message: string | null;
+	sellingLimit?: { amount: number; quantity: number };
+}
+
+/**
+ * Probe the seller's account readiness via the privilege endpoint.
+ * Returns ready=false with a human-readable message when eBay rejects the
+ * call or the response indicates a $0/0-item selling limit (typical for
+ * un-enrolled accounts).
+ */
+export async function checkSellerReadiness(token: string, userId: string): Promise<SellerReadiness> {
+	const start = Date.now();
+	try {
+		const res = await fetch('https://api.ebay.com/sell/account/v1/privilege', {
+			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+		});
+		void logEbayUsage({
+			userId,
+			endpoint: 'sell.account.get_privilege',
+			httpMethod: 'GET',
+			httpStatus: res.status,
+			success: res.ok,
+			errorMessage: res.ok ? null : `HTTP ${res.status}`,
+			requestPath: 'internal:checkSellerReadiness',
+			durationMs: Date.now() - start
+		});
+
+		if (!res.ok) {
+			return {
+				ready: false,
+				message: `eBay rejected the readiness check (HTTP ${res.status}). Visit eBay Seller Hub to complete seller account setup.`
+			};
+		}
+
+		const data = await res.json();
+		const limitAmount = data.sellingLimit?.amount?.value ?? 0;
+		const limitQuantity = data.sellingLimit?.quantity ?? 0;
+
+		// $0 + 0 items typically means the seller account isn't fully enrolled
+		// (Managed Payments missing, identity verification pending, etc.).
+		if (limitAmount === 0 && limitQuantity === 0) {
+			return {
+				ready: false,
+				message: 'Your eBay seller account needs setup before listings can be created. Open eBay Seller Hub, complete Managed Payments enrollment, and verify your identity.',
+				sellingLimit: { amount: limitAmount, quantity: limitQuantity }
+			};
+		}
+
+		return {
+			ready: true,
+			message: null,
+			sellingLimit: { amount: limitAmount, quantity: limitQuantity }
+		};
+	} catch (err) {
+		console.error('[ebay-seller-auth] Readiness check threw:', err);
+		void logEvent({ level: 'warn', event: 'ebay.seller_auth.readiness_check_threw', error: err, userId });
+		// Network error — don't punish the user; treat as unknown.
+		return { ready: false, message: 'Could not reach eBay to check seller readiness. Try again later.' };
+	}
+}
+
+/**
+ * Refresh the cached profile + readiness on the ebay_seller_tokens row.
+ * Called from exchangeCode (on connect) and from the user-triggered Test
+ * button (validateSellerConnection). The status endpoint never calls this —
+ * it reads the cache directly to avoid an eBay API hit on every page load.
+ */
+export async function refreshSellerProfileCache(userId: string): Promise<void> {
+	const adminClient = getServiceClient();
+	if (!adminClient) return;
+
+	const token = await getSellerToken(userId);
+	if (!token) return;
+
+	const [profile, readiness] = await Promise.all([
+		getSellerProfile(userId),
+		checkSellerReadiness(token, userId)
+	]);
+
+	const { error: updateErr } = await adminClient
+		.from('ebay_seller_tokens')
+		.update({
+			ebay_username: profile.username,
+			ebay_email: profile.email,
+			seller_account_ready: readiness.ready,
+			seller_account_status_message: readiness.message,
+			profile_last_refreshed_at: new Date().toISOString(),
+			updated_at: new Date().toISOString()
+		})
+		.eq('user_id', userId);
+
+	if (updateErr) {
+		console.error('[ebay-seller-auth] Profile cache write failed:', updateErr.message);
+		void logEvent({
+			level: 'warn',
+			event: 'ebay.seller_auth.profile_cache_write_failed',
+			error: updateErr,
+			userId,
+			context: { ready: readiness.ready, username: profile.username }
+		});
+	}
 }
