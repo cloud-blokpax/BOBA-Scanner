@@ -800,6 +800,7 @@ export interface Database {
 					scopes: string | null;
 					created_at: string;
 					updated_at: string;
+					ebay_user_id: string | null;
 					ebay_username: string | null;
 					ebay_email: string | null;
 					seller_account_ready: boolean | null;
@@ -816,6 +817,7 @@ export interface Database {
 					refresh_token_expires_at: string;
 					scopes?: string | null;
 					updated_at?: string;
+					ebay_user_id?: string | null;
 					ebay_username?: string | null;
 					ebay_email?: string | null;
 					seller_account_ready?: boolean | null;

@@ -11,8 +11,15 @@ const GLOBAL_WINDOW_MS = 60_000;
 const GLOBAL_MAX_REQUESTS = 100;
 
 const globalRateLimit: Handle = async ({ event, resolve }) => {
-	// Skip rate limiting for static assets
-	if (event.url.pathname.startsWith('/_app/') || event.url.pathname.startsWith('/icon-')) {
+	// Skip rate limiting for static assets and for eBay-initiated webhooks.
+	// The eBay account-deletion endpoint is called from a small set of eBay
+	// IPs and may burst on deletion-heavy events; rate-limiting it risks
+	// missed notifications and possible production keyset suspension.
+	if (
+		event.url.pathname.startsWith('/_app/') ||
+		event.url.pathname.startsWith('/icon-') ||
+		event.url.pathname === '/api/ebay/account-deletion'
+	) {
 		return resolve(event);
 	}
 
