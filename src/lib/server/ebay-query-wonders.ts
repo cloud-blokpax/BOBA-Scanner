@@ -11,6 +11,15 @@
 
 import type { EbayCardInfo } from '$lib/utils/ebay-title';
 
+/**
+ * Wonders card_numbers are stored as bare integers (e.g. "301") but eBay
+ * listings often title them as "301/402" (with set-size denominator).
+ * Strip the slash-suffix for comparison so both forms match.
+ */
+function bareCardNumber(num: string): string {
+	return (num || '').split('/')[0].trim();
+}
+
 // ── Parallel name → eBay search keyword mapping ──────────────
 // Paper gets no keyword (base search). Foils get long-form names plus
 // alternative phrasings that real sellers use. Keys are the canonical
@@ -65,7 +74,7 @@ export function buildWondersEbayQuery(card: EbayCardInfo): string {
 		parts.push(parallelKeywords[0]);
 	}
 
-	const cardNum = (card.card_number || '').trim();
+	const cardNum = bareCardNumber(card.card_number || '');
 	if (cardNum) parts.push(`"${cardNum}"`);
 
 	return parts.join(' ');
@@ -93,7 +102,7 @@ export function evaluateWondersListings<T extends { title?: string }>(
 	card: EbayCardInfo
 ): Array<{ item: T; decision: WondersListingFilterDecision }> {
 	const cardName = (card.name || card.hero_name || '').toUpperCase().trim();
-	const cardNum = (card.card_number || '').toUpperCase().trim();
+	const cardNum = bareCardNumber(card.card_number || '').toUpperCase();
 	const parallelKeywords = keywordsFor(card.parallel);
 	const keywordPhrases = parallelKeywords.map((k) => k.replace(/"/g, '').toUpperCase());
 
@@ -190,7 +199,7 @@ export function filterRelevantWondersListings<T extends { title?: string }>(
 export function scoreWondersListingMatch(title: string, card: EbayCardInfo): number {
 	const t = title.toUpperCase();
 	const cardName = (card.name || card.hero_name || '').toUpperCase().trim();
-	const cardNum = (card.card_number || '').toUpperCase().trim();
+	const cardNum = bareCardNumber(card.card_number || '').toUpperCase();
 	const setDisplay = wondersSetDisplay(card.metadata).toUpperCase();
 
 	const hasName = cardName.length > 2 && includesAllWords(t, cardName);
