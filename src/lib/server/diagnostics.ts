@@ -252,3 +252,68 @@ export async function wrapSilent<T>(
 		return fallback;
 	}
 }
+
+// ─── throwLogged ──────────────────────────────────────────────────────────────
+//
+// Drop-in replacement for `throw error(status, message)` from @sveltejs/kit
+// that ALSO writes a row to app_events first. SvelteKit's handleError hook
+// does not fire for HttpErrors thrown via error(), so without this helper any
+// `throw error(502, ...)` in a route is invisible in Admin → Triage.
+//
+// Usage:
+//   import { throwLogged } from '$lib/server/diagnostics';
+//   // ... inside a +server.ts handler:
+//   throwLogged(event, {
+//     status: 502,
+//     message: 'eBay inventory creation failed',
+//     event: 'ebay.create_draft.inventory_put_failed',
+//     cause: parsedEbayError,
+//     context: { sku, cardId, ebayStatus: itemRes.status }
+//   });
+//
+// `event` is the SvelteKit RequestEvent — passed so the helper can
+// auto-populate userId, requestPath, vercelRequestId and set the suppression
+// marker that prevents the apiErrorMirror Handle from double-logging.
+
+import { error as svelteError } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
+
+export interface ThrowLoggedOptions {
+	/** HTTP status to throw with. 5xx → level=error, else → level=warn (overridable). */
+	status: number;
+	/** User-facing message attached to the HttpError. */
+	message: string;
+	/** Event name for app_events. Use dot-separated namespaces, e.g. 'ebay.create_draft.inventory_put_failed'. */
+	event: string;
+	/** Original error / parsed upstream body / anything that gives root-cause detail. */
+	cause?: unknown;
+	/** Structured fields for app_events.context. Keep small + JSON-serializable. */
+	context?: DiagnosticContext;
+	/** Override the auto-derived level if needed. */
+	level?: LogLevel;
+	/** Originating scan id for provenance — optional. */
+	scanId?: string | null;
+}
+
+export function throwLogged(event: RequestEvent, opts: ThrowLoggedOptions): never {
+	const level: LogLevel = opts.level ?? (opts.status >= 500 ? 'error' : 'warn');
+
+	void logEvent({
+		level,
+		event: opts.event,
+		source: 'server',
+		error: opts.cause,
+		errorCode: String(opts.status),
+		context: opts.context,
+		userId: event.locals.user?.id ?? null,
+		scanId: opts.scanId ?? null,
+		requestPath: event.url.pathname,
+		vercelRequestId: event.request.headers.get('x-vercel-id')
+	});
+
+	// Marker — apiErrorMirror in hooks.server.ts checks this and skips
+	// auto-logging when a route has already recorded rich context.
+	event.locals.__diagLogged = true;
+
+	throw svelteError(opts.status, opts.message);
+}

@@ -7,6 +7,7 @@ import { getAdminClient } from '$lib/server/supabase-admin';
 import { getSellerPolicies, ensureInventoryLocation, publishOffer, optInToBusinessPolicies, EBAY_INVENTORY_URL } from '$lib/server/ebay-policies';
 import { conditionToEbay, conditionToDescriptorId } from '$lib/server/ebay-condition';
 import { logEbayUsage } from '$lib/server/ebay-usage-log';
+import { throwLogged } from '$lib/server/diagnostics';
 import { incrementPersona } from '$lib/services/persona';
 import { buildEbayListingTitle } from '$lib/utils/ebay-title';
 import { buildBobaDescription, buildWondersDescription } from '$lib/services/listing-generator';
@@ -82,7 +83,8 @@ function plainTextToHtml(text: string): string {
 		.join('\n');
 }
 
-export const POST: RequestHandler = async ({ request, locals, getClientAddress }) => {
+export const POST: RequestHandler = async (event) => {
+	const { request, locals, getClientAddress } = event;
 	const user = await requireAuth(locals);
 	const clientIp = getClientAddress();
 	const userAgent = request.headers.get('user-agent');
@@ -339,19 +341,46 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		if (!itemRes.ok) {
 			const errBody = await itemRes.text().catch(() => '');
 			console.error('[ebay/create-draft] Inventory item creation failed:', itemRes.status, errBody);
-			if (itemRes.status === 401) {
-				throw error(403, 'eBay session expired. Reconnect in Settings.');
-			}
-			let message = `eBay inventory item creation failed (${itemRes.status})`;
+
+			let parsedError: unknown = null;
+			let ebayErrorId: number | null = null;
+			let ebayLongMessage: string | null = null;
 			try {
-				const parsed = JSON.parse(errBody);
-				if (parsed.errors?.[0]?.longMessage) {
-					message = parsed.errors[0].longMessage;
-				} else if (parsed.errors?.[0]?.message) {
-					message = parsed.errors[0].message;
+				parsedError = JSON.parse(errBody);
+				const first = (parsedError as { errors?: Array<{ errorId?: number; longMessage?: string; message?: string }> })?.errors?.[0];
+				if (first) {
+					ebayErrorId = typeof first.errorId === 'number' ? first.errorId : null;
+					ebayLongMessage = first.longMessage ?? first.message ?? null;
 				}
-			} catch { /* use default message */ }
-			throw error(502, message);
+			} catch { /* errBody wasn't JSON */ }
+
+			if (itemRes.status === 401) {
+				throwLogged(event, {
+					status: 403,
+					message: 'eBay session expired. Reconnect in Settings.',
+					event: 'ebay.create_draft.token_unauthorized',
+					context: { sku, cardId: body.cardId, gameId, parallel }
+				});
+			}
+
+			const userMessage = ebayLongMessage ?? `eBay inventory item creation failed (${itemRes.status})`;
+
+			throwLogged(event, {
+				status: 502,
+				message: userMessage,
+				event: 'ebay.create_draft.inventory_put_failed',
+				cause: parsedError ?? errBody,
+				context: {
+					sku,
+					cardId: body.cardId,
+					gameId,
+					parallel,
+					ebayHttpStatus: itemRes.status,
+					ebayErrorId,
+					ebayLongMessage,
+					rawBodySnippet: errBody.slice(0, 500)
+				}
+			});
 		}
 
 		// Step 2: Ensure seller has an inventory location (required for Item.Country on publish)
@@ -466,7 +495,12 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 			// Offer failed but inventory item exists — still a partial success
 			if (offerRes.status === 401) {
-				throw error(403, 'eBay session expired. Reconnect in Settings.');
+				throwLogged(event, {
+					status: 403,
+					message: 'eBay session expired. Reconnect in Settings.',
+					event: 'ebay.create_draft.token_unauthorized',
+					context: { sku, cardId: body.cardId, gameId, stage: 'offer' }
+				});
 			}
 
 			// With unique SKUs, duplicate offers should not occur.
@@ -537,12 +571,19 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			message: 'Listing created on eBay'
 		});
 	} catch (err) {
-		// Re-throw SvelteKit HttpErrors as-is (they already have status + message)
-		if (err && typeof err === 'object' && 'status' in err) throw err;
-		const message = err instanceof Error ? err.message : 'Draft creation failed';
-		console.error('[ebay/create-draft] Unexpected error:', message);
+		const isHttpError = !!(err && typeof err === 'object' && 'status' in err);
 
-		// Update template with error
+		// Best-effort error message: HttpError bodies usually have .body.message;
+		// non-HttpErrors fall back to .message or stringification.
+		const httpErrorMessage = isHttpError
+			? ((err as { body?: { message?: string } }).body?.message ?? null)
+			: null;
+		const message = httpErrorMessage
+			?? (err instanceof Error ? err.message : 'Draft creation failed');
+
+		// Persist failure state on the listing_templates row — runs on every
+		// failure exit (HttpError or otherwise). Without this, throwLogged'd
+		// HttpErrors leave the row stuck at status='pending' forever.
 		if (adminClient) {
 			try {
 				await adminClient.from('listing_templates').update({
@@ -553,6 +594,18 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			} catch { /* non-critical */ }
 		}
 
-		throw error(502, `Draft creation failed: ${message}`);
+		// HttpErrors thrown via throwLogged() are already in app_events with
+		// rich context — re-throw as-is so SvelteKit returns the right status.
+		if (isHttpError) throw err;
+
+		// True unexpected error — log + throw.
+		console.error('[ebay/create-draft] Unexpected error:', message);
+		throwLogged(event, {
+			status: 502,
+			message: `Draft creation failed: ${message}`,
+			event: 'ebay.create_draft.unexpected_error',
+			cause: err,
+			context: { sku, cardId: body.cardId, gameId, parallel }
+		});
 	}
 };

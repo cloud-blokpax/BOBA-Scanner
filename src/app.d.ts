@@ -9,6 +9,12 @@ declare global {
 			safeGetSession: () => Promise<{ session: Session | null; user: User | null }>;
 			user: User | null;
 			session: Session | null;
+			/**
+			 * Set by `throwLogged()` to suppress the apiErrorMirror handle
+			 * from writing a duplicate `app_events` row for the same failure.
+			 * Do not read or set this directly outside of diagnostics + hooks.
+			 */
+			__diagLogged?: boolean;
 		}
 
 		interface PageData {
