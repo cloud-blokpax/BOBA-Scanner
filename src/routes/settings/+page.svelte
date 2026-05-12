@@ -21,10 +21,14 @@
 	let ebayConfigured = $state(false);
 	let ebayConnected = $state(false);
 	let ebayConnectedSince = $state<string | null>(null);
+	let ebaySellerUsername = $state<string | null>(null);
+	let ebaySellerAccountReady = $state<boolean | null>(null);
+	let ebaySellerAccountMessage = $state<string | null>(null);
 	let ebayLoading = $state(true);
 	let ebayDisconnecting = $state(false);
 	let ebayJustDisconnected = $state(false);
 	let ebayValidating = $state(false);
+	let ebayAccessExpanded = $state(false);
 	let ebayValidation = $state<{ valid: boolean; sellingLimit?: { amount: number; quantity: number }; error?: string } | null>(null);
 	let ebayTokenHealth = $state<{ access_token_valid: boolean; access_token_expires_at: string; refresh_token_expires_at: string; refresh_days_remaining: number; scopes: string | null } | null>(null);
 
@@ -168,6 +172,9 @@
 				ebayConfigured = data.configured;
 				ebayConnected = data.connected;
 				ebayConnectedSince = data.connected_since ?? null;
+				ebaySellerUsername = data.seller_username ?? null;
+				ebaySellerAccountReady = data.seller_account_ready ?? null;
+				ebaySellerAccountMessage = data.seller_account_status_message ?? null;
 				ebayTokenHealth = data.token_health ?? null;
 			})
 			.catch((err) => console.warn('[settings] eBay status check failed:', err))
@@ -318,11 +325,19 @@
 						<span class="row-title">eBay seller</span>
 						<span class="row-sub" class:connected={ebayConnected && ebayValidation?.valid !== false}>
 							{#if ebayLoading}Checking...
-							{:else if ebayConnected}Connected{#if ebayConnectedSince} {new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{/if}
+							{:else if ebayConnected}
+								Connected{#if ebaySellerUsername} as @{ebaySellerUsername}{/if}{#if ebayConnectedSince} &middot; since {new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{/if}
 							{:else if ebayConfigured}Not connected
 							{:else}Coming soon
 							{/if}
 						</span>
+						{#if ebayConnected && ebaySellerAccountReady === false && ebaySellerAccountMessage}
+							<div class="ebay-readiness-warning">
+								<span class="warning-icon">&#9888;</span>
+								<span class="warning-text">{ebaySellerAccountMessage}</span>
+								<a href="https://www.ebay.com/sh/" target="_blank" rel="noopener noreferrer">Open eBay Seller Hub</a>
+							</div>
+						{/if}
 						{#if ebayValidation}
 							<span class="ebay-validation-result" class:valid={ebayValidation.valid} class:invalid={!ebayValidation.valid}>
 								{#if ebayValidation.valid}
@@ -360,10 +375,41 @@
 								{ebayDisconnecting ? '...' : 'Disconnect'}
 							</button>
 						{:else if ebayConfigured}
-							<a href="/auth/ebay?from=/settings" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
+							<div class="ebay-connect-group">
+								<button
+									type="button"
+									class="ebay-access-toggle"
+									onclick={() => ebayAccessExpanded = !ebayAccessExpanded}
+									aria-expanded={ebayAccessExpanded}
+								>
+									What will Card Scanner access?
+									<span class="chevron-small">{ebayAccessExpanded ? '▴' : '▾'}</span>
+								</button>
+								<a href="/auth/ebay?from=/settings" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
+							</div>
 						{/if}
 					</div>
 				</div>
+				{#if !ebayConnected && ebayConfigured && ebayAccessExpanded}
+					<div class="ebay-access-disclosure">
+						<p class="disclosure-lead">When you connect your eBay account, Card Scanner will be able to:</p>
+						<ul>
+							<li><strong>See your eBay username and email</strong> so we can show you which account is connected.</li>
+							<li><strong>Create and update card listings on your behalf</strong> — only when you tap the eBay button on a card.</li>
+							<li><strong>Read and use your shipping, payment, and return policies</strong> so listings inherit your existing seller setup.</li>
+						</ul>
+						<p class="disclosure-lead">Card Scanner will <em>not</em>:</p>
+						<ul>
+							<li>See your bank or payment details.</li>
+							<li>Read your messages, sales history, or buyer information.</li>
+							<li>Make changes outside of listings you initiate.</li>
+						</ul>
+						<p class="disclosure-revoke">
+							You can disconnect at any time from this page. To fully revoke access at eBay, visit
+							<a href="https://accounts.ebay.com/uas/PreferencesApplications" target="_blank" rel="noopener noreferrer">eBay → Apps you've authorized</a>.
+						</p>
+					</div>
+				{/if}
 				{#if ebayJustDisconnected && !ebayConnected}
 					<div class="ebay-revoke-hint">
 						Disconnected from this app. If you suspect your account was compromised, also revoke this app's authorization at
@@ -615,6 +661,82 @@
 	.token-dot.healthy { background: var(--success); }
 	.token-dot.expired { background: var(--warning, #f59e0b); }
 	.token-warning { color: var(--warning, #f59e0b); font-size: 0.6875rem; }
+
+	.ebay-readiness-warning {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		align-items: flex-start;
+		margin-top: 0.5rem;
+		padding: 0.5rem 0.625rem;
+		border-radius: 0.5rem;
+		background: rgba(245, 158, 11, 0.08);
+		border: 1px solid rgba(245, 158, 11, 0.25);
+		font-size: 0.6875rem;
+		line-height: 1.4;
+		color: var(--text-secondary, #d1d5db);
+	}
+	.ebay-readiness-warning .warning-icon { color: #f59e0b; font-size: 0.875rem; flex-shrink: 0; }
+	.ebay-readiness-warning .warning-text { flex: 1 1 200px; min-width: 0; }
+	.ebay-readiness-warning a {
+		color: #f59e0b;
+		text-decoration: underline;
+		font-weight: 500;
+		flex-shrink: 0;
+	}
+
+	.ebay-connect-group {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.375rem;
+	}
+	.ebay-access-toggle {
+		background: none;
+		border: none;
+		color: var(--accent, #3b82f6);
+		font-size: 0.6875rem;
+		cursor: pointer;
+		padding: 2px 4px;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		text-decoration: underline;
+	}
+	.chevron-small { font-size: 0.625rem; }
+
+	.ebay-access-disclosure {
+		margin-top: 0.5rem;
+		padding: 0.75rem 0.875rem;
+		border-radius: 0.625rem;
+		background: rgba(59, 130, 246, 0.06);
+		border: 1px solid rgba(59, 130, 246, 0.18);
+		font-size: 0.75rem;
+		line-height: 1.5;
+		color: var(--text-secondary, #d1d5db);
+	}
+	.ebay-access-disclosure .disclosure-lead {
+		margin: 0 0 0.375rem 0;
+		font-weight: 500;
+		color: var(--text-primary, #fff);
+	}
+	.ebay-access-disclosure ul {
+		margin: 0 0 0.625rem 0;
+		padding-left: 1.125rem;
+	}
+	.ebay-access-disclosure li { margin-bottom: 0.25rem; }
+	.ebay-access-disclosure li:last-child { margin-bottom: 0; }
+	.ebay-access-disclosure strong { color: var(--text-primary, #fff); font-weight: 600; }
+	.ebay-access-disclosure em { font-style: italic; color: var(--text-primary, #fff); }
+	.ebay-access-disclosure .disclosure-revoke {
+		margin: 0.625rem 0 0 0;
+		font-size: 0.6875rem;
+		color: var(--text-muted, #9ca3af);
+	}
+	.ebay-access-disclosure a {
+		color: var(--accent, #3b82f6);
+		text-decoration: underline;
+	}
 
 	.ebay-revoke-hint {
 		font-size: 0.75rem;

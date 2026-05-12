@@ -800,6 +800,11 @@ export interface Database {
 					scopes: string | null;
 					created_at: string;
 					updated_at: string;
+					ebay_username: string | null;
+					ebay_email: string | null;
+					seller_account_ready: boolean | null;
+					seller_account_status_message: string | null;
+					profile_last_refreshed_at: string | null;
 				};
 				Insert: {
 					user_id: string;
@@ -811,6 +816,11 @@ export interface Database {
 					refresh_token_expires_at: string;
 					scopes?: string | null;
 					updated_at?: string;
+					ebay_username?: string | null;
+					ebay_email?: string | null;
+					seller_account_ready?: boolean | null;
+					seller_account_status_message?: string | null;
+					profile_last_refreshed_at?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['ebay_seller_tokens']['Insert']>;
 				Relationships: [];
