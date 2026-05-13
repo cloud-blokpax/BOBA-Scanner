@@ -1205,6 +1205,84 @@ This was the biggest drift class in the Phase 2 arc and is worth calling out exp
 - **Deploy order: SQL migrations first, then code.** Code that reads a new column will 500 if the column doesn't exist yet; the reverse is always safe.
 - **Drift check.** Post-deploy, run the drift-check queries at the end of the Database Schema section. Should always return `0/0`.
 
+### New Table Migration Template
+
+Every new `public` table migration MUST include grants + RLS in the same `apply_migration` call. Supabase removes default Data API grants for new tables in new projects from May 30, 2026, and all existing projects from Oct 30, 2026. This pattern is forward-compatible.
+
+```sql
+-- 1. Table
+create table public.foo (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  -- ...
+  created_at timestamptz not null default now()
+);
+
+-- 2. Grants (required for Data API access post-Oct-30-2026)
+grant select on public.foo to anon;
+grant select, insert, update, delete on public.foo to authenticated;
+grant select, insert, update, delete on public.foo to service_role;
+
+-- 3. RLS
+alter table public.foo enable row level security;
+
+-- 4. Policies (at least one per role that should have access)
+create policy "users read own foo"
+  on public.foo for select to authenticated
+  using (auth.uid() = user_id);
+
+create policy "users insert own foo"
+  on public.foo for insert to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "users update own foo"
+  on public.foo for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "users delete own foo"
+  on public.foo for delete to authenticated
+  using (auth.uid() = user_id);
+```
+
+#### Server-side-only table variant
+
+For tables touched only by service_role (e.g., harvester logs, hash caches, internal queues):
+
+```sql
+create table public.foo (...);
+
+-- service_role only — no grants to anon/authenticated
+grant select, insert, update, delete on public.foo to service_role;
+
+-- RLS enabled with NO policies = locked down except service_role
+alter table public.foo enable row level security;
+```
+
+#### View / materialized view checklist
+
+- Views: always create with `WITH (security_invoker = true)` so RLS of the querying user applies, not the view creator.
+- Materialized views: do NOT grant select to `anon`/`authenticated` unless you actively want the data public — they bypass RLS entirely. Gate behind an RPC if access control matters.
+
+#### SECURITY DEFINER function checklist
+
+When creating `SECURITY DEFINER` functions:
+1. Always set `SET search_path = public, pg_catalog` in the function definition (prevents search_path hijacking).
+2. By default, `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated;` then `GRANT EXECUTE` only to the role that should call it.
+3. Functions that are auth triggers (`handle_new_user`, etc.) should NEVER be granted to anon/authenticated.
+4. Cron/admin functions (refresh_*, reconcile_*) should be service_role-only.
+
+```sql
+create or replace function public.foo()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$ ... $$;
+
+revoke execute on function public.foo() from public, anon, authenticated;
+grant execute on function public.foo() to service_role;
+```
+
 ### API Route Patterns
 
 - All API routes are in `src/routes/api/`
