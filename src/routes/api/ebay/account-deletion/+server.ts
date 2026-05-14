@@ -149,7 +149,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Process the deletion. Fire-and-forget so we can ACK fast — eBay only
 	// cares that we returned 2xx. Errors land in app_events.
-	void processAccountDeletion(data, notification?.notificationId ?? null);
+	void processAccountDeletion(
+		{ username: data.username, userId: data.userId, eiasToken: data.eiasToken },
+		notification?.notificationId ?? null
+	);
 
 	return json({ ok: true });
 };
@@ -174,7 +177,7 @@ interface EbayDeletionNotification {
 }
 
 async function processAccountDeletion(
-	data: { username?: string; userId?: string; eiasToken?: string },
+	data: { username?: string; userId: string; eiasToken?: string },
 	notificationId: string | null
 ): Promise<void> {
 	const admin = getAdminClient();

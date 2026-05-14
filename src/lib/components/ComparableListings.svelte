@@ -10,7 +10,7 @@
 	as-is; it owns its own state.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	interface Listing {
 		ebay_item_id: string;
@@ -31,7 +31,7 @@
 		defaultExpanded?: boolean;
 	} = $props();
 
-	let expanded = $state(defaultExpanded);
+	let expanded = $state(untrack(() => defaultExpanded));
 	let listings = $state<Listing[]>([]);
 	let loading = $state(false);
 	let loaded = $state(false);
@@ -91,7 +91,7 @@
 		img.style.display = 'none';
 	}
 
-	if (defaultExpanded) {
+	if (untrack(() => defaultExpanded)) {
 		onMount(() => {
 			void fetchListings();
 		});
@@ -264,6 +264,7 @@
 		text-overflow: ellipsis;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 	}
 	.listing-sub {
