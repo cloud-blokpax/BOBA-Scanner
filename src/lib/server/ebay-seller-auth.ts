@@ -49,7 +49,7 @@ export function isSellerOAuthConfigured(): boolean {
 	return !!(env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET && env.EBAY_RUNAME);
 }
 
-export function buildAuthUrl(state: string): string {
+export function buildAuthUrl(state: string, opts: { forceLogin?: boolean } = {}): string {
 	const params = new URLSearchParams({
 		client_id: env.EBAY_CLIENT_ID ?? '',
 		redirect_uri: env.EBAY_RUNAME ?? '',
@@ -57,6 +57,11 @@ export function buildAuthUrl(state: string): string {
 		scope: SELLER_SCOPES,
 		state
 	});
+	// Force eBay to show its login picker even if the browser already has an
+	// eBay session cookie. Without this, a user who disconnects and reconnects
+	// is silently re-attached to the same eBay account they were already signed
+	// into — they can't actually switch accounts.
+	if (opts.forceLogin) params.set('prompt', 'login');
 	return `${EBAY_AUTH_URL}?${params.toString()}`;
 }
 

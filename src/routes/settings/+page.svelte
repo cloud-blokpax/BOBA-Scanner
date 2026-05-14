@@ -371,6 +371,9 @@
 							<button class="row-action-btn row-action-test" onclick={validateEbay} disabled={ebayValidating}>
 								{ebayValidating ? '...' : 'Test'}
 							</button>
+							<a href="/auth/ebay?from=/settings&force_login=1" class="row-action-btn row-action-switch" data-sveltekit-reload>
+								Switch
+							</a>
 							<button class="row-action-btn" onclick={disconnectEbay} disabled={ebayDisconnecting}>
 								{ebayDisconnecting ? '...' : 'Disconnect'}
 							</button>
@@ -385,7 +388,11 @@
 									What will Card Scanner access?
 									<span class="chevron-small">{ebayAccessExpanded ? '▴' : '▾'}</span>
 								</button>
-								<a href="/auth/ebay?from=/settings" class="row-action-btn row-action-connect" data-sveltekit-reload>Connect</a>
+								<a
+									href={ebayJustDisconnected ? '/auth/ebay?from=/settings&force_login=1' : '/auth/ebay?from=/settings'}
+									class="row-action-btn row-action-connect"
+									data-sveltekit-reload
+								>Connect</a>
 							</div>
 						{/if}
 					</div>
@@ -628,6 +635,7 @@
 	}
 	.row-action-connect { border-color: var(--success); color: var(--success); }
 	.row-action-test { border-color: var(--info, #3b82f6); color: var(--info, #3b82f6); }
+	.row-action-switch { border-color: var(--warning, #f59e0b); color: var(--warning, #f59e0b); }
 
 	.ebay-row { flex-wrap: wrap; }
 	.ebay-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
