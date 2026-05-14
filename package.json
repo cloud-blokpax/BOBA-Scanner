@@ -15,6 +15,7 @@
     "generate-dbs-migration": "tsx scripts/generate-dbs-sync-migration.ts",
     "lint:bundle-drift": "tsx scripts/lint-play-bundle-drift.ts",
     "wonders:import-set": "tsx scripts/import-wonders-set.ts",
+    "migrate:r2": "tsx scripts/migrate-images-to-r2.ts",
     "bench:scan": "tsx tests/scan-bench/run-bench.ts",
     "bench:scan:compare": "tsx tests/scan-bench/compare-reports.ts"
   },
