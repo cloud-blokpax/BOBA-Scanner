@@ -116,7 +116,11 @@ Card-Scanner/
 │   │   ├── grader/+page.svelte     # AI card condition grading
 │   │   ├── export/+page.svelte     # Collection export (CSV, etc.)
 │   │   ├── sell/+page.svelte       # Sell cards (eBay listing, Whatnot CSV)
-│   │   ├── settings/+page.svelte   # User settings page
+│   │   ├── settings/               # User settings
+│   │   │   ├── +page.svelte        # Main settings page (profile, badges, data, eBay summary, sign out)
+│   │   │   └── integrations/       # Per-integration management subpages
+│   │   │       ├── ebay/+page.svelte    # Dedicated eBay account management (identity, readiness, token health, scopes)
+│   │   │       └── whatnot/+page.svelte # Whatnot (WTP) connection management
 │   │   ├── set-completion/+page.svelte # Set completion tracker
 │   │   ├── packs/+page.svelte      # Pack simulator
 │   │   ├── market/                 # Market & pricing
@@ -156,7 +160,14 @@ Card-Scanner/
 │   │   │   ├── AdminStatsTab.svelte     # Statistics overview (legacy)
 │   │   │   ├── HarvestResults.svelte    # Harvest results display
 │   │   │   ├── Sparkline.svelte         # Admin sparkline chart
-│   │   │   └── dragon-points/           # Wonders dragon points admin
+│   │   │   ├── sellers/                 # Seller analytics dashboard (linked from AdminEbayTab + AdminSidebar Tools)
+│   │   │   │   ├── +page.svelte         # 14-day BIN seller archetypes, pricing/inventory classification, today's deals
+│   │   │   │   ├── +page.server.ts
+│   │   │   │   └── [username]/+page.svelte  # Per-seller drilldown
+│   │   │   ├── detector-labels/         # OCR detection label review (linked from AdminPhase2Tab + sidebar Tools)
+│   │   │   │   ├── +page.svelte         # Confirm/correct/reject queue for auto-labelled scans
+│   │   │   │   └── +page.server.ts
+│   │   │   └── dragon-points/           # Wonders dragon points admin (linked from AdminSystemTab + sidebar Tools)
 │   │   │       ├── +page.svelte
 │   │   │       └── +page.server.ts
 │   │   ├── auth/
@@ -325,6 +336,7 @@ Card-Scanner/
 │   │   │   │   ├── QuickActionsGrid.svelte  # Quick action buttons
 │   │   │   │   ├── RecentScansStrip.svelte  # Recent scans horizontal strip
 │   │   │   │   ├── ScanHeroCard.svelte      # Scan CTA hero card
+│   │   │   │   ├── EbayConnectionWidget.svelte # eBay connect/setup/manage tri-state widget (seller persona)
 │   │   │   │   └── TournamentCodeEntry.svelte # Tournament code input
 │   │   │   ├── collection/         # Collection sub-components
 │   │   │   │   ├── OverviewTab.svelte   # Collection overview tab

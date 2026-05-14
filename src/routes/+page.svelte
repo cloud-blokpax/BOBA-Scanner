@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ScanHeroCard from '$lib/components/home/ScanHeroCard.svelte';
 	import TournamentCodeEntry from '$lib/components/home/TournamentCodeEntry.svelte';
+	import EbayConnectionWidget from '$lib/components/home/EbayConnectionWidget.svelte';
 
 	let { data } = $props();
 </script>
@@ -47,8 +48,11 @@
 			</section>
 		</div>
 
+		<!-- eBay connection widget — surfaces connect/setup/manage for seller persona -->
+		<div class="block-entrance" style="animation-delay: 120ms"><EbayConnectionWidget /></div>
+
 		<!-- Tournament code entry stays on root landing -->
-		<div class="block-entrance" style="animation-delay: 120ms"><TournamentCodeEntry /></div>
+		<div class="block-entrance" style="animation-delay: 180ms"><TournamentCodeEntry /></div>
 	{:else}
 		<div class="landing-hero">
 			<h1 class="landing-title">Card Scanner</h1>

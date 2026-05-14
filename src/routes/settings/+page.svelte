@@ -368,6 +368,7 @@
 					</div>
 					<div class="ebay-actions">
 						{#if ebayConnected}
+							<a href="/settings/integrations/ebay" class="row-action-btn row-action-manage">Manage</a>
 							<button class="row-action-btn row-action-test" onclick={validateEbay} disabled={ebayValidating}>
 								{ebayValidating ? '...' : 'Test'}
 							</button>
@@ -636,6 +637,7 @@
 	.row-action-connect { border-color: var(--success); color: var(--success); }
 	.row-action-test { border-color: var(--info, #3b82f6); color: var(--info, #3b82f6); }
 	.row-action-switch { border-color: var(--warning, #f59e0b); color: var(--warning, #f59e0b); }
+	.row-action-manage { border-color: var(--gold); color: var(--gold); }
 
 	.ebay-row { flex-wrap: wrap; }
 	.ebay-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }

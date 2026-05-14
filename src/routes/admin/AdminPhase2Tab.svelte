@@ -166,6 +166,17 @@
 			</div>
 		</div>
 
+		<!-- Pipeline Tools -->
+		<div class="section">
+			<h3 class="section-title">Pipeline tools</h3>
+			<div class="tool-links">
+				<a href="/admin/detector-labels" class="tool-link">
+					<span class="tool-label">Detection labels</span>
+					<span class="tool-sub">Review OCR corner labels — confirm, correct, reject</span>
+				</a>
+			</div>
+		</div>
+
 		<!-- Pipeline mix -->
 		<div class="section">
 			<h3 class="section-title">Pipeline mix</h3>
@@ -497,6 +508,37 @@
 	.threshold-hint {
 		font-weight: 400;
 		font-size: 0.7rem;
+		color: var(--text-tertiary);
+	}
+
+	.tool-links {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.tool-link {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		padding: 0.625rem 0.875rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-surface);
+		text-decoration: none;
+		color: var(--text-primary);
+		font-size: 0.85rem;
+	}
+
+	.tool-link:hover {
+		border-color: var(--gold);
+	}
+
+	.tool-label {
+		font-weight: 600;
+	}
+
+	.tool-sub {
+		font-size: 0.75rem;
 		color: var(--text-tertiary);
 	}
 

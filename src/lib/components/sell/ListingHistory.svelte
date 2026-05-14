@@ -490,7 +490,7 @@
 												View on Wonders Trading Post &#x2197;
 											</a>
 										{:else if wtpStatusFetched && !wtpConnected}
-											<a href="/settings/wtp-connect" class="lh-detail-btn lh-detail-btn-wtp">
+											<a href="/settings/integrations/whatnot" class="lh-detail-btn lh-detail-btn-wtp">
 												Connect Wonders Trading Post
 											</a>
 										{:else if wtpConnected}

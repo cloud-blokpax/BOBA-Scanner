@@ -96,6 +96,16 @@
 		</div>
 	</div>
 
+	<!-- Game Configuration -->
+	<div class="section">
+		<h3 class="section-title">Game Configuration</h3>
+		<div class="db-links">
+			<a class="db-link" href="/admin/dragon-points">
+				Dragon Points Config (Wonders)
+			</a>
+		</div>
+	</div>
+
 	<!-- Quick DB Info -->
 	<div class="section">
 		<h3 class="section-title">Database Info</h3>

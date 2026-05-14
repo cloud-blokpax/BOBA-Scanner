@@ -277,6 +277,15 @@
 			</div>
 		{/if}
 
+		<!-- Seller Intelligence -->
+		<div class="info-section">
+			<h3 class="section-title">Seller Intelligence</h3>
+			<p class="threshold-desc">14-day rolling analytics for active BIN listings — pricing archetypes, inventory size, and today's deals.</p>
+			<div class="actions-grid">
+				<a href="/admin/sellers" class="action-btn primary">View Seller Analytics →</a>
+			</div>
+		</div>
+
 		<!-- Price Freshness -->
 		<div class="info-section">
 			<h3 class="section-title">Price Freshness</h3>
@@ -607,6 +616,13 @@
 
 	.action-btn:hover {
 		border-color: var(--border-strong);
+	}
+
+	a.action-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		text-decoration: none;
 	}
 
 	.action-btn.primary {

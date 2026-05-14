@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const { data } = await admin
 		.from('ebay_seller_tokens')
-		.select('access_token_expires_at, refresh_token_expires_at, scopes, created_at, updated_at, ebay_username, ebay_email, seller_account_ready, seller_account_status_message, profile_last_refreshed_at')
+		.select('access_token_expires_at, refresh_token_expires_at, scopes, created_at, updated_at, ebay_user_id, ebay_username, ebay_email, seller_account_ready, seller_account_status_message, profile_last_refreshed_at')
 		.eq('user_id', user.id)
 		.maybeSingle();
 
@@ -36,6 +36,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		connected_since: connected && data?.created_at ? data.created_at : null,
 		// Cached from the connect flow + the Test button. Reading from the row
 		// avoids a per-page-load commerce.identity.get_user call to eBay.
+		seller_user_id: connected ? data?.ebay_user_id ?? null : null,
 		seller_username: connected ? data?.ebay_username ?? null : null,
 		seller_email: connected ? data?.ebay_email ?? null : null,
 		seller_account_ready: connected ? data?.seller_account_ready ?? null : null,
