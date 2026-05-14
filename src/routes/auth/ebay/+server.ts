@@ -13,6 +13,12 @@ export const GET: RequestHandler = async ({ url, locals, cookies }) => {
 	// Defaults to /settings (the historical landing page) if not provided.
 	const returnTo = sanitizeReturnTo(url.searchParams.get('from'));
 
+	// When ?force_login=1 is set (e.g. after a disconnect, or from a "Switch
+	// account" button), append prompt=login to the eBay auth URL so the user
+	// can pick a different eBay account. Defaults off — the steady-state
+	// reconnect flow should remain frictionless.
+	const forceLogin = url.searchParams.get('force_login') === '1';
+
 	// Build the eBay `state` parameter. Two parallel mechanisms protect this
 	// flow because iOS Safari ITP strips cookies on cross-site redirects:
 	//   1. HMAC-signed state token via OAUTH_STATE_SECRET — survives cookie loss,
@@ -32,5 +38,5 @@ export const GET: RequestHandler = async ({ url, locals, cookies }) => {
 		maxAge: 600
 	});
 
-	throw redirect(302, buildAuthUrl(state));
+	throw redirect(302, buildAuthUrl(state, { forceLogin }));
 };
