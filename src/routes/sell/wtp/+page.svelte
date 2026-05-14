@@ -22,7 +22,7 @@
 			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			status = (await r.json()) as WtpStatus;
 			if (!status.connected) {
-				goto(`/settings/wtp-connect?return=${encodeURIComponent('/sell/wtp')}`);
+				goto(`/settings/integrations/whatnot?return=${encodeURIComponent('/sell/wtp')}`);
 				return;
 			}
 		} catch (err) {

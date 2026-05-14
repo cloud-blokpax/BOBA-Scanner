@@ -95,6 +95,15 @@
 		{/if}
 	</div>
 
+	<div class="sidebar-tools">
+		<span class="sb-label">Tools</span>
+		<nav class="tool-list">
+			<a class="tool-row" href="/admin/sellers">Seller Analytics</a>
+			<a class="tool-row" href="/admin/detector-labels">Detection Labels</a>
+			<a class="tool-row" href="/admin/dragon-points">Dragon Points Config</a>
+		</nav>
+	</div>
+
 	<div class="sidebar-health">
 		<span class="sb-label">Services</span>
 		<div class="health-list">
@@ -207,6 +216,34 @@
 
 	.alert-metric .alert-value {
 		color: var(--warning);
+	}
+
+	.sidebar-tools {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.75rem;
+	}
+
+	.tool-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.tool-row {
+		display: block;
+		padding: 0.375rem 0.5rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		text-decoration: none;
+	}
+
+	.tool-row:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 
 	.sidebar-health {
