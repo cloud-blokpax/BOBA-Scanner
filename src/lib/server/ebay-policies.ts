@@ -71,6 +71,32 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 		if (!envelopeFulfillmentId) {
 			console.log('[ebay-policies] No envelope fulfillment policy — creating');
 			envelopeFulfillmentId = await createEnvelopeFulfillmentPolicy(headers);
+
+			// If creation returned null (409 conflict on name), the policy already
+			// exists but our initial name-match missed it — refetch and search again
+			// with a broader match so the seller still gets envelope pricing.
+			if (!envelopeFulfillmentId) {
+				console.log('[ebay-policies] Envelope policy creation returned null, refetching policies...');
+				const refetch = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy?marketplace_id=EBAY_US`, { headers })
+					.then(r => r.ok ? r.json() : null)
+					.catch(() => null);
+				const refetchPolicies: Array<Record<string, string>> = refetch?.fulfillmentPolicies || [];
+				const retryEnvelopeSearch = refetchPolicies.find(
+					(p) => p.name?.toLowerCase().includes('envelope')
+				);
+				envelopeFulfillmentId = retryEnvelopeSearch?.fulfillmentPolicyId || null;
+
+				if (envelopeFulfillmentId) {
+					console.log('[ebay-policies] Found existing envelope policy on retry:', envelopeFulfillmentId);
+				} else {
+					console.error('[ebay-policies] CRITICAL: Envelope policy still missing after creation attempt');
+					void logEvent({
+						level: 'error',
+						event: 'ebay.policies.envelope_missing_after_create',
+						context: { fulfillment_policy_count: refetchPolicies.length }
+					});
+				}
+			}
 		}
 		if (!fulfillmentId) {
 			console.log('[ebay-policies] No standard fulfillment policy — creating');
@@ -92,6 +118,14 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 			});
 			return null;
 		}
+
+		console.log('[ebay-policies] Policies fetched successfully:', {
+			fulfillmentPolicyId: fulfillmentId,
+			envelopeFulfillmentPolicyId: envelopeFulfillmentId,
+			paymentPolicyId: paymentId,
+			returnPolicyId: returnId,
+			hasEnvelopePolicy: !!envelopeFulfillmentId
+		});
 
 		return {
 			fulfillmentPolicyId: fulfillmentId,
