@@ -17,7 +17,13 @@
 		ebaySellerUsername: string | null;
 		ebaySellerEmail: string | null;
 		ebayConnectedSince: string | null;
-		ebayTokenHealth: { access_token_valid: boolean; refresh_days_remaining: number } | null;
+		ebayTokenHealth: {
+			access_token_valid: boolean;
+			access_token_expires_at?: string;
+			refresh_token_expires_at?: string;
+			refresh_days_remaining: number;
+			scopes?: string | null;
+		} | null;
 		onStartScan: () => void;
 		onStartUpload: () => void;
 		onEbayDisconnected: () => void;
@@ -64,6 +70,20 @@
 		}
 		ebayValidating = false;
 	}
+
+	function formatDate(iso: string | null): string {
+		if (!iso) return '—';
+		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+	}
+
+	function formatDateTime(iso: string | null | undefined): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+			' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+	}
+
+	const scopeList = $derived(ebayTokenHealth?.scopes?.split(/\s+/).filter(Boolean) ?? []);
 
 	const rawItems = $derived(collectionItems());
 	const loading = $derived(collectionLoading());
@@ -164,51 +184,94 @@
 							Connected{ebaySellerUsername ? ` as ${ebaySellerUsername}` : ''}
 						</span>
 						<span class="ebay-chevron">{ebayExpanded ? '▾' : '▸'}</span>
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="ebay-seller-actions" onclick={(e) => e.stopPropagation()}>
-							<button class="ebay-action-btn ebay-action-test" onclick={validateEbay} disabled={ebayValidating}>
-								{ebayValidating ? '...' : 'Test'}
-							</button>
-							<button class="ebay-action-btn ebay-action-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
-								{ebayDisconnecting ? '...' : 'Disconnect'}
-							</button>
-						</div>
 					</div>
 
 					{#if ebayExpanded}
-					<div class="ebay-seller-details">
-						{#if ebaySellerUsername}
-							<div class="ebay-detail-row">
-								<span class="ebay-detail-label">Seller</span>
-								<span class="ebay-detail-value">{ebaySellerUsername}</span>
+						<div class="ebay-seller-details">
+							<div class="ebay-section-title">Account</div>
+							{#if ebaySellerUsername}
+								<div class="ebay-detail-row">
+									<span class="ebay-detail-label">Username</span>
+									<span class="ebay-detail-value">@{ebaySellerUsername}</span>
+								</div>
+							{/if}
+							{#if ebaySellerEmail}
+								<div class="ebay-detail-row">
+									<span class="ebay-detail-label">Email</span>
+									<span class="ebay-detail-value ebay-email">{ebaySellerEmail}</span>
+								</div>
+							{/if}
+							{#if ebayConnectedSince}
+								<div class="ebay-detail-row">
+									<span class="ebay-detail-label">Since</span>
+									<span class="ebay-detail-value">{formatDate(ebayConnectedSince)}</span>
+								</div>
+							{/if}
+
+							{#if ebayTokenHealth}
+								<div class="ebay-section-title" style="margin-top: 0.875rem;">Token Health</div>
+								<div class="ebay-detail-row">
+									<span class="ebay-detail-label">
+										<span class="ebay-token-dot" class:healthy={ebayTokenHealth.access_token_valid} class:expired={!ebayTokenHealth.access_token_valid}></span>
+										Access
+									</span>
+									<span class="ebay-detail-value">
+										{ebayTokenHealth.access_token_valid ? 'Active' : 'Refreshing'}
+									</span>
+								</div>
+								{#if ebayTokenHealth.access_token_expires_at}
+									<div class="ebay-detail-row">
+										<span class="ebay-detail-label">Expires</span>
+										<span class="ebay-detail-value">{formatDateTime(ebayTokenHealth.access_token_expires_at)}</span>
+									</div>
+								{/if}
+								<div class="ebay-detail-row">
+									<span class="ebay-detail-label">
+										<span class="ebay-token-dot" class:healthy={ebayTokenHealth.refresh_days_remaining > 30} class:expired={ebayTokenHealth.refresh_days_remaining <= 30}></span>
+										Refresh
+									</span>
+									<span class="ebay-detail-value">
+										{ebayTokenHealth.refresh_days_remaining}d remaining
+										{#if ebayTokenHealth.refresh_days_remaining <= 30}
+											<span class="ebay-token-warning"> · reconnect soon</span>
+										{/if}
+									</span>
+								</div>
+								{#if ebayTokenHealth.refresh_token_expires_at}
+									<div class="ebay-detail-row">
+										<span class="ebay-detail-label">Expires</span>
+										<span class="ebay-detail-value">{formatDate(ebayTokenHealth.refresh_token_expires_at)}</span>
+									</div>
+								{/if}
+
+								{#if scopeList.length > 0}
+									<details class="ebay-scopes-disclosure">
+										<summary class="ebay-scopes-summary">Scopes ({scopeList.length})</summary>
+										<div class="ebay-scopes-list">
+											{#each scopeList as scope}
+												<div class="ebay-scope-item">{scope}</div>
+											{/each}
+										</div>
+									</details>
+								{/if}
+							{/if}
+
+							<div class="ebay-action-buttons">
+								<button class="ebay-action-btn ebay-action-test" onclick={validateEbay} disabled={ebayValidating}>
+									{ebayValidating ? '...' : 'Test'}
+								</button>
+								<a
+									href="/auth/ebay?from=/sell&force_login=1"
+									class="ebay-action-btn ebay-action-manage"
+									data-sveltekit-reload
+								>
+									Switch
+								</a>
+								<button class="ebay-action-btn ebay-action-disconnect" onclick={disconnectEbay} disabled={ebayDisconnecting}>
+									{ebayDisconnecting ? '...' : 'Disconnect'}
+								</button>
 							</div>
-						{/if}
-						{#if ebaySellerEmail}
-							<div class="ebay-detail-row">
-								<span class="ebay-detail-label">Email</span>
-								<span class="ebay-detail-value ebay-email">{ebaySellerEmail}</span>
-							</div>
-						{/if}
-						{#if ebayConnectedSince}
-							<div class="ebay-detail-row">
-								<span class="ebay-detail-label">Since</span>
-								<span class="ebay-detail-value">{new Date(ebayConnectedSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-							</div>
-						{/if}
-						{#if ebayTokenHealth}
-							<div class="ebay-detail-row">
-								<span class="ebay-detail-label">Token</span>
-								<span class="ebay-detail-value">
-									<span class="ebay-token-dot" class:healthy={ebayTokenHealth.access_token_valid} class:expired={!ebayTokenHealth.access_token_valid}></span>
-									{ebayTokenHealth.access_token_valid ? 'Active' : 'Refreshing'}
-									{#if ebayTokenHealth.refresh_days_remaining <= 30}
-										<span class="ebay-token-warning"> · {ebayTokenHealth.refresh_days_remaining}d left</span>
-									{/if}
-								</span>
-							</div>
-						{/if}
-					</div>
+						</div>
 					{/if}
 
 					{#if ebayValidation}
@@ -443,7 +506,7 @@
 	.ebay-chevron {
 		font-size: 0.75rem;
 		color: var(--text-tertiary, #334155);
-		margin-right: auto;
+		margin-left: auto;
 	}
 
 	.ebay-status-dot {
@@ -458,12 +521,6 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		color: var(--success, #10b981);
-	}
-
-	.ebay-seller-actions {
-		margin-left: auto;
-		display: flex;
-		gap: 0.375rem;
 	}
 
 	.ebay-action-btn {
@@ -760,5 +817,70 @@
 	.sort-btn.active {
 		background: var(--bg-surface, #0d1524);
 		color: var(--text-primary, #e2e8f0);
+	}
+
+	.ebay-section-title {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-muted, #475569);
+		margin-bottom: 0.5rem;
+	}
+
+	.ebay-action-buttons {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.875rem;
+		padding-top: 0.875rem;
+		border-top: 1px solid var(--border, rgba(148,163,184,0.10));
+	}
+
+	.ebay-action-manage {
+		background: transparent;
+		color: var(--text-secondary, #94a3b8);
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.ebay-action-manage:hover {
+		background: rgba(148,163,184,0.08);
+		color: var(--text-primary, #e2e8f0);
+	}
+
+	.ebay-scopes-disclosure {
+		margin-top: 0.75rem;
+		font-size: 0.75rem;
+	}
+
+	.ebay-scopes-summary {
+		cursor: pointer;
+		color: var(--text-muted, #475569);
+		padding: 0.375rem 0;
+		list-style: none;
+	}
+
+	.ebay-scopes-summary::-webkit-details-marker,
+	.ebay-scopes-summary::marker {
+		display: none;
+	}
+
+	.ebay-scopes-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-top: 0.5rem;
+	}
+
+	.ebay-scope-item {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+		font-size: 0.65rem;
+		padding: 0.25rem 0.5rem;
+		background: var(--bg-surface, #0d1524);
+		border-radius: 4px;
+		color: var(--text-secondary, #94a3b8);
+		word-break: break-all;
 	}
 </style>

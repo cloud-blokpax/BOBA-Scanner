@@ -32,7 +32,7 @@
 </script>
 
 {#if visible && status}
-	<a class="widget" href="/settings/integrations/ebay" data-state={status.connected ? (needsSetup ? 'warn' : 'ok') : 'connect'}>
+	<a class="widget" href="/sell" data-state={status.connected ? (needsSetup ? 'warn' : 'ok') : 'connect'}>
 		<span class="icon" aria-hidden="true">
 			{#if status.connected && !needsSetup}✓{:else if needsSetup}!{:else}＋{/if}
 		</span>
