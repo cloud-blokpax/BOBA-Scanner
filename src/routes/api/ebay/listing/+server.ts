@@ -256,6 +256,19 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 			});
 		}
 
+		const selectedFulfillmentPolicyId = price < 20 && policies.envelopeFulfillmentPolicyId
+			? policies.envelopeFulfillmentPolicyId
+			: policies.fulfillmentPolicyId;
+
+		console.log('[ebay/listing] Offer shipping config:', {
+			price,
+			packageWeight: price >= 20 ? 4 : 1,
+			packageType: price >= 20 ? 'PACKAGE_THICK_ENVELOPE' : 'LETTER',
+			hasEnvelopePolicy: !!policies.envelopeFulfillmentPolicyId,
+			selectedPolicyId: selectedFulfillmentPolicyId,
+			willUseEnvelope: price < 20 && !!policies.envelopeFulfillmentPolicyId
+		});
+
 		// Step 4: Create offer
 		const offerStart = Date.now();
 		const offerRes = await fetch(`${EBAY_INVENTORY_URL}/offer`, {
@@ -282,9 +295,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 					}
 				},
 				listingPolicies: {
-					fulfillmentPolicyId: price < 20 && policies.envelopeFulfillmentPolicyId
-						? policies.envelopeFulfillmentPolicyId
-						: policies.fulfillmentPolicyId,
+					fulfillmentPolicyId: selectedFulfillmentPolicyId,
 					paymentPolicyId: policies.paymentPolicyId,
 					returnPolicyId: policies.returnPolicyId
 				}

@@ -419,6 +419,19 @@ export const POST: RequestHandler = async (event) => {
 			});
 		}
 
+		const selectedFulfillmentPolicyId = price < 20 && policies.envelopeFulfillmentPolicyId
+			? policies.envelopeFulfillmentPolicyId
+			: policies.fulfillmentPolicyId;
+
+		console.log('[ebay/create-draft] Offer shipping config:', {
+			price,
+			packageWeight: price >= 20 ? 4 : 1,
+			packageType: price >= 20 ? 'PACKAGE_THICK_ENVELOPE' : 'LETTER',
+			hasEnvelopePolicy: !!policies.envelopeFulfillmentPolicyId,
+			selectedPolicyId: selectedFulfillmentPolicyId,
+			willUseEnvelope: price < 20 && !!policies.envelopeFulfillmentPolicyId
+		});
+
 		// Step 4: Create offer (unpublished = draft in Seller Hub)
 		const bestOfferEnabled = body.bestOffer !== false; // default ON
 
@@ -437,9 +450,7 @@ export const POST: RequestHandler = async (event) => {
 			},
 			categoryId: EBAY_CATEGORY_TRADING_CARDS,
 			listingPolicies: {
-				fulfillmentPolicyId: price < 20 && policies.envelopeFulfillmentPolicyId
-					? policies.envelopeFulfillmentPolicyId
-					: policies.fulfillmentPolicyId,
+				fulfillmentPolicyId: selectedFulfillmentPolicyId,
 				returnPolicyId: policies.returnPolicyId,
 				paymentPolicyId: policies.paymentPolicyId,
 				...(bestOfferEnabled ? {
