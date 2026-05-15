@@ -309,14 +309,13 @@ export async function uploadScanImage(collectionItemId: string, cardId: string, 
 export async function uploadScanImageForListing(
 	cardId: string,
 	imageSource: string,
-	signedTtlSeconds = 3600
+	_signedTtlSeconds = 3600
 ): Promise<string | null> {
 	const client = getSupabase();
 	if (!client) return null;
 
 	const { data: { session } } = await client.auth.getSession();
 	if (!session?.user) return null;
-	const user = session.user;
 
 	// Image upload open to all users — eBay requires at least 1 photo.
 	// Image URL in CSV exports is Pro-gated separately in whatnot-export.ts.
@@ -325,8 +324,6 @@ export async function uploadScanImageForListing(
 	try {
 		const response = await fetch(imageSource);
 		const rawBlob = await response.blob();
-
-		// Resize/compress to fit Supabase storage limits
 		const bitmap = await createImageBitmap(rawBlob);
 		const compressed = await createListingImageBlob(bitmap);
 		bitmap.close();
@@ -336,25 +333,27 @@ export async function uploadScanImageForListing(
 		return null;
 	}
 
-	const filename = `${user.id}/listing_${cardId}_${Date.now()}.jpg`;
-
-	const { error: uploadError } = await client.storage
-		.from('scan-images')
-		.upload(filename, blob, {
-			contentType: 'image/jpeg',
-			upsert: true
+	// Upload to R2 (public, no JWT) so the URL fits inside eBay's 500-char
+	// per-URL limit. Supabase signed URLs were ~455 chars and breached the
+	// 3975-char total limit when combined.
+	try {
+		const form = new FormData();
+		form.append('image', blob, `listing_${cardId}.jpg`);
+		form.append('cardId', cardId);
+		const res = await fetch('/api/listing-image', {
+			method: 'POST',
+			body: form
 		});
-
-	if (uploadError) {
-		console.error('[collection] Listing image upload failed:', uploadError);
+		if (!res.ok) {
+			console.error('[collection] R2 listing upload failed:', res.status);
+			return null;
+		}
+		const { url } = await res.json();
+		return url as string;
+	} catch (err) {
+		console.error('[collection] R2 listing upload error:', err);
 		return null;
 	}
-
-	// Bucket is private (migration 044). Sign for the immediate consumer
-	// (eBay Inventory API ingests the image straight away — a 1h signed URL
-	// is plenty). If the signed URL is later persisted, signScanImageUrl can
-	// re-sign from the path the URL embeds.
-	return await signScanImageUrl(client, filename, signedTtlSeconds);
 }
 
 export async function updateQuantity(itemId: string, quantity: number): Promise<void> {
