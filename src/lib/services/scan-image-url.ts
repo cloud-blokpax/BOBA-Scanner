@@ -26,6 +26,11 @@ export const SCAN_IMAGES_BUCKET = 'scan-images';
 const PUBLIC_URL_RE =
 	/\/storage\/v1\/object\/(?:public|sign)\/scan-images\/([^?#]+)/i;
 
+// R2-hosted listing images. Stored as the full public URL — no signing
+// needed at render time. Match any host with a `/listing-images/` path so
+// a future move from `pub-{hash}.r2.dev` to a custom domain Just Works.
+const R2_LISTING_URL_RE = /^https?:\/\/[^/]+\/listing-images\//i;
+
 /**
  * Best-effort: pull the storage path out of a value that might be a
  * legacy public URL, a freshly-signed URL, or already a path.
@@ -36,6 +41,11 @@ export function extractScanImagePath(value: string | null | undefined): string |
 	if (!value || typeof value !== 'string') return null;
 	const trimmed = value.trim();
 	if (!trimmed) return null;
+
+	// R2 listing image URL — store as-is. The DB column accepts either a
+	// Supabase path (private bucket) or a full R2 URL; signScanImageUrl
+	// short-circuits on the R2 form.
+	if (R2_LISTING_URL_RE.test(trimmed)) return trimmed;
 
 	// Already a storage path (no scheme, no leading /storage prefix).
 	if (!trimmed.includes('://') && !trimmed.startsWith('/storage/')) {
@@ -61,6 +71,11 @@ export async function signScanImageUrl(
 	value: string | null | undefined,
 	ttlSeconds = 3600
 ): Promise<string | null> {
+	if (!value) return null;
+	// R2 URLs are already public + permanent. No signing needed.
+	const trimmed = typeof value === 'string' ? value.trim() : '';
+	if (trimmed && R2_LISTING_URL_RE.test(trimmed)) return trimmed;
+
 	if (!client) return null;
 	const path = extractScanImagePath(value);
 	if (!path) return null;
