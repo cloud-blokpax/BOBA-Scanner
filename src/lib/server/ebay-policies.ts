@@ -181,10 +181,14 @@ async function createFulfillmentPolicy(
 }
 
 async function createEnvelopeFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	// eSE is FLAT_RATE only — CALCULATED is rejected silently and produces a "contact seller for
+	// shipping options" listing. shippingCarrierCode is required per eBay docs.
+	// https://developer.ebay.com/api-docs/sell/static/seller-accounts/using-the-ebay-standard-envelope-service.html
 	return createFulfillmentPolicy(headers, 'BOBA - eBay Standard Envelope', [{
 		optionType: 'DOMESTIC',
-		costType: 'CALCULATED',
+		costType: 'FLAT_RATE',
 		shippingServices: [{
+			shippingCarrierCode: 'USPS',
 			shippingServiceCode: 'US_eBayStandardEnvelope',
 			freeShipping: false,
 			sortOrder: 1
