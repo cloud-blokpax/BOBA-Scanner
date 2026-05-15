@@ -20,6 +20,11 @@ import { smoothQuad, mapBitmapQuadToCss, type Pt, type VideoLayout } from './qua
 
 export type QuadState = 'detected' | 'ready' | 'lost';
 
+/** After this many consecutive frames with no valid quad, surface a coaching
+ *  message and suppress the yellow overlay — better than confidently drawing
+ *  on the wrong rectangle. */
+export const NO_CARD_FRAME_THRESHOLD = 5;
+
 export interface QuadDetectionState {
 	readonly cssCorners: [Pt, Pt, Pt, Pt] | null;
 	readonly quadState: QuadState;
@@ -30,6 +35,10 @@ export interface QuadDetectionState {
 	/** performance.now() when continuous detection began. Null whenever
 	 *  quadState becomes 'lost'. Used by analysis loop for stable-dwell. */
 	readonly detectedSince: number | null;
+	/** Number of consecutive ticks that returned no valid quad. Resets to 0
+	 *  on a successful detection. Drives the "can't find card edges"
+	 *  coaching state once it crosses NO_CARD_FRAME_THRESHOLD. */
+	readonly consecutiveMissFrames: number;
 	/** Call from the analysis tick AFTER you've captured a bitmap. */
 	processBitmap: (
 		bitmap: ImageBitmap,
@@ -46,6 +55,7 @@ export function useQuadDetection(): QuadDetectionState {
 	let _quadState = $state<QuadState>('lost');
 	let _motionPx = $state<number | null>(null);
 	let _detectedSince = $state<number | null>(null);
+	let _consecutiveMissFrames = $state(0);
 	let _inFlight = false;
 	let _smoothedBitmap: [Pt, Pt, Pt, Pt] | null = null;
 
@@ -79,8 +89,10 @@ export function useQuadDetection(): QuadDetectionState {
 				_smoothedBitmap = null; // reset smoothing on detection loss
 				_motionPx = null;
 				_detectedSince = null;
+				_consecutiveMissFrames++;
 				return;
 			}
+			_consecutiveMissFrames = 0;
 			const next: [Pt, Pt, Pt, Pt] = detection.corners as [Pt, Pt, Pt, Pt];
 
 			// Capture the previous SMOOTHED quad before EMA overwrites it.
@@ -116,6 +128,7 @@ export function useQuadDetection(): QuadDetectionState {
 			_bitmapCorners = null;
 			_cssCorners = null;
 			_quadState = 'lost';
+			_consecutiveMissFrames++;
 		} finally {
 			_inFlight = false;
 		}
@@ -128,6 +141,7 @@ export function useQuadDetection(): QuadDetectionState {
 		_smoothedBitmap = null;
 		_motionPx = null;
 		_detectedSince = null;
+		_consecutiveMissFrames = 0;
 		_inFlight = false;
 	}
 
@@ -137,6 +151,7 @@ export function useQuadDetection(): QuadDetectionState {
 		get bitmapCorners() { return _bitmapCorners; },
 		get motionPx() { return _motionPx; },
 		get detectedSince() { return _detectedSince; },
+		get consecutiveMissFrames() { return _consecutiveMissFrames; },
 		processBitmap,
 		reset
 	};

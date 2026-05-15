@@ -1,5 +1,10 @@
 <script lang="ts">
-	export type CameraPillState = 'searching' | 'reading' | 'got_it' | 'try_again';
+	export type CameraPillState =
+		| 'searching'
+		| 'cant_find_card'
+		| 'reading'
+		| 'got_it'
+		| 'try_again';
 
 	let {
 		state = 'searching' as CameraPillState,
@@ -13,6 +18,11 @@
 
 	const config: Record<CameraPillState, Config> = {
 		searching: { text: 'Point at card', bg: 'rgba(0, 0, 0, 0.65)', fg: '#fff' },
+		cant_find_card: {
+			text: "Can't find card edges — try a darker background",
+			bg: 'rgba(0, 0, 0, 0.75)',
+			fg: '#fff'
+		},
 		reading: { text: 'Reading', bg: '#FFA726', fg: '#1a1a1a' },
 		got_it: { text: '', bg: '#10B981', fg: '#fff' },
 		try_again: { text: "Couldn't read — tap to retry", bg: '#EF4444', fg: '#fff' }

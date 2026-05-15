@@ -88,17 +88,66 @@ const DETECT_LONG_EDGE_DEFAULT = 800;
 const DETECT_LONG_EDGE_LIVE = 600;
 const MIN_AREA_FRAC = 0.15;
 
-// Pre-warp aspect tolerance — wide because perspective distortion shrinks
-// or stretches detected aspect significantly. Bench evidence: held cards
-// at 15–25° tilt produce aspects 1.34–1.52 even when fully visible. The
-// gate's only job is to reject obvious non-cards (table edges, book spines,
-// phone screens at ~0.56 aspect, posters at >1.7); the post-warp canonical
-// is always exactly 1.4 because we force it that way.
-const ASPECT_PRE_WARP_MIN = 1.28;
-const ASPECT_PRE_WARP_MAX = 1.55;
+// Mode-specific aspect tolerances. Tighter than the legacy 1.28–1.55 window
+// so the inner artwork frame (roughly square, aspect ~1.15–1.25) and
+// off-card rectangles like book spines (aspect >1.55) are rejected by the
+// gate. Live is permissive because handheld tilt skews the detected aspect;
+// canonical is strictest because the user has deliberately framed the card.
+const ASPECT_TOLERANCE_LIVE = { min: 1.3, max: 1.5 };
+const ASPECT_TOLERANCE_CANONICAL = { min: 1.34, max: 1.46 };
+const ASPECT_TOLERANCE_UPLOAD = { min: 1.32, max: 1.48 };
+
+// Holo speculars saturate the V channel and create false edges inside the
+// card that fragment the outer contour. Clamping V to this ceiling before
+// Canny heals that without darkening normal cards.
+const HSV_V_CLAMP = 240;
+
+// Larger close-kernel bridges the broken-edge gaps holo rainbow noise leaves
+// in the outer card contour, letting findContours close it into a single
+// 4-vertex polygon. Costs ~2ms per frame at 600×800.
+const DILATE_KERNEL_SIZE = 7;
 
 export interface DetectCardOptions {
-	mode?: 'live' | 'upload';
+	mode?: 'live' | 'canonical' | 'upload';
+}
+
+function getAspectTolerance(mode: DetectCardOptions['mode']): { min: number; max: number } {
+	if (mode === 'canonical') return ASPECT_TOLERANCE_CANONICAL;
+	if (mode === 'upload') return ASPECT_TOLERANCE_UPLOAD;
+	return ASPECT_TOLERANCE_LIVE;
+}
+
+/**
+ * Clamp the HSV V channel so holo speculars (typically 250–255) flatten to
+ * HSV_V_CLAMP before Canny. This removes the false edges that fragment the
+ * outer card contour into multiple short segments on foil/rainbow cards.
+ *
+ * Caller owns the returned Mat and must `.delete()` it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function clampSpeculars(src: any, cv: any): any {
+	const hsv = new cv.Mat();
+	const channels = new cv.MatVector();
+	const clamped = new cv.Mat();
+
+	try {
+		cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+		cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+		cv.split(hsv, channels);
+
+		const v = channels.get(2);
+		cv.threshold(v, v, HSV_V_CLAMP, HSV_V_CLAMP, cv.THRESH_TRUNC);
+		channels.set(2, v);
+
+		cv.merge(channels, hsv);
+		cv.cvtColor(hsv, clamped, cv.COLOR_HSV2RGB);
+		cv.cvtColor(clamped, clamped, cv.COLOR_RGB2RGBA);
+
+		return clamped;
+	} finally {
+		hsv.delete();
+		channels.delete();
+	}
 }
 
 export async function detectCard(
@@ -135,14 +184,20 @@ export async function detectCard(
 	const imageData = ctx.getImageData(0, 0, dw, dh);
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let src: any, gray: any, blurred: any, edges: any, kernel: any;
+	let src: any, clamped: any, gray: any, blurred: any, edges: any, kernel: any;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let contours: any, hierarchy: any;
 
 	try {
 		src = cv.matFromImageData(imageData);
+
+		// Holo specular suppression — clamps overbright pixels in HSV V
+		// channel so the rainbow noise on foil/holo cards stops fragmenting
+		// the outer card edge into short segments.
+		clamped = clampSpeculars(src, cv);
+
 		gray = new cv.Mat();
-		cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+		cv.cvtColor(clamped, gray, cv.COLOR_RGBA2GRAY);
 
 		blurred = new cv.Mat();
 		cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
@@ -153,12 +208,19 @@ export async function detectCard(
 		// outer-scope Mats so the finally{} cleanup still works.
 
 		edges = new cv.Mat();
-		kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+		// Ellipse + 7×7 bridges holo-disrupted outer-edge gaps that the
+		// legacy 3×3 rect kernel left as separate contours; the inner
+		// artwork frame is filtered out by aspect ratio, not by kernel size.
+		kernel = cv.getStructuringElement(
+			cv.MORPH_ELLIPSE,
+			new cv.Size(DILATE_KERNEL_SIZE, DILATE_KERNEL_SIZE)
+		);
 		contours = new cv.MatVector();
 		hierarchy = new cv.Mat();
 
 		const minArea = dw * dh * MIN_AREA_FRAC;
 		const borderInsetPx = Math.max(2, Math.round(Math.min(dw, dh) * 0.005));
+		const aspectTolerance = getAspectTolerance(options.mode);
 
 		let bestCorners: [Point, Point, Point, Point] | null = null;
 		let detectionLayer: string | null = null;
@@ -230,8 +292,13 @@ export async function detectCard(
 					const sides = computeSideLengths(ordered);
 					const avgLong = (sides.left + sides.right) / 2;
 					const avgShort = (sides.top + sides.bottom) / 2;
+					if (avgShort < 1) {
+						if (approx) approx.delete();
+						c.delete();
+						continue;
+					}
 					const aspect = avgLong / avgShort;
-					if (aspect >= ASPECT_PRE_WARP_MIN && aspect <= ASPECT_PRE_WARP_MAX) {
+					if (aspect >= aspectTolerance.min && aspect <= aspectTolerance.max) {
 						bestArea = area;
 						best = ordered;
 					}
@@ -370,6 +437,7 @@ export async function detectCard(
 		return centeredFallback(W, H);
 	} finally {
 		try { src?.delete(); } catch { /* ignore */ }
+		try { clamped?.delete(); } catch { /* ignore */ }
 		try { gray?.delete(); } catch { /* ignore */ }
 		try { blurred?.delete(); } catch { /* ignore */ }
 		try { edges?.delete(); } catch { /* ignore */ }

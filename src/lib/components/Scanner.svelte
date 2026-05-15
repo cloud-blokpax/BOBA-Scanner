@@ -3,6 +3,7 @@
 	import { captureFrame } from '$lib/services/camera';
 	import { useScannerCamera } from './scanner/use-scanner-camera.svelte';
 	import { useScannerAnalysis } from './scanner/use-scanner-analysis.svelte';
+	import { NO_CARD_FRAME_THRESHOLD } from './scanner/use-quad-detection.svelte';
 	import { cropToCardRegion, cropFrame } from '$lib/services/card-cropper';
 	import { cropToCanonical, type ViewfinderRect } from '$lib/services/constrained-crop';
 	import { detectCard, type CardDetection } from '$lib/services/upload-card-detector';
@@ -176,8 +177,11 @@
 	// Three-state-plus-failure machine surfaced as bracket color + status pill text.
 	// 'reading' covers both alignment-detected-but-not-yet-captured AND the
 	// active capture/process window — the user just sees one continuous "we're
-	// working on it" signal until the scan resolves.
-	type CameraUIState = 'searching' | 'reading' | 'got_it' | 'try_again';
+	// working on it" signal until the scan resolves. 'cant_find_card' takes
+	// over once the quad detector has missed for NO_CARD_FRAME_THRESHOLD ticks
+	// in a row — suppresses the yellow overlay (drawn upstream by the quad
+	// composable) and surfaces a coaching message.
+	type CameraUIState = 'searching' | 'cant_find_card' | 'reading' | 'got_it' | 'try_again';
 	const cameraState = $derived.by((): CameraUIState => {
 		if (phase === 'result_success') return 'got_it';
 		if (phase === 'result_fail') return 'try_again';
@@ -186,6 +190,9 @@
 		}
 		if (analysis.alignmentState === 'ready' || analysis.alignmentState === 'partial') {
 			return 'reading';
+		}
+		if (analysis.quad.consecutiveMissFrames >= NO_CARD_FRAME_THRESHOLD) {
+			return 'cant_find_card';
 		}
 		return 'searching';
 	});
@@ -620,8 +627,11 @@
 			reducedMotion={prefersReducedMotion}
 		/>
 
-		<!-- Single 5:7 bracket frame. Doubles as `.scanner-guide-rect` for crop math. -->
-		<CameraBrackets state={cameraState} />
+		<!-- Single 5:7 bracket frame. Doubles as `.scanner-guide-rect` for crop math.
+		     Brackets only know the four legacy states; `cant_find_card` collapses to
+		     `searching` here so the bracket stays neutral while the pill above
+		     surfaces the coaching message. -->
+		<CameraBrackets state={cameraState === 'cant_find_card' ? 'searching' : cameraState} />
 
 		<!-- Camera primitives: blur warning, glare regions, foil guidance, camera error, flash. -->
 		<ScannerViewfinder
