@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CardCorrection from '$lib/components/CardCorrection.svelte';
 	import type { Card } from '$lib/types';
+	import { classifyScanFailure } from '$lib/utils/scan-fail-classify';
 
 	let {
 		capturedImageUrl,
@@ -17,21 +18,18 @@
 	} = $props();
 
 	let showManualSearch = $state(false);
+	const fail = $derived(classifyScanFailure(failReason));
 </script>
 
-<div class="fail-state">
+<div class="fail-state" data-fail-kind={fail.kind}>
 	{#if capturedImageUrl}
 		<div class="fail-image-wrapper">
 			<img src={capturedImageUrl} alt="Scanned card" class="card-image" />
-			<div class="fail-image-overlay">?</div>
+			<div class="fail-image-overlay" aria-hidden="true">{fail.icon}</div>
 		</div>
 	{/if}
-	<h2>Card Not Identified</h2>
-	{#if failReason}
-		<p class="fail-reason">{failReason}</p>
-	{:else}
-		<p class="fail-reason">Try adjusting the angle or lighting and scan again.</p>
-	{/if}
+	<h2>{fail.title}</h2>
+	<p class="fail-reason">{fail.helpText}</p>
 	{#if showManualSearch}
 		<div class="manual-search-container">
 			<CardCorrection
