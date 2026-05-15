@@ -368,7 +368,7 @@
 					</div>
 					<div class="ebay-actions">
 						{#if ebayConnected}
-							<a href="/settings/integrations/ebay" class="row-action-btn row-action-manage">Manage</a>
+							<a href="/sell" class="row-action-btn row-action-manage">Manage</a>
 							<button class="row-action-btn row-action-test" onclick={validateEbay} disabled={ebayValidating}>
 								{ebayValidating ? '...' : 'Test'}
 							</button>

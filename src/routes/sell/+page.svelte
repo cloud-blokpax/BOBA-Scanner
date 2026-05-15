@@ -29,7 +29,13 @@
 	let ebaySellerUsername = $state<string | null>(null);
 	let ebaySellerEmail = $state<string | null>(null);
 	let ebayConnectedSince = $state<string | null>(null);
-	let ebayTokenHealth = $state<{ access_token_valid: boolean; refresh_days_remaining: number } | null>(null);
+	let ebayTokenHealth = $state<{
+		access_token_valid: boolean;
+		access_token_expires_at?: string;
+		refresh_token_expires_at?: string;
+		refresh_days_remaining: number;
+		scopes?: string | null;
+	} | null>(null);
 
 	onMount(() => {
 		fetch('/api/ebay/status')
@@ -42,7 +48,10 @@
 				ebayConnectedSince = data.connected_since ?? null;
 				ebayTokenHealth = data.token_health ? {
 					access_token_valid: data.token_health.access_token_valid,
-					refresh_days_remaining: data.token_health.refresh_days_remaining
+					access_token_expires_at: data.token_health.access_token_expires_at,
+					refresh_token_expires_at: data.token_health.refresh_token_expires_at,
+					refresh_days_remaining: data.token_health.refresh_days_remaining,
+					scopes: data.token_health.scopes
 				} : null;
 			})
 			.catch((err) => {
