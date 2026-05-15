@@ -56,11 +56,13 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 		const envelopePolicy = allFulfillment.find(
 			(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('Envelope')
 		);
-		const firstClassPolicy = allFulfillment.find(
-			(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('First Class')
+		const groundAdvantagePolicy = allFulfillment.find(
+			(p: Record<string, string>) =>
+				p.name?.includes('BOBA') &&
+				(p.name?.includes('Ground Advantage') || p.name?.includes('First Class'))
 		);
 		let envelopeFulfillmentId = envelopePolicy?.fulfillmentPolicyId || null;
-		let fulfillmentId = firstClassPolicy?.fulfillmentPolicyId
+		let fulfillmentId = groundAdvantagePolicy?.fulfillmentPolicyId
 			|| findPolicy(allFulfillment, 'fulfillmentPolicyId');
 		let paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
 		let returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
@@ -72,7 +74,7 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 		}
 		if (!fulfillmentId) {
 			console.log('[ebay-policies] No standard fulfillment policy — creating');
-			fulfillmentId = await createFirstClassFulfillmentPolicy(headers);
+			fulfillmentId = await createGroundAdvantageFulfillmentPolicy(headers);
 			if (!fulfillmentId) fulfillmentId = envelopeFulfillmentId;
 		}
 		if (!paymentId) {
@@ -156,12 +158,12 @@ async function createEnvelopeFulfillmentPolicy(headers: Record<string, string>):
 	}]);
 }
 
-async function createFirstClassFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
-	return createFulfillmentPolicy(headers, 'BOBA - USPS First Class', [{
+async function createGroundAdvantageFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	return createFulfillmentPolicy(headers, 'BOBA - USPS Ground Advantage', [{
 		optionType: 'DOMESTIC',
 		costType: 'CALCULATED',
 		shippingServices: [{
-			shippingServiceCode: 'USPSFirstClass',
+			shippingServiceCode: 'USPSGroundAdvantage',
 			freeShipping: false,
 			sortOrder: 1
 		}]
