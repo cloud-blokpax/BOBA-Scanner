@@ -12,6 +12,7 @@
 	import { uiPref } from '$lib/stores/ui-prefs.svelte';
 	import { getUserProfile, ensureProfileLoaded } from '$lib/stores/feature-flags.svelte';
 	import ListingExternalPricingPanel from './ListingExternalPricingPanel.svelte';
+	import ShippingLabelNudge from './ShippingLabelNudge.svelte';
 
 	interface Props {
 		card: Card;
@@ -436,6 +437,10 @@
 				<input id="stl-price" type="number" class="stl-price-input" bind:value={price}
 					step="0.01" min="0.01" inputmode="decimal" />
 			</div>
+			<ShippingLabelNudge
+				currentPrice={parseFloat(price) || 0}
+				onAccept={(newPrice) => { price = newPrice.toFixed(2); }}
+			/>
 			{#if priceLoading}
 				<span class="stl-field-hint">Loading market data...</span>
 			{:else if priceData && (priceData.buy_now_mid || priceData.price_mid)}

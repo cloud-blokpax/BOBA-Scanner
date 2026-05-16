@@ -152,7 +152,7 @@ async function createFulfillmentPolicy(
 			body: JSON.stringify({
 				name,
 				marketplaceId: 'EBAY_US',
-				handlingTime: { value: 1, unit: 'DAY' },
+				handlingTime: { value: 2, unit: 'DAY' },
 				shippingOptions
 			})
 		});
@@ -181,29 +181,34 @@ async function createFulfillmentPolicy(
 }
 
 async function createEnvelopeFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
-	// eSE is FLAT_RATE only — CALCULATED is rejected silently and produces a "contact seller for
-	// shipping options" listing. shippingCarrierCode is required per eBay docs.
-	// https://developer.ebay.com/api-docs/sell/static/seller-accounts/using-the-ebay-standard-envelope-service.html
+	// eSE is FLAT_RATE only. The Seller Hub UI labels these policies as
+	// "Calculated:" in the dropdown, but the underlying costType is FLAT_RATE.
+	// freeShipping:true is required — the seller absorbs the $0.74 label cost
+	// out of sale proceeds (we recover this via the pricing nudge in the UI).
+	// Reference: https://developer.ebay.com/api-docs/sell/static/seller-accounts/using-the-ebay-standard-envelope-service.html
 	return createFulfillmentPolicy(headers, 'BOBA - eBay Standard Envelope', [{
 		optionType: 'DOMESTIC',
 		costType: 'FLAT_RATE',
 		shippingServices: [{
+			sortOrder: 1,
 			shippingCarrierCode: 'USPS',
 			shippingServiceCode: 'US_eBayStandardEnvelope',
-			freeShipping: false,
-			sortOrder: 1
+			freeShipping: true
 		}]
 	}]);
 }
 
 async function createGroundAdvantageFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
+	// USPSFirstClass is deprecated — eBay consolidated it into USPSGroundAdvantage.
+	// Used for $20+ listings where eSE isn't an option.
 	return createFulfillmentPolicy(headers, 'BOBA - USPS Ground Advantage', [{
 		optionType: 'DOMESTIC',
 		costType: 'CALCULATED',
 		shippingServices: [{
+			sortOrder: 1,
+			shippingCarrierCode: 'USPS',
 			shippingServiceCode: 'USPSGroundAdvantage',
-			freeShipping: false,
-			sortOrder: 1
+			freeShipping: false
 		}]
 	}]);
 }
