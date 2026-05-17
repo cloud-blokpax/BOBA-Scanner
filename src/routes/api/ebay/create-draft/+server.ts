@@ -389,14 +389,14 @@ export const POST: RequestHandler = async (event) => {
 		// Step 3: Try to fetch policies and create a full offer.
 		// Some eBay accounts (Managed Payments) can't access the Business Policy API,
 		// so if this fails we still return success with the inventory item created.
-		let policies = await getSellerPolicies(token);
+		let policies = await getSellerPolicies(token, user.id);
 
 		// If policies failed, try auto-enrolling in Business Policies and retry once
 		if (!policies) {
 			const enrolled = await optInToBusinessPolicies(token);
 			if (enrolled) {
 				console.log('[ebay-policies] Retrying policy fetch after Business Policy enrollment...');
-				policies = await getSellerPolicies(token);
+				policies = await getSellerPolicies(token, user.id);
 			}
 		}
 

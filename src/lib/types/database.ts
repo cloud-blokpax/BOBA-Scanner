@@ -806,6 +806,10 @@ export interface Database {
 					seller_account_ready: boolean | null;
 					seller_account_status_message: string | null;
 					profile_last_refreshed_at: string | null;
+					envelope_fulfillment_policy_id: string | null;
+					standard_fulfillment_policy_id: string | null;
+					payment_policy_id_override: string | null;
+					return_policy_id_override: string | null;
 				};
 				Insert: {
 					user_id: string;
@@ -823,6 +827,10 @@ export interface Database {
 					seller_account_ready?: boolean | null;
 					seller_account_status_message?: string | null;
 					profile_last_refreshed_at?: string | null;
+					envelope_fulfillment_policy_id?: string | null;
+					standard_fulfillment_policy_id?: string | null;
+					payment_policy_id_override?: string | null;
+					return_policy_id_override?: string | null;
 				};
 				Update: Partial<Database['public']['Tables']['ebay_seller_tokens']['Insert']>;
 				Relationships: [];

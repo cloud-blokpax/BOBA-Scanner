@@ -23,13 +23,43 @@ export interface SellerPolicies {
 	returnPolicyId: string;
 }
 
-export async function getSellerPolicies(token: string): Promise<SellerPolicies | null> {
+export async function getSellerPolicies(
+	token: string,
+	userId?: string
+): Promise<SellerPolicies | null> {
 	const headers = {
 		Authorization: `Bearer ${token}`,
 		'Content-Type': 'application/json',
 		'Accept-Language': 'en-US',
 		'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
 	};
+
+	// Per-user policy ID overrides bypass auto-detection entirely. Used when
+	// an account has a pre-configured working policy the auto-create logic
+	// can't reliably reproduce (e.g. eSE policies created via Seller Hub UI
+	// with FLAT_RATE + freeShipping that the API sometimes refuses to mint).
+	let overrides: {
+		envelope_fulfillment_policy_id: string | null;
+		standard_fulfillment_policy_id: string | null;
+		payment_policy_id_override: string | null;
+		return_policy_id_override: string | null;
+	} | null = null;
+
+	if (userId) {
+		const adminClient = getAdminClient();
+		if (adminClient) {
+			const { data, error: overrideErr } = await adminClient
+				.from('ebay_seller_tokens')
+				.select('envelope_fulfillment_policy_id, standard_fulfillment_policy_id, payment_policy_id_override, return_policy_id_override')
+				.eq('user_id', userId)
+				.maybeSingle();
+			if (overrideErr) {
+				console.error('[ebay-policies] Failed to fetch policy overrides:', overrideErr.message);
+			} else {
+				overrides = data;
+			}
+		}
+	}
 
 	try {
 		const safeJson = async (r: Response, label: string) => {
@@ -53,19 +83,36 @@ export async function getSellerPolicies(token: string): Promise<SellerPolicies |
 
 		// Look for BOBA-specific policies first, then fall back to any existing policy
 		const allFulfillment = fulfillment.fulfillmentPolicies || [];
-		const envelopePolicy = allFulfillment.find(
-			(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('Envelope')
-		);
-		const groundAdvantagePolicy = allFulfillment.find(
-			(p: Record<string, string>) =>
-				p.name?.includes('BOBA') &&
-				(p.name?.includes('Ground Advantage') || p.name?.includes('First Class'))
-		);
-		let envelopeFulfillmentId = envelopePolicy?.fulfillmentPolicyId || null;
-		let fulfillmentId = groundAdvantagePolicy?.fulfillmentPolicyId
-			|| findPolicy(allFulfillment, 'fulfillmentPolicyId');
-		let paymentId = findPolicy(payment.paymentPolicies, 'paymentPolicyId');
-		let returnId = findPolicy(returns.returnPolicies, 'returnPolicyId');
+
+		// Envelope policy: override > name match > auto-create
+		let envelopeFulfillmentId: string | null = overrides?.envelope_fulfillment_policy_id ?? null;
+		if (envelopeFulfillmentId) {
+			console.log('[ebay-policies] Using envelope policy override:', envelopeFulfillmentId);
+		} else {
+			const envelopePolicy = allFulfillment.find(
+				(p: Record<string, string>) => p.name?.includes('BOBA') && p.name?.includes('Envelope')
+			);
+			envelopeFulfillmentId = envelopePolicy?.fulfillmentPolicyId || null;
+		}
+
+		// Standard fulfillment policy: override > name match > first available > auto-create
+		let fulfillmentId: string | null = overrides?.standard_fulfillment_policy_id ?? null;
+		if (fulfillmentId) {
+			console.log('[ebay-policies] Using standard fulfillment policy override:', fulfillmentId);
+		} else {
+			const groundAdvantagePolicy = allFulfillment.find(
+				(p: Record<string, string>) =>
+					p.name?.includes('BOBA') &&
+					(p.name?.includes('Ground Advantage') || p.name?.includes('First Class'))
+			);
+			fulfillmentId = groundAdvantagePolicy?.fulfillmentPolicyId
+				|| findPolicy(allFulfillment, 'fulfillmentPolicyId');
+		}
+
+		let paymentId = overrides?.payment_policy_id_override
+			|| findPolicy(payment.paymentPolicies, 'paymentPolicyId');
+		let returnId = overrides?.return_policy_id_override
+			|| findPolicy(returns.returnPolicies, 'returnPolicyId');
 
 		// Auto-create missing policies so sellers don't have to configure eBay manually
 		if (!envelopeFulfillmentId) {
