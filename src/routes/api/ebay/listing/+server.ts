@@ -226,14 +226,14 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 		const hasLocation = await ensureInventoryLocation(token);
 
 		// Step 3: Fetch seller's business policies — with defensive opt-in retry
-		let policies = await getSellerPolicies(token);
+		let policies = await getSellerPolicies(token, user.id);
 
 		if (!policies) {
 			// Try auto-enrolling in Business Policies and retry once
 			const enrolled = await optInToBusinessPolicies(token);
 			if (enrolled) {
 				console.log('[ebay/listing] Retrying policy fetch after Business Policy enrollment...');
-				policies = await getSellerPolicies(token);
+				policies = await getSellerPolicies(token, user.id);
 			}
 		}
 
