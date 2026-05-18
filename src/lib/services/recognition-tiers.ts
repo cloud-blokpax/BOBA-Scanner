@@ -1005,7 +1005,10 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				hit,
 				notes,
 				fusionDiag: fusionDiag ?? null,
-				lensDiag: lensDiag ?? null
+				lensDiag: lensDiag ?? null,
+				visualFeatures: canonicalRef?.visualFeatures ?? null,
+				catalogDiag: canonicalRef?.catalogDiag ?? null,
+				templateDiag: canonicalRef?.templateDiag ?? null
 			});
 			void scanIdPromise
 				.then((scanId) => {

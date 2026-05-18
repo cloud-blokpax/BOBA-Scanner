@@ -128,10 +128,13 @@ export class LiveOCRCoordinator {
 		this.lastCycleAt = now;
 		const dispatchedSessionId = this.sessionId;
 		try {
-			const regions = this.game === 'boba' ? REGIONS.boba : REGIONS.wonders;
+			const regions =
+				this.game === 'boba' ? REGIONS.boba.default : REGIONS.wonders.default;
 			const cardNumberReg = regionToPixels(regions.card_number, bitmap.width, bitmap.height);
 			const nameReg = regionToPixels(
-				this.game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+				this.game === 'boba'
+					? REGIONS.boba.default.hero_name
+					: REGIONS.wonders.default.card_name,
 				bitmap.width,
 				bitmap.height
 			);

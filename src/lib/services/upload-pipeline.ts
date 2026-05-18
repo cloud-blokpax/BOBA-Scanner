@@ -92,10 +92,12 @@ export async function runUploadPipeline(
 	// consensus is reached (subsequent frames can't improve a passed threshold).
 	for await (const { frame } of streamFrames(sourceBitmap)) {
 		try {
-			const regions = game === 'boba' ? REGIONS.boba : REGIONS.wonders;
+			const regions = game === 'boba' ? REGIONS.boba.default : REGIONS.wonders.default;
 			const cardNumberReg = regionToPixels(regions.card_number, frame.width, frame.height);
 			const nameReg = regionToPixels(
-				game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+				game === 'boba'
+					? REGIONS.boba.default.hero_name
+					: REGIONS.wonders.default.card_name,
 				frame.width,
 				frame.height
 			);
