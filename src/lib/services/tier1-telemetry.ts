@@ -17,6 +17,7 @@ import { PIPELINE_VERSION } from './pipeline-version';
 import type { CanonicalResult } from './tier1-canonical';
 import type { LiveOCRSnapshot } from './live-ocr-coordinator';
 import type {
+	ContourTelemetry,
 	Tier1Candidate,
 	Tier1CatalogLookup,
 	Tier1Detection,
@@ -182,6 +183,8 @@ function buildDetection(ctx: Record<string, unknown> | null): Tier1Detection {
 	const ringValidation =
 		(ctx?.ring_validation as Tier1Detection['ring_validation'] | undefined) ?? null;
 	const ringRejected = layer ? layer.endsWith('_rejected_ring') : false;
+	const contourDiagnostics =
+		(ctx?.contour_diagnostics as ContourTelemetry | undefined) ?? null;
 	return {
 		method,
 		layer,
@@ -192,7 +195,8 @@ function buildDetection(ctx: Record<string, unknown> | null): Tier1Detection {
 		corners_clockwise_from_topleft: corners,
 		rejected_layers_tried: rejected,
 		ring_validation: ringValidation,
-		ring_rejected: ringRejected
+		ring_rejected: ringRejected,
+		contour_diagnostics: contourDiagnostics
 	};
 }
 

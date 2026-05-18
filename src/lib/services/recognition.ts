@@ -701,7 +701,9 @@ export async function recognizeCard(
 			detection_layer: detectedCardDetection?.detection_layer ?? null,
 			rectification_applied: !!detectedCardDetection?.homography,
 			corners: detectedCardDetection?.corners ?? null,
-			ring_validation: detectedCardDetection?.extras?.ring_validation ?? null
+			ring_validation: detectedCardDetection?.extras?.ring_validation ?? null,
+			contour_diagnostics:
+				detectedCardDetection?.extras?.contour_diagnostics ?? null
 		}
 		: null;
 

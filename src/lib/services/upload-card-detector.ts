@@ -29,11 +29,27 @@
  */
 
 import { preloadOpencv } from '$lib/shims/opencv-js';
+import type {
+	ContourDiagnostic,
+	ContourTelemetry,
+	DetectionPassDiagnostic
+} from './tier1-telemetry.types';
+
+export type { ContourDiagnostic, ContourTelemetry, DetectionPassDiagnostic };
 
 export interface Point {
 	x: number;
 	y: number;
 }
+
+/** Per-pass cap on contour_diagnostics list (sorted by area desc).
+ *  Sized so a degenerate frame with 200 noise contours can't blow the
+ *  scan_tier_results.extras 32KB cap. */
+const CONTOUR_DIAG_CAP = 10;
+/** Rectangularity floor used for the informational `passed_rectangularity`
+ *  flag on each contour diagnostic. Not currently gated in code — see
+ *  CLAUDE.md "Recognition Pipeline" → Detection. */
+const RECTANGULARITY_FLOOR = 0.85;
 
 export interface CardDetection {
 	/** Original-frame quadrilateral, ordered TL/TR/BR/BL, in source-pixel coords.
@@ -238,10 +254,28 @@ export async function detectCard(
 		let bestCorners: [Point, Point, Point, Point] | null = null;
 		let detectionLayer: string | null = null;
 
+		// Per-pass diagnostics accumulator. Each call to findBestCorners
+		// populates the `currentPassDiag` entry passed in by the caller; the
+		// outer detectCard loop then appends it to the per-detection
+		// `passes` list. Sorted+capped at CONTOUR_DIAG_CAP at append-time.
+		const passes: DetectionPassDiagnostic[] = [];
+		const aggregateRejections = {
+			below_min_area: 0,
+			touches_border_inset: 0,
+			no_quad_at_any_eps: 0,
+			aspect_out_of_range: 0
+		};
+
 		// Helper: from a populated `edges` Mat, find the best 4-corner card
 		// contour. Mutates `contours` and `hierarchy` (zero'd at start of
 		// each call to avoid stale data from previous attempts).
-		const findBestCorners = (): [Point, Point, Point, Point] | null => {
+		//
+		// Also writes per-contour forensics into `passDiag.contour_diagnostics`
+		// (capped + sorted by the caller) and increments per-stage rejection
+		// counters on `passDiag` so the analyst can see which gate dropped what.
+		const findBestCorners = (
+			passDiag: DetectionPassDiagnostic
+		): [Point, Point, Point, Point] | null => {
 			contours.delete();
 			contours = new cv.MatVector();
 			hierarchy.delete();
@@ -257,13 +291,17 @@ export async function detectCard(
 			let best: [Point, Point, Point, Point] | null = null;
 			let bestArea = 0;
 			const n = contours.size();
+			passDiag.contours_total = n;
+
 			for (let i = 0; i < n; i++) {
 				const c = contours.get(i);
 				const area = cv.contourArea(c);
 				if (area < minArea) {
+					aggregateRejections.below_min_area++;
 					c.delete();
 					continue;
 				}
+				passDiag.contours_passed_area++;
 
 				// Layer 4 — border-inset filter. Reject contours whose bounding
 				// rect touches the frame edge — those are usually the FRAME, not
@@ -275,33 +313,100 @@ export async function detectCard(
 					br.x + br.width > dw - borderInsetPx ||
 					br.y + br.height > dh - borderInsetPx
 				) {
+					aggregateRejections.touches_border_inset++;
 					c.delete();
 					continue;
 				}
+				passDiag.contours_passed_border_inset++;
 
 				const peri = cv.arcLength(c, true);
+				const epsilonFactors = [0.02, 0.03, 0.04, 0.05];
+				const vertexCountsPerEps: Record<string, number> = {};
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				let approx: any = null;
+				// Raw corners captured the first time approxPolyDP yields 4
+				// vertices. Saved here (not held as a Mat across iterations)
+				// because the loop keeps running for diagnostic vertex-count
+				// data even after the first 4-vertex hit, and we don't want
+				// to fight Mat lifetime in two dimensions at once.
+				let firstFourCorners: Point[] | null = null;
 				let found4 = false;
-				for (const epsilonFactor of [0.02, 0.03, 0.04, 0.05]) {
+				for (const epsilonFactor of epsilonFactors) {
 					if (approx) approx.delete();
 					approx = new cv.Mat();
 					cv.approxPolyDP(c, approx, epsilonFactor * peri, true);
-					if (approx.rows === 4) {
+					vertexCountsPerEps[epsilonFactor.toFixed(2)] = approx.rows;
+					if (approx.rows === 4 && !found4) {
 						found4 = true;
-						break;
+						const raw: Point[] = [];
+						for (let j = 0; j < 4; j++) {
+							raw.push({
+								x: approx.data32S[j * 2] / scale,
+								y: approx.data32S[j * 2 + 1] / scale
+							});
+						}
+						firstFourCorners = raw;
+						// Keep iterating so the diagnostic carries the full
+						// vertex-count distribution (this is the field that
+						// caught the 8-vertex bug post-hoc).
 					}
 				}
 
-				if (found4 && approx && area > bestArea) {
-					const rawCorners: Point[] = [];
-					for (let j = 0; j < 4; j++) {
-						rawCorners.push({
-							x: approx.data32S[j * 2] / scale,
-							y: approx.data32S[j * 2 + 1] / scale
-						});
-					}
-					const ordered = orderCorners(rawCorners);
+				// Per-contour forensic snapshot. Computed for every area- and
+				// border-inset-passing contour, regardless of whether it wins.
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				let hull: any = null;
+				let hullArea = 0;
+				let minAreaRectAspect = 0;
+				let minAreaRectAngle = 0;
+				let minAreaRectSize: [number, number] = [0, 0];
+				try {
+					hull = new cv.Mat();
+					cv.convexHull(c, hull, false, true);
+					hullArea = cv.contourArea(hull);
+					const rr = cv.minAreaRect(c);
+					const rrW = rr.size.width || 0;
+					const rrH = rr.size.height || 0;
+					minAreaRectSize = [Math.round(rrW), Math.round(rrH)];
+					minAreaRectAngle = rr.angle ?? 0;
+					const long = Math.max(rrW, rrH);
+					const short = Math.min(rrW, rrH);
+					minAreaRectAspect = short > 0 ? long / short : 0;
+				} catch {
+					// Best-effort forensics. Failure here must not break the
+					// detector — the diagnostic just lands with zeros.
+				} finally {
+					try { hull?.delete(); } catch { /* ignore */ }
+				}
+
+				const rrFootprint = minAreaRectSize[0] * minAreaRectSize[1];
+				const rectangularity = rrFootprint > 0 ? area / rrFootprint : 0;
+				const aspectPassedFlag =
+					minAreaRectAspect >= aspectTolerance.min &&
+					minAreaRectAspect <= aspectTolerance.max;
+
+				const contourDiag: ContourDiagnostic = {
+					contour_area_downscaled: Math.round(area),
+					bounding_rect: { x: br.x, y: br.y, w: br.width, h: br.height },
+					approx_vertex_counts_per_eps: vertexCountsPerEps,
+					min_area_rect_aspect: round3(minAreaRectAspect),
+					min_area_rect_angle: round3(minAreaRectAngle),
+					min_area_rect_size: minAreaRectSize,
+					convex_hull_area: Math.round(hullArea),
+					rectangularity: round3(rectangularity),
+					perimeter: round3(peri),
+					passed_aspect: aspectPassedFlag,
+					passed_rectangularity: rectangularity >= RECTANGULARITY_FLOOR,
+					final_picked: false
+				};
+				passDiag.contour_diagnostics.push(contourDiag);
+
+				if (!found4) {
+					aggregateRejections.no_quad_at_any_eps++;
+				}
+
+				if (found4 && firstFourCorners && area > bestArea) {
+					const ordered = orderCorners(firstFourCorners);
 					const sides = computeSideLengths(ordered);
 					const avgLong = (sides.left + sides.right) / 2;
 					const avgShort = (sides.top + sides.bottom) / 2;
@@ -314,6 +419,8 @@ export async function detectCard(
 					if (aspect >= aspectTolerance.min && aspect <= aspectTolerance.max) {
 						bestArea = area;
 						best = ordered;
+					} else {
+						aggregateRejections.aspect_out_of_range++;
 					}
 				}
 
@@ -321,6 +428,19 @@ export async function detectCard(
 				c.delete();
 			}
 			return best;
+		};
+
+		// Compute edge density (fraction of edge pixels post-morph) for the
+		// current `edges` Mat. Used per-pass to surface "low-edge frame"
+		// detection failures separately from "lots-of-edges but no card".
+		const measureEdgesPct = (): number => {
+			try {
+				const nz = cv.countNonZero(edges);
+				const tot = edges.rows * edges.cols;
+				return tot > 0 ? round3(nz / tot) : 0;
+			} catch {
+				return 0;
+			}
 		};
 
 		// Layer 1 — Multi-scale Canny. Run all three threshold pairs;
@@ -357,7 +477,17 @@ export async function detectCard(
 				cv.dilate(edges, edges, kernel);
 				cv.erode(edges, edges, kernel);
 
-				const corners = findBestCorners();
+				const layerName = `canny_${lo}_${hi}`;
+				const passDiag: DetectionPassDiagnostic = {
+					layer: layerName,
+					edges_after_morph_pct: measureEdgesPct(),
+					contours_total: 0,
+					contours_passed_area: 0,
+					contours_passed_border_inset: 0,
+					contour_diagnostics: []
+				};
+				const corners = findBestCorners(passDiag);
+				passes.push(passDiag);
 				if (corners) {
 					// Shoelace formula on de-scaled corner positions so areas
 					// are comparable across passes.
@@ -370,7 +500,7 @@ export async function detectCard(
 					candidatesAcrossPasses.push({
 						corners,
 						area: a,
-						layer: `canny_${lo}_${hi}`
+						layer: layerName
 					});
 				}
 			}
@@ -419,7 +549,16 @@ export async function detectCard(
 				// Replace edges with adaptive output and try contour finding again.
 				edges.delete();
 				edges = adaptive.clone();
-				bestCorners = findBestCorners();
+				const adaptivePassDiag: DetectionPassDiagnostic = {
+					layer: 'adaptive',
+					edges_after_morph_pct: measureEdgesPct(),
+					contours_total: 0,
+					contours_passed_area: 0,
+					contours_passed_border_inset: 0,
+					contour_diagnostics: []
+				};
+				bestCorners = findBestCorners(adaptivePassDiag);
+				passes.push(adaptivePassDiag);
 				if (bestCorners) detectionLayer = 'adaptive';
 			} finally {
 				if (adaptive) adaptive.delete();
@@ -427,7 +566,27 @@ export async function detectCard(
 			}
 		}
 
-		if (!bestCorners) return centeredFallback(W, H);
+		// Trim each pass's contour_diagnostics to the cap (sorted by area desc)
+		// and mark the globally-picked contour as final_picked = true. This
+		// runs even when bestCorners is null, so the analyst still gets the
+		// per-pass forensics on detector misses.
+		const contourTelemetry = finalizeContourTelemetry(
+			passes,
+			detectionLayer,
+			bestCorners,
+			dw,
+			dh,
+			scale,
+			aggregateRejections
+		);
+
+		if (!bestCorners) {
+			const fallback = centeredFallback(W, H);
+			return {
+				...fallback,
+				extras: { contour_diagnostics: contourTelemetry }
+			};
+		}
 
 		// Ring-luminance validation: reject quads that are most likely the
 		// inner artwork frame on a holo card. The brightness/saturation jump
@@ -443,7 +602,8 @@ export async function detectCard(
 					: 'rejected_ring',
 				extras: {
 					ring_validation: ringValidation,
-					rejected_corners: bestCorners
+					rejected_corners: bestCorners,
+					contour_diagnostics: contourTelemetry
 				}
 			};
 		}
@@ -490,7 +650,10 @@ export async function detectCard(
 			aspectRatio,
 			method: 'corner_detected',
 			detection_layer: detectionLayer,
-			extras: ringValidation ? { ring_validation: ringValidation } : undefined
+			extras: {
+				...(ringValidation ? { ring_validation: ringValidation } : {}),
+				contour_diagnostics: contourTelemetry
+			}
 		};
 	} catch (err) {
 		console.debug('[card-detector] threw, using fallback:', err);
@@ -683,6 +846,115 @@ function validateQuadByRing(
 		try { outerMask?.delete(); } catch { /* ignore */ }
 		try { ringMask?.delete(); } catch { /* ignore */ }
 	}
+}
+
+function round3(n: number): number {
+	if (!Number.isFinite(n)) return 0;
+	return Math.round(n * 1000) / 1000;
+}
+
+/**
+ * Finalize per-pass contour diagnostics into a single ContourTelemetry blob.
+ *   - Sort each pass's contours by area desc, trim to CONTOUR_DIAG_CAP.
+ *   - Mark the contour matching the global winner as final_picked = true.
+ *     Match is by per-pass bounding-rect equality (the only stable handle we
+ *     have once Mats are deleted); for canny passes the winning corners come
+ *     from the same pass and the bounding rect derived from the contour is
+ *     identical to the one stored in the diagnostic. The adaptive pass
+ *     follows the same logic.
+ *   - Compute the picked-summary fields (layer, aspect, rectangularity,
+ *     area as fraction of bitmap).
+ */
+function finalizeContourTelemetry(
+	passes: DetectionPassDiagnostic[],
+	pickedLayer: string | null,
+	bestCorners: [Point, Point, Point, Point] | null,
+	dw: number,
+	dh: number,
+	scale: number,
+	rejections: ContourTelemetry['rejection_reasons']
+): ContourTelemetry {
+	// Trim each pass's contour list, sorted by area desc, to the cap.
+	for (const p of passes) {
+		p.contour_diagnostics.sort(
+			(a, b) => b.contour_area_downscaled - a.contour_area_downscaled
+		);
+		if (p.contour_diagnostics.length > CONTOUR_DIAG_CAP) {
+			p.contour_diagnostics.length = CONTOUR_DIAG_CAP;
+		}
+	}
+
+	// Locate the picked contour. The picked layer's diagnostics list is the
+	// only place to look — bestCorners came from that pass. Match by
+	// approximate bounding-rect overlap to the winner's bbox.
+	let pickedAspect: number | null = null;
+	let pickedRect: number | null = null;
+	let pickedAreaPctOfBitmap: number | null = null;
+	if (bestCorners && pickedLayer) {
+		// bestCorners are in source coords (already de-scaled). Translate back
+		// to downsampled coords for comparison against the per-pass bbox,
+		// which was recorded in downsampled space.
+		const xsDown = bestCorners.map((c) => c.x * scale);
+		const ysDown = bestCorners.map((c) => c.y * scale);
+		const wx = Math.min(...xsDown);
+		const wy = Math.min(...ysDown);
+		const ww = Math.max(...xsDown) - wx;
+		const wh = Math.max(...ysDown) - wy;
+		const winnerPass = passes.find((p) => p.layer === pickedLayer);
+		if (winnerPass) {
+			// Pick the contour whose downsampled bounding rect best overlaps
+			// the winner. The picked contour came directly from the pass, so
+			// IoU should be ~1.0 for the right one and <0.5 for everything
+			// else. Linear scan over <= CONTOUR_DIAG_CAP entries is cheap.
+			let bestIoU = 0;
+			let bestEntry: ContourDiagnostic | null = null;
+			for (const cd of winnerPass.contour_diagnostics) {
+				const iou = bboxIoU(cd.bounding_rect, {
+					x: wx,
+					y: wy,
+					w: ww,
+					h: wh
+				});
+				if (iou > bestIoU) {
+					bestIoU = iou;
+					bestEntry = cd;
+				}
+			}
+			if (bestEntry && bestIoU > 0.5) {
+				bestEntry.final_picked = true;
+				pickedAspect = bestEntry.min_area_rect_aspect;
+				pickedRect = bestEntry.rectangularity;
+				pickedAreaPctOfBitmap =
+					dw * dh > 0
+						? round3(bestEntry.contour_area_downscaled / (dw * dh))
+						: null;
+			}
+		}
+	}
+
+	return {
+		passes,
+		picked_layer: pickedLayer,
+		picked_aspect: pickedAspect,
+		picked_rectangularity: pickedRect,
+		picked_box_area_pct_of_bitmap: pickedAreaPctOfBitmap,
+		rejection_reasons: rejections
+	};
+}
+
+function bboxIoU(
+	a: { x: number; y: number; w: number; h: number },
+	b: { x: number; y: number; w: number; h: number }
+): number {
+	const ix1 = Math.max(a.x, b.x);
+	const iy1 = Math.max(a.y, b.y);
+	const ix2 = Math.min(a.x + a.w, b.x + b.w);
+	const iy2 = Math.min(a.y + a.h, b.y + b.h);
+	const iw = Math.max(0, ix2 - ix1);
+	const ih = Math.max(0, iy2 - iy1);
+	const inter = iw * ih;
+	const union = a.w * a.h + b.w * b.h - inter;
+	return union > 0 ? inter / union : 0;
 }
 
 function centeredFallback(W: number, H: number): CardDetection {

@@ -68,6 +68,71 @@ export interface RingValidation {
 	satDelta: number;
 }
 
+/**
+ * Per-contour forensic snapshot. Captured for every contour that passed the
+ * minimum-area threshold inside a single detection pass (Canny layer or
+ * adaptive). Sized so the doc's "approxPolyDP would never converge to 4"
+ * class of bug is observable without re-running the detector.
+ *
+ * `approx_vertex_counts_per_eps` is the field that would have caught the
+ * 8-vertex bug on the first scan: a Battlefoil holo whose vertex counts
+ * stayed >= 6 at every tried epsilon is now visible in telemetry.
+ */
+export interface ContourDiagnostic {
+	contour_area_downscaled: number;
+	bounding_rect: { x: number; y: number; w: number; h: number };
+	/** Keyed by the epsilon factor (as string) used in approxPolyDP. */
+	approx_vertex_counts_per_eps: Record<string, number>;
+	min_area_rect_aspect: number;
+	min_area_rect_angle: number;
+	min_area_rect_size: [number, number];
+	convex_hull_area: number;
+	rectangularity: number;
+	perimeter: number;
+	passed_aspect: boolean;
+	/** Informational: no rectangularity gate is active in code today.
+	 *  True when rectangularity >= 0.85. */
+	passed_rectangularity: boolean;
+	/** True for the single contour that was promoted to the final detection. */
+	final_picked: boolean;
+}
+
+/**
+ * Per-detection-pass summary. One entry per Canny threshold pair, plus one
+ * for the adaptive fallback when it runs. `edges_after_morph_pct` is the
+ * fraction of pixels in the (downsampled) frame that survived the
+ * accumulated Canny + morph close — useful for spotting low-edge frames
+ * where the detector had nothing to work with.
+ */
+export interface DetectionPassDiagnostic {
+	layer: string;
+	edges_after_morph_pct: number;
+	contours_total: number;
+	contours_passed_area: number;
+	contours_passed_border_inset: number;
+	contour_diagnostics: ContourDiagnostic[];
+}
+
+/**
+ * Top-level detection forensics. Attached to CardDetection.extras and
+ * carried through recognition.ts → tier1-telemetry → scan_tier_results.
+ * Cap: per-pass contour list is sorted by area desc and trimmed to 10
+ * entries at the detector site so a noisy frame can't blow the row.
+ */
+export interface ContourTelemetry {
+	passes: DetectionPassDiagnostic[];
+	picked_layer: string | null;
+	picked_aspect: number | null;
+	picked_rectangularity: number | null;
+	picked_box_area_pct_of_bitmap: number | null;
+	rejection_reasons: {
+		below_min_area: number;
+		touches_border_inset: number;
+		no_quad_at_any_eps: number;
+		aspect_out_of_range: number;
+	};
+}
+
 export interface Tier1Detection {
 	method: string;
 	layer: string | null;
@@ -79,6 +144,11 @@ export interface Tier1Detection {
 	rejected_layers_tried: string[];
 	ring_validation: RingValidation | null;
 	ring_rejected: boolean;
+	/** Per-pass contour forensics from upload-card-detector. NULL when the
+	 *  detector ran centered_fallback before any contour pass, or when the
+	 *  caller's capture mode didn't run detectCard (e.g. live shutter
+	 *  path where the bitmap arrives pre-cropped). */
+	contour_diagnostics: ContourTelemetry | null;
 }
 
 export interface Tier1Consensus {
