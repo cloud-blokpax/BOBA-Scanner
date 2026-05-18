@@ -17,13 +17,18 @@ import { getAllCards } from './card-db';
 import { getImageWorker } from './recognition-workers';
 import { crossValidateCardResult } from './recognition-validation';
 import { validateCatalogTriangulation } from './catalog-validation';
-import { recordTierResult as writerRecordTierResult } from './scan-writer';
+import {
+	recordTierResult as writerRecordTierResult,
+	writeTier1Result
+} from './scan-writer';
 import { runCanonicalTier1, type CanonicalResult } from './tier1-canonical';
 import { tryLiveShortCircuit } from './tier1-short-circuit';
 import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 import { runUploadPipeline } from './upload-pipeline';
 import { toParallelName } from '$lib/data/wonders-parallels';
 import { checkpoint } from './scan-checkpoint';
+import { buildTier1TelemetryPayload } from './tier1-telemetry';
+import type { Tier1PathTaken } from './tier1-telemetry.types';
 import type { LiveOCRSnapshot } from './live-ocr-coordinator';
 import type { Card, ScanResult } from '$lib/types';
 
@@ -613,6 +618,19 @@ export interface Tier1Inputs {
 	 * recognition-tiers stays free of feature-flag imports.
 	 */
 	ttaEnabled: boolean;
+	/**
+	 * Capture source label persisted on the Tier 1 forensic row
+	 * (extras.capture_source). 'camera_live' / 'camera_upload' / 'binder' etc.
+	 * Sourced from the orchestrator so this module stays free of imageSource
+	 * classification logic.
+	 */
+	captureSource: string;
+	/**
+	 * Resolves to the scan row id (or null when unauthenticated / openScanRow
+	 * failed). Tier 1 telemetry persistence awaits this in a finally block —
+	 * a null resolution silently skips the write.
+	 */
+	scanIdPromise: Promise<string | null>;
 }
 
 /**
@@ -635,249 +653,363 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 		liveConsensusReached,
 		cardDetectContext,
 		confidenceFloor,
-		ttaEnabled
+		ttaEnabled,
+		captureSource,
+		scanIdPromise
 	} = inputs;
 
 	let canonicalTelemetry: Tier1Telemetry['canonical'] = null;
 	let ttaTelemetry: Tier1Telemetry['tta'] = null;
 	let canonicalAttempts: Tier1Telemetry['canonicalAttempts'] = [];
 
-	// Phase 2 Doc 2.0 — pre-shutter consensus short-circuit. When live OCR
-	// has reached STRONG consensus and Doc 1.0 validation passes against
-	// the live values, skip canonical entirely. tryLiveShortCircuit returns
-	// null on any guard failure → fall through to canonical unchanged.
-	const shortCircuitEnabled = featureEnabled('phase2_short_circuit_v1')();
-	if (shortCircuitEnabled) {
-		try {
-			const sc = await tryLiveShortCircuit({
-				liveConsensusSnapshot,
-				gameHint,
-				isAutoDetect,
-				cardDetectContext,
-				traceId,
-				startTime
-			});
-			if (sc) return sc;
-		} catch (err) {
-			// Defensive — short-circuit must never throw out of runTier1.
-			// Log and fall through to canonical.
-			console.debug('[tier1] short-circuit attempt threw, falling through', err);
-		}
-	}
-
-	checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
-	try {
-		// Auto-detect runs Tier 1 against both games sequentially. Explicit
-		// gameHint runs only that game. Per-game attempts are logged in
-		// decision_context.canonical_attempts so we can measure the auto-detect
-		// win distribution post-deploy.
-		const gamesToTry: Array<'boba' | 'wonders'> = isAutoDetect
-			? ['boba', 'wonders']
-			: gameHint === 'wonders'
-				? ['wonders']
-				: ['boba'];
-
-		let canonical!: CanonicalResult;
-		let game: 'boba' | 'wonders' = gamesToTry[0];
-
-		for (const candidateGame of gamesToTry) {
-			const attempt = await runCanonicalTier1(workingBitmap, candidateGame);
-			canonical = attempt;
-			game = candidateGame;
-			canonicalAttempts.push({
-				game: candidateGame,
-				hit: !!attempt.card,
-				confidence: attempt.confidence,
-				ocr_strategy: attempt.ocrStrategy
-			});
-			if (attempt.card) break;
-		}
-
-		canonicalTelemetry = {
-			perTask: canonical.perTask,
-			ocrStrategy: canonical.ocrStrategy,
-			validation: canonical.validation
-		};
-
-		const liveSnap = liveConsensusSnapshot;
-		const live = liveSnap?.consensus ?? null;
-		// Live consensus emits classifier short codes; canonical.parallel is
-		// already the human-readable DB name. Map before comparing.
-		const liveParallelName = live?.parallel?.value
-			? toParallelName(live.parallel.value)
-			: null;
-		const liveAgreed = !!(
-			live?.reachedThreshold &&
-			live.cardNumber?.value === canonical.cardNumber &&
-			live.name?.value === canonical.name &&
-			(game === 'boba' || liveParallelName === canonical.parallel)
-		);
-
-		checkpoint(traceId, 'tier1_canonical:done', performance.now() - startTime, {
-			hit: !!canonical.card,
-			confidence: canonical.confidence,
-			live_reached: liveConsensusReached,
-			live_agreed: liveAgreed
-		});
-
-		// Phase 1 Doc 1.0 — Catalog cross-validation gate enforcement.
-		// When the gate ran AND failed, force fallback regardless of OCR
-		// confidence. validation==null means flag was off → preserve legacy
-		// behavior (accept on confidence alone).
-		const validationGated =
-			canonical.validation !== null && !canonical.validation.passed;
-		if (canonical.card && canonical.confidence >= confidenceFloor && !validationGated) {
-			const divergent: string[] = [];
-			if (live) {
-				if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
-				if (live.name?.value !== canonical.name) divergent.push('name');
-				if (game === 'wonders' && liveParallelName !== canonical.parallel) divergent.push('parallel');
-			}
-			const decisionCtx: Record<string, unknown> = {
-				live_session: liveSnap,
-				canonical_result: canonical.perTask,
-				canonical_ocr_strategy: canonical.ocrStrategy,
-				canonical_attempts: canonicalAttempts,
-				winning_game: game,
-				live_vs_canonical: {
-					live_ran: !!live,
-					agreed: liveAgreed,
-					divergent_fields: live ? divergent : null
-				},
-				catalog_validation: canonical.validation, // Phase 1 Doc 1.0
-				...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
-			};
-			const tier1Result: ScanResult = {
-				card_id: canonical.card.id,
-				card: {
-					id: canonical.card.id,
-					game_id: canonical.card.game_id,
-					card_number: canonical.card.card_number,
-					hero_name: canonical.card.hero_name ?? undefined,
-					name: canonical.card.name ?? canonical.card.hero_name ?? '',
-					set_code: canonical.card.set_code ?? '',
-					parallel: canonical.card.parallel ?? undefined
-				} as unknown as Card,
-				scan_method: 'local_ocr',
-				confidence: canonical.confidence,
-				processing_ms: Math.round(performance.now() - startTime),
-				parallel: canonical.parallel,
-				game_id: canonical.card.game_id,
-				liveConsensusReached,
-				liveVsCanonicalAgreed: liveAgreed,
-				fallbackTierUsed: null,
-				winningTier: 'tier1_local_ocr',
-				decisionContext: decisionCtx,
-				// Phase 1 Doc 1.0 — surface validation outcome for the dedicated
-				// scans.catalog_validation_* columns. NULL when flag is off.
-				catalogValidationPassed: canonical.validation?.passed ?? null,
-				catalogValidationFailureReason: canonical.validation?.passed === false
-					? (canonical.validation.reason ?? null)
-					: null,
-				// Phase 2 Doc 2.0 — flag canonical-path scans as the non-short-
-				// circuit cohort. When the flag is off this stays false; when on
-				// and short-circuit declined, this is the canonical-path arm.
-				tier1ShortCircuited: false,
-				// Phase 2 Doc 2.4 — region-OCR batching telemetry.
-				ocrRegionBatchSize: canonical.ocrRegionBatchSize,
-				ocrRegionTotalMs: canonical.ocrRegionTotalMs
-			};
-			return {
-				result: tier1Result,
-				telemetry: { canonical: canonicalTelemetry, tta: null, canonicalAttempts }
-			};
-		}
-		// Below confidence floor OR validation gate fired — fall through to
-		// TTA (uploads only) or Tier 2 Haiku.
-		ctx.lastTier2FailReason = validationGated && canonical.validation
-			? `validation_${canonical.validation.reason}`
-			: null;
-
-		// ── Upload TTA voting (Session 2.1b) ────────────────
-		const ttaEligible = imageSource instanceof File;
-		if (ttaEligible && ttaEnabled) {
-			checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
-			try {
-				const tta = await runUploadPipeline(workingBitmap, game);
-				ttaTelemetry = {
-					frames_processed: tta.framesProcessed,
-					consensus_reached: tta.consensusReached,
-					parallel_code: tta.parallelCode ?? null,
-					parallel_rule_fired: tta.parallelRuleFired,
-					per_frame_results: tta.perFrameResults,
-					augmentation_set_version: tta.augmentationSetVersion
-				};
-				checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
-					hit: tta.consensusReached,
-					frames: tta.framesProcessed,
-					confidence: tta.confidence
-				});
-
-				if (tta.consensusReached && tta.card) {
-					const ttaDecisionCtx: Record<string, unknown> = {
-						canonical_result: canonical.perTask,
-						canonical_ocr_strategy: canonical.ocrStrategy,
-						canonical_attempts: canonicalAttempts,
-						winning_game: game,
-						upload_tta: ttaTelemetry,
-						catalog_validation: canonical.validation, // Phase 1 Doc 1.0
-						...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
-					};
-					const ttaResult: ScanResult = {
-						card_id: tta.card.id,
-						card: {
-							id: tta.card.id,
-							game_id: tta.card.game_id,
-							card_number: tta.card.card_number,
-							hero_name: tta.card.hero_name ?? undefined,
-							name: tta.card.name ?? tta.card.hero_name ?? '',
-							set_code: tta.card.set_code ?? '',
-							parallel: tta.card.parallel ?? undefined
-						} as unknown as Card,
-						scan_method: 'upload_tta',
-						confidence: tta.confidence,
-						processing_ms: Math.round(performance.now() - startTime),
-						parallel: tta.parallel,
-						game_id: tta.card.game_id,
-						liveConsensusReached,
-						liveVsCanonicalAgreed: null,
-						fallbackTierUsed: null,
-						winningTier: 'tier1_upload_tta',
-						decisionContext: ttaDecisionCtx,
-						// Phase 1 Doc 1.0 — preserve canonical validation outcome
-						// even when TTA rescued the scan.
-						catalogValidationPassed: canonical.validation?.passed ?? null,
-						catalogValidationFailureReason: canonical.validation?.passed === false
-							? (canonical.validation.reason ?? null)
-							: null,
-						// Phase 2 Doc 2.0 — TTA path is canonical-cohort.
-						tier1ShortCircuited: false,
-						// Phase 2 Doc 2.4 — region-OCR batching telemetry.
-						ocrRegionBatchSize: canonical.ocrRegionBatchSize,
-						ocrRegionTotalMs: canonical.ocrRegionTotalMs
-					};
-					return {
-						result: ttaResult,
-						telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
-					};
-				}
-				// TTA couldn't converge either — fall through to Haiku.
-			} catch (err) {
-				checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
-					error: err instanceof Error ? err.message : String(err)
-				});
-				console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
-			}
-		}
-	} catch (err) {
-		checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
-			error: err instanceof Error ? err.message : String(err)
-		});
-		console.warn('[scan] Tier 1 canonical failed, falling through to Tier 2:', err);
-	}
-
-	return {
+	// ── Tier 1 telemetry accumulators ──────────────────────────
+	// Tracked across every exit path; consumed by the finally block to
+	// build the single scan_tier_results row owed to this invocation.
+	const tier1StartMs = performance.now();
+	let canonicalRef: CanonicalResult | null = null;
+	let pathTaken: Tier1PathTaken = 'canonical';
+	let hit = false;
+	let errored = false;
+	let errorMessage: string | null = null;
+	let winningCardId: string | null = null;
+	let winningParallel: string | null = null;
+	let winningConfidence: number | null = null;
+	let winningCardNumber: string | null = null;
+	let winningCardName: string | null = null;
+	let notes: string | null = null;
+	let outcome: Tier1Outcome = {
 		result: null,
-		telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+		telemetry: { canonical: null, tta: null, canonicalAttempts: [] }
 	};
+
+	try {
+		// Phase 2 Doc 2.0 — pre-shutter consensus short-circuit. When live OCR
+		// has reached STRONG consensus and Doc 1.0 validation passes against
+		// the live values, skip canonical entirely. tryLiveShortCircuit returns
+		// null on any guard failure → fall through to canonical unchanged.
+		const shortCircuitEnabled = featureEnabled('phase2_short_circuit_v1')();
+		if (shortCircuitEnabled) {
+			try {
+				const sc = await tryLiveShortCircuit({
+					liveConsensusSnapshot,
+					gameHint,
+					isAutoDetect,
+					cardDetectContext,
+					traceId,
+					startTime
+				});
+				if (sc) {
+					pathTaken = 'short_circuit';
+					hit = !!sc.result?.card_id;
+					winningCardId = sc.result?.card_id ?? null;
+					winningParallel = sc.result?.parallel ?? null;
+					winningConfidence = sc.result?.confidence ?? null;
+					winningCardNumber = sc.result?.card?.card_number ?? null;
+					winningCardName = sc.result?.card?.name ?? sc.result?.card?.hero_name ?? null;
+					notes = 'live short-circuit';
+					outcome = sc;
+					return outcome;
+				}
+			} catch (err) {
+				// Defensive — short-circuit must never throw out of runTier1.
+				// Log and fall through to canonical.
+				console.debug('[tier1] short-circuit attempt threw, falling through', err);
+			}
+		}
+
+		checkpoint(traceId, 'tier1_canonical:start', performance.now() - startTime);
+		try {
+			// Auto-detect runs Tier 1 against both games sequentially. Explicit
+			// gameHint runs only that game. Per-game attempts are logged in
+			// decision_context.canonical_attempts so we can measure the auto-detect
+			// win distribution post-deploy.
+			const gamesToTry: Array<'boba' | 'wonders'> = isAutoDetect
+				? ['boba', 'wonders']
+				: gameHint === 'wonders'
+					? ['wonders']
+					: ['boba'];
+
+			let canonical!: CanonicalResult;
+			let game: 'boba' | 'wonders' = gamesToTry[0];
+
+			for (const candidateGame of gamesToTry) {
+				const attempt = await runCanonicalTier1(workingBitmap, candidateGame);
+				canonical = attempt;
+				game = candidateGame;
+				canonicalAttempts.push({
+					game: candidateGame,
+					hit: !!attempt.card,
+					confidence: attempt.confidence,
+					ocr_strategy: attempt.ocrStrategy
+				});
+				if (attempt.card) break;
+			}
+
+			canonicalRef = canonical;
+			canonicalTelemetry = {
+				perTask: canonical.perTask,
+				ocrStrategy: canonical.ocrStrategy,
+				validation: canonical.validation
+			};
+
+			const liveSnap = liveConsensusSnapshot;
+			const live = liveSnap?.consensus ?? null;
+			// Live consensus emits classifier short codes; canonical.parallel is
+			// already the human-readable DB name. Map before comparing.
+			const liveParallelName = live?.parallel?.value
+				? toParallelName(live.parallel.value)
+				: null;
+			const liveAgreed = !!(
+				live?.reachedThreshold &&
+				live.cardNumber?.value === canonical.cardNumber &&
+				live.name?.value === canonical.name &&
+				(game === 'boba' || liveParallelName === canonical.parallel)
+			);
+
+			// Enriched checkpoint extras (Tier 1 telemetry instrumentation):
+			// adds OCR signals and detection context so the historical
+			// scan_pipeline_checkpoint stream stays useful even without the
+			// fuller scan_tier_results row.
+			checkpoint(traceId, 'tier1_canonical:done', performance.now() - startTime, {
+				hit: !!canonical.card,
+				confidence: canonical.confidence,
+				live_reached: liveConsensusReached,
+				live_agreed: liveAgreed,
+				ocr_strategy: canonical.ocrStrategy,
+				detected_card_number: canonical.cardNumber,
+				detected_name: canonical.name,
+				card_number_conf: canonical.perTask.cardNumber.confidence,
+				name_conf: canonical.perTask.name.confidence,
+				detection_method: (cardDetectContext?.method as string | undefined) ?? null,
+				aspect_ratio: (cardDetectContext?.aspect_ratio as number | undefined) ?? null,
+				candidates_returned: canonical.card ? 1 : 0
+			});
+
+			// Phase 1 Doc 1.0 — Catalog cross-validation gate enforcement.
+			// When the gate ran AND failed, force fallback regardless of OCR
+			// confidence. validation==null means flag was off → preserve legacy
+			// behavior (accept on confidence alone).
+			const validationGated =
+				canonical.validation !== null && !canonical.validation.passed;
+			if (canonical.card && canonical.confidence >= confidenceFloor && !validationGated) {
+				const divergent: string[] = [];
+				if (live) {
+					if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
+					if (live.name?.value !== canonical.name) divergent.push('name');
+					if (game === 'wonders' && liveParallelName !== canonical.parallel) divergent.push('parallel');
+				}
+				const decisionCtx: Record<string, unknown> = {
+					live_session: liveSnap,
+					canonical_result: canonical.perTask,
+					canonical_ocr_strategy: canonical.ocrStrategy,
+					canonical_attempts: canonicalAttempts,
+					winning_game: game,
+					live_vs_canonical: {
+						live_ran: !!live,
+						agreed: liveAgreed,
+						divergent_fields: live ? divergent : null
+					},
+					catalog_validation: canonical.validation, // Phase 1 Doc 1.0
+					...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
+				};
+				const tier1Result: ScanResult = {
+					card_id: canonical.card.id,
+					card: {
+						id: canonical.card.id,
+						game_id: canonical.card.game_id,
+						card_number: canonical.card.card_number,
+						hero_name: canonical.card.hero_name ?? undefined,
+						name: canonical.card.name ?? canonical.card.hero_name ?? '',
+						set_code: canonical.card.set_code ?? '',
+						parallel: canonical.card.parallel ?? undefined
+					} as unknown as Card,
+					scan_method: 'local_ocr',
+					confidence: canonical.confidence,
+					processing_ms: Math.round(performance.now() - startTime),
+					parallel: canonical.parallel,
+					game_id: canonical.card.game_id,
+					liveConsensusReached,
+					liveVsCanonicalAgreed: liveAgreed,
+					fallbackTierUsed: null,
+					winningTier: 'tier1_local_ocr',
+					decisionContext: decisionCtx,
+					// Phase 1 Doc 1.0 — surface validation outcome for the dedicated
+					// scans.catalog_validation_* columns. NULL when flag is off.
+					catalogValidationPassed: canonical.validation?.passed ?? null,
+					catalogValidationFailureReason: canonical.validation?.passed === false
+						? (canonical.validation.reason ?? null)
+						: null,
+					// Phase 2 Doc 2.0 — flag canonical-path scans as the non-short-
+					// circuit cohort. When the flag is off this stays false; when on
+					// and short-circuit declined, this is the canonical-path arm.
+					tier1ShortCircuited: false,
+					// Phase 2 Doc 2.4 — region-OCR batching telemetry.
+					ocrRegionBatchSize: canonical.ocrRegionBatchSize,
+					ocrRegionTotalMs: canonical.ocrRegionTotalMs
+				};
+				pathTaken = 'canonical';
+				hit = true;
+				winningCardId = canonical.card.id;
+				winningParallel = canonical.parallel;
+				winningConfidence = canonical.confidence;
+				winningCardNumber = canonical.card.card_number ?? null;
+				winningCardName = canonical.card.name ?? canonical.card.hero_name ?? null;
+				outcome = {
+					result: tier1Result,
+					telemetry: { canonical: canonicalTelemetry, tta: null, canonicalAttempts }
+				};
+				return outcome;
+			}
+			// Below confidence floor OR validation gate fired — fall through to
+			// TTA (uploads only) or Tier 2 Haiku.
+			ctx.lastTier2FailReason = validationGated && canonical.validation
+				? `validation_${canonical.validation.reason}`
+				: null;
+			if (validationGated && canonical.validation) {
+				notes = `validation_failed:${canonical.validation.reason}`;
+			} else if (canonical.card && canonical.confidence < confidenceFloor) {
+				notes = `below_floor:${canonical.confidence.toFixed(2)}_lt_${confidenceFloor}`;
+			} else if (!canonical.card) {
+				notes = 'no_canonical_card';
+			}
+
+			// ── Upload TTA voting (Session 2.1b) ────────────────
+			const ttaEligible = imageSource instanceof File;
+			if (ttaEligible && ttaEnabled) {
+				checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
+				try {
+					const tta = await runUploadPipeline(workingBitmap, game);
+					ttaTelemetry = {
+						frames_processed: tta.framesProcessed,
+						consensus_reached: tta.consensusReached,
+						parallel_code: tta.parallelCode ?? null,
+						parallel_rule_fired: tta.parallelRuleFired,
+						per_frame_results: tta.perFrameResults,
+						augmentation_set_version: tta.augmentationSetVersion
+					};
+					checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
+						hit: tta.consensusReached,
+						frames: tta.framesProcessed,
+						confidence: tta.confidence
+					});
+
+					if (tta.consensusReached && tta.card) {
+						const ttaDecisionCtx: Record<string, unknown> = {
+							canonical_result: canonical.perTask,
+							canonical_ocr_strategy: canonical.ocrStrategy,
+							canonical_attempts: canonicalAttempts,
+							winning_game: game,
+							upload_tta: ttaTelemetry,
+							catalog_validation: canonical.validation, // Phase 1 Doc 1.0
+							...(cardDetectContext ? { upload_card_rect: cardDetectContext } : {})
+						};
+						const ttaResult: ScanResult = {
+							card_id: tta.card.id,
+							card: {
+								id: tta.card.id,
+								game_id: tta.card.game_id,
+								card_number: tta.card.card_number,
+								hero_name: tta.card.hero_name ?? undefined,
+								name: tta.card.name ?? tta.card.hero_name ?? '',
+								set_code: tta.card.set_code ?? '',
+								parallel: tta.card.parallel ?? undefined
+							} as unknown as Card,
+							scan_method: 'upload_tta',
+							confidence: tta.confidence,
+							processing_ms: Math.round(performance.now() - startTime),
+							parallel: tta.parallel,
+							game_id: tta.card.game_id,
+							liveConsensusReached,
+							liveVsCanonicalAgreed: null,
+							fallbackTierUsed: null,
+							winningTier: 'tier1_upload_tta',
+							decisionContext: ttaDecisionCtx,
+							// Phase 1 Doc 1.0 — preserve canonical validation outcome
+							// even when TTA rescued the scan.
+							catalogValidationPassed: canonical.validation?.passed ?? null,
+							catalogValidationFailureReason: canonical.validation?.passed === false
+								? (canonical.validation.reason ?? null)
+								: null,
+							// Phase 2 Doc 2.0 — TTA path is canonical-cohort.
+							tier1ShortCircuited: false,
+							// Phase 2 Doc 2.4 — region-OCR batching telemetry.
+							ocrRegionBatchSize: canonical.ocrRegionBatchSize,
+							ocrRegionTotalMs: canonical.ocrRegionTotalMs
+						};
+						pathTaken = 'canonical_tta';
+						hit = true;
+						winningCardId = tta.card.id;
+						winningParallel = tta.parallel ?? null;
+						winningConfidence = tta.confidence;
+						winningCardNumber = tta.card.card_number ?? null;
+						winningCardName = tta.card.name ?? tta.card.hero_name ?? null;
+						notes = `tta_rescued_after:${notes ?? 'canonical_miss'}`;
+						outcome = {
+							result: ttaResult,
+							telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+						};
+						return outcome;
+					}
+					// TTA couldn't converge either — fall through to Haiku.
+				} catch (err) {
+					checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
+						error: err instanceof Error ? err.message : String(err)
+					});
+					console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
+				}
+			}
+		} catch (err) {
+			errored = true;
+			errorMessage = err instanceof Error ? err.message : String(err);
+			checkpoint(traceId, 'tier1_canonical:threw', performance.now() - startTime, {
+				error: errorMessage
+			});
+			console.warn('[scan] Tier 1 canonical failed, falling through to Tier 2:', err);
+		}
+
+		outcome = {
+			result: null,
+			telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+		};
+		return outcome;
+	} finally {
+		// Single owner of the tier1_paddle_ocr row for this scan. Always runs
+		// (hit, miss, error, short-circuit). Fire-and-forget; never throws.
+		const latencyMs = Math.round(performance.now() - tier1StartMs);
+		try {
+			const payload = buildTier1TelemetryPayload({
+				captureSource,
+				engineVersion: 'PP-OCRv4-2.5',
+				latencyMs,
+				errored,
+				errorMessage,
+				errorCode: null,
+				skipReason: null,
+				pathTaken,
+				gameHint,
+				confidenceFloor,
+				canonical: canonicalRef,
+				liveSnapshot: liveConsensusSnapshot,
+				cardDetectContext,
+				winningCardId,
+				winningParallel,
+				winningConfidence,
+				winningCardNumber,
+				winningCardName,
+				hit,
+				notes
+			});
+			void scanIdPromise
+				.then((scanId) => {
+					if (!scanId) return;
+					return writeTier1Result({ scanId, payload });
+				})
+				.catch((err) => {
+					console.debug('[tier1] writeTier1Result chain failed', err);
+				});
+		} catch (telErr) {
+			// Telemetry assembly must never affect the scan flow.
+			console.debug('[tier1] telemetry assembly threw', telErr);
+		}
+	}
 }

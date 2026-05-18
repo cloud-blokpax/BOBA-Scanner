@@ -685,6 +685,8 @@ export async function recognizeCard(
 	// Card-detection telemetry — surfaces in scans.decision_context so we
 	// can measure detection hit rate vs centered_fallback rate post-deploy
 	// and track Tier 1 hit rate as a function of detection method.
+	// Tier 1 telemetry also reads aspect_ratio / detection_layer / corners
+	// from here to populate the `detection` extras sub-object.
 	const cardDetectContext: Record<string, unknown> | null = detectedCardRect
 		? {
 			method: detectedCardRect.method,
@@ -694,7 +696,11 @@ export async function recognizeCard(
 				width: detectedCardRect.width,
 				height: detectedCardRect.height
 			},
-			source_dimensions: { width: bitmap.width, height: bitmap.height }
+			source_dimensions: { width: bitmap.width, height: bitmap.height },
+			aspect_ratio: detectedCardDetection?.aspectRatio ?? null,
+			detection_layer: detectedCardDetection?.detection_layer ?? null,
+			rectification_applied: !!detectedCardDetection?.homography,
+			corners: detectedCardDetection?.corners ?? null
 		}
 		: null;
 
@@ -946,7 +952,9 @@ export async function recognizeCard(
 			liveConsensusReached,
 			cardDetectContext,
 			confidenceFloor: 0.6,
-			ttaEnabled
+			ttaEnabled,
+			captureSource: captureSource ?? 'unknown',
+			scanIdPromise
 		});
 		tier1Telemetry = tier1Outcome.telemetry;
 		if (tier1Outcome.result) {

@@ -22,6 +22,8 @@ import { PIPELINE_VERSION } from '$lib/services/pipeline-version';
 import { userId } from '$lib/stores/auth.svelte';
 import { coerceHumanReadableParallel } from '$lib/data/wonders-parallels';
 import { reportClientEvent } from '$lib/services/diagnostics-client';
+import { checkpoint } from '$lib/services/scan-checkpoint';
+import type { Tier1TelemetryPayload } from './tier1-telemetry.types';
 import type {
 	OpenSessionInput,
 	RecordScanInput,
@@ -408,6 +410,92 @@ export async function recordTierResult(input: RecordTierResultInput): Promise<st
 			engine: input.engine
 		});
 		return null;
+	}
+}
+
+/**
+ * Persist a Tier 1 PaddleOCR forensic row. Fire-and-forget. Exactly one
+ * row per scan per Tier 1 invocation — runTier1 in recognition-tiers.ts
+ * is the single caller. Wraps raw_output (16KB) and extras (32KB) in
+ * size clamps so an oversized field can't bloat the table.
+ *
+ * Failures land in scan_pipeline_checkpoint with stage
+ * 'tier1_result_write:failed' for forensic recovery.
+ */
+export async function writeTier1Result(opts: {
+	scanId: string;
+	payload: Tier1TelemetryPayload;
+	ranAt?: Date;
+}): Promise<void> {
+	const uid = userId();
+	if (!uid) return;
+
+	const client = getSupabase();
+	if (!client) return;
+
+	const ranAt = (opts.ranAt ?? new Date()).toISOString();
+	// The DB enum was extended with 'tier1_paddle_ocr' in migration 073, but
+	// the generated DB types still pin scan_tier_results.tier to the pre-073
+	// union. Cast through unknown so the build doesn't have to wait on a
+	// `npm run db:types` regen. Drop the cast once db:types catches up.
+	const row = {
+		scan_id: opts.scanId,
+		user_id: uid,
+		tier: 'tier1_paddle_ocr' as unknown as 'tier3_claude',
+		engine: opts.payload.engine,
+		engine_version: opts.payload.engine_version,
+		raw_output: safeJsonClamp(opts.payload.raw_output, 16_000) as Record<string, unknown>,
+		parsed_card_id: opts.payload.parsed_card_id,
+		parsed_parallel: opts.payload.parsed_parallel,
+		parsed_confidence: opts.payload.parsed_confidence,
+		latency_ms: opts.payload.latency_ms,
+		cost_usd: opts.payload.cost_usd,
+		errored: opts.payload.errored,
+		error_message: opts.payload.error_message,
+		error_code: opts.payload.error_code,
+		outcome: opts.payload.outcome,
+		skip_reason: opts.payload.skip_reason,
+		topn_candidates: opts.payload.topn_candidates as unknown as Record<string, unknown>[],
+		ocr_text_raw: opts.payload.ocr_text_raw,
+		ocr_mean_confidence: opts.payload.ocr_mean_confidence,
+		ocr_word_count: opts.payload.ocr_word_count,
+		ocr_detected_card_number: opts.payload.ocr_detected_card_number,
+		ocr_orientation_deg: opts.payload.ocr_orientation_deg,
+		extras: safeJsonClamp(opts.payload.extras, 32_000) as Record<string, unknown>,
+		ran_at: ranAt
+	};
+	try {
+		const { error } = await client.from('scan_tier_results').insert(row);
+		if (error) {
+			logFailure('writeTier1Result', error, {
+				scanId: opts.scanId,
+				outcome: opts.payload.outcome
+			});
+			// Mirror the write failure into the existing checkpoint stream so
+			// forensic recovery has a trail even when scan_tier_results refused
+			// the insert. checkpoint() uses direct PostgREST fetch so a stalled
+			// supabase-js client can't swallow it too.
+			checkpoint(opts.scanId, 'tier1_result_write:failed', 0, {
+				error_message: error.message,
+				error_code: error.code,
+				outcome: opts.payload.outcome
+			});
+		}
+	} catch (err) {
+		logFailure('writeTier1Result', err, {
+			scanId: opts.scanId,
+			outcome: opts.payload.outcome
+		});
+	}
+}
+
+function safeJsonClamp(value: unknown, maxBytes: number): unknown {
+	try {
+		const s = JSON.stringify(value);
+		if (s.length <= maxBytes) return value;
+		return { _truncated: true, _original_bytes: s.length, _head: s.slice(0, maxBytes) };
+	} catch {
+		return { _truncated: true, _reason: 'serialization_failed' };
 	}
 }
 
