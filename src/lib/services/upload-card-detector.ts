@@ -310,15 +310,22 @@ export async function detectCard(
 			return best;
 		};
 
-		// Layer 1 — Multi-scale Canny. Three threshold pairs from sharp to soft;
-		// each pass dilates onto the same `edges` Mat, accumulating. After each
-		// pass, try contour finding. Accept the first pass that yields a valid
-		// 4-corner card.
+		// Layer 1 — Multi-scale Canny. Run all three threshold pairs;
+		// accumulate edges across passes; collect the best valid quad from each
+		// pass and pick the largest globally. Breaking on the first match causes
+		// us to lock onto the inner artwork frame on holo cards, where the sharp
+		// Canny pass finds the inner frame as a closed contour while the outer
+		// card edge is fragmented by specular highlights.
 		const cannyThresholds: Array<[number, number]> = [
 			[75, 200],   // default — sharp edges, high precision
 			[40, 120],   // softer — catches dim edges from glare washouts
 			[20, 80]     // softest — last resort, may pick up noise
 		];
+		const candidatesAcrossPasses: Array<{
+			corners: [Point, Point, Point, Point];
+			area: number;
+			layer: string;
+		}> = [];
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		let cannyOut: any = null;
 		try {
@@ -337,14 +344,34 @@ export async function detectCard(
 				cv.dilate(edges, edges, kernel);
 				cv.erode(edges, edges, kernel);
 
-				bestCorners = findBestCorners();
-				if (bestCorners) {
-					detectionLayer = `canny_${lo}_${hi}`;
-					break;
+				const corners = findBestCorners();
+				if (corners) {
+					// Shoelace formula on de-scaled corner positions so areas
+					// are comparable across passes.
+					const a = Math.abs(
+						(corners[0].x * corners[1].y - corners[1].x * corners[0].y) +
+						(corners[1].x * corners[2].y - corners[2].x * corners[1].y) +
+						(corners[2].x * corners[3].y - corners[3].x * corners[2].y) +
+						(corners[3].x * corners[0].y - corners[0].x * corners[3].y)
+					) / 2;
+					candidatesAcrossPasses.push({
+						corners,
+						area: a,
+						layer: `canny_${lo}_${hi}`
+					});
 				}
 			}
 		} finally {
 			if (cannyOut) cannyOut.delete();
+		}
+
+		// Pick the globally-largest valid quad. On holos this resolves to the
+		// outer card edge from a softer-threshold pass over the inner artwork
+		// frame from the sharper pass.
+		if (candidatesAcrossPasses.length > 0) {
+			candidatesAcrossPasses.sort((a, b) => b.area - a.area);
+			bestCorners = candidatesAcrossPasses[0].corners;
+			detectionLayer = candidatesAcrossPasses[0].layer;
 		}
 
 		// Layer 2 — Adaptive thresholding fallback. If Canny found nothing
