@@ -966,6 +966,10 @@ export async function recognizeCard(
 			lensDiag:
 				(detectedCardDetection?.extras?.lens_diag as
 					| import('./tier1-telemetry.types').Tier1LensDiag
+					| undefined) ?? null,
+			edgeFitDiag:
+				(detectedCardDetection?.extras?.edge_fit_diag as
+					| import('./tier1-telemetry.types').Tier1EdgeFitDiag
 					| undefined) ?? null
 		});
 		tier1Telemetry = tier1Outcome.telemetry;
