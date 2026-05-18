@@ -23,6 +23,7 @@ import { lookupOverlayPrice, type OverlayData } from './overlay-price-lookup';
 import type { ViewfinderRect } from '$lib/services/constrained-crop';
 import { useQuadDetection, type QuadDetectionState } from './use-quad-detection.svelte';
 import { featureEnabled } from '$lib/stores/feature-flags.svelte';
+import { checkpoint } from '$lib/services/scan-checkpoint';
 
 const READY_DWELL_MS = 300;
 const ALIGN_BLUR_THRESHOLD = 5500;
@@ -71,6 +72,10 @@ export function useScannerAnalysis(
 	let _overlayLookupInProgress = false;
 	let _lastOverlayHash: string | null = null;
 	let _autoCaptureFired = false;
+
+	let _sessionTraceId: string | null = null;
+	let _tickCounter = 0;
+	let _loopStartedAt = 0;
 
 	// Phase 2 Doc 2.2 — quad-detection composable. State is read through
 	// the AnalysisState interface so callers see one source of truth.
@@ -142,6 +147,27 @@ export function useScannerAnalysis(
 					: signals.cornerGradientScore >= ALIGN_CORNER_PARTIAL
 						? 'partial'
 						: 'no_card';
+
+			_tickCounter = (_tickCounter + 1) % 4;
+			if (_tickCounter === 0 && _sessionTraceId) {
+				checkpoint(_sessionTraceId, 'align:signal:sample', performance.now() - _loopStartedAt, {
+					blur_inside: Math.round(signals.blurInside),
+					corner_gradient: Math.round(signals.cornerGradientScore),
+					border_gradient: Math.round(signals.borderGradientScore),
+					edge_inside: Number(signals.edgeDensityInside.toFixed(3)),
+					edge_outside: Number(signals.edgeDensityOutside.toFixed(3)),
+					luminance: Math.round(signals.luminanceInside),
+					interior_variance: Math.round(signals.interiorVariance),
+					computed_state: nextState,
+					prev_state: _alignmentState,
+					quad_state: quadDetection.quadState,
+					quad_motion_px: quadDetection.motionPx,
+					viewfinder_w: vf.width,
+					viewfinder_h: vf.height,
+					bitmap_w: bitmap.width,
+					bitmap_h: bitmap.height
+				});
+			}
 
 			// Wait for the parallel quad detection so we don't race the
 			// finally{ bitmap.close() } below. Already started above.
@@ -219,7 +245,17 @@ export function useScannerAnalysis(
 				await onAutoCapture();
 			}
 		} catch (err) {
-			console.debug('[Scanner] Frame analysis failed:', err);
+			const errAny = err as Error & { code?: string };
+			console.warn('[Scanner] Frame analysis failed:', err);
+			if (_sessionTraceId) {
+				checkpoint(_sessionTraceId, 'align:loop:threw', performance.now() - _loopStartedAt, {
+					error_message: String(errAny?.message ?? err).slice(0, 500),
+					error_name: errAny?.name ?? null,
+					error_code: errAny?.code ?? null,
+					quad_enabled: quadEnabled(),
+					last_state: _alignmentState
+				});
+			}
 		} finally {
 			bitmap?.close();
 		}
@@ -227,13 +263,31 @@ export function useScannerAnalysis(
 
 	function start() {
 		if (_interval) return;
+		_sessionTraceId = `align-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		_loopStartedAt = performance.now();
+		_tickCounter = 0;
+		checkpoint(_sessionTraceId, 'align:loop:start', 0, {
+			quad_enabled: quadEnabled(),
+			quad_autocapture_enabled: quadAutoCaptureEnabled(),
+			align_blur_threshold: ALIGN_BLUR_THRESHOLD,
+			align_corner_ready: ALIGN_CORNER_READY,
+			ready_dwell_ms: READY_DWELL_MS
+		});
 		_interval = setInterval(runAnalysis, 250);
 	}
 
 	function stop() {
 		if (_interval) {
+			if (_sessionTraceId) {
+				checkpoint(_sessionTraceId, 'align:loop:stop', performance.now() - _loopStartedAt, {
+					last_state: _alignmentState,
+					last_ready_since_ms: _alignmentReadySince ? performance.now() - _alignmentReadySince : null,
+					auto_capture_fired: _autoCaptureFired
+				});
+			}
 			clearInterval(_interval);
 			_interval = null;
+			_sessionTraceId = null;
 		}
 		quadDetection.reset();
 	}
