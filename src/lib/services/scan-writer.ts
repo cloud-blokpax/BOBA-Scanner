@@ -444,10 +444,19 @@ export async function writeTier1Result(opts: {
 		tier: 'tier1_paddle_ocr' as unknown as 'tier3_claude',
 		engine: opts.payload.engine,
 		engine_version: opts.payload.engine_version,
-		raw_output: safeJsonClamp(opts.payload.raw_output, 16_000) as Record<string, unknown>,
-		parsed_card_id: opts.payload.parsed_card_id,
-		parsed_parallel: opts.payload.parsed_parallel,
-		parsed_confidence: opts.payload.parsed_confidence,
+		raw_output: safeJsonClamp(
+			{
+				// Generated columns derive from these three keys — must use these
+				// exact names to populate parsed_card_id / parsed_parallel /
+				// parsed_confidence on the row.
+				card_id: opts.payload.parsed_card_id,
+				variant: opts.payload.parsed_parallel,
+				confidence: opts.payload.parsed_confidence,
+				// Plus whatever the recognizer already packed into raw_output.
+				...((opts.payload.raw_output as Record<string, unknown> | null) ?? {})
+			},
+			16_000
+		) as Record<string, unknown>,
 		latency_ms: opts.payload.latency_ms,
 		cost_usd: opts.payload.cost_usd,
 		errored: opts.payload.errored,
