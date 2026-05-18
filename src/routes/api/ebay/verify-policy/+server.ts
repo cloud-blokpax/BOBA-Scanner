@@ -8,12 +8,11 @@
  * Defaults to type=fulfillment since that's the most common verification use case.
  *
  * Returns the raw eBay response plus a parsed summary highlighting the fields
- * that matter for eBay Standard Envelope (eSE) compatibility:
- *  - costType (must be FLAT_RATE for eSE)
- *  - freeShipping (must be true for eSE to work without "ask seller" failure)
- *  - shippingServiceCode (must be US_eBayStandardEnvelope)
- *  - shippingCarrierCode (must be USPS)
- *  - handlingTime (typically 1-3 days)
+ * that matter for eBay Standard Envelope (eSE) compatibility. The diagnosis
+ * function is empirical, not docs-based — see its docstring for the details.
+ * Briefly: working eSE on production accounts is CALCULATED + "eBay Send" +
+ * freeShipping:true. The docs are wrong about the first two; buyer-pays
+ * (freeShipping:false) was tested and failed on a real account.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -39,15 +38,34 @@ interface ESEDiagnosis {
 	will_work: boolean;
 	expected_buyer_experience: string;
 	issues: string[];
-	verdict: 'ese_free_shipping_working' | 'ese_buyer_pays_risky' | 'not_ese' | 'misconfigured';
+	warnings?: string[];
+	verdict:
+		| 'ese_free_shipping_working'
+		| 'ese_buyer_pays_working'
+		| 'ese_buyer_pays_untested'
+		| 'ese_buyer_pays_risky'
+		| 'not_ese'
+		| 'misconfigured';
 }
 
 /**
  * Analyze a fulfillment policy for eSE compatibility.
- * Returns an actionable diagnosis explaining what the buyer will see on the listing.
+ *
+ * Empirical, not documentation-based. eBay's developer docs claim eSE requires
+ * costType=FLAT_RATE + shippingCarrierCode=USPS, but real production accounts
+ * with working eSE have costType=CALCULATED + shippingCarrierCode="eBay Send"
+ * (verified via this endpoint on policy 266252755012, account petrarca08).
+ *
+ * The differentiator that actually matters is freeShipping. Buyer-pays eSE was
+ * tested 2026-05-18 on petrarca08 (policy 266252767012, all other fields
+ * matching the known-working config) and produced "ask seller for shipping
+ * quote" failures on the live listing page. freeShipping:true is the only
+ * variant proven to work — sellers absorb the ~$0.74 label cost, recovered via
+ * the pricing nudge.
  */
 function diagnoseEnvelopePolicy(policy: Record<string, unknown>): ESEDiagnosis {
 	const issues: string[] = [];
+	const warnings: string[] = [];
 	const shippingOptions = (policy.shippingOptions as Array<Record<string, unknown>>) || [];
 	const firstOption = shippingOptions[0] || {};
 	const services = (firstOption.shippingServices as Array<Record<string, unknown>>) || [];
@@ -70,13 +88,20 @@ function diagnoseEnvelopePolicy(policy: Record<string, unknown>): ESEDiagnosis {
 		};
 	}
 
-	if (costType !== 'FLAT_RATE') {
+	if (costType !== 'CALCULATED' && costType !== 'FLAT_RATE') {
 		issues.push(
-			`costType is "${costType}" — eSE REQUIRES "FLAT_RATE". Buyer will see "ask seller for shipping quote".`
+			`costType is "${costType}" — working eSE policies use CALCULATED in practice. Listings will likely show "ask seller for shipping quote".`
+		);
+	} else if (costType === 'FLAT_RATE') {
+		warnings.push(
+			'costType is "FLAT_RATE" — eBay\'s official docs recommend this, but real working accounts use CALCULATED. May or may not work depending on account configuration.'
 		);
 	}
-	if (carrierCode !== 'USPS') {
-		issues.push(`shippingCarrierCode is "${carrierCode}" — eSE REQUIRES "USPS".`);
+
+	if (carrierCode !== 'USPS' && carrierCode !== 'eBay Send') {
+		issues.push(
+			`shippingCarrierCode is "${carrierCode}" — working eSE policies use "eBay Send" in practice (despite docs saying USPS). When you POST "USPS" to the Account API, eBay stores it as "eBay Send" internally.`
+		);
 	}
 
 	if (freeShipping === true) {
@@ -85,26 +110,28 @@ function diagnoseEnvelopePolicy(policy: Record<string, unknown>): ESEDiagnosis {
 			will_work: issues.length === 0,
 			expected_buyer_experience:
 				issues.length === 0
-					? 'Buyer sees "Free shipping · eBay Standard Envelope". Seller absorbs ~$0.74 label cost out of proceeds.'
-					: 'Will likely fail — buyer sees "ask seller for shipping quote"',
+					? 'Buyer sees "Free shipping" with eSE delivery. Seller absorbs ~$0.74 label cost out of proceeds.'
+					: 'Likely broken — buyer sees "ask seller for shipping quote"',
 			issues,
+			warnings: warnings.length ? warnings : undefined,
 			verdict: issues.length === 0 ? 'ese_free_shipping_working' : 'misconfigured'
 		};
 	}
 
-	if (freeShipping === false || freeShipping === undefined) {
-		issues.push(
-			'freeShipping is not true. eBay\'s official eSE docs ONLY show the freeShipping:true pattern. ' +
-				'Buyer-pays eSE is undocumented and historically causes "ask seller for shipping quote" failure on the listing page. ' +
-				'Strongly recommend using freeShipping:true and recovering the $0.74 label cost via the pricing nudge instead.'
+	if (freeShipping === false) {
+		warnings.push(
+			'freeShipping is false (buyer-pays eSE). Tested 2026-05-18 on account petrarca08 with otherwise-working config — produced "ask seller for shipping quote" failures on the live listing page. May still work on other accounts but is not safe to rely on without per-account verification. Recommend freeShipping:true and recovering the $0.74 label cost via the pricing nudge.'
 		);
 		return {
 			is_ese_policy: true,
 			will_work: false,
 			expected_buyer_experience:
-				'HIGH RISK — buyer likely sees "ask seller for shipping quote" instead of a shipping cost. Buyer-pays eSE is not officially supported.',
+				issues.length === 0
+					? 'HIGH RISK — known to produce "ask seller for shipping quote" on at least one account with this exact config. Needs per-account verification before relying on it.'
+					: 'HIGH RISK — buyer will see "ask seller for shipping quote"',
 			issues,
-			verdict: 'ese_buyer_pays_risky'
+			warnings,
+			verdict: issues.length === 0 ? 'ese_buyer_pays_untested' : 'ese_buyer_pays_risky'
 		};
 	}
 
@@ -113,6 +140,7 @@ function diagnoseEnvelopePolicy(policy: Record<string, unknown>): ESEDiagnosis {
 		will_work: issues.length === 0,
 		expected_buyer_experience: 'Unknown configuration — review raw policy data below',
 		issues,
+		warnings: warnings.length ? warnings : undefined,
 		verdict: 'misconfigured'
 	};
 }

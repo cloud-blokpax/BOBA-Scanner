@@ -35,9 +35,10 @@ export async function getSellerPolicies(
 	};
 
 	// Per-user policy ID overrides bypass auto-detection entirely. Used when
-	// an account has a pre-configured working policy the auto-create logic
-	// can't reliably reproduce (e.g. eSE policies created via Seller Hub UI
-	// with FLAT_RATE + freeShipping that the API sometimes refuses to mint).
+	// an account has a pre-configured working policy that should take
+	// precedence over anything auto-create would mint — e.g. an eSE policy
+	// hand-built in Seller Hub with the empirically-correct CALCULATED +
+	// "eBay Send" + freeShipping:true config (verified via /api/ebay/verify-policy).
 	let overrides: {
 		envelope_fulfillment_policy_id: string | null;
 		standard_fulfillment_policy_id: string | null;
@@ -190,7 +191,8 @@ export async function getSellerPolicies(
 async function createFulfillmentPolicy(
 	headers: Record<string, string>,
 	name: string,
-	shippingOptions: Record<string, unknown>[]
+	shippingOptions: Record<string, unknown>[],
+	handlingDays: number = 2
 ): Promise<string | null> {
 	try {
 		const res = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy`, {
@@ -199,7 +201,8 @@ async function createFulfillmentPolicy(
 			body: JSON.stringify({
 				name,
 				marketplaceId: 'EBAY_US',
-				handlingTime: { value: 2, unit: 'DAY' },
+				categoryTypes: [{ name: 'ALL_EXCLUDING_MOTORS_VEHICLES' }],
+				handlingTime: { value: handlingDays, unit: 'DAY' },
 				shippingOptions
 			})
 		});
@@ -228,36 +231,87 @@ async function createFulfillmentPolicy(
 }
 
 async function createEnvelopeFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
-	// eSE is FLAT_RATE only. The Seller Hub UI labels these policies as
-	// "Calculated:" in the dropdown, but the underlying costType is FLAT_RATE.
-	// freeShipping:true is required — the seller absorbs the $0.74 label cost
-	// out of sale proceeds (we recover this via the pricing nudge in the UI).
-	// Reference: https://developer.ebay.com/api-docs/sell/static/seller-accounts/using-the-ebay-standard-envelope-service.html
-	return createFulfillmentPolicy(headers, 'BOBA - eBay Standard Envelope', [{
-		optionType: 'DOMESTIC',
-		costType: 'FLAT_RATE',
-		shippingServices: [{
-			sortOrder: 1,
-			shippingCarrierCode: 'USPS',
-			shippingServiceCode: 'US_eBayStandardEnvelope',
-			freeShipping: true
-		}]
-	}]);
+	// Config verified empirically on production eBay accounts via the
+	// /api/ebay/verify-policy endpoint (policy 266252755012, account petrarca08):
+	//   - costType: CALCULATED        — eBay computes the rate server-side
+	//   - shippingCarrierCode: USPS   — eBay stores this as "eBay Send" internally
+	//   - shippingServiceCode: US_eBayStandardEnvelope
+	//   - freeShipping: true          — buyer-pays variant (false) was tested
+	//                                   2026-05-18 on petrarca08 and produced
+	//                                   "ask seller for shipping quote" failures
+	//   - handlingTime: 2 DAY         — matches the known-working reference policy
+	//
+	// eBay's developer docs claim eSE requires FLAT_RATE + USPS. The docs are
+	// wrong — every working policy we've inspected on real accounts is
+	// CALCULATED + "eBay Send". Trust the verify-policy endpoint, not the docs.
+	//
+	// Seller absorbs the ~$0.74 label cost out of proceeds; the pricing nudge
+	// in the listing UI recovers it by suggesting a higher charm-priced rung.
+	const policyId = await createFulfillmentPolicy(
+		headers,
+		'BOBA - eBay Standard Envelope',
+		[{
+			optionType: 'DOMESTIC',
+			costType: 'CALCULATED',
+			shippingServices: [{
+				sortOrder: 1,
+				shippingCarrierCode: 'USPS',
+				shippingServiceCode: 'US_eBayStandardEnvelope',
+				freeShipping: true
+			}]
+		}],
+		2
+	);
+
+	if (!policyId) return null;
+
+	// Verify what eBay actually stored — they silently transform some fields
+	// (e.g. carrier USPS → "eBay Send" for eSE). Informational only; we don't
+	// fail the create if verification breaks.
+	try {
+		const verifyRes = await fetch(`${EBAY_ACCOUNT_URL}/fulfillment_policy/${policyId}`, {
+			method: 'GET',
+			headers
+		});
+		if (verifyRes.ok) {
+			const policy = await verifyRes.json();
+			const svc = policy.shippingOptions?.[0]?.shippingServices?.[0];
+			console.log('[ebay-policies] Envelope policy verified after create:', {
+				id: policyId,
+				costType: policy.shippingOptions?.[0]?.costType,
+				carrier: svc?.shippingCarrierCode,
+				service: svc?.shippingServiceCode,
+				freeShipping: svc?.freeShipping
+			});
+		} else {
+			console.warn(`[ebay-policies] Envelope policy created (${policyId}) but verification GET failed: ${verifyRes.status}`);
+		}
+	} catch (err) {
+		console.warn('[ebay-policies] Envelope policy verification error:', err);
+	}
+
+	return policyId;
 }
 
 async function createGroundAdvantageFulfillmentPolicy(headers: Record<string, string>): Promise<string | null> {
-	// USPSFirstClass is deprecated — eBay consolidated it into USPSGroundAdvantage.
-	// Used for $20+ listings where eSE isn't an option.
-	return createFulfillmentPolicy(headers, 'BOBA - USPS Ground Advantage', [{
-		optionType: 'DOMESTIC',
-		costType: 'CALCULATED',
-		shippingServices: [{
-			sortOrder: 1,
-			shippingCarrierCode: 'USPS',
-			shippingServiceCode: 'USPSGroundAdvantage',
-			freeShipping: false
-		}]
-	}]);
+	// For $20+ listings where eSE is not allowed.
+	// USPSFirstClass deprecated by eBay — consolidated into USPSGroundAdvantage.
+	// Buyer pays the calculated rate.
+	return createFulfillmentPolicy(
+		headers,
+		'BOBA - USPS Ground Advantage',
+		[{
+			optionType: 'DOMESTIC',
+			costType: 'CALCULATED',
+			shippingServices: [{
+				sortOrder: 1,
+				shippingCarrierCode: 'USPS',
+				shippingServiceCode: 'USPSGroundAdvantage',
+				freeShipping: false
+			}]
+		}],
+		2
+	);
 }
 
 async function createDefaultPaymentPolicy(headers: Record<string, string>): Promise<string | null> {
