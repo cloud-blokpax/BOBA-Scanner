@@ -15,7 +15,10 @@ const baseDetection: Tier1Detection = {
 	card_area_pct: null,
 	rectification_applied: true,
 	corners_clockwise_from_topleft: null,
-	rejected_layers_tried: []
+	rejected_layers_tried: [],
+	ring_validation: null,
+	ring_rejected: false,
+	contour_diagnostics: null
 };
 
 function emptyCanonical(): CanonicalResult {
@@ -390,5 +393,71 @@ describe('buildTier1TelemetryPayload', () => {
 		expect(payload.extras.detection.method).toBe('centered_fallback');
 		expect(payload.extras.detection.aspect_ratio).toBe(1.32);
 		expect(payload.extras.detection.aspect_ratio_valid).toBe(false);
+		// contour_diagnostics defaults to null when not supplied by ctx.
+		expect(payload.extras.detection.contour_diagnostics).toBeNull();
+	});
+
+	it('passes contour_diagnostics through cardDetectContext', () => {
+		const contour = {
+			passes: [
+				{
+					layer: 'canny_75_200',
+					edges_after_morph_pct: 0.043,
+					contours_total: 7,
+					contours_passed_area: 2,
+					contours_passed_border_inset: 1,
+					contour_diagnostics: [
+						{
+							contour_area_downscaled: 99068,
+							bounding_rect: { x: 12, y: 14, w: 308, h: 415 },
+							approx_vertex_counts_per_eps: {
+								'0.02': 12,
+								'0.03': 9,
+								'0.04': 8,
+								'0.05': 6
+							},
+							min_area_rect_aspect: 1.394,
+							min_area_rect_angle: -88.5,
+							min_area_rect_size: [307, 428] as [number, number],
+							convex_hull_area: 109832,
+							rectangularity: 0.86,
+							perimeter: 1490,
+							passed_aspect: true,
+							passed_rectangularity: true,
+							final_picked: true
+						}
+					]
+				}
+			],
+			picked_layer: 'canny_75_200',
+			picked_aspect: 1.394,
+			picked_rectangularity: 0.86,
+			picked_box_area_pct_of_bitmap: 0.564,
+			rejection_reasons: {
+				below_min_area: 6,
+				touches_border_inset: 0,
+				no_quad_at_any_eps: 0,
+				aspect_out_of_range: 0
+			}
+		};
+		const payload = buildTier1TelemetryPayload({
+			...baseArgs,
+			cardDetectContext: {
+				method: 'corner_detected',
+				aspect_ratio: 1.39,
+				detection_layer: 'canny_75_200',
+				rectification_applied: true,
+				contour_diagnostics: contour
+			}
+		});
+		const cd = payload.extras.detection.contour_diagnostics;
+		expect(cd).not.toBeNull();
+		expect(cd!.picked_layer).toBe('canny_75_200');
+		expect(cd!.passes).toHaveLength(1);
+		expect(cd!.passes[0].contour_diagnostics[0].final_picked).toBe(true);
+		expect(
+			cd!.passes[0].contour_diagnostics[0].approx_vertex_counts_per_eps['0.04']
+		).toBe(8);
+		expect(cd!.rejection_reasons.below_min_area).toBe(6);
 	});
 });
