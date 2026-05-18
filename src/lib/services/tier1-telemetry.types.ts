@@ -67,6 +67,15 @@ export interface Tier1Detection {
 	rectification_applied: boolean;
 	corners_clockwise_from_topleft: number[][] | null;
 	rejected_layers_tried: string[];
+	/**
+	 * minAreaRect telemetry (added 2026-05-18 with the approxPolyDP →
+	 * minAreaRect detector rewrite). NULL when detection used the
+	 * centered_fallback path or the engine field wasn't surfaced.
+	 */
+	detection_engine: string | null;
+	rectangularity: number | null;
+	box_area_downscaled: number | null;
+	rect_angle: number | null;
 }
 
 export interface Tier1Consensus {

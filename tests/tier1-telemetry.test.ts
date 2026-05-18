@@ -15,7 +15,11 @@ const baseDetection: Tier1Detection = {
 	card_area_pct: null,
 	rectification_applied: true,
 	corners_clockwise_from_topleft: null,
-	rejected_layers_tried: []
+	rejected_layers_tried: [],
+	detection_engine: null,
+	rectangularity: null,
+	box_area_downscaled: null,
+	rect_angle: null
 };
 
 function emptyCanonical(): CanonicalResult {

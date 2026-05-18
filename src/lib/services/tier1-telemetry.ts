@@ -187,7 +187,11 @@ function buildDetection(ctx: Record<string, unknown> | null): Tier1Detection {
 		card_area_pct: cardAreaPct,
 		rectification_applied: rectificationApplied,
 		corners_clockwise_from_topleft: corners,
-		rejected_layers_tried: rejected
+		rejected_layers_tried: rejected,
+		detection_engine: readStr(ctx, 'detection_engine'),
+		rectangularity: readNum(ctx, 'rectangularity'),
+		box_area_downscaled: readNum(ctx, 'box_area_downscaled'),
+		rect_angle: readNum(ctx, 'rect_angle')
 	};
 }
 

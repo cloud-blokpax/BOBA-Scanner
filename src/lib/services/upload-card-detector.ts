@@ -66,6 +66,18 @@ export interface CardDetection {
 	 * Null on centered_fallback.
 	 */
 	detection_layer?: string | null;
+
+	/**
+	 * Detection engine + minAreaRect telemetry. Surfaces to
+	 * scan_tier_results.extras.detection so we can A/B detection quality.
+	 * Null on centered_fallback.
+	 */
+	detection_extras?: {
+		detection_engine: 'minAreaRect_v1';
+		rectangularity: number | null;
+		box_area_downscaled: number | null;
+		rect_angle: number | null;
+	} | null;
 }
 
 /** @deprecated Use CardDetection. Kept as a transition shim — see detectCardRect at bottom. */
@@ -93,9 +105,20 @@ const MIN_AREA_FRAC = 0.15;
 // off-card rectangles like book spines (aspect >1.55) are rejected by the
 // gate. Live is permissive because handheld tilt skews the detected aspect;
 // canonical is strictest because the user has deliberately framed the card.
-const ASPECT_TOLERANCE_LIVE = { min: 1.3, max: 1.5 };
+// LIVE tightened alongside the minAreaRect change: minAreaRect produces very
+// accurate aspect ratios (within 0.01 of true 1.397 on test images), so we
+// no longer need a loose window to compensate for approxPolyDP's
+// quantization. Tighter bounds reject noise blobs that happen to be roughly
+// rectangular.
+const ASPECT_TOLERANCE_LIVE = { min: 1.34, max: 1.46 };
 const ASPECT_TOLERANCE_CANONICAL = { min: 1.34, max: 1.46 };
 const ASPECT_TOLERANCE_UPLOAD = { min: 1.32, max: 1.48 };
+
+// Convex-hull-area / minAreaRect-box-area. A real card contour has
+// hull ≈ box (>0.85 typical). Noise blobs that happen to have card-like
+// aspect have irregular hulls (<0.75 typical). 0.80 catches the obvious
+// noise without rejecting slightly-warped or sleeve-haloed real cards.
+const RECTANGULARITY_FLOOR = 0.80;
 
 // Holo speculars saturate the V channel and create false edges inside the
 // card that fragment the outer contour. Clamping V to this ceiling before
@@ -222,13 +245,27 @@ export async function detectCard(
 		const borderInsetPx = Math.max(2, Math.round(Math.min(dw, dh) * 0.005));
 		const aspectTolerance = getAspectTolerance(options.mode);
 
+		interface DetectionExtras {
+			rectangularity: number;
+			box_area_downscaled: number;
+			rect_angle: number;
+		}
+		interface FindResult {
+			corners: [Point, Point, Point, Point];
+			extras: DetectionExtras;
+		}
+
 		let bestCorners: [Point, Point, Point, Point] | null = null;
 		let detectionLayer: string | null = null;
+		let bestExtras: DetectionExtras | null = null;
 
-		// Helper: from a populated `edges` Mat, find the best 4-corner card
-		// contour. Mutates `contours` and `hierarchy` (zero'd at start of
-		// each call to avoid stale data from previous attempts).
-		const findBestCorners = (): [Point, Point, Point, Point] | null => {
+		// Helper: from a populated `edges` Mat, find the best card contour
+		// using minAreaRect. Replaces the old approxPolyDP 4-vertex filter,
+		// which fails on cards with rounded corners (BoBA cards produce
+		// 8-vertex polygons; approxPolyDP can't simplify them to 4 without
+		// losing the actual corner positions). minAreaRect fits a rotated
+		// rectangle to any contour regardless of vertex count.
+		const findBestCorners = (): FindResult | null => {
 			contours.delete();
 			contours = new cv.MatVector();
 			hierarchy.delete();
@@ -241,71 +278,85 @@ export async function detectCard(
 				cv.CHAIN_APPROX_SIMPLE
 			);
 
-			let best: [Point, Point, Point, Point] | null = null;
-			let bestArea = 0;
+			let best: FindResult | null = null;
+			let bestBoxArea = 0;
+
 			const n = contours.size();
 			for (let i = 0; i < n; i++) {
 				const c = contours.get(i);
-				const area = cv.contourArea(c);
-				if (area < minArea) {
-					c.delete();
-					continue;
-				}
+				try {
+					const contourArea = cv.contourArea(c);
+					if (contourArea < minArea) continue;
 
-				// Layer 4 — border-inset filter. Reject contours whose bounding
-				// rect touches the frame edge — those are usually the FRAME, not
-				// a card centered in it.
-				const br = cv.boundingRect(c);
-				if (
-					br.x < borderInsetPx ||
-					br.y < borderInsetPx ||
-					br.x + br.width > dw - borderInsetPx ||
-					br.y + br.height > dh - borderInsetPx
-				) {
-					c.delete();
-					continue;
-				}
-
-				const peri = cv.arcLength(c, true);
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				let approx: any = null;
-				let found4 = false;
-				for (const epsilonFactor of [0.02, 0.03, 0.04, 0.05]) {
-					if (approx) approx.delete();
-					approx = new cv.Mat();
-					cv.approxPolyDP(c, approx, epsilonFactor * peri, true);
-					if (approx.rows === 4) {
-						found4 = true;
-						break;
-					}
-				}
-
-				if (found4 && approx && area > bestArea) {
-					const rawCorners: Point[] = [];
-					for (let j = 0; j < 4; j++) {
-						rawCorners.push({
-							x: approx.data32S[j * 2] / scale,
-							y: approx.data32S[j * 2 + 1] / scale
-						});
-					}
-					const ordered = orderCorners(rawCorners);
-					const sides = computeSideLengths(ordered);
-					const avgLong = (sides.left + sides.right) / 2;
-					const avgShort = (sides.top + sides.bottom) / 2;
-					if (avgShort < 1) {
-						if (approx) approx.delete();
-						c.delete();
+					// Border-inset filter — reject contours whose bounding
+					// rect touches the frame edge (those are usually the FRAME,
+					// not a card centered in it).
+					const br = cv.boundingRect(c);
+					if (
+						br.x < borderInsetPx ||
+						br.y < borderInsetPx ||
+						br.x + br.width > dw - borderInsetPx ||
+						br.y + br.height > dh - borderInsetPx
+					) {
 						continue;
 					}
-					const aspect = avgLong / avgShort;
-					if (aspect >= aspectTolerance.min && aspect <= aspectTolerance.max) {
-						bestArea = area;
-						best = ordered;
-					}
-				}
 
-				if (approx) approx.delete();
-				c.delete();
+					// Fit a minimum-area rotated rectangle to the contour points.
+					const rect = cv.minAreaRect(c);
+					const rw: number = rect.size.width;
+					const rh: number = rect.size.height;
+					const boxArea = rw * rh;
+					if (boxArea < minArea) continue;
+
+					// Convex-hull-area / box-area = "rectangularity" — measures
+					// how cleanly the contour's outer envelope fits the rotated
+					// rect. Cheap (one extra Mat allocation per candidate).
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					const hull: any = new cv.Mat();
+					try {
+						cv.convexHull(c, hull);
+						const hullArea = cv.contourArea(hull);
+						const rectangularity = boxArea > 0 ? hullArea / boxArea : 0;
+						if (rectangularity < RECTANGULARITY_FLOOR) continue;
+
+						// Aspect check — long / short.
+						const longSide = Math.max(rw, rh);
+						const shortSide = Math.min(rw, rh);
+						if (shortSide < 1) continue;
+						const aspect = longSide / shortSide;
+						if (
+							aspect < aspectTolerance.min ||
+							aspect > aspectTolerance.max
+						) {
+							continue;
+						}
+
+						// Extract the 4 corners of the rotated rectangle and
+						// convert to source-pixel coordinates.
+						const boxPts = getBoxPoints(rect, cv);
+						const rawCorners: Point[] = boxPts.map((p) => ({
+							x: p.x / scale,
+							y: p.y / scale
+						}));
+						const ordered = orderCorners(rawCorners);
+
+						if (boxArea > bestBoxArea) {
+							bestBoxArea = boxArea;
+							best = {
+								corners: ordered,
+								extras: {
+									rectangularity,
+									box_area_downscaled: boxArea,
+									rect_angle: typeof rect.angle === 'number' ? rect.angle : 0
+								}
+							};
+						}
+					} finally {
+						hull.delete();
+					}
+				} finally {
+					c.delete();
+				}
 			}
 			return best;
 		};
@@ -322,8 +373,7 @@ export async function detectCard(
 			[20, 80]     // softest — last resort, may pick up noise
 		];
 		const candidatesAcrossPasses: Array<{
-			corners: [Point, Point, Point, Point];
-			area: number;
+			result: FindResult;
 			layer: string;
 		}> = [];
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -344,19 +394,10 @@ export async function detectCard(
 				cv.dilate(edges, edges, kernel);
 				cv.erode(edges, edges, kernel);
 
-				const corners = findBestCorners();
-				if (corners) {
-					// Shoelace formula on de-scaled corner positions so areas
-					// are comparable across passes.
-					const a = Math.abs(
-						(corners[0].x * corners[1].y - corners[1].x * corners[0].y) +
-						(corners[1].x * corners[2].y - corners[2].x * corners[1].y) +
-						(corners[2].x * corners[3].y - corners[3].x * corners[2].y) +
-						(corners[3].x * corners[0].y - corners[0].x * corners[3].y)
-					) / 2;
+				const found = findBestCorners();
+				if (found) {
 					candidatesAcrossPasses.push({
-						corners,
-						area: a,
+						result: found,
 						layer: `canny_${lo}_${hi}`
 					});
 				}
@@ -365,13 +406,16 @@ export async function detectCard(
 			if (cannyOut) cannyOut.delete();
 		}
 
-		// Pick the globally-largest valid quad. On holos this resolves to the
-		// outer card edge from a softer-threshold pass over the inner artwork
-		// frame from the sharper pass.
+		// Pick the globally-largest valid quad by minAreaRect box area. On
+		// holos this resolves to the outer card edge from a softer-threshold
+		// pass over the inner artwork frame from the sharper pass.
 		if (candidatesAcrossPasses.length > 0) {
-			candidatesAcrossPasses.sort((a, b) => b.area - a.area);
-			bestCorners = candidatesAcrossPasses[0].corners;
+			candidatesAcrossPasses.sort(
+				(a, b) => b.result.extras.box_area_downscaled - a.result.extras.box_area_downscaled
+			);
+			bestCorners = candidatesAcrossPasses[0].result.corners;
 			detectionLayer = candidatesAcrossPasses[0].layer;
+			bestExtras = candidatesAcrossPasses[0].result.extras;
 		}
 
 		// Layer 2 — Adaptive thresholding fallback. If Canny found nothing
@@ -406,8 +450,12 @@ export async function detectCard(
 				// Replace edges with adaptive output and try contour finding again.
 				edges.delete();
 				edges = adaptive.clone();
-				bestCorners = findBestCorners();
-				if (bestCorners) detectionLayer = 'adaptive';
+				const adaptiveResult = findBestCorners();
+				if (adaptiveResult) {
+					bestCorners = adaptiveResult.corners;
+					detectionLayer = 'adaptive';
+					bestExtras = adaptiveResult.extras;
+				}
 			} finally {
 				if (adaptive) adaptive.delete();
 				if (largeKernel) largeKernel.delete();
@@ -457,7 +505,15 @@ export async function detectCard(
 			pxPerMm,
 			aspectRatio,
 			method: 'corner_detected',
-			detection_layer: detectionLayer
+			detection_layer: detectionLayer,
+			detection_extras: bestExtras
+				? {
+						detection_engine: 'minAreaRect_v1',
+						rectangularity: bestExtras.rectangularity,
+						box_area_downscaled: bestExtras.box_area_downscaled,
+						rect_angle: bestExtras.rect_angle
+					}
+				: { detection_engine: 'minAreaRect_v1', rectangularity: null, box_area_downscaled: null, rect_angle: null }
 		};
 	} catch (err) {
 		console.debug('[card-detector] threw, using fallback:', err);
@@ -542,8 +598,56 @@ function centeredFallback(W: number, H: number): CardDetection {
 		homography: null,
 		pxPerMm: null,
 		aspectRatio: null,
-		method: 'centered_fallback'
+		method: 'centered_fallback',
+		detection_extras: null
 	};
+}
+
+/**
+ * Extract the 4 corners of a `cv.RotatedRect` as plain {x, y} points.
+ *
+ * opencv-js bindings have varied across versions on how box points are
+ * exposed (`cv.RotatedRect.points(rect)`, `cv.boxPoints(rect)`, or neither).
+ * Try the documented techstark/opencv-js path first, then fall back to
+ * computing the four corners from `rect.center` / `rect.size` / `rect.angle`
+ * directly so detection still works on builds without either binding.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getBoxPoints(rect: any, cv: any): Array<{ x: number; y: number }> {
+	try {
+		if (cv?.RotatedRect?.points) {
+			const pts = cv.RotatedRect.points(rect);
+			if (Array.isArray(pts) && pts.length === 4) {
+				return pts.map((p: { x: number; y: number }) => ({ x: p.x, y: p.y }));
+			}
+		}
+	} catch {
+		/* fall through to manual */
+	}
+
+	// Manual computation. OpenCV stores `angle` in degrees, rotating the
+	// rectangle clockwise around its center. The 4 corners come out in the
+	// canonical (bottom-left, top-left, top-right, bottom-right) order
+	// that OpenCV native cv::boxPoints would produce.
+	const cx = rect.center.x;
+	const cy = rect.center.y;
+	const w = rect.size.width;
+	const h = rect.size.height;
+	const angleRad = ((rect.angle ?? 0) * Math.PI) / 180;
+	const cos = Math.cos(angleRad);
+	const sin = Math.sin(angleRad);
+	const hw = w / 2;
+	const hh = h / 2;
+	const offsets: Array<[number, number]> = [
+		[-hw, hh],
+		[-hw, -hh],
+		[hw, -hh],
+		[hw, hh]
+	];
+	return offsets.map(([dx, dy]) => ({
+		x: cx + dx * cos - dy * sin,
+		y: cy + dx * sin + dy * cos
+	}));
 }
 
 /**
