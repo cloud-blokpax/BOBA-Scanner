@@ -96,7 +96,11 @@ export async function getSellerPolicies(
 			envelopeFulfillmentId = envelopePolicy?.fulfillmentPolicyId || null;
 		}
 
-		// Standard fulfillment policy: override > name match > first available > auto-create
+		// Standard fulfillment policy ($20+): override > name match > auto-create.
+		// Do NOT fall back to `findPolicy(allFulfillment, ...)` — that grabs the
+		// first policy in the list, which on petrarca08's account is an eSE
+		// policy (3 oz max) and breaks every $20+ listing with
+		// "Package weight is over the weight limit for service 3 oz".
 		let fulfillmentId: string | null = overrides?.standard_fulfillment_policy_id ?? null;
 		if (fulfillmentId) {
 			console.log('[ebay-policies] Using standard fulfillment policy override:', fulfillmentId);
@@ -106,8 +110,7 @@ export async function getSellerPolicies(
 					p.name?.includes('BOBA') &&
 					(p.name?.includes('Ground Advantage') || p.name?.includes('First Class'))
 			);
-			fulfillmentId = groundAdvantagePolicy?.fulfillmentPolicyId
-				|| findPolicy(allFulfillment, 'fulfillmentPolicyId');
+			fulfillmentId = groundAdvantagePolicy?.fulfillmentPolicyId || null;
 		}
 
 		let paymentId = overrides?.payment_policy_id_override
@@ -147,9 +150,20 @@ export async function getSellerPolicies(
 			}
 		}
 		if (!fulfillmentId) {
-			console.log('[ebay-policies] No standard fulfillment policy — creating');
+			console.log('[ebay-policies] No standard fulfillment policy — creating Ground Advantage');
 			fulfillmentId = await createGroundAdvantageFulfillmentPolicy(headers);
-			if (!fulfillmentId) fulfillmentId = envelopeFulfillmentId;
+			// Do NOT fall back to envelopeFulfillmentId here. If standard
+			// creation fails, surface the error rather than silently attaching
+			// an eSE policy to $20+ listings (which fails with a 3oz weight cap).
+			if (!fulfillmentId) {
+				console.error('[ebay-policies] CRITICAL: Could not resolve standard fulfillment policy');
+				void logEvent({
+					level: 'error',
+					event: 'ebay.policies.standard_fulfillment_unresolved',
+					context: { fulfillment_policy_count: allFulfillment.length }
+				});
+				return null;
+			}
 		}
 		if (!paymentId) {
 			console.log('[ebay-policies] No payment policy found — creating default');
