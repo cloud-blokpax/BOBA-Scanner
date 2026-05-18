@@ -179,6 +179,9 @@ function buildDetection(ctx: Record<string, unknown> | null): Tier1Detection {
 	const rectificationApplied = readBool(ctx, 'rectification_applied') ?? false;
 	const corners = (ctx?.corners as number[][] | undefined) ?? null;
 	const rejected = (ctx?.rejected_layers_tried as string[] | undefined) ?? [];
+	const ringValidation =
+		(ctx?.ring_validation as Tier1Detection['ring_validation'] | undefined) ?? null;
+	const ringRejected = layer ? layer.endsWith('_rejected_ring') : false;
 	return {
 		method,
 		layer,
@@ -187,7 +190,9 @@ function buildDetection(ctx: Record<string, unknown> | null): Tier1Detection {
 		card_area_pct: cardAreaPct,
 		rectification_applied: rectificationApplied,
 		corners_clockwise_from_topleft: corners,
-		rejected_layers_tried: rejected
+		rejected_layers_tried: rejected,
+		ring_validation: ringValidation,
+		ring_rejected: ringRejected
 	};
 }
 

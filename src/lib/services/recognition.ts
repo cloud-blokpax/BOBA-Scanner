@@ -700,7 +700,8 @@ export async function recognizeCard(
 			aspect_ratio: detectedCardDetection?.aspectRatio ?? null,
 			detection_layer: detectedCardDetection?.detection_layer ?? null,
 			rectification_applied: !!detectedCardDetection?.homography,
-			corners: detectedCardDetection?.corners ?? null
+			corners: detectedCardDetection?.corners ?? null,
+			ring_validation: detectedCardDetection?.extras?.ring_validation ?? null
 		}
 		: null;
 

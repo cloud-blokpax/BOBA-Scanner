@@ -92,6 +92,23 @@ export function useQuadDetection(): QuadDetectionState {
 				_consecutiveMissFrames++;
 				return;
 			}
+			// Defense-in-depth: detectCard already returns centered_fallback
+			// when ring validation rejects, but if a future path returns
+			// corner_detected alongside looksLikeInnerFrame=true, prefer
+			// "no overlay" over drawing on the inner artwork frame.
+			const ringExtras = (detection as {
+				extras?: { ring_validation?: { looksLikeInnerFrame?: boolean } };
+			}).extras?.ring_validation;
+			if (ringExtras && ringExtras.looksLikeInnerFrame) {
+				_bitmapCorners = null;
+				_cssCorners = null;
+				_quadState = 'lost';
+				_smoothedBitmap = null;
+				_motionPx = null;
+				_detectedSince = null;
+				_consecutiveMissFrames++;
+				return;
+			}
 			_consecutiveMissFrames = 0;
 			const next: [Pt, Pt, Pt, Pt] = detection.corners as [Pt, Pt, Pt, Pt];
 

@@ -63,9 +63,18 @@ export interface CardDetection {
 	/**
 	 * Which detection layer found the corners (Doc 1.2).
 	 * 'canny_75_200' | 'canny_40_120' | 'canny_20_80' | 'adaptive' | null.
-	 * Null on centered_fallback.
+	 * Null on centered_fallback. Suffix `_rejected_ring` indicates the
+	 * corner-detected quad was rejected by ring-luminance validation and
+	 * fell back to centered_fallback.
 	 */
 	detection_layer?: string | null;
+
+	/**
+	 * Per-detection auxiliary data. Currently carries `ring_validation` for
+	 * the post-corner-detection inner-frame check (and, on the rejected
+	 * path, the `rejected_corners` that triggered the fallback).
+	 */
+	extras?: Record<string, unknown>;
 }
 
 /** @deprecated Use CardDetection. Kept as a transition shim — see detectCardRect at bottom. */
@@ -93,7 +102,11 @@ const MIN_AREA_FRAC = 0.15;
 // off-card rectangles like book spines (aspect >1.55) are rejected by the
 // gate. Live is permissive because handheld tilt skews the detected aspect;
 // canonical is strictest because the user has deliberately framed the card.
-const ASPECT_TOLERANCE_LIVE = { min: 1.3, max: 1.5 };
+// Tightened 2026-05-18: the previous loose [1.30, 1.50] window admitted
+// inner artwork frames (often 1.45+) and noise blobs (often 1.30-1.34)
+// on holo cards. Standard TCG aspect is 88/63 ≈ 1.397; keeping ±0.04
+// rejects most non-card quads while still tolerating perspective skew.
+const ASPECT_TOLERANCE_LIVE = { min: 1.36, max: 1.45 };
 const ASPECT_TOLERANCE_CANONICAL = { min: 1.34, max: 1.46 };
 const ASPECT_TOLERANCE_UPLOAD = { min: 1.32, max: 1.48 };
 
@@ -416,6 +429,25 @@ export async function detectCard(
 
 		if (!bestCorners) return centeredFallback(W, H);
 
+		// Ring-luminance validation: reject quads that are most likely the
+		// inner artwork frame on a holo card. The brightness/saturation jump
+		// just outside the inner frame is much larger than at a true card
+		// edge bordering wood/desk/background.
+		const ringValidation = validateQuadByRing(bitmap, bestCorners, cv, 0.06);
+		if (ringValidation?.looksLikeInnerFrame) {
+			const fallback = centeredFallback(W, H);
+			return {
+				...fallback,
+				detection_layer: detectionLayer
+					? `${detectionLayer}_rejected_ring`
+					: 'rejected_ring',
+				extras: {
+					ring_validation: ringValidation,
+					rejected_corners: bestCorners
+				}
+			};
+		}
+
 		const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
 			bestCorners[0].x, bestCorners[0].y,
 			bestCorners[1].x, bestCorners[1].y,
@@ -457,7 +489,8 @@ export async function detectCard(
 			pxPerMm,
 			aspectRatio,
 			method: 'corner_detected',
-			detection_layer: detectionLayer
+			detection_layer: detectionLayer,
+			extras: ringValidation ? { ring_validation: ringValidation } : undefined
 		};
 	} catch (err) {
 		console.debug('[card-detector] threw, using fallback:', err);
@@ -518,6 +551,138 @@ function boundingRectFromCorners(c: [Point, Point, Point, Point]) {
 		width: Math.round(Math.max(...xs) - x),
 		height: Math.round(Math.max(...ys) - y)
 	};
+}
+
+interface RingValidationResult {
+	looksLikeInnerFrame: boolean;
+	meanInsideLum: number;
+	meanRingLum: number;
+	lumDelta: number;
+	meanInsideSat: number;
+	meanRingSat: number;
+	satDelta: number;
+}
+
+/**
+ * Validate a detected quad by sampling luminance + saturation inside the
+ * quad and in a thin ring just outside it.
+ *
+ * On a real card outer edge, the ring is wood/desk/background. Luminance
+ * and saturation are not dramatically higher than inside the card.
+ *
+ * On an inner artwork frame on a holo card, the ring is the bright foil
+ * border. Luminance and saturation are dramatically higher than inside
+ * the artwork. Both deltas spike.
+ *
+ * Calibrated offline on Alien (OBF-98): canny_75_200 first match had
+ * deltas of +34.3 lum / +51.6 sat (rejected); canny_40_120 was +1.4 /
+ * +3.4 (would pass — bitmap-edge blob caught by aspect gate instead);
+ * canny_20_80 was +23.4 / -0.7 (rejected on lum).
+ */
+function validateQuadByRing(
+	bitmap: ImageBitmap,
+	corners: [Point, Point, Point, Point],
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	cv: any,
+	ringOffsetFrac: number = 0.06
+): RingValidationResult | null {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let src: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let hsv: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let insideMask: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let outerMask: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let ringMask: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let gray: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let channels: any = null;
+	try {
+		const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+		ctx.drawImage(bitmap, 0, 0);
+		const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+
+		src = cv.matFromImageData(imageData);
+		gray = new cv.Mat();
+		cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+		hsv = new cv.Mat();
+		cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+		cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+		channels = new cv.MatVector();
+		cv.split(hsv, channels);
+		const satMat = channels.get(1);
+
+		insideMask = cv.Mat.zeros(bitmap.height, bitmap.width, cv.CV_8U);
+		const insidePoly = cv.matFromArray(
+			4,
+			1,
+			cv.CV_32SC2,
+			corners.flatMap((c) => [Math.round(c.x), Math.round(c.y)])
+		);
+		const insideMV = new cv.MatVector();
+		insideMV.push_back(insidePoly);
+		cv.fillPoly(insideMask, insideMV, new cv.Scalar(255));
+		insidePoly.delete();
+		insideMV.delete();
+
+		const cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+		const cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+		const expanded = corners.map((c) => ({
+			x: cx + (c.x - cx) * (1 + ringOffsetFrac),
+			y: cy + (c.y - cy) * (1 + ringOffsetFrac)
+		}));
+		outerMask = cv.Mat.zeros(bitmap.height, bitmap.width, cv.CV_8U);
+		const outerPoly = cv.matFromArray(
+			4,
+			1,
+			cv.CV_32SC2,
+			expanded.flatMap((c) => [Math.round(c.x), Math.round(c.y)])
+		);
+		const outerMV = new cv.MatVector();
+		outerMV.push_back(outerPoly);
+		cv.fillPoly(outerMask, outerMV, new cv.Scalar(255));
+		outerPoly.delete();
+		outerMV.delete();
+
+		ringMask = new cv.Mat();
+		cv.subtract(outerMask, insideMask, ringMask);
+
+		const meanInsideLum = cv.mean(gray, insideMask)[0];
+		const meanRingLum = cv.mean(gray, ringMask)[0];
+		const meanInsideSat = cv.mean(satMat, insideMask)[0];
+		const meanRingSat = cv.mean(satMat, ringMask)[0];
+
+		const lumDelta = meanRingLum - meanInsideLum;
+		const satDelta = meanRingSat - meanInsideSat;
+
+		// Either test triggering = inner-frame reject. Both passing = OK.
+		const looksLikeInnerFrame = lumDelta > 15 || satDelta > 12;
+
+		return {
+			looksLikeInnerFrame,
+			meanInsideLum,
+			meanRingLum,
+			lumDelta,
+			meanInsideSat,
+			meanRingSat,
+			satDelta
+		};
+	} catch {
+		return null;
+	} finally {
+		try { src?.delete(); } catch { /* ignore */ }
+		try { hsv?.delete(); } catch { /* ignore */ }
+		try { gray?.delete(); } catch { /* ignore */ }
+		try { channels?.delete(); } catch { /* ignore */ }
+		try { insideMask?.delete(); } catch { /* ignore */ }
+		try { outerMask?.delete(); } catch { /* ignore */ }
+		try { ringMask?.delete(); } catch { /* ignore */ }
+	}
 }
 
 function centeredFallback(W: number, H: number): CardDetection {
