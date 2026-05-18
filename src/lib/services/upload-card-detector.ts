@@ -79,17 +79,11 @@ export interface CardDetection {
 	/**
 	 * Which detection layer found the corners (Doc 1.2).
 	 * 'canny_75_200' | 'canny_40_120' | 'canny_20_80' | 'adaptive' | null.
-	 * Null on centered_fallback. Suffix `_rejected_ring` indicates the
-	 * corner-detected quad was rejected by ring-luminance validation and
-	 * fell back to centered_fallback.
+	 * Null on centered_fallback.
 	 */
 	detection_layer?: string | null;
 
-	/**
-	 * Per-detection auxiliary data. Currently carries `ring_validation` for
-	 * the post-corner-detection inner-frame check (and, on the rejected
-	 * path, the `rejected_corners` that triggered the fallback).
-	 */
+	/** Per-detection auxiliary data. Currently carries `contour_diagnostics`. */
 	extras?: Record<string, unknown>;
 }
 
@@ -324,12 +318,12 @@ export async function detectCard(
 				const vertexCountsPerEps: Record<string, number> = {};
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				let approx: any = null;
-				// Raw corners captured the first time approxPolyDP yields 4
-				// vertices. Saved here (not held as a Mat across iterations)
-				// because the loop keeps running for diagnostic vertex-count
-				// data even after the first 4-vertex hit, and we don't want
-				// to fight Mat lifetime in two dimensions at once.
-				let firstFourCorners: Point[] | null = null;
+				// approxPolyDP loop is now diagnostic-only: it captures the
+				// vertex-count distribution per contour into
+				// `approx_vertex_counts_per_eps` (the field that surfaced the
+				// 8-vertex bug post-hoc on BoBA cards with rounded corners).
+				// Corner selection itself uses minAreaRect below, which works
+				// regardless of vertex count.
 				let found4 = false;
 				for (const epsilonFactor of epsilonFactors) {
 					if (approx) approx.delete();
@@ -338,17 +332,6 @@ export async function detectCard(
 					vertexCountsPerEps[epsilonFactor.toFixed(2)] = approx.rows;
 					if (approx.rows === 4 && !found4) {
 						found4 = true;
-						const raw: Point[] = [];
-						for (let j = 0; j < 4; j++) {
-							raw.push({
-								x: approx.data32S[j * 2] / scale,
-								y: approx.data32S[j * 2 + 1] / scale
-							});
-						}
-						firstFourCorners = raw;
-						// Keep iterating so the diagnostic carries the full
-						// vertex-count distribution (this is the field that
-						// caught the 8-vertex bug post-hoc).
 					}
 				}
 
@@ -405,23 +388,56 @@ export async function detectCard(
 					aggregateRejections.no_quad_at_any_eps++;
 				}
 
-				if (found4 && firstFourCorners && area > bestArea) {
-					const ordered = orderCorners(firstFourCorners);
-					const sides = computeSideLengths(ordered);
-					const avgLong = (sides.left + sides.right) / 2;
-					const avgShort = (sides.top + sides.bottom) / 2;
-					if (avgShort < 1) {
-						if (approx) approx.delete();
-						c.delete();
-						continue;
-					}
-					const aspect = avgLong / avgShort;
-					if (aspect >= aspectTolerance.min && aspect <= aspectTolerance.max) {
-						bestArea = area;
-						best = ordered;
+				// Use minAreaRect output (already computed for diagnostics above)
+				// for actual corner selection. Works regardless of approxPolyDP
+				// vertex count. On BoBA cards with rounded corners, approxPolyDP
+				// returns 8 vertices, not 4, which used to silently discard the
+				// correct contour. minAreaRect fits a rotated rectangle to any
+				// contour and gives card-perfect output (verified offline on
+				// Cupid/RBF-84 and Alien/OBF-98).
+				if (
+					minAreaRectAspect >= aspectTolerance.min &&
+					minAreaRectAspect <= aspectTolerance.max &&
+					rectangularity >= RECTANGULARITY_FLOOR &&
+					rrFootprint > bestArea
+				) {
+					const rr = cv.minAreaRect(c);
+					let raw: Point[] | null = null;
+					if (typeof cv.boxPoints === 'function') {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						const boxMat: any = new cv.Mat();
+						try {
+							cv.boxPoints(rr, boxMat);
+							const pts: Point[] = [];
+							for (let j = 0; j < 4; j++) {
+								pts.push({
+									x: boxMat.data32F[j * 2] / scale,
+									y: boxMat.data32F[j * 2 + 1] / scale
+								});
+							}
+							raw = pts;
+						} finally {
+							boxMat.delete();
+						}
 					} else {
-						aggregateRejections.aspect_out_of_range++;
+						// Math fallback when cv.boxPoints isn't exposed by this
+						// opencv-js build. Portable, no Mat lifetime concerns.
+						raw = rectCorners(rr).map((p) => ({
+							x: p.x / scale,
+							y: p.y / scale
+						}));
 					}
+					if (raw) {
+						bestArea = rrFootprint;
+						best = orderCorners(raw);
+						contourDiag.final_picked = true;
+					}
+				} else if (
+					minAreaRectAspect > 0 &&
+					(minAreaRectAspect < aspectTolerance.min ||
+						minAreaRectAspect > aspectTolerance.max)
+				) {
+					aggregateRejections.aspect_out_of_range++;
 				}
 
 				if (approx) approx.delete();
@@ -443,22 +459,17 @@ export async function detectCard(
 			}
 		};
 
-		// Layer 1 — Multi-scale Canny. Run all three threshold pairs;
-		// accumulate edges across passes; collect the best valid quad from each
-		// pass and pick the largest globally. Breaking on the first match causes
-		// us to lock onto the inner artwork frame on holo cards, where the sharp
-		// Canny pass finds the inner frame as a closed contour while the outer
-		// card edge is fragmented by specular highlights.
+		// Layer 1 — Multi-scale Canny. Try sharpest threshold first; fall back
+		// to softer thresholds if no valid quad emerges. Earlier code tried to
+		// pick the globally-largest quad across all passes — that backfired by
+		// letting softer-Canny noise blobs win on area. With minAreaRect-based
+		// selection plus the rectangularity floor, the first pass that returns
+		// a valid candidate IS the right answer.
 		const cannyThresholds: Array<[number, number]> = [
-			[75, 200],   // default — sharp edges, high precision
-			[40, 120],   // softer — catches dim edges from glare washouts
-			[20, 80]     // softest — last resort, may pick up noise
+			[75, 200],   // sharp — high precision
+			[40, 120],   // softer — catches dim edges from glare
+			[20, 80]     // softest — last resort
 		];
-		const candidatesAcrossPasses: Array<{
-			corners: [Point, Point, Point, Point];
-			area: number;
-			layer: string;
-		}> = [];
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		let cannyOut: any = null;
 		try {
@@ -466,17 +477,13 @@ export async function detectCard(
 				if (cannyOut) cannyOut.delete();
 				cannyOut = new cv.Mat();
 				cv.Canny(blurred, cannyOut, lo, hi);
-				// OR onto accumulating edges Mat for cumulative coverage.
 				if (edges.rows === 0) {
 					cannyOut.copyTo(edges);
 				} else {
 					cv.bitwise_or(edges, cannyOut, edges);
 				}
-				// Morphological close at each scale: dilate then erode bridges
-				// small gaps from occlusion/glare without ballooning real edges.
 				cv.dilate(edges, edges, kernel);
 				cv.erode(edges, edges, kernel);
-
 				const layerName = `canny_${lo}_${hi}`;
 				const passDiag: DetectionPassDiagnostic = {
 					layer: layerName,
@@ -489,32 +496,13 @@ export async function detectCard(
 				const corners = findBestCorners(passDiag);
 				passes.push(passDiag);
 				if (corners) {
-					// Shoelace formula on de-scaled corner positions so areas
-					// are comparable across passes.
-					const a = Math.abs(
-						(corners[0].x * corners[1].y - corners[1].x * corners[0].y) +
-						(corners[1].x * corners[2].y - corners[2].x * corners[1].y) +
-						(corners[2].x * corners[3].y - corners[3].x * corners[2].y) +
-						(corners[3].x * corners[0].y - corners[0].x * corners[3].y)
-					) / 2;
-					candidatesAcrossPasses.push({
-						corners,
-						area: a,
-						layer: layerName
-					});
+					bestCorners = corners;
+					detectionLayer = layerName;
+					break;
 				}
 			}
 		} finally {
 			if (cannyOut) cannyOut.delete();
-		}
-
-		// Pick the globally-largest valid quad. On holos this resolves to the
-		// outer card edge from a softer-threshold pass over the inner artwork
-		// frame from the sharper pass.
-		if (candidatesAcrossPasses.length > 0) {
-			candidatesAcrossPasses.sort((a, b) => b.area - a.area);
-			bestCorners = candidatesAcrossPasses[0].corners;
-			detectionLayer = candidatesAcrossPasses[0].layer;
 		}
 
 		// Layer 2 — Adaptive thresholding fallback. If Canny found nothing
@@ -588,26 +576,6 @@ export async function detectCard(
 			};
 		}
 
-		// Ring-luminance validation: reject quads that are most likely the
-		// inner artwork frame on a holo card. The brightness/saturation jump
-		// just outside the inner frame is much larger than at a true card
-		// edge bordering wood/desk/background.
-		const ringValidation = validateQuadByRing(bitmap, bestCorners, cv, 0.06);
-		if (ringValidation?.looksLikeInnerFrame) {
-			const fallback = centeredFallback(W, H);
-			return {
-				...fallback,
-				detection_layer: detectionLayer
-					? `${detectionLayer}_rejected_ring`
-					: 'rejected_ring',
-				extras: {
-					ring_validation: ringValidation,
-					rejected_corners: bestCorners,
-					contour_diagnostics: contourTelemetry
-				}
-			};
-		}
-
 		const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
 			bestCorners[0].x, bestCorners[0].y,
 			bestCorners[1].x, bestCorners[1].y,
@@ -651,7 +619,6 @@ export async function detectCard(
 			method: 'corner_detected',
 			detection_layer: detectionLayer,
 			extras: {
-				...(ringValidation ? { ring_validation: ringValidation } : {}),
 				contour_diagnostics: contourTelemetry
 			}
 		};
@@ -693,6 +660,30 @@ interface SideLengths {
 	left: number;
 }
 
+/**
+ * Compute the 4 corners of an OpenCV RotatedRect from its center/size/angle.
+ * Used as a portable fallback when `cv.boxPoints` is not exposed by the
+ * bundled opencv-js build. Output order matches `cv.boxPoints`: the
+ * downstream `orderCorners` re-sorts to TL/TR/BR/BL regardless.
+ */
+function rectCorners(rr: {
+	center: { x: number; y: number };
+	size: { width: number; height: number };
+	angle: number;
+}): Point[] {
+	const a = (rr.angle * Math.PI) / 180;
+	const c = Math.cos(a);
+	const s = Math.sin(a);
+	const hw = rr.size.width / 2;
+	const hh = rr.size.height / 2;
+	return [
+		{ x: rr.center.x + -hw * c - -hh * s, y: rr.center.y + -hw * s + -hh * c },
+		{ x: rr.center.x + hw * c - -hh * s, y: rr.center.y + hw * s + -hh * c },
+		{ x: rr.center.x + hw * c - hh * s, y: rr.center.y + hw * s + hh * c },
+		{ x: rr.center.x + -hw * c - hh * s, y: rr.center.y + -hw * s + hh * c }
+	];
+}
+
 function computeSideLengths(c: [Point, Point, Point, Point]): SideLengths {
 	const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 	return {
@@ -714,138 +705,6 @@ function boundingRectFromCorners(c: [Point, Point, Point, Point]) {
 		width: Math.round(Math.max(...xs) - x),
 		height: Math.round(Math.max(...ys) - y)
 	};
-}
-
-interface RingValidationResult {
-	looksLikeInnerFrame: boolean;
-	meanInsideLum: number;
-	meanRingLum: number;
-	lumDelta: number;
-	meanInsideSat: number;
-	meanRingSat: number;
-	satDelta: number;
-}
-
-/**
- * Validate a detected quad by sampling luminance + saturation inside the
- * quad and in a thin ring just outside it.
- *
- * On a real card outer edge, the ring is wood/desk/background. Luminance
- * and saturation are not dramatically higher than inside the card.
- *
- * On an inner artwork frame on a holo card, the ring is the bright foil
- * border. Luminance and saturation are dramatically higher than inside
- * the artwork. Both deltas spike.
- *
- * Calibrated offline on Alien (OBF-98): canny_75_200 first match had
- * deltas of +34.3 lum / +51.6 sat (rejected); canny_40_120 was +1.4 /
- * +3.4 (would pass — bitmap-edge blob caught by aspect gate instead);
- * canny_20_80 was +23.4 / -0.7 (rejected on lum).
- */
-function validateQuadByRing(
-	bitmap: ImageBitmap,
-	corners: [Point, Point, Point, Point],
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	cv: any,
-	ringOffsetFrac: number = 0.06
-): RingValidationResult | null {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let src: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let hsv: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let insideMask: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let outerMask: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let ringMask: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let gray: any = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let channels: any = null;
-	try {
-		const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return null;
-		ctx.drawImage(bitmap, 0, 0);
-		const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-
-		src = cv.matFromImageData(imageData);
-		gray = new cv.Mat();
-		cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-		hsv = new cv.Mat();
-		cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
-		cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
-		channels = new cv.MatVector();
-		cv.split(hsv, channels);
-		const satMat = channels.get(1);
-
-		insideMask = cv.Mat.zeros(bitmap.height, bitmap.width, cv.CV_8U);
-		const insidePoly = cv.matFromArray(
-			4,
-			1,
-			cv.CV_32SC2,
-			corners.flatMap((c) => [Math.round(c.x), Math.round(c.y)])
-		);
-		const insideMV = new cv.MatVector();
-		insideMV.push_back(insidePoly);
-		cv.fillPoly(insideMask, insideMV, new cv.Scalar(255));
-		insidePoly.delete();
-		insideMV.delete();
-
-		const cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
-		const cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
-		const expanded = corners.map((c) => ({
-			x: cx + (c.x - cx) * (1 + ringOffsetFrac),
-			y: cy + (c.y - cy) * (1 + ringOffsetFrac)
-		}));
-		outerMask = cv.Mat.zeros(bitmap.height, bitmap.width, cv.CV_8U);
-		const outerPoly = cv.matFromArray(
-			4,
-			1,
-			cv.CV_32SC2,
-			expanded.flatMap((c) => [Math.round(c.x), Math.round(c.y)])
-		);
-		const outerMV = new cv.MatVector();
-		outerMV.push_back(outerPoly);
-		cv.fillPoly(outerMask, outerMV, new cv.Scalar(255));
-		outerPoly.delete();
-		outerMV.delete();
-
-		ringMask = new cv.Mat();
-		cv.subtract(outerMask, insideMask, ringMask);
-
-		const meanInsideLum = cv.mean(gray, insideMask)[0];
-		const meanRingLum = cv.mean(gray, ringMask)[0];
-		const meanInsideSat = cv.mean(satMat, insideMask)[0];
-		const meanRingSat = cv.mean(satMat, ringMask)[0];
-
-		const lumDelta = meanRingLum - meanInsideLum;
-		const satDelta = meanRingSat - meanInsideSat;
-
-		// Either test triggering = inner-frame reject. Both passing = OK.
-		const looksLikeInnerFrame = lumDelta > 15 || satDelta > 12;
-
-		return {
-			looksLikeInnerFrame,
-			meanInsideLum,
-			meanRingLum,
-			lumDelta,
-			meanInsideSat,
-			meanRingSat,
-			satDelta
-		};
-	} catch {
-		return null;
-	} finally {
-		try { src?.delete(); } catch { /* ignore */ }
-		try { hsv?.delete(); } catch { /* ignore */ }
-		try { gray?.delete(); } catch { /* ignore */ }
-		try { channels?.delete(); } catch { /* ignore */ }
-		try { insideMask?.delete(); } catch { /* ignore */ }
-		try { outerMask?.delete(); } catch { /* ignore */ }
-		try { ringMask?.delete(); } catch { /* ignore */ }
-	}
 }
 
 function round3(n: number): number {
