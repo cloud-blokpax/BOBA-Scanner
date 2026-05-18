@@ -32,36 +32,67 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+/**
+ * Pre-flight ref check.
+ *
+ * We MUST match only Supabase Storage URLs (which we're about to delete), not
+ * R2 URLs. The R2 migration preserved the bucket prefix as the key, so R2 URLs
+ * also contain the substring "/card-images/harvested/". A naive substring
+ * filter flags ~12k already-migrated rows as false positives and aborts.
+ *
+ * `card_reference_images.image_path` is a storage path (not a URL); it lives
+ * in a separate `references/` folder but we still defensively check.
+ */
 async function preflightDbRefCheck(): Promise<boolean> {
-  const checks: Array<{ table: string; column: string }> = [
+  const supabaseUrlChecks: Array<{ table: string; column: string }> = [
     { table: 'cards', column: 'image_url' },
     { table: 'ebay_card_images', column: 'image_url' },
     { table: 'ebay_card_images', column: 'thumbnail_url' },
     { table: 'ebay_listing_observations', column: 'image_url' },
     { table: 'external_pricing', column: 'ep_image_url' },
-    { table: 'card_reference_images', column: 'image_path' },
   ];
 
   let allClear = true;
-  for (const { table, column } of checks) {
+  for (const { table, column } of supabaseUrlChecks) {
     const { count, error } = await supabase
       .from(table)
       .select(column, { count: 'exact', head: true })
-      .like(column, '%/card-images/harvested/%');
+      .like(column, 'https://%.supabase.co/storage/v1/object/public/card-images/harvested/%');
 
     if (error) {
-      console.error(`✗ Pre-flight error on ${table}.${column}: ${error.message}`);
+      console.error(
+        `✗ Pre-flight error on ${table}.${column}: ${error.message || '(empty)'}`
+      );
       allClear = false;
       continue;
     }
     const c = count ?? 0;
     if (c > 0) {
-      console.error(`✗ ABORT: ${c} rows in ${table}.${column} reference harvested/`);
+      console.error(`✗ ABORT: ${c} rows in ${table}.${column} reference Supabase harvested/`);
       allClear = false;
     } else {
       console.log(`✓ ${table}.${column}: 0 refs`);
     }
   }
+
+  const { count: refImgCount, error: refImgError } = await supabase
+    .from('card_reference_images')
+    .select('image_path', { count: 'exact', head: true })
+    .or('image_path.like.card-images/harvested/%,image_path.like.harvested/%');
+  if (refImgError) {
+    console.error(
+      `✗ Pre-flight error on card_reference_images.image_path: ${refImgError.message || '(empty)'}`
+    );
+    allClear = false;
+  } else if ((refImgCount ?? 0) > 0) {
+    console.error(
+      `✗ ABORT: ${refImgCount} rows in card_reference_images.image_path reference harvested/`
+    );
+    allClear = false;
+  } else {
+    console.log('✓ card_reference_images.image_path: 0 refs');
+  }
+
   return allClear;
 }
 
