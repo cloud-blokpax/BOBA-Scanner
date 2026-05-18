@@ -58,6 +58,16 @@ export interface Tier1CanonicalSummary {
 	preprocessing_applied: string[];
 }
 
+export interface RingValidation {
+	looksLikeInnerFrame: boolean;
+	meanInsideLum: number;
+	meanRingLum: number;
+	lumDelta: number;
+	meanInsideSat: number;
+	meanRingSat: number;
+	satDelta: number;
+}
+
 export interface Tier1Detection {
 	method: string;
 	layer: string | null;
@@ -67,6 +77,8 @@ export interface Tier1Detection {
 	rectification_applied: boolean;
 	corners_clockwise_from_topleft: number[][] | null;
 	rejected_layers_tried: string[];
+	ring_validation: RingValidation | null;
+	ring_rejected: boolean;
 }
 
 export interface Tier1Consensus {
