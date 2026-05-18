@@ -380,6 +380,10 @@ export async function recognizeCard(
 		 *  detection. Upload mode runs detectCard inside this function and
 		 *  ignores any caller-supplied geometry. */
 		geometry?: ScanWriteGeometry | null;
+		/** Phase 1: frame fusion telemetry from the Scanner shutter path.
+		 *  Surfaced into Tier 1 telemetry extras for hit-rate-by-method
+		 *  segmentation. NULL for upload + binder paths. */
+		fusionDiag?: import('./frame-fusion').FusionDiag | null;
 	}
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
@@ -957,7 +961,12 @@ export async function recognizeCard(
 			confidenceFloor: 0.6,
 			ttaEnabled,
 			captureSource: captureSource ?? 'unknown',
-			scanIdPromise
+			scanIdPromise,
+			fusionDiag: options?.fusionDiag ?? null,
+			lensDiag:
+				(detectedCardDetection?.extras?.lens_diag as
+					| import('./tier1-telemetry.types').Tier1LensDiag
+					| undefined) ?? null
 		});
 		tier1Telemetry = tier1Outcome.telemetry;
 		if (tier1Outcome.result) {

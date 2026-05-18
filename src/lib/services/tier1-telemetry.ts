@@ -19,11 +19,17 @@ import type { LiveOCRSnapshot } from './live-ocr-coordinator';
 import type {
 	ContourTelemetry,
 	Tier1Candidate,
+	Tier1CatalogDiag,
 	Tier1CatalogLookup,
 	Tier1Detection,
+	Tier1EdgeFitDiag,
+	Tier1FusionDiag,
+	Tier1LensDiag,
 	Tier1MissCategory,
 	Tier1PathTaken,
 	Tier1TelemetryPayload,
+	Tier1TemplateDiag,
+	Tier1VisualFeatures,
 	OcrRegion
 } from './tier1-telemetry.types';
 
@@ -89,6 +95,18 @@ export interface BuildTier1TelemetryArgs {
 	hit: boolean;
 	/** Free-text notes from the path decision; capped at NOTES_CAP. */
 	notes: string | null;
+	/** Phase 1 — frame fusion telemetry from the Scanner shutter path. */
+	fusionDiag?: Tier1FusionDiag | null;
+	/** Phase 3 — border-color visual features sampled from canonical crop. */
+	visualFeatures?: Tier1VisualFeatures | null;
+	/** Phase 3 — catalog-lookup parallel-hint diagnostics. */
+	catalogDiag?: Tier1CatalogDiag | null;
+	/** Phase 2 — edge-fit corner refinement diagnostics. */
+	edgeFitDiag?: Tier1EdgeFitDiag | null;
+	/** Phase 6 — lens distortion correction diagnostics. */
+	lensDiag?: Tier1LensDiag | null;
+	/** Phase 7 — region template selection diagnostics. */
+	templateDiag?: Tier1TemplateDiag | null;
 }
 
 /**
@@ -408,7 +426,23 @@ export function buildTier1TelemetryPayload(args: BuildTier1TelemetryArgs): Tier1
 				path_taken: args.pathTaken
 			},
 			capture_source: args.captureSource,
-			pipeline_version: PIPELINE_VERSION
+			pipeline_version: PIPELINE_VERSION,
+			fusion_diag: clampFusionDiag(args.fusionDiag ?? null),
+			visual_features: args.visualFeatures ?? null,
+			catalog_diag: args.catalogDiag ?? null,
+			edge_fit_diag: args.edgeFitDiag ?? null,
+			lens_correction: args.lensDiag ?? null,
+			template_diag: args.templateDiag ?? null
 		}
 	};
+}
+
+/**
+ * Cap the per_frame_scores array at 10 entries — the buffer is small but a
+ * future bump shouldn't blow the 32KB extras budget.
+ */
+function clampFusionDiag(diag: Tier1FusionDiag | null): Tier1FusionDiag | null {
+	if (!diag) return null;
+	if (diag.per_frame_scores.length <= 10) return diag;
+	return { ...diag, per_frame_scores: diag.per_frame_scores.slice(0, 10) };
 }

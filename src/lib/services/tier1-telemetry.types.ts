@@ -195,6 +195,84 @@ export interface Tier1Candidate {
 	why_chosen: string;
 }
 
+/**
+ * Phase 1 — frame fusion diagnostics. Populated by the Scanner shutter path
+ * when it composites the best K buffered frames before detection. NULL for
+ * paths that skip fusion (uploads, binder, manual capture).
+ */
+export interface Tier1FusionDiag {
+	frames_buffered: number;
+	frames_used: number;
+	composite_method: 'median' | 'min_pixel' | 'shutter_only';
+	pre_composite_blur_variance: number;
+	post_composite_blur_variance: number;
+	per_frame_scores: Array<{
+		blur_variance: number;
+		glare_area_pct: number;
+		composite_score: number;
+		used: boolean;
+	}>;
+	composite_ms: number;
+}
+
+/**
+ * Phase 3 — visual feature signals extracted from the canonical crop
+ * (border color, etc). Used by catalog lookup as a parallel hint. NULL when
+ * the sampler errored or capture mode skipped it.
+ */
+export interface Tier1VisualFeatures {
+	border_color_lab: [number, number, number];
+	nearest_parallel_by_color: string;
+	color_distance: number;
+	margin_to_2nd: number;
+	elapsed_ms: number;
+}
+
+/**
+ * Phase 3 — catalog lookup diagnostics, including whether the parallel hint
+ * was used and whether it changed the winning candidate.
+ */
+export interface Tier1CatalogDiag {
+	parallel_hint_used: boolean;
+	parallel_hint_value: string | null;
+	parallel_hint_changed_winner: boolean;
+}
+
+/**
+ * Phase 2 — edge-fit corner refinement diagnostics. Records RANSAC fit
+ * quality per side and per-corner displacement from the minAreaRect output.
+ */
+export interface Tier1EdgeFitDiag {
+	contour_points_total: number;
+	points_per_side: number[];
+	points_rejected_as_outliers: number;
+	ransac_inlier_pct: number[];
+	corner_displacement_from_minarearect_px: number[];
+	fitted_line_residual_rmse_px: number[];
+	elapsed_ms: number;
+	used: boolean;
+}
+
+/**
+ * Phase 6 — lens distortion correction. Records which intrinsics were used
+ * and whether they were actually applied.
+ */
+export interface Tier1LensDiag {
+	device_label: string;
+	intrinsic_source: 'published_apple' | 'published_google' | 'estimated' | 'identity';
+	correction_applied: boolean;
+	elapsed_ms: number;
+}
+
+/**
+ * Phase 7 — region template selection diagnostics. Records which per-parallel
+ * template fed PaddleOCR.
+ */
+export interface Tier1TemplateDiag {
+	template_used: string;
+	parallel_hint_at_selection: string | null;
+}
+
 export interface Tier1TelemetryExtras {
 	frames: Tier1FrameSummary;
 	canonical: Tier1CanonicalSummary;
@@ -204,6 +282,18 @@ export interface Tier1TelemetryExtras {
 	decision: Tier1Decision;
 	capture_source: string;
 	pipeline_version: string;
+	/** Phase 1 — populated only by the live Scanner path. */
+	fusion_diag?: Tier1FusionDiag | null;
+	/** Phase 3 — populated when border color sampling ran. */
+	visual_features?: Tier1VisualFeatures | null;
+	/** Phase 3 — populated when catalog lookup considered a parallel hint. */
+	catalog_diag?: Tier1CatalogDiag | null;
+	/** Phase 2 — populated when edge-fit refinement was attempted. */
+	edge_fit_diag?: Tier1EdgeFitDiag | null;
+	/** Phase 6 — populated when lens correction was attempted. */
+	lens_correction?: Tier1LensDiag | null;
+	/** Phase 7 — populated when a per-parallel template was selected. */
+	template_diag?: Tier1TemplateDiag | null;
 }
 
 export interface Tier1TelemetryPayload {

@@ -631,6 +631,10 @@ export interface Tier1Inputs {
 	 * a null resolution silently skips the write.
 	 */
 	scanIdPromise: Promise<string | null>;
+	/** Phase 1 — frame-fusion diagnostics from the Scanner shutter path. */
+	fusionDiag?: import('./tier1-telemetry.types').Tier1FusionDiag | null;
+	/** Phase 6 — lens correction diagnostics from upload-card-detector. */
+	lensDiag?: import('./tier1-telemetry.types').Tier1LensDiag | null;
 }
 
 /**
@@ -655,7 +659,9 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 		confidenceFloor,
 		ttaEnabled,
 		captureSource,
-		scanIdPromise
+		scanIdPromise,
+		fusionDiag,
+		lensDiag
 	} = inputs;
 
 	let canonicalTelemetry: Tier1Telemetry['canonical'] = null;
@@ -997,7 +1003,9 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				winningCardNumber,
 				winningCardName,
 				hit,
-				notes
+				notes,
+				fusionDiag: fusionDiag ?? null,
+				lensDiag: lensDiag ?? null
 			});
 			void scanIdPromise
 				.then((scanId) => {
