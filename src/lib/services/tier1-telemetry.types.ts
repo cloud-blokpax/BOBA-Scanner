@@ -203,7 +203,7 @@ export interface Tier1Candidate {
 export interface Tier1FusionDiag {
 	frames_buffered: number;
 	frames_used: number;
-	composite_method: 'median' | 'min_pixel' | 'shutter_only';
+	composite_method: 'best_frame' | 'min_pixel' | 'shutter_only' | 'median';
 	pre_composite_blur_variance: number;
 	post_composite_blur_variance: number;
 	per_frame_scores: Array<{

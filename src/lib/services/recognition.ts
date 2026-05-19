@@ -691,6 +691,18 @@ export async function recognizeCard(
 	// and track Tier 1 hit rate as a function of detection method.
 	// Tier 1 telemetry also reads aspect_ratio / detection_layer / corners
 	// from here to populate the `detection` extras sub-object.
+	//
+	// Two source paths:
+	//   - Upload mode: detectedCardDetection + detectedCardRect were
+	//     populated by detectCard() above in this function.
+	//   - Live mode: detection ran in the scanner component and arrives
+	//     here via options.geometry (a ScanWriteGeometry). Read from there.
+	//
+	// Bug 2026-05-19: previously only upload-mode populated
+	// cardDetectContext, so live scans had detection.method = 'unknown' in
+	// Tier 1 telemetry even when corners were detected. ring_validation and
+	// contour_diagnostics aren't on ScanWriteGeometry today; extending that
+	// type to thread per-contour live diagnostics is a separate follow-up.
 	const cardDetectContext: Record<string, unknown> | null = detectedCardRect
 		? {
 			method: detectedCardRect.method,
@@ -709,7 +721,19 @@ export async function recognizeCard(
 			contour_diagnostics:
 				detectedCardDetection?.extras?.contour_diagnostics ?? null
 		}
-		: null;
+		: options?.geometry
+			? {
+				method: options.geometry.detection_method,
+				rect: null,
+				source_dimensions: { width: bitmap.width, height: bitmap.height },
+				aspect_ratio: options.geometry.aspect_ratio_at_capture,
+				detection_layer: options.geometry.detection_layer,
+				rectification_applied: options.geometry.rectification_applied,
+				corners: options.geometry.detected_corners,
+				ring_validation: null,
+				contour_diagnostics: null
+			}
+			: null;
 
 	// Helper to record scan result to history and auto-tag before returning
 	async function finalize(result: ScanResult): Promise<ScanResult> {

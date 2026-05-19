@@ -20,7 +20,7 @@ import { getMotionAtTimestamp, getPermissionState as getImuPermission } from './
 // recalibrate if blur_variance ranges shift.
 const IMU_SCORE_PENALTY = 5000;
 
-export type FusionMethod = 'median' | 'min_pixel' | 'shutter_only';
+export type FusionMethod = 'best_frame' | 'min_pixel' | 'shutter_only';
 
 export interface FusionPerFrameScore {
 	blur_variance: number;
@@ -131,22 +131,45 @@ export async function fuseShutterWithBuffer(
 		const shutterScore = scores[scores.length - 1];
 		diag.pre_composite_blur_variance = Math.round(shutterScore.blur_variance);
 		diag.frames_used = topFrames.length;
-		diag.composite_method = opts.foilMode ? 'min_pixel' : 'median';
+		// Phase 1 fix 2026-05-19: median composite was producing softer output
+		// than the sharpest input frame because hand-jitter mis-registers
+		// per-pixel samples across frames. Switched to best-single-frame
+		// selection. compositeMinPixel is retained for foilMode where the
+		// glare-suppression benefit outweighs the registration cost (user is
+		// holding still for the foil sweep on purpose).
+		diag.composite_method = opts.foilMode ? 'min_pixel' : 'best_frame';
 
-		const composited = opts.foilMode
-			? await worker.compositeMinPixel(topFrames)
-			: await worker.compositeMedian(topFrames);
+		let composited: ImageBitmap;
+		let ownsComposite: boolean;
+		let bestFrameIdx = -1;
+		if (opts.foilMode) {
+			composited = await worker.compositeMinPixel(topFrames);
+			ownsComposite = true;
+		} else {
+			// Highest score is at ranked[0] (sorted desc by adjustedScore).
+			// Return a reference to the buffered/shutter bitmap directly;
+			// caller's existing lifecycle owns close().
+			bestFrameIdx = ranked[0].idx;
+			composited = allFrames[bestFrameIdx];
+			ownsComposite = false;
+		}
 
-		// Best-effort post-score. Failure here doesn't invalidate the composite.
-		try {
-			const post = await worker.scoreFrame(composited);
-			diag.post_composite_blur_variance = Math.round(post.blur_variance);
-		} catch {
-			diag.post_composite_blur_variance = diag.pre_composite_blur_variance;
+		// For best_frame, post-score == the picked frame's pre-score; no
+		// re-score needed. For min_pixel, the composite is a new bitmap so
+		// re-score it.
+		if (opts.foilMode) {
+			try {
+				const post = await worker.scoreFrame(composited);
+				diag.post_composite_blur_variance = Math.round(post.blur_variance);
+			} catch {
+				diag.post_composite_blur_variance = diag.pre_composite_blur_variance;
+			}
+		} else {
+			diag.post_composite_blur_variance = Math.round(scores[bestFrameIdx].blur_variance);
 		}
 
 		diag.composite_ms = Math.round(performance.now() - start);
-		return { bitmap: composited, owned: true, diag };
+		return { bitmap: composited, owned: ownsComposite, diag };
 	} catch (err) {
 		console.debug('[frame-fusion] fusion failed, falling back to shutter:', err);
 		diag.composite_method = 'shutter_only';
