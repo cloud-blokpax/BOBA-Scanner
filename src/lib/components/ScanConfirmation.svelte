@@ -15,6 +15,7 @@
 	import ParallelSelector from '$lib/components/ParallelSelector.svelte';
 
 	import ScanCardImage from './scan-confirmation/ScanCardImage.svelte';
+	import QuadAdjustOverlay from './scan-confirmation/QuadAdjustOverlay.svelte';
 	import ScanCardHeader from './scan-confirmation/ScanCardHeader.svelte';
 	import ScanPriceSection from './scan-confirmation/ScanPriceSection.svelte';
 	import ScanMetaPills from './scan-confirmation/ScanMetaPills.svelte';
@@ -76,6 +77,38 @@
 	let autoAddAttempted = $state(false);
 	// Phase 8 — time-to-correction lets us segment UX friction by type.
 	const correctionStartMs = performance.now();
+
+	// Phase 8 — draggable quad refinement overlay. Opens from a small
+	// "Adjust crop" link near the result image. Available even on
+	// non-low-confidence scans so users can correct over-cropping that
+	// the detector was confident about.
+	let showQuadAdjust = $state(false);
+	const QUAD_BASELINE: Array<{ x: number; y: number }> = [
+		{ x: 0.02, y: 0.02 },
+		{ x: 0.98, y: 0.02 },
+		{ x: 0.98, y: 0.98 },
+		{ x: 0.02, y: 0.98 }
+	];
+	function onQuadAdjustComplete(corrected: Array<{ x: number; y: number }>) {
+		// Submit if the corrected corners actually changed from the
+		// baseline — no point logging a no-op interaction.
+		const changed = corrected.some(
+			(c, i) =>
+				Math.abs(c.x - QUAD_BASELINE[i].x) > 0.005 ||
+				Math.abs(c.y - QUAD_BASELINE[i].y) > 0.005
+		);
+		if (changed && result.id) {
+			void submitUserCorrection({
+				scanId: result.id,
+				correctionType: 'quad_adjust',
+				originalCorners: QUAD_BASELINE,
+				correctedCorners: corrected,
+				originalCardId: result.card?.id ?? null,
+				correctionLatencyMs: Math.round(performance.now() - correctionStartMs)
+			});
+		}
+		showQuadAdjust = false;
+	}
 
 	// Phase 8 — log a single abandon event when the user closes a failed
 	// scan without a correction landing. The original handler is wrapped
@@ -343,6 +376,21 @@
 	}
 </script>
 
+{#if showQuadAdjust && capturedImageUrl}
+	<div
+		class="quad-adjust-modal"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Adjust card crop"
+	>
+		<QuadAdjustOverlay
+			imageUrl={capturedImageUrl}
+			oncomplete={onQuadAdjustComplete}
+			oncancel={() => (showQuadAdjust = false)}
+		/>
+	</div>
+{/if}
+
 <div class="confirmation-overlay">
 	<div class="confirmation-backdrop"></div>
 	<div class="confirmation-container">
@@ -357,6 +405,19 @@
 				weaponType={card.weapon_type ?? null}
 				parallel={card.parallel ?? null}
 			/>
+
+			<!-- Phase 8 — Adjust-crop link offers a draggable quad on the
+			     captured image. Only surfaces when we actually have an
+			     image to render and a scan id to attach the correction to. -->
+			{#if capturedImageUrl && result.id}
+				<button
+					type="button"
+					class="quad-adjust-link"
+					onclick={() => (showQuadAdjust = true)}
+				>
+					Adjust crop
+				</button>
+			{/if}
 
 			<div class="card-details">
 				<ScanCardHeader
@@ -570,6 +631,37 @@
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
+	}
+
+	/* Phase 8 — quad-adjust modal sits ABOVE the confirmation overlay
+	   while open so the user can interact with the SVG handles without
+	   the sheet's backdrop intercepting taps. */
+	.quad-adjust-modal {
+		position: fixed;
+		inset: 0;
+		z-index: calc(var(--z-sticky, 1020) + 40);
+		background: rgba(0, 0, 0, 0.92);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) 0;
+	}
+
+	.quad-adjust-link {
+		display: block;
+		margin: 6px auto -6px;
+		padding: 4px 12px;
+		background: transparent;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 999px;
+		color: rgba(255, 255, 255, 0.7);
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.quad-adjust-link:hover {
+		color: white;
+		border-color: rgba(255, 255, 255, 0.4);
 	}
 
 	.confirmation-backdrop {

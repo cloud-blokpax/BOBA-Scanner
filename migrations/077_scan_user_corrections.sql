@@ -6,7 +6,11 @@
 
 CREATE TABLE IF NOT EXISTS scan_user_corrections (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    scan_id uuid NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+    -- NULLABLE because corner_tap_4 corrections fire BEFORE any scan row
+    -- exists (detector failed pre-capture, user supplies corners directly).
+    -- card_id_override / abandon / quad_adjust corrections always have a
+    -- scan row to reference.
+    scan_id uuid REFERENCES scans(id) ON DELETE CASCADE,
     user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
     correction_type text NOT NULL CHECK (correction_type IN (
         'corner_tap_4', 'quad_adjust', 'card_id_override', 'abandon'

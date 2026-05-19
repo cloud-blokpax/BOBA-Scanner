@@ -13,6 +13,8 @@
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { fuseShutterWithBuffer, type FusionDiag } from '$lib/services/frame-fusion';
 	import { requestImuPermission } from '$lib/services/imu-monitor';
+	import { submitUserCorrection } from '$lib/services/user-corrections';
+	import CornerTapOverlay from './scanner/CornerTapOverlay.svelte';
 	import type { ScanResult, Card } from '$lib/types';
 
 	import ScannerViewfinder from './scanner/ScannerViewfinder.svelte';
@@ -113,6 +115,13 @@
 	}
 
 	let showFirstRunGuide = $state(false);
+
+	// Phase 8 — corner-tap fallback. Shown when the detector has missed
+	// for a while and the user is stuck. Tap-out captures labeled training
+	// data; the actual scan retry uses the existing detector.
+	let cornerTapMode = $state(false);
+	let cornerTapStartMs = $state<number | null>(null);
+	const CORNER_TAP_OFFER_AFTER_MISSES = 12; // ~3s at 4 fps analysis loop
 
 	let foilMode = $state(false);
 	let foilCaptures = $state<ImageBitmap[]>([]);
@@ -583,6 +592,39 @@
 		await handleCapture();
 	}
 
+	function openCornerTap() {
+		cornerTapMode = true;
+		cornerTapStartMs = performance.now();
+	}
+
+	function cancelCornerTap() {
+		cornerTapMode = false;
+		cornerTapStartMs = null;
+	}
+
+	async function onCornerTapComplete(cornersInVideoCoords: Array<{ x: number; y: number }>) {
+		// Phase 8 — fire-and-forget submit so the user isn't blocked on the
+		// network call. scan_id is null at this point (pre-capture), which
+		// is supported post-migration-077.
+		const latencyMs =
+			cornerTapStartMs !== null
+				? Math.round(performance.now() - cornerTapStartMs)
+				: null;
+		void submitUserCorrection({
+			scanId: null,
+			correctionType: 'corner_tap_4',
+			correctedCorners: cornersInVideoCoords,
+			correctionLatencyMs: latencyMs
+		});
+		cornerTapMode = false;
+		cornerTapStartMs = null;
+		showToast('Thanks — try the scan again', '🎯', 2200);
+		// Trigger a fresh capture immediately; the detector runs as normal.
+		// (Future enhancement: feed the manual corners into a bypass path
+		// in detectCard so this scan uses the user's quad directly.)
+		await handleCapture();
+	}
+
 	async function handleFoilCapture() {
 		if (!videoEl || scanning) return;
 		phase = 'foil_capturing';
@@ -703,6 +745,22 @@
 			cameraError={camera.cameraError}
 			onAlignmentStateChanged={handleAlignmentStateChanged}
 		/>
+
+		<!-- Phase 8 — corner-tap fallback offer + overlay.
+		     Offer button appears after the detector has been stuck on
+		     'cant_find_card' for ~3s. Clicking it opens the full-screen
+		     overlay where the user marks the four corners directly. -->
+		{#if cornerTapMode}
+			<CornerTapOverlay
+				{videoEl}
+				oncomplete={onCornerTapComplete}
+				oncancel={cancelCornerTap}
+			/>
+		{:else if cameraState === 'cant_find_card' && analysis.quad.consecutiveMissFrames >= CORNER_TAP_OFFER_AFTER_MISSES && !scanning}
+			<button type="button" class="corner-tap-offer" onclick={openCornerTap}>
+				Can't find the card? Tap corners manually
+			</button>
+		{/if}
 
 		<!-- Particle reveal — runs during scan and on success, rarity-coded. -->
 		<ScanEffects
@@ -830,6 +888,26 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+
+	.corner-tap-offer {
+		position: absolute;
+		bottom: 80px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: rgba(255, 255, 255, 0.92);
+		color: #111;
+		font-size: 14px;
+		font-weight: 600;
+		padding: 10px 18px;
+		border-radius: 999px;
+		border: none;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		z-index: 25;
+		cursor: pointer;
+	}
+	.corner-tap-offer:active {
+		transform: translateX(-50%) scale(0.97);
 	}
 
 	.torch-btn {

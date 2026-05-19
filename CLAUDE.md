@@ -875,7 +875,7 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `scan_pipeline_checkpoint` | Per-stage trace (elapsed_ms + extras) for live pipeline debugging | `id` (BIGINT PK), `trace_id`, `user_id`, `stage`, `elapsed_ms`, `extras` (JSONB), `created_at` |
 | `scan_resolutions` | Consensus snapshot for confirmed scan outcomes | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `card_id`, `parallel` (default `'paper'`), `consensus_score`, `tier_agreement_bits`, `confirmed_at`, `confirmed_by`, `superseded_at`, `superseded_by`, `extras`, `schema_version` |
 | `scan_disputes` | User-reported incorrect scans | `id` (UUID PK), scan + card refs, dispute metadata |
-| `scan_user_corrections` | Phase 8 tap-to-teach data. Labeled training data for detector / catalog tuning. RLS scoped to submitter. | `id` (UUID PK), `scan_id` (FK `scans`), `user_id` (FK `auth.users`), `correction_type` CHECK `corner_tap_4\|quad_adjust\|card_id_override\|abandon`, `original_corners` JSONB, `corrected_corners` JSONB, `original_card_id` (FK `cards`), `corrected_card_id` (FK `cards`), `correction_latency_ms` INT, `created_at` |
+| `scan_user_corrections` | Phase 8 tap-to-teach data. Labeled training data for detector / catalog tuning. RLS scoped to submitter. | `id` (UUID PK), `scan_id` (FK `scans`, nullable — corner_tap_4 can fire pre-scan), `user_id` (FK `auth.users`), `correction_type` CHECK `corner_tap_4\|quad_adjust\|card_id_override\|abandon`, `original_corners` JSONB, `corrected_corners` JSONB, `original_card_id` (FK `cards`), `corrected_card_id` (FK `cards`), `correction_latency_ms` INT, `created_at` |
 | `alignment_signal_telemetry` | Pre-capture alignment signal data (live camera) | `id` (PK) |
 
 #### Tables — Pricing & Commerce
