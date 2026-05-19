@@ -585,6 +585,12 @@ export interface Tier1Telemetry {
 		parallel_rule_fired: string | null;
 		per_frame_results: unknown[];
 		augmentation_set_version: string;
+		/** Phase 4 — why TTA ran on this scan. 'canonical_missed' is the
+		 *  pre-Phase-4 behavior; 'low_confidence' is new (canonical hit
+		 *  but below TTA_LOW_CONF_RESCUE_THRESHOLD). */
+		invocation_reason?: 'canonical_missed' | 'low_confidence' | 'none';
+		canonical_confidence_at_invocation?: number;
+		canonical_card_id_at_invocation?: string | null;
 	} | null;
 	canonicalAttempts: Array<{
 		game: 'boba' | 'wonders';
@@ -800,7 +806,24 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 			// behavior (accept on confidence alone).
 			const validationGated =
 				canonical.validation !== null && !canonical.validation.passed;
-			if (canonical.card && canonical.confidence >= confidenceFloor && !validationGated) {
+			// Phase 4 — TTA may rescue a canonical hit that landed below this
+			// threshold. Above it (and with ttaEnabled), we trust canonical
+			// immediately. Below it, we defer the early-return and let TTA
+			// race; if TTA can't converge, canonical is restored as the
+			// winner (no regression vs pre-Phase-4 behavior).
+			const TTA_LOW_CONF_RESCUE_THRESHOLD = 0.7;
+			const ttaShouldRescueLowConf =
+				ttaEnabled &&
+				!!canonical.card &&
+				canonical.confidence >= confidenceFloor &&
+				canonical.confidence < TTA_LOW_CONF_RESCUE_THRESHOLD &&
+				!validationGated;
+			if (
+				canonical.card &&
+				canonical.confidence >= confidenceFloor &&
+				!validationGated &&
+				!ttaShouldRescueLowConf
+			) {
 				const divergent: string[] = [];
 				if (live) {
 					if (live.cardNumber?.value !== canonical.cardNumber) divergent.push('card_number');
@@ -882,10 +905,22 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 				notes = 'no_canonical_card';
 			}
 
-			// ── Upload TTA voting (Session 2.1b) ────────────────
-			const ttaEligible = imageSource instanceof File;
-			if (ttaEligible && ttaEnabled) {
-				checkpoint(traceId, 'upload_tta:start', performance.now() - startTime);
+			// ── TTA voting (Session 2.1b; Phase 4 — relaxed to live too) ─
+			// Phase 4: gate is now ttaEnabled (caller-resolved via the right
+			// flag for the source). Invocation reason is captured for the
+			// hit-rate-by-reason segmentation in telemetry.
+			const ttaInvocationReason: 'canonical_missed' | 'low_confidence' | 'none' =
+				ttaEnabled && !canonical.card
+					? 'canonical_missed'
+					: ttaShouldRescueLowConf
+						? 'low_confidence'
+						: 'none';
+			if (ttaEnabled && ttaInvocationReason !== 'none') {
+				checkpoint(traceId, 'upload_tta:start', performance.now() - startTime, {
+					invocation_reason: ttaInvocationReason,
+					canonical_confidence_at_invocation: canonical.confidence,
+					canonical_card_id_at_invocation: canonical.card?.id ?? null
+				});
 				try {
 					const tta = await runUploadPipeline(workingBitmap, game);
 					ttaTelemetry = {
@@ -894,7 +929,10 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 						parallel_code: tta.parallelCode ?? null,
 						parallel_rule_fired: tta.parallelRuleFired,
 						per_frame_results: tta.perFrameResults,
-						augmentation_set_version: tta.augmentationSetVersion
+						augmentation_set_version: tta.augmentationSetVersion,
+						invocation_reason: ttaInvocationReason,
+						canonical_confidence_at_invocation: canonical.confidence,
+						canonical_card_id_at_invocation: canonical.card?.id ?? null
 					};
 					checkpoint(traceId, 'upload_tta:done', performance.now() - startTime, {
 						hit: tta.consensusReached,
@@ -959,13 +997,78 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 						};
 						return outcome;
 					}
-					// TTA couldn't converge either — fall through to Haiku.
+					// TTA couldn't converge either — fall through to Haiku
+					// UNLESS the original canonical hit was a valid low-conf
+					// rescue candidate. In that case, restore canonical as the
+					// winner so we don't regress to Haiku on a scan we'd have
+					// previously accepted at floor confidence.
+					if (ttaShouldRescueLowConf && canonical.card) {
+						outcome = buildLowConfRescueOutcome(
+							canonical,
+							canonicalTelemetry,
+							ttaTelemetry,
+							canonicalAttempts,
+							liveConsensusReached,
+							startTime
+						);
+						pathTaken = 'canonical';
+						hit = true;
+						winningCardId = canonical.card.id;
+						winningParallel = canonical.parallel;
+						winningConfidence = canonical.confidence;
+						winningCardNumber = canonical.card.card_number ?? null;
+						winningCardName =
+							canonical.card.name ?? canonical.card.hero_name ?? null;
+						notes = `tta_low_conf_rescue_failed:keep_canonical@${canonical.confidence.toFixed(2)}`;
+						return outcome;
+					}
 				} catch (err) {
 					checkpoint(traceId, 'upload_tta:threw', performance.now() - startTime, {
 						error: err instanceof Error ? err.message : String(err)
 					});
 					console.warn('[scan] Upload TTA failed, falling through to Tier 2:', err);
+					if (ttaShouldRescueLowConf && canonical.card) {
+						outcome = buildLowConfRescueOutcome(
+							canonical,
+							canonicalTelemetry,
+							ttaTelemetry,
+							canonicalAttempts,
+							liveConsensusReached,
+							startTime
+						);
+						pathTaken = 'canonical';
+						hit = true;
+						winningCardId = canonical.card.id;
+						winningParallel = canonical.parallel;
+						winningConfidence = canonical.confidence;
+						winningCardNumber = canonical.card.card_number ?? null;
+						winningCardName =
+							canonical.card.name ?? canonical.card.hero_name ?? null;
+						notes = `tta_low_conf_rescue_threw:keep_canonical@${canonical.confidence.toFixed(2)}`;
+						return outcome;
+					}
 				}
+			} else if (ttaShouldRescueLowConf && canonical.card) {
+				// ttaEnabled === true at top of block but invocation_reason
+				// could still be 'none' from edge cases; restore canonical so
+				// the low-conf hit isn't dropped.
+				outcome = buildLowConfRescueOutcome(
+					canonical,
+					canonicalTelemetry,
+					ttaTelemetry,
+					canonicalAttempts,
+					liveConsensusReached,
+					startTime
+				);
+				pathTaken = 'canonical';
+				hit = true;
+				winningCardId = canonical.card.id;
+				winningParallel = canonical.parallel;
+				winningConfidence = canonical.confidence;
+				winningCardNumber = canonical.card.card_number ?? null;
+				winningCardName = canonical.card.name ?? canonical.card.hero_name ?? null;
+				notes = `tta_low_conf_rescue_skipped:keep_canonical@${canonical.confidence.toFixed(2)}`;
+				return outcome;
 			}
 		} catch (err) {
 			errored = true;
@@ -1028,3 +1131,71 @@ export async function runTier1(inputs: Tier1Inputs): Promise<Tier1Outcome> {
 		}
 	}
 }
+
+/**
+ * Phase 4 — assemble a canonical-hit Tier1Outcome when TTA was attempted
+ * for a low-confidence canonical but couldn't converge. Mirrors the
+ * canonical-hit shape inside runTier1 so we don't drop a hit we'd have
+ * accepted at floor confidence before Phase 4.
+ */
+function buildLowConfRescueOutcome(
+	canonical: CanonicalResult,
+	canonicalTelemetry: Tier1Telemetry['canonical'],
+	ttaTelemetry: Tier1Telemetry['tta'],
+	canonicalAttempts: Tier1Telemetry['canonicalAttempts'],
+	liveConsensusReached: boolean,
+	startTime: number
+): Tier1Outcome {
+	if (!canonical.card) {
+		// Defensive — caller already verified card is non-null before
+		// invoking us. Returning a null outcome here would silently lose
+		// the result; instead surface a no-op fall-through.
+		return {
+			result: null,
+			telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+		};
+	}
+	const decisionCtx: Record<string, unknown> = {
+		canonical_result: canonical.perTask,
+		canonical_ocr_strategy: canonical.ocrStrategy,
+		canonical_attempts: canonicalAttempts,
+		catalog_validation: canonical.validation,
+		tta_low_conf_rescue: true,
+		...(ttaTelemetry ? { upload_tta: ttaTelemetry } : {})
+	};
+	const tier1Result: ScanResult = {
+		card_id: canonical.card.id,
+		card: {
+			id: canonical.card.id,
+			game_id: canonical.card.game_id,
+			card_number: canonical.card.card_number,
+			hero_name: canonical.card.hero_name ?? undefined,
+			name: canonical.card.name ?? canonical.card.hero_name ?? '',
+			set_code: canonical.card.set_code ?? '',
+			parallel: canonical.card.parallel ?? undefined
+		} as unknown as Card,
+		scan_method: 'local_ocr',
+		confidence: canonical.confidence,
+		processing_ms: Math.round(performance.now() - startTime),
+		parallel: canonical.parallel,
+		game_id: canonical.card.game_id,
+		liveConsensusReached,
+		liveVsCanonicalAgreed: null,
+		fallbackTierUsed: null,
+		winningTier: 'tier1_local_ocr',
+		decisionContext: decisionCtx,
+		catalogValidationPassed: canonical.validation?.passed ?? null,
+		catalogValidationFailureReason:
+			canonical.validation?.passed === false
+				? (canonical.validation.reason ?? null)
+				: null,
+		tier1ShortCircuited: false,
+		ocrRegionBatchSize: canonical.ocrRegionBatchSize,
+		ocrRegionTotalMs: canonical.ocrRegionTotalMs
+	};
+	return {
+		result: tier1Result,
+		telemetry: { canonical: canonicalTelemetry, tta: ttaTelemetry, canonicalAttempts }
+	};
+}
+

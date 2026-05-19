@@ -94,6 +94,17 @@ const FEATURE_DEFINITIONS: FeatureFlag[] = [
 		enabled_for_authenticated: false,
 		enabled_for_pro: false,
 		enabled_for_admin: true
+	},
+	{
+		feature_key: 'tta_live_low_conf_v1',
+		display_name: 'TTA Rescue for Low-Confidence Live Scans (Phase 4)',
+		description: 'Runs TTA voting on live-camera scans whose canonical hit landed below 0.70 confidence (but above the 0.60 floor). If TTA converges to a higher-confidence card, prefer it; otherwise keep the canonical hit. Adds ~300 ms to qualifying scans (a minority).',
+		icon: '🎯',
+		enabled_globally: false,
+		enabled_for_guest: false,
+		enabled_for_authenticated: false,
+		enabled_for_pro: false,
+		enabled_for_admin: true
 	}
 ];
 
