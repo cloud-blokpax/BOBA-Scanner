@@ -12,6 +12,7 @@
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
 	import { fuseShutterWithBuffer, type FusionDiag } from '$lib/services/frame-fusion';
+	import { requestImuPermission } from '$lib/services/imu-monitor';
 	import type { ScanResult, Card } from '$lib/types';
 
 	import ScannerViewfinder from './scanner/ScannerViewfinder.svelte';
@@ -237,6 +238,12 @@
 			} catch {
 				phase = 'error';
 			}
+
+			// Phase 5 — request IMU permission inside the same user-gesture
+			// flow as the camera prompt. iOS requires this; other browsers
+			// grant implicitly. Failure is non-fatal — analysis falls back to
+			// alignment-only stability signals.
+			void requestImuPermission().catch(() => {});
 
 			const { idb } = await import('$lib/services/idb');
 			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');

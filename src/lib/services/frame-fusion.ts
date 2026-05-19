@@ -13,6 +13,12 @@
  * caller keeps using the original bitmap. Never throws.
  */
 import { getImageWorker } from './recognition-workers';
+import { getMotionAtTimestamp, getPermissionState as getImuPermission } from './imu-monitor';
+
+// Phase 5 — weight applied to motion magnitude (m/s²) when adjusting a
+// frame's composite_score. Tuned so a 0.5 m/s² spike costs ~2,500 points;
+// recalibrate if blur_variance ranges shift.
+const IMU_SCORE_PENALTY = 5000;
 
 export type FusionMethod = 'median' | 'min_pixel' | 'shutter_only';
 
@@ -90,11 +96,25 @@ export async function fuseShutterWithBuffer(
 	try {
 		const worker = getImageWorker();
 		const allFrames: ImageBitmap[] = [...sameDim.map((f) => f.bitmap), shutter];
+		const allTimestamps: Array<number | null> = [
+			...sameDim.map((f) => f.capturedAt),
+			null // shutter has no buffered timestamp; treat as motion-free
+		];
 
 		const scores = await Promise.all(allFrames.map((b) => worker.scoreFrame(b)));
 
+		// Phase 5 — penalize frames captured during phone motion. Skipped when
+		// IMU permission isn't granted (no signal to read from).
+		const imuActive = getImuPermission() === 'granted';
+		const adjustedScores = scores.map((s, idx) => {
+			const ts = allTimestamps[idx];
+			if (!imuActive || ts === null) return s.composite_score;
+			const motion = getMotionAtTimestamp(ts);
+			return s.composite_score - motion * IMU_SCORE_PENALTY;
+		});
+
 		const ranked = scores
-			.map((s, idx) => ({ idx, score: s.composite_score, full: s }))
+			.map((s, idx) => ({ idx, score: adjustedScores[idx], full: s }))
 			.sort((a, b) => b.score - a.score)
 			.slice(0, Math.min(FRAMES_TO_PICK, allFrames.length));
 
