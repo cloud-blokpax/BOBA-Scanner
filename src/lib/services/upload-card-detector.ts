@@ -50,7 +50,7 @@ const CONTOUR_DIAG_CAP = 10;
 /** Rectangularity floor used for the informational `passed_rectangularity`
  *  flag on each contour diagnostic. Not currently gated in code — see
  *  CLAUDE.md "Recognition Pipeline" → Detection. */
-const RECTANGULARITY_FLOOR = 0.85;
+const RECTANGULARITY_FLOOR = 0.78;
 
 export interface CardDetection {
 	/** Original-frame quadrilateral, ordered TL/TR/BR/BL, in source-pixel coords.

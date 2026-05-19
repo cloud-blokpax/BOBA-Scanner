@@ -23,7 +23,7 @@ export type QuadState = 'detected' | 'ready' | 'lost';
 /** After this many consecutive frames with no valid quad, surface a coaching
  *  message and suppress the yellow overlay — better than confidently drawing
  *  on the wrong rectangle. */
-export const NO_CARD_FRAME_THRESHOLD = 5;
+export const NO_CARD_FRAME_THRESHOLD = 12;
 
 export interface QuadDetectionState {
 	readonly cssCorners: [Pt, Pt, Pt, Pt] | null;

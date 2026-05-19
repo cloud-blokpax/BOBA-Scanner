@@ -19,7 +19,7 @@
 	const config: Record<CameraPillState, Config> = {
 		searching: { text: 'Point at card', bg: 'rgba(0, 0, 0, 0.65)', fg: '#fff' },
 		cant_find_card: {
-			text: "Can't find card edges — try a darker background",
+			text: 'Move closer or tap shutter to capture anyway',
 			bg: 'rgba(0, 0, 0, 0.75)',
 			fg: '#fff'
 		},
