@@ -21,7 +21,9 @@ export interface CornerPoint {
 }
 
 export interface SubmitUserCorrectionInput {
-	scanId: string;
+	/** Null for pre-scan corrections (corner_tap_4 fired before a scan
+	 *  row existed). All other correction types have a scan_id. */
+	scanId: string | null;
 	correctionType: CorrectionType;
 	originalCorners?: CornerPoint[] | null;
 	correctedCorners?: CornerPoint[] | null;
@@ -42,7 +44,7 @@ export async function submitUserCorrection(
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const table = (client.from as any)('scan_user_corrections');
 		const { error } = await table.insert({
-			scan_id: input.scanId,
+			scan_id: input.scanId ?? null,
 			correction_type: input.correctionType,
 			original_corners: input.originalCorners ?? null,
 			corrected_corners: input.correctedCorners ?? null,
