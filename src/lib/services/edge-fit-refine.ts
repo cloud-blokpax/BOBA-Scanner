@@ -132,10 +132,15 @@ function fitLineRANSAC(
 }
 
 function intersectLines(L1: LineABC, L2: LineABC): Point | null {
+	// System:  a1*x + b1*y = -c1
+	//          a2*x + b2*y = -c2
+	// Cramer's rule with det = a1*b2 - a2*b1:
+	//   x = (b1*c2 - b2*c1) / det
+	//   y = (a2*c1 - a1*c2) / det
 	const det = L1.a * L2.b - L2.a * L1.b;
 	if (Math.abs(det) < 1e-6) return null;
-	const x = (L1.b * L2.c - L2.b * L1.c) / -det;
-	const y = (L2.a * L1.c - L1.a * L2.c) / -det;
+	const x = (L1.b * L2.c - L2.b * L1.c) / det;
+	const y = (L2.a * L1.c - L1.a * L2.c) / det;
 	return { x, y };
 }
 
