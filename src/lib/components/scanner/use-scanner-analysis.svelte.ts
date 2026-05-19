@@ -24,6 +24,13 @@ import type { ViewfinderRect } from '$lib/services/constrained-crop';
 import { useQuadDetection, type QuadDetectionState } from './use-quad-detection.svelte';
 import { featureEnabled } from '$lib/stores/feature-flags.svelte';
 import { checkpoint } from '$lib/services/scan-checkpoint';
+import { getPermissionState as getImuPermissionState, getRecentMotion } from '$lib/services/imu-monitor';
+
+// Phase 5 — when IMU permission is granted, gate auto-capture on motion
+// stability in addition to alignment readiness. m/s² threshold tuned for
+// "phone roughly steady in hand" — sub-noise jitter still passes, deliberate
+// motion does not.
+const IMU_STABLE_ACCEL_MAG_MAX = 0.2;
 
 const READY_DWELL_MS = 300;
 const ALIGN_BLUR_THRESHOLD = 5500;
@@ -140,9 +147,21 @@ export function useScannerAnalysis(
 				h: vf.height
 			});
 
+			// Phase 5 — IMU stability sample. permissionState 'granted' means
+			// we have a live motion stream; any other state (denied/unsupported/
+			// unknown) keeps imuStable=true so we don't block users without IMU.
+			const imuPermissionState = getImuPermissionState();
+			const imuMotion =
+				imuPermissionState === 'granted' ? getRecentMotion(500) : null;
+			const imuStable =
+				imuMotion === null ||
+				imuMotion.samples_in_window === 0 ||
+				imuMotion.acceleration_mean_mag < IMU_STABLE_ACCEL_MAG_MAX;
+
 			const nextState: AlignmentState =
 				signals.blurInside >= ALIGN_BLUR_THRESHOLD &&
-				signals.cornerGradientScore >= ALIGN_CORNER_READY
+				signals.cornerGradientScore >= ALIGN_CORNER_READY &&
+				imuStable
 					? 'ready'
 					: signals.cornerGradientScore >= ALIGN_CORNER_PARTIAL
 						? 'partial'
@@ -165,7 +184,13 @@ export function useScannerAnalysis(
 					viewfinder_w: vf.width,
 					viewfinder_h: vf.height,
 					bitmap_w: bitmap.width,
-					bitmap_h: bitmap.height
+					bitmap_h: bitmap.height,
+					imu_permission: imuPermissionState,
+					imu_motion_mean: imuMotion ? Number(imuMotion.acceleration_mean_mag.toFixed(3)) : null,
+					imu_motion_max: imuMotion ? Number(imuMotion.acceleration_max_mag.toFixed(3)) : null,
+					imu_rotation_max: imuMotion ? Number(imuMotion.rotation_max_dps.toFixed(2)) : null,
+					imu_samples: imuMotion ? imuMotion.samples_in_window : null,
+					imu_stable: imuStable
 				});
 			}
 

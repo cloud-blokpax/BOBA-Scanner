@@ -164,7 +164,9 @@ export async function lookupCard(
 	game: 'boba' | 'wonders',
 	cardNumber: string,
 	nameField: string,
-	parallel: string | null = null
+	parallel: string | null = null,
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	_parallelHint: string | null = null
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const indexName = game === 'boba' ? 'game_card_hero' : 'game_card_name';
@@ -222,7 +224,9 @@ export async function lookupCardByCardNumberFuzzy(
 	game: 'boba' | 'wonders',
 	cardNumber: string,
 	rawName: string,
-	parallel: string | null = null
+	parallel: string | null = null,
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	_parallelHint: string | null = null
 ): Promise<MirrorCard | null> {
 	const db = await getDB();
 	const all = (await db.getAll(STORE_CARDS)) as MirrorCard[];

@@ -76,6 +76,10 @@ export async function scanImage(
 		 *  detection. Upload mode ignores this — recognition.ts runs
 		 *  detectCard internally for File inputs. */
 		geometry?: import('$lib/services/scan-writer.types').ScanWriteGeometry | null;
+		/** Phase 1: frame fusion diagnostics from the Scanner shutter path.
+		 *  Threaded into Tier 1 telemetry extras so we can compare hit rate
+		 *  by composite method. NULL when fusion didn't run (uploads, etc.). */
+		fusionDiag?: import('$lib/services/frame-fusion').FusionDiag | null;
 	},
 	generation?: number
 ): Promise<ScanResult | null> {

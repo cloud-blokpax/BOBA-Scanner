@@ -8,6 +8,7 @@
 	import { generateListingTemplate } from '$lib/services/listing-generator';
 	import { tryAwardBadge } from '$lib/services/badges';
 	import { trackScanMetric } from '$lib/services/error-tracking';
+	import { submitUserCorrection } from '$lib/services/user-corrections';
 	import type { ScanResult, Card } from '$lib/types';
 	import { RELEASE_TO_SET_NAME } from '$lib/data/boba-config';
 	import { normalizeParallel, isFoilParallel, PARALLEL_FULL_NAME, type ParallelCode } from '$lib/data/parallels';
@@ -73,9 +74,37 @@
 
 	let manualCard = $state<Card | null>(null);
 	let autoAddAttempted = $state(false);
+	// Phase 8 — time-to-correction lets us segment UX friction by type.
+	const correctionStartMs = performance.now();
+
+	// Phase 8 — log a single abandon event when the user closes a failed
+	// scan without a correction landing. The original handler is wrapped
+	// so existing behavior is preserved.
+	function handleCloseWithAbandonCapture() {
+		if (result.id && !result.card && !manualCard) {
+			void submitUserCorrection({
+				scanId: result.id,
+				correctionType: 'abandon',
+				originalCardId: null,
+				correctionLatencyMs: Math.round(performance.now() - correctionStartMs)
+			});
+		}
+		onClose();
+	}
 
 	function handleManualCorrection(correctedCard: Partial<Card>) {
 		manualCard = correctedCard as Card;
+		// Phase 8 — capture the override as labeled training data.
+		// Fire-and-forget; never blocks the UI update above.
+		if (result.id && correctedCard.id) {
+			void submitUserCorrection({
+				scanId: result.id,
+				correctionType: 'card_id_override',
+				originalCardId: result.card?.id ?? null,
+				correctedCardId: correctedCard.id,
+				correctionLatencyMs: Math.round(performance.now() - correctionStartMs)
+			});
+		}
 	}
 
 	const card = $derived(manualCard ?? result.card);
@@ -317,7 +346,7 @@
 <div class="confirmation-overlay">
 	<div class="confirmation-backdrop"></div>
 	<div class="confirmation-container">
-		<CloseButton onclick={onClose} position="top-right" variant="dark" />
+		<CloseButton onclick={handleCloseWithAbandonCapture} position="top-right" variant="dark" />
 		<div class="confirmation-scroll">
 		<div class="sheet-handle"></div>
 		{#if card}

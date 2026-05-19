@@ -380,6 +380,10 @@ export async function recognizeCard(
 		 *  detection. Upload mode runs detectCard inside this function and
 		 *  ignores any caller-supplied geometry. */
 		geometry?: ScanWriteGeometry | null;
+		/** Phase 1: frame fusion telemetry from the Scanner shutter path.
+		 *  Surfaced into Tier 1 telemetry extras for hit-rate-by-method
+		 *  segmentation. NULL for upload + binder paths. */
+		fusionDiag?: import('./frame-fusion').FusionDiag | null;
 	}
 ): Promise<ScanResult> {
 	const traceId = crypto.randomUUID().slice(0, 8);
@@ -942,7 +946,12 @@ export async function recognizeCard(
 				tier1Attempted: true
 			});
 		}).catch(() => { /* swallow */ });
-		const ttaEnabled = imageSource instanceof File ? await isUploadTtaEnabled() : false;
+		// Phase 4 — TTA is gated by source today; the new live_tta flag also
+		// lets canonical-hit-but-low-confidence scans retry via TTA.
+		const isUpload = imageSource instanceof File;
+		const ttaEnabled = isUpload
+			? await isUploadTtaEnabled()
+			: await isLiveTtaLowConfEnabled();
 		const tier1Outcome = await runTier1({
 			workingBitmap,
 			ctx,
@@ -957,7 +966,16 @@ export async function recognizeCard(
 			confidenceFloor: 0.6,
 			ttaEnabled,
 			captureSource: captureSource ?? 'unknown',
-			scanIdPromise
+			scanIdPromise,
+			fusionDiag: options?.fusionDiag ?? null,
+			lensDiag:
+				(detectedCardDetection?.extras?.lens_diag as
+					| import('./tier1-telemetry.types').Tier1LensDiag
+					| undefined) ?? null,
+			edgeFitDiag:
+				(detectedCardDetection?.extras?.edge_fit_diag as
+					| import('./tier1-telemetry.types').Tier1EdgeFitDiag
+					| undefined) ?? null
 		});
 		tier1Telemetry = tier1Outcome.telemetry;
 		if (tier1Outcome.result) {
@@ -1105,6 +1123,21 @@ async function isUploadTtaEnabled(): Promise<boolean> {
 	try {
 		const flagsModule = await import('$lib/stores/feature-flags.svelte');
 		return flagsModule.featureEnabled('upload_tta_v1')();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Phase 4 — gate the new "live TTA on low confidence" behavior. Default OFF
+ * in production; admin-on by default. When this flag flips on, canonical
+ * scans that hit at confidence < 0.70 also trigger TTA voting (uploads
+ * already do via `upload_tta_v1`).
+ */
+async function isLiveTtaLowConfEnabled(): Promise<boolean> {
+	try {
+		const flagsModule = await import('$lib/stores/feature-flags.svelte');
+		return flagsModule.featureEnabled('tta_live_low_conf_v1')();
 	} catch {
 		return false;
 	}

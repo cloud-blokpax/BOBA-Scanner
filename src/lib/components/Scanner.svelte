@@ -11,6 +11,8 @@
 	import { checkImageQuality, compositeForFoilMode } from '$lib/services/recognition';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { triggerHaptic } from '$lib/utils/haptics';
+	import { fuseShutterWithBuffer, type FusionDiag } from '$lib/services/frame-fusion';
+	import { requestImuPermission } from '$lib/services/imu-monitor';
 	import type { ScanResult, Card } from '$lib/types';
 
 	import ScannerViewfinder from './scanner/ScannerViewfinder.svelte';
@@ -92,6 +94,13 @@
 	// shutter. Owned here so we can close the last bitmap before replacing it.
 	let latestVideoFrameBitmap: ImageBitmap | null = null;
 	let frameSamplerTimer: ReturnType<typeof setInterval> | null = null;
+	// Phase 1 — fusion frame buffer. Holds the last FUSION_BUFFER_SIZE
+	// native-resolution video frames so the shutter path can score-and-
+	// composite the best K. Native res keeps the viewfinder coord system
+	// valid (no rescaling). Cap is small to control mobile memory: 4 frames
+	// at 1080p ≈ 32 MB. Drained on destroy.
+	const FUSION_BUFFER_SIZE = 4;
+	const fusionFrameBuffer: Array<{ bitmap: ImageBitmap; capturedAt: number }> = [];
 	// Tracks the post-scan phase-reset timer scheduled in handleScanResult.
 	// Captured here so a fast Try Again → re-scan can cancel a stale timer
 	// before it overwrites the new scan's phase.
@@ -230,6 +239,12 @@
 				phase = 'error';
 			}
 
+			// Phase 5 — request IMU permission inside the same user-gesture
+			// flow as the camera prompt. iOS requires this; other browsers
+			// grant implicitly. Failure is non-fatal — analysis falls back to
+			// alignment-only stability signals.
+			void requestImuPermission().catch(() => {});
+
 			const { idb } = await import('$lib/services/idb');
 			const hasScanned = await idb.getMeta<boolean>('has_completed_first_scan');
 			if (!hasScanned) {
@@ -244,6 +259,10 @@
 		// Sample a downsampled live frame at 2fps so the live-OCR coordinator
 		// always has a fresh bitmap to probe. Cheap — runs whether or not the
 		// coordinator is active; the coordinator decides when to consume.
+		// Phase 1 — same timer also pushes a medium-resolution clone into the
+		// fusion frame buffer so the shutter path can composite the best K
+		// frames. The downsampled bitmap stays small (for live-OCR); the
+		// fusion clone is the larger size used at capture time.
 		frameSamplerTimer = setInterval(async () => {
 			if (!videoEl || videoEl.paused || videoEl.readyState < 2) return;
 			if (videoEl.videoWidth <= 0 || videoEl.videoHeight <= 0) return;
@@ -257,6 +276,21 @@
 				latestVideoFrameBitmap = next;
 			} catch {
 				// ignore — transient decode errors are fine
+			}
+			try {
+				// Fusion buffer entry — native video resolution so dims match
+				// captureFrame output and viewfinder coords still apply.
+				const fusionFrame = await createImageBitmap(videoEl);
+				if (fusionFrameBuffer.length >= FUSION_BUFFER_SIZE) {
+					const evicted = fusionFrameBuffer.shift();
+					evicted?.bitmap.close();
+				}
+				fusionFrameBuffer.push({
+					bitmap: fusionFrame,
+					capturedAt: performance.now()
+				});
+			} catch {
+				// ignore — fusion is best-effort, falls through to shutter-only.
 			}
 		}, 500);
 
@@ -297,6 +331,10 @@
 			latestVideoFrameBitmap.close();
 			latestVideoFrameBitmap = null;
 		}
+		for (const f of fusionFrameBuffer) {
+			try { f.bitmap.close(); } catch { /* ignore */ }
+		}
+		fusionFrameBuffer.length = 0;
 		import('$lib/services/live-ocr-coordinator').then(({ liveOCRCoordinator }) => {
 			liveOCRCoordinator.reset();
 		});
@@ -395,6 +433,8 @@
 		const alignmentAtCapture = analysis.alignmentState;
 
 		let rawBitmap: ImageBitmap | null = null;
+		let fusedBitmap: ImageBitmap | null = null;
+		let fusionDiag: FusionDiag | null = null;
 		let croppedBitmap: ImageBitmap | null = null;
 		let liveCardDetection: CardDetection | null = null;
 		try {
@@ -419,6 +459,19 @@
 
 			phase = 'processing';
 
+			// Phase 1 — fuse shutter with recent buffered frames. The fused
+			// bitmap replaces rawBitmap for detectCard + cropToCanonical (both
+			// in the same coord system since buffer + shutter are native res).
+			// Best-effort: on failure, sourceBitmap stays = rawBitmap.
+			const fusion = await fuseShutterWithBuffer(
+				rawBitmap,
+				fusionFrameBuffer.slice(),
+				{ foilMode }
+			);
+			fusionDiag = fusion.diag;
+			if (fusion.owned) fusedBitmap = fusion.bitmap;
+			const sourceBitmap = fusion.bitmap;
+
 			// Resolve the viewfinder region in source-pixel coords and crop to a
 			// canonical 500×700 frame for Tier 1/2. Tier 3 still sees the full
 			// bitmap via the recognition pipeline (Claude benefits from context).
@@ -426,9 +479,9 @@
 			// Geometry rebuild (Doc 1): detect corners first; pass homography
 			// through to cropToCanonical so the canonical is a true perspective
 			// warp, not a viewfinder rectangle.
-			liveCardDetection = await detectCard(rawBitmap, { mode: 'live' });
+			liveCardDetection = await detectCard(sourceBitmap, { mode: 'live' });
 			croppedBitmap = await cropToCanonical(
-				rawBitmap,
+				sourceBitmap,
 				viewfinder ?? {
 					x: liveCardDetection.boundingRect.x,
 					y: liveCardDetection.boundingRect.y,
@@ -485,6 +538,7 @@
 					alignmentStateAtCapture: alignmentAtCapture,
 					viewfinder: viewfinder ?? null,
 					liveConsensusSnapshot: preConsensus,
+					fusionDiag,
 					geometry: liveCardDetection
 						? {
 								detection_method: liveCardDetection.method,
@@ -517,6 +571,7 @@
 			handleScanResult({ card_id: null, card: null, scan_method: 'claude', confidence: 0, processing_ms: 0, failReason: 'Scanner error — please try again' });
 		} finally {
 			rawBitmap?.close();
+			fusedBitmap?.close();
 			croppedBitmap?.close();
 		}
 	}

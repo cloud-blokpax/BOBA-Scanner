@@ -45,24 +45,103 @@ import { CANONICAL_W, CANONICAL_H } from './upload-card-detector';
  * (3-7mm tall depending on field) — region-OCR upsamples internally and a
  * slightly oversized box is far better than a slightly undersized one.
  */
-export const REGIONS = {
+/**
+ * Phase 7 — REGIONS is a 3-tier nested map: game → template → field.
+ * `default` keeps the pre-Phase-7 production coords (no behavior change for
+ * scans that don't get a parallel hint). `first_edition` shifts the
+ * hero_name left and down to capture the "FIRST EDITION" stamp pattern;
+ * gated on the visual-features parallel hint.
+ *
+ * Adding a template: pick a key, add the same fields as `default`, register
+ * a trigger inside `pickTemplate` below. Don't change `default` without
+ * confirming on telemetry first — it's the safety net for unhinted scans.
+ */
+interface BobaTemplateShape {
+	card_number: Region;
+	hero_name: Region;
+	set_code: Region;
+}
+interface WondersTemplateShape {
+	card_number: Region;
+	card_name: Region;
+	ocr_serial: Region;
+}
+
+export const REGIONS: {
+	boba: { default: BobaTemplateShape; first_edition: BobaTemplateShape };
+	wonders: { default: WondersTemplateShape };
+} = {
 	boba: {
-		// Bottom-left card_number stamp. "BBF-82" / "BF-88" / "PL-71" / "GLBF-170".
-		card_number: { x: 48,  y: 1008, w: 216, h: 48  },
-		// Top-left hero name. Up to 23 chars ("Barry 'Cutback' Sanders").
-		hero_name:   { x: 48,  y: 48,   w: 456, h: 72  },
-		// "2026" year stamp below card_number.
-		set_code:    { x: 48,  y: 1032, w: 96,  h: 36  }
+		default: {
+			// Bottom-left card_number stamp. "BBF-82" / "BF-88" / "PL-71" / "GLBF-170".
+			card_number: { x: 48,  y: 1008, w: 216, h: 48  },
+			// Top-left hero name. Up to 23 chars ("Barry 'Cutback' Sanders").
+			hero_name:   { x: 48,  y: 48,   w: 456, h: 72  },
+			// "2026" year stamp below card_number.
+			set_code:    { x: 48,  y: 1032, w: 96,  h: 36  }
+		},
+		// Speculated First Edition layout — shifted down to clear the
+		// "FIRST EDITION" line under the hero name. Hero name x moved left
+		// to catch leading characters lost in the ILDBILL/ILADA pattern.
+		first_edition: {
+			card_number: { x: 48,  y: 1024, w: 216, h: 48  },
+			hero_name:   { x: 24,  y: 48,   w: 480, h: 56  },
+			set_code:    { x: 48,  y: 1048, w: 96,  h: 36  }
+		}
 	},
 	wonders: {
-		// Bottom-left "279/401" / "350/401" — print-run notation.
-		card_number: { x: 48,  y: 1004, w: 216, h: 36  },
-		// Top card name, up to 35 chars ("Jarthex Pyrethane, Lord of Darkiron").
-		card_name:   { x: 60,  y: 60,   w: 528, h: 84  },
-		// Left-edge serial strip (vertical) for OCM detection.
-		ocr_serial:  { x: 0,   y: 367,  w: 45,  h: 315 }
+		default: {
+			// Bottom-left "279/401" / "350/401" — print-run notation.
+			card_number: { x: 48,  y: 1004, w: 216, h: 36  },
+			// Top card name, up to 35 chars ("Jarthex Pyrethane, Lord of Darkiron").
+			card_name:   { x: 60,  y: 60,   w: 528, h: 84  },
+			// Left-edge serial strip (vertical) for OCM detection.
+			ocr_serial:  { x: 0,   y: 367,  w: 45,  h: 315 }
+		}
 	}
-} as const;
+};
+
+export type BobaTemplate = BobaTemplateShape;
+export type WondersTemplate = WondersTemplateShape;
+export type TemplateName = 'default' | 'first_edition';
+
+/**
+ * Phase 7 — pick the per-game region template based on the visual-features
+ * parallel hint. Returns the default template when:
+ *   - hint is null
+ *   - hint doesn't trigger a non-default template
+ *   - game has no non-default templates
+ *
+ * Trigger is intentionally narrow: only flips to first_edition when the
+ * hint names FE explicitly. Cross-game safety: a Wonders parallel hint on
+ * a BoBA scan returns BoBA default.
+ */
+export function pickBobaTemplate(parallelHint: string | null): {
+	template: BobaTemplate;
+	name: TemplateName;
+} {
+	if (parallelHint && /^FE/i.test(parallelHint)) {
+		return { template: REGIONS.boba.first_edition, name: 'first_edition' };
+	}
+	return { template: REGIONS.boba.default, name: 'default' };
+}
+
+export function pickWondersTemplate(): { template: WondersTemplate; name: TemplateName } {
+	return { template: REGIONS.wonders.default, name: 'default' };
+}
+
+/**
+ * Phase 7 — game-agnostic template picker. Returns the chosen template +
+ * its name (for telemetry). BoBA reads the parallel hint; Wonders ignores
+ * it (one template per game today).
+ */
+export function pickTemplate(
+	game: 'boba' | 'wonders',
+	parallelHint: string | null
+): { template: BobaTemplate | WondersTemplate; name: TemplateName } {
+	if (game === 'wonders') return pickWondersTemplate();
+	return pickBobaTemplate(parallelHint);
+}
 
 /**
  * Region pixel rectangle, ready to feed to PaddleOCR or to crop a sub-bitmap.

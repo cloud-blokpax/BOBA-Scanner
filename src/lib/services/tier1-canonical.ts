@@ -35,6 +35,18 @@ import {
 	type MirrorCard
 } from './catalog-mirror';
 import { toParallelName } from '$lib/data/wonders-parallels';
+import {
+	sampleBorderColorLab,
+	nearestParallelByBorderColor,
+	type LabColor,
+	type ParallelColorMatch
+} from './visual-features';
+import { pickTemplate } from './ocr-regions';
+import type {
+	Tier1CatalogDiag,
+	Tier1TemplateDiag,
+	Tier1VisualFeatures
+} from './tier1-telemetry.types';
 
 export interface CanonicalResult {
 	card: MirrorCard | null;
@@ -57,6 +69,12 @@ export interface CanonicalResult {
 	 *  scan didn't reach the region-OCR pass or the flag was off. */
 	ocrRegionBatchSize: number | null;
 	ocrRegionTotalMs: number | null;
+	/** Phase 3 — border-color sampling result. NULL when sampling errored. */
+	visualFeatures: Tier1VisualFeatures | null;
+	/** Phase 3 — catalog lookup diagnostics: was a parallel hint applied? */
+	catalogDiag: Tier1CatalogDiag | null;
+	/** Phase 7 — which region template fed PaddleOCR. NULL when not selected. */
+	templateDiag: Tier1TemplateDiag | null;
 	perTask: {
 		cardNumber: { raw: string; confidence: number; validated: string | null };
 		name: { raw: string; confidence: number; collapsed: string | null };
@@ -96,8 +114,46 @@ export async function runCanonicalTier1(
 ): Promise<CanonicalResult> {
 	await initPaddleOCR();
 
-	// Stage 1: region-cropped OCR (fast path)
-	let regionOut = await runRegionOCR(bitmap, game);
+	// Phase 3 — sample the border color BEFORE OCR so the hint can drive
+	// per-parallel template selection (Phase 7) on the first OCR pass. Cheap
+	// (~5 ms on a 750×1050 bitmap). Best-effort; failure falls through to
+	// the default template with a null hint.
+	let visualFeatures: Tier1VisualFeatures | null = null;
+	let parallelColorHint: string | null = null;
+	{
+		const vfStart = performance.now();
+		try {
+			const lab = await sampleBorderColorLab(bitmap);
+			const match = nearestParallelByBorderColor(lab);
+			visualFeatures = {
+				border_color_lab: [
+					Number(lab.L.toFixed(1)),
+					Number(lab.a.toFixed(1)),
+					Number(lab.b.toFixed(1))
+				],
+				nearest_parallel_by_color: match.code,
+				color_distance: Number(match.distance.toFixed(2)),
+				margin_to_2nd: Number(match.margin_to_2nd.toFixed(2)),
+				elapsed_ms: Math.round(performance.now() - vfStart)
+			};
+			// Only accept the hint when the winner is decisive — color
+			// classification gets noisy when 2 parallels score within ~5 ΔE.
+			if (match.code && match.margin_to_2nd >= 8) {
+				parallelColorHint = match.code;
+			}
+		} catch (err) {
+			console.debug('[tier1-canonical] visual-feature sampling skipped', err);
+		}
+	}
+
+	// Stage 1: region-cropped OCR (fast path). Phase 7 — template selection
+	// is driven by the color hint; null hint produces the default layout.
+	const pickedTemplate = pickTemplate(game, parallelColorHint);
+	const templateDiag: Tier1TemplateDiag = {
+		template_used: pickedTemplate.name,
+		parallel_hint_at_selection: parallelColorHint
+	};
+	let regionOut = await runRegionOCR(bitmap, game, parallelColorHint);
 	let activeBitmap: ImageBitmap = bitmap;
 	// When the 180° retry creates a rotated bitmap we own, this holds it so
 	// callers don't have to know about the rotation. Closed at end of fn.
@@ -122,7 +178,7 @@ export async function runCanonicalTier1(
 				const rotated = await rotateBitmap(bitmap, 180);
 				let usedRotated = false;
 				try {
-					const retry = await runRegionOCR(rotated, game);
+					const retry = await runRegionOCR(rotated, game, parallelColorHint);
 					const retryHasField = !!retry.cardNumber.validated || !!retry.name.collapsed;
 					if (retryHasField) {
 						regionOut = retry;
@@ -185,7 +241,15 @@ export async function runCanonicalTier1(
 	// to disambiguate among same-(card_number, name) rows post-expansion;
 	// without it the lookup returns a parallel-blind first match, and
 	// final_card_id ends up pointing at the wrong parallel's row.
+	// Phase 3 — for BoBA the lookup is single-row by index so the hint
+	// rarely changes a winner; for telemetry we still record that the hint
+	// was considered. Wonders keeps its image-classifier parallel.
 	const lookupParallel = game === 'wonders' ? parallelHumanName : null;
+	const catalogDiag: Tier1CatalogDiag = {
+		parallel_hint_used: parallelColorHint != null,
+		parallel_hint_value: parallelColorHint,
+		parallel_hint_changed_winner: false
+	};
 	let card: MirrorCard | null = null;
 	if (merged.cardNumber.validated && merged.name.collapsed) {
 		try {
@@ -193,7 +257,8 @@ export async function runCanonicalTier1(
 				game,
 				merged.cardNumber.validated,
 				merged.name.collapsed,
-				lookupParallel
+				lookupParallel,
+				parallelColorHint
 			);
 		} catch (err) {
 			console.debug('[tier1-canonical] lookupCard failed', err);
@@ -205,7 +270,8 @@ export async function runCanonicalTier1(
 				game,
 				merged.cardNumber.validated,
 				merged.name.raw || merged.name.collapsed || '',
-				lookupParallel
+				lookupParallel,
+				parallelColorHint
 			);
 		} catch (err) {
 			console.debug('[tier1-canonical] fuzzy lookup failed', err);
@@ -265,6 +331,9 @@ export async function runCanonicalTier1(
 		validation,
 		ocrRegionBatchSize: merged.ocrRegionBatchSize ?? null,
 		ocrRegionTotalMs: merged.ocrRegionTotalMs ?? null,
+		visualFeatures,
+		catalogDiag,
+		templateDiag,
 		perTask: {
 			cardNumber: merged.cardNumber,
 			name: merged.name,
@@ -276,12 +345,18 @@ export async function runCanonicalTier1(
 
 async function runRegionOCR(
 	bitmap: ImageBitmap,
-	game: 'boba' | 'wonders'
+	game: 'boba' | 'wonders',
+	parallelHint: string | null = null
 ): Promise<OCROutputs> {
-	const regions = game === 'boba' ? REGIONS.boba : REGIONS.wonders;
-	const cardNumberReg = regionToPixels(regions.card_number, bitmap.width, bitmap.height);
+	// Phase 7 — pickTemplate selects the per-game (and, for BoBA, per-
+	// parallel-hint) region layout. Defaults to the production layout when
+	// the hint is null, so unhinted scans behave identically to pre-Phase-7.
+	const picked = pickTemplate(game, parallelHint);
+	const cardNumberReg = regionToPixels(picked.template.card_number, bitmap.width, bitmap.height);
 	const nameReg = regionToPixels(
-		game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+		game === 'boba'
+			? (picked.template as typeof REGIONS.boba.default).hero_name
+			: (picked.template as typeof REGIONS.wonders.default).card_name,
 		bitmap.width,
 		bitmap.height
 	);
@@ -290,7 +365,11 @@ async function runRegionOCR(
 	// downstream task vote is skipped.
 	const setCodeReg =
 		game === 'boba'
-			? regionToPixels(REGIONS.boba.set_code, bitmap.width, bitmap.height)
+			? regionToPixels(
+					(picked.template as typeof REGIONS.boba.default).set_code,
+					bitmap.width,
+					bitmap.height
+				)
 			: null;
 
 	// Doc 2, Phase 4 — rec-only path. We KNOW where each field lives on the
@@ -478,11 +557,15 @@ async function runFullFrameOCR(
 	// region OCR — it just sweeps in nearby boxes that pure region cropping
 	// might have missed because of region-coord drift.
 	const cnRegion = expandRegion(
-		game === 'boba' ? REGIONS.boba.card_number : REGIONS.wonders.card_number,
+		game === 'boba'
+			? REGIONS.boba.default.card_number
+			: REGIONS.wonders.default.card_number,
 		0.5
 	);
 	const nmRegion = expandRegion(
-		game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+		game === 'boba'
+			? REGIONS.boba.default.hero_name
+			: REGIONS.wonders.default.card_name,
 		0.5
 	);
 

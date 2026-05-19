@@ -29,6 +29,7 @@
  */
 
 import { preloadOpencv } from '$lib/shims/opencv-js';
+import { getIntrinsicsForUserAgent, buildCvIntrinsics } from './lens-intrinsics';
 import type {
 	ContourDiagnostic,
 	ContourTelemetry,
@@ -211,8 +212,61 @@ export async function detectCard(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let contours: any, hierarchy: any;
 
+	// Phase 6 — lens distortion correction. Applied only for devices with
+	// known intrinsics (published_apple / published_google) and the
+	// estimated default mobile fallback. 'identity' source skips the call
+	// to preserve pre-Phase-6 behavior.
+	let lensDiag: import('./tier1-telemetry.types').Tier1LensDiag | null = null;
+	const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+	const intr = getIntrinsicsForUserAgent(ua);
+
 	try {
 		src = cv.matFromImageData(imageData);
+
+		if (intr.source !== 'identity') {
+			const lensStart = performance.now();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let cameraMatrix: any = null;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let distCoeffs: any = null;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let undistorted: any = null;
+			try {
+				const built = buildCvIntrinsics(intr, src.cols, src.rows, cv);
+				cameraMatrix = built.cameraMatrix;
+				distCoeffs = built.distCoeffs;
+				undistorted = new cv.Mat();
+				cv.undistort(src, undistorted, cameraMatrix, distCoeffs);
+				src.delete();
+				src = undistorted;
+				undistorted = null;
+				lensDiag = {
+					device_label: intr.label,
+					intrinsic_source: intr.source,
+					correction_applied: true,
+					elapsed_ms: Math.round(performance.now() - lensStart)
+				};
+			} catch (err) {
+				console.debug('[card-detector] lens undistort failed, continuing with original src:', err);
+				lensDiag = {
+					device_label: intr.label,
+					intrinsic_source: intr.source,
+					correction_applied: false,
+					elapsed_ms: Math.round(performance.now() - lensStart)
+				};
+			} finally {
+				try { cameraMatrix?.delete(); } catch { /* ignore */ }
+				try { distCoeffs?.delete(); } catch { /* ignore */ }
+				try { undistorted?.delete(); } catch { /* ignore */ }
+			}
+		} else {
+			lensDiag = {
+				device_label: intr.label,
+				intrinsic_source: 'identity',
+				correction_applied: false,
+				elapsed_ms: 0
+			};
+		}
 
 		// Holo specular suppression — clamps overbright pixels in HSV V
 		// channel so the rainbow noise on foil/holo cards stops fragmenting
@@ -247,6 +301,11 @@ export async function detectCard(
 
 		let bestCorners: [Point, Point, Point, Point] | null = null;
 		let detectionLayer: string | null = null;
+		// Phase 2 — points of the contour that produced bestCorners, in
+		// source-frame coords (already unscaled). Captured inside
+		// findBestCorners at the moment the contour wins so we can run
+		// edge-fit refinement after the contour Mat is deleted.
+		let pickedContourPoints: Point[] | null = null;
 
 		// Per-pass diagnostics accumulator. Each call to findBestCorners
 		// populates the `currentPassDiag` entry passed in by the caller; the
@@ -274,6 +333,9 @@ export async function detectCard(
 			contours = new cv.MatVector();
 			hierarchy.delete();
 			hierarchy = new cv.Mat();
+			// Phase 2 — reset before each pass so a previous layer's contour
+			// points can't leak into this layer's edge-fit refinement.
+			pickedContourPoints = null;
 			cv.findContours(
 				edges,
 				contours,
@@ -431,6 +493,23 @@ export async function detectCard(
 						bestArea = rrFootprint;
 						best = orderCorners(raw);
 						contourDiag.final_picked = true;
+						// Phase 2 — snapshot the contour's points so we can
+						// refit each side via RANSAC after the loop. Stored
+						// in source-frame coords (unscaled) so the refined
+						// corners come out in the same coord system as raw[].
+						try {
+							const captured: Point[] = [];
+							const cn = c.rows;
+							for (let k = 0; k < cn; k++) {
+								captured.push({
+									x: c.data32S[k * 2] / scale,
+									y: c.data32S[k * 2 + 1] / scale
+								});
+							}
+							pickedContourPoints = captured;
+						} catch {
+							pickedContourPoints = null;
+						}
 					}
 				} else if (
 					minAreaRectAspect > 0 &&
@@ -572,15 +651,67 @@ export async function detectCard(
 			const fallback = centeredFallback(W, H);
 			return {
 				...fallback,
-				extras: { contour_diagnostics: contourTelemetry }
+				extras: {
+					contour_diagnostics: contourTelemetry,
+					...(lensDiag ? { lens_diag: lensDiag } : {})
+				}
 			};
 		}
 
+		// Phase 2 — refine minAreaRect's rough corners by RANSAC line fitting
+		// each side against the raw contour points. Falls through to the
+		// rough corners when the fit fails any quality gate.
+		let edgeFitDiag: import('./tier1-telemetry.types').Tier1EdgeFitDiag | null = null;
+		let finalCorners: [Point, Point, Point, Point] = bestCorners;
+		// Cast through unknown — pickedContourPoints is mutated inside the
+		// findBestCorners closure but TS keeps the declared narrowing.
+		const refinePoints = pickedContourPoints as unknown as Point[] | null;
+		if (refinePoints && refinePoints.length >= 20) {
+			const efStart = performance.now();
+			try {
+				const { edgeFitRefine } = await import('./edge-fit-refine');
+				const fit = edgeFitRefine(bestCorners, refinePoints, {
+					edgeProximityThreshold: 8,
+					ransacMaxIters: 50,
+					ransacDistThreshold: 1.5,
+					minPointsPerSide: 5
+				});
+				if (fit && fit.maxRMSE < 3.0) {
+					finalCorners = fit.corners;
+					edgeFitDiag = {
+						contour_points_total: refinePoints.length,
+						points_per_side: fit.pointsPerSide,
+						points_rejected_as_outliers: fit.outliers,
+						ransac_inlier_pct: fit.inlierPcts.map((v) => Number(v.toFixed(3))),
+						corner_displacement_from_minarearect_px: fit.displacements.map((v) =>
+							Number(v.toFixed(2))
+						),
+						fitted_line_residual_rmse_px: fit.rmses.map((v) => Number(v.toFixed(3))),
+						elapsed_ms: Math.round(performance.now() - efStart),
+						used: true
+					};
+				} else {
+					edgeFitDiag = {
+						contour_points_total: refinePoints.length,
+						points_per_side: fit?.pointsPerSide ?? [0, 0, 0, 0],
+						points_rejected_as_outliers: fit?.outliers ?? 0,
+						ransac_inlier_pct: [0, 0, 0, 0],
+						corner_displacement_from_minarearect_px: [0, 0, 0, 0],
+						fitted_line_residual_rmse_px: [0, 0, 0, 0],
+						elapsed_ms: Math.round(performance.now() - efStart),
+						used: false
+					};
+				}
+			} catch (err) {
+				console.debug('[card-detector] edge-fit refinement threw:', err);
+			}
+		}
+
 		const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-			bestCorners[0].x, bestCorners[0].y,
-			bestCorners[1].x, bestCorners[1].y,
-			bestCorners[2].x, bestCorners[2].y,
-			bestCorners[3].x, bestCorners[3].y
+			finalCorners[0].x, finalCorners[0].y,
+			finalCorners[1].x, finalCorners[1].y,
+			finalCorners[2].x, finalCorners[2].y,
+			finalCorners[3].x, finalCorners[3].y
 		]);
 		const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
 			0, 0,
@@ -601,17 +732,17 @@ export async function detectCard(
 			if (H_mat) H_mat.delete();
 		}
 
-		const sides = computeSideLengths(bestCorners);
+		const sides = computeSideLengths(finalCorners);
 		const pxPerMmTopBottom = (sides.top + sides.bottom) / 2 / CARD_PHYSICAL_WIDTH_MM;
 		const pxPerMmLeftRight = (sides.left + sides.right) / 2 / CARD_PHYSICAL_HEIGHT_MM;
 		const pxPerMm = (pxPerMmTopBottom + pxPerMmLeftRight) / 2;
 		const aspectRatio =
 			(sides.left + sides.right) / 2 / ((sides.top + sides.bottom) / 2);
 
-		const boundingRect = boundingRectFromCorners(bestCorners);
+		const boundingRect = boundingRectFromCorners(finalCorners);
 
 		return {
-			corners: bestCorners,
+			corners: finalCorners,
 			boundingRect,
 			homography,
 			pxPerMm,
@@ -619,7 +750,9 @@ export async function detectCard(
 			method: 'corner_detected',
 			detection_layer: detectionLayer,
 			extras: {
-				contour_diagnostics: contourTelemetry
+				contour_diagnostics: contourTelemetry,
+				...(edgeFitDiag ? { edge_fit_diag: edgeFitDiag } : {}),
+				...(lensDiag ? { lens_diag: lensDiag } : {})
 			}
 		};
 	} catch (err) {

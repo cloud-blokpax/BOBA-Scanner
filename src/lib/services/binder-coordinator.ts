@@ -177,10 +177,12 @@ export class BinderCoordinator {
 		if (!cell.builder) {
 			cell.builder = new ConsensusBuilder(cell.sessionId, this.game);
 		}
-		const regions = this.game === 'boba' ? REGIONS.boba : REGIONS.wonders;
+		const regions = this.game === 'boba' ? REGIONS.boba.default : REGIONS.wonders.default;
 		const cardNumReg = regionToPixels(regions.card_number, cellBitmap.width, cellBitmap.height);
 		const nameReg = regionToPixels(
-			this.game === 'boba' ? REGIONS.boba.hero_name : REGIONS.wonders.card_name,
+			this.game === 'boba'
+				? REGIONS.boba.default.hero_name
+				: REGIONS.wonders.default.card_name,
 			cellBitmap.width,
 			cellBitmap.height
 		);

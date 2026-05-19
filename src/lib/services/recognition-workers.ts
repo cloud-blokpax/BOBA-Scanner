@@ -42,6 +42,15 @@ export type ImageWorkerProxy = Comlink.Remote<{
 		phash256: string;
 	}>;
 	compositeMinPixel: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
+	/** Phase 1 — per-channel median composite (default for non-foil capture). */
+	compositeMedian: (bitmaps: ImageBitmap[]) => Promise<ImageBitmap>;
+	/** Phase 1 — quality score for best-frame selection before fusion. */
+	scoreFrame: (bitmap: ImageBitmap) => Promise<{
+		blur_variance: number;
+		glare_area_pct: number;
+		exposure_balance: number;
+		composite_score: number;
+	}>;
 }>;
 
 // ── Worker State ───────────────────────────────────────────
