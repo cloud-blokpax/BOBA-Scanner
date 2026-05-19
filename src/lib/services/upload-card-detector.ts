@@ -29,6 +29,7 @@
  */
 
 import { preloadOpencv } from '$lib/shims/opencv-js';
+import { getIntrinsicsForUserAgent, buildCvIntrinsics } from './lens-intrinsics';
 import type {
 	ContourDiagnostic,
 	ContourTelemetry,
@@ -211,8 +212,61 @@ export async function detectCard(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let contours: any, hierarchy: any;
 
+	// Phase 6 — lens distortion correction. Applied only for devices with
+	// known intrinsics (published_apple / published_google) and the
+	// estimated default mobile fallback. 'identity' source skips the call
+	// to preserve pre-Phase-6 behavior.
+	let lensDiag: import('./tier1-telemetry.types').Tier1LensDiag | null = null;
+	const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+	const intr = getIntrinsicsForUserAgent(ua);
+
 	try {
 		src = cv.matFromImageData(imageData);
+
+		if (intr.source !== 'identity') {
+			const lensStart = performance.now();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let cameraMatrix: any = null;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let distCoeffs: any = null;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			let undistorted: any = null;
+			try {
+				const built = buildCvIntrinsics(intr, src.cols, src.rows, cv);
+				cameraMatrix = built.cameraMatrix;
+				distCoeffs = built.distCoeffs;
+				undistorted = new cv.Mat();
+				cv.undistort(src, undistorted, cameraMatrix, distCoeffs);
+				src.delete();
+				src = undistorted;
+				undistorted = null;
+				lensDiag = {
+					device_label: intr.label,
+					intrinsic_source: intr.source,
+					correction_applied: true,
+					elapsed_ms: Math.round(performance.now() - lensStart)
+				};
+			} catch (err) {
+				console.debug('[card-detector] lens undistort failed, continuing with original src:', err);
+				lensDiag = {
+					device_label: intr.label,
+					intrinsic_source: intr.source,
+					correction_applied: false,
+					elapsed_ms: Math.round(performance.now() - lensStart)
+				};
+			} finally {
+				try { cameraMatrix?.delete(); } catch { /* ignore */ }
+				try { distCoeffs?.delete(); } catch { /* ignore */ }
+				try { undistorted?.delete(); } catch { /* ignore */ }
+			}
+		} else {
+			lensDiag = {
+				device_label: intr.label,
+				intrinsic_source: 'identity',
+				correction_applied: false,
+				elapsed_ms: 0
+			};
+		}
 
 		// Holo specular suppression — clamps overbright pixels in HSV V
 		// channel so the rainbow noise on foil/holo cards stops fragmenting
@@ -597,7 +651,10 @@ export async function detectCard(
 			const fallback = centeredFallback(W, H);
 			return {
 				...fallback,
-				extras: { contour_diagnostics: contourTelemetry }
+				extras: {
+					contour_diagnostics: contourTelemetry,
+					...(lensDiag ? { lens_diag: lensDiag } : {})
+				}
 			};
 		}
 
@@ -694,7 +751,8 @@ export async function detectCard(
 			detection_layer: detectionLayer,
 			extras: {
 				contour_diagnostics: contourTelemetry,
-				...(edgeFitDiag ? { edge_fit_diag: edgeFitDiag } : {})
+				...(edgeFitDiag ? { edge_fit_diag: edgeFitDiag } : {}),
+				...(lensDiag ? { lens_diag: lensDiag } : {})
 			}
 		};
 	} catch (err) {
