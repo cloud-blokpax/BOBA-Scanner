@@ -441,6 +441,12 @@ Card-Scanner/
 │   │   │   ├── parallel-classifier.ts      # Wonders parallel classifier (paper/cf/ff/ocm/sf from visual signals)
 │   │   │   ├── pixel-stability.ts          # Pixel-correlation check (~0.85 threshold — wire-crossing defense)
 │   │   │   ├── constrained-crop.ts         # Card-aspect-preserving crop helper
+│   │   │   ├── frame-fusion.ts             # Phase 1 — score shutter + buffered frames, composite best K via median/min-pixel
+│   │   │   ├── visual-features.ts          # Phase 3 — sample canonical border L*a*b, nearest-parallel hint for catalog + Phase 7 template
+│   │   │   ├── edge-fit-refine.ts          # Phase 2 — RANSAC line fit per side + intersect for subpixel-accurate corners
+│   │   │   ├── lens-intrinsics.ts          # Phase 6 — per-device camera intrinsics registry for cv.undistort
+│   │   │   ├── imu-monitor.ts              # Phase 5 — DeviceMotionEvent ring buffer; stability gate + per-frame scoring weight
+│   │   │   ├── user-corrections.ts         # Phase 8 — fire-and-forget POST to scan_user_corrections (card overrides + abandons)
 │   │   │   │
 │   │   │   # Scan telemetry + writes (single owner of scan row lifecycle)
 │   │   │   ├── scan-writer.ts              # Single owner of scans table row writes (OpenScanRow → UpdateOutcome); also exports writeTier1Result for the tier1_paddle_ocr forensic row
@@ -869,6 +875,7 @@ Schema changes are applied via Supabase MCP (`apply_migration` for DDL, `execute
 | `scan_pipeline_checkpoint` | Per-stage trace (elapsed_ms + extras) for live pipeline debugging | `id` (BIGINT PK), `trace_id`, `user_id`, `stage`, `elapsed_ms`, `extras` (JSONB), `created_at` |
 | `scan_resolutions` | Consensus snapshot for confirmed scan outcomes | `id` (UUID PK), `scan_id` (FK `scans`), `user_id`, `card_id`, `parallel` (default `'paper'`), `consensus_score`, `tier_agreement_bits`, `confirmed_at`, `confirmed_by`, `superseded_at`, `superseded_by`, `extras`, `schema_version` |
 | `scan_disputes` | User-reported incorrect scans | `id` (UUID PK), scan + card refs, dispute metadata |
+| `scan_user_corrections` | Phase 8 tap-to-teach data. Labeled training data for detector / catalog tuning. RLS scoped to submitter. | `id` (UUID PK), `scan_id` (FK `scans`), `user_id` (FK `auth.users`), `correction_type` CHECK `corner_tap_4\|quad_adjust\|card_id_override\|abandon`, `original_corners` JSONB, `corrected_corners` JSONB, `original_card_id` (FK `cards`), `corrected_card_id` (FK `cards`), `correction_latency_ms` INT, `created_at` |
 | `alignment_signal_telemetry` | Pre-capture alignment signal data (live camera) | `id` (PK) |
 
 #### Tables — Pricing & Commerce
